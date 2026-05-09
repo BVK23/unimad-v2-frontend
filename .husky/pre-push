@@ -1,0 +1,3 @@
+#!/usr/bin/env sh
+echo "husky pre-push typechecking..."
+pnpm exec tsc --noEmit

@@ -1,0 +1,27 @@
+<div align="center">
+<img width="1200" height="475" alt="GHBanner" src="https://github.com/user-attachments/assets/0aa67016-6eaf-458a-adb2-6e31a0763ed6" />
+</div>
+
+# Run and deploy your AI Studio app
+
+This contains everything you need to run your app locally.
+
+**Project structure:** See [STRUCTURE.md](STRUCTURE.md) for folder conventions and where to put new code. AI agents: see [AGENTS.md](AGENTS.md).
+
+View your app in AI Studio: https://ai.studio/apps/drive/1Hz3qg9cRlZcAJc6neBEIwP0gLhag6jZ5
+
+## Run Locally
+
+**Prerequisites:** Node.js, [pnpm](https://pnpm.io/) (or enable Corepack: `corepack enable`)
+
+1. Install dependencies:
+   ```bash
+   pnpm install
+   ```
+2. Copy [.env.example](.env.example) to `.env.local` and set `NEXT_PUBLIC_GEMINI_API_KEY` to your Gemini API key.
+3. Run the app:
+   ```bash
+   pnpm dev
+   ```
+
+**If you see "API key must be set" or old errors:** stop the dev server, delete the `.next` folder, then run `pnpm dev` again so Next picks up your `.env.local`.

@@ -1,0 +1,36 @@
+export type ApplicationStatus = "draft" | "applied" | "interviewing" | "offered" | "rejected";
+
+export interface Application {
+  application_id: string;
+  role: string;
+  company: string;
+  job_description: string;
+  applied_date: string | null;
+  interview_date: string | null;
+  status: ApplicationStatus;
+  job_id?: string | null;
+  /** When present, Apply Now is enabled (e.g. from job board); manual entries have no link */
+  apply_url?: string | null;
+  /** Location when from job board; may be missing for manually added applications */
+  location?: string | null;
+  assets?: Record<string, unknown>;
+}
+
+export interface CreateApplicationInput {
+  role: string;
+  company: string;
+  job_description: string;
+  applied_date?: string | null;
+  interview_date?: string | null;
+  status: ApplicationStatus;
+  job_id?: string | null;
+}
+
+export interface UpdateApplicationInput {
+  role: string;
+  company: string;
+  job_description: string;
+  applied_date?: string | null;
+  interview_date?: string | null;
+  status: ApplicationStatus;
+}
