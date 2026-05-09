@@ -1,12 +1,12 @@
 "use client";
 
-import React, { useState, useEffect } from "react";
+import React, { Suspense, useEffect, useState } from "react";
 import ChatSidebar from "@/components/ChatSidebar";
-import type { UnibotIncomingRequest, UnibotResumeSection } from "@/components/chat/unibot-incoming-request";
 import DebugConsole from "@/components/DebugConsole";
 import OnboardingModal from "@/components/OnboardingModal";
 import ProfileMenu from "@/components/ProfileMenu";
 import { AdkChatProvider } from "@/components/chat/AdkChatProvider";
+import type { UnibotIncomingRequest, UnibotResumeSection } from "@/components/chat/unibot-incoming-request";
 import { computeAdkUserId } from "@/utils/adkUserId";
 import { Bell } from "lucide-react";
 import Link from "next/link";
@@ -77,9 +77,11 @@ export default function UniboardShell({ children, userData }: { children: React.
 
   return (
     <div className="flex h-screen bg-slate-50 dark:bg-[#0a0a0a] font-sans text-slate-900 dark:text-slate-100 text-[13px] transition-colors duration-300">
-      <AdkChatProvider userId={adkUserId}>
-        <ChatSidebar incomingRequest={pendingAIRequest} onRequestHandled={() => setPendingAIRequest(null)} />
-      </AdkChatProvider>
+      <Suspense fallback={null}>
+        <AdkChatProvider userId={adkUserId}>
+          <ChatSidebar incomingRequest={pendingAIRequest} onRequestHandled={() => setPendingAIRequest(null)} />
+        </AdkChatProvider>
+      </Suspense>
 
       <div className="flex-1 flex flex-col h-full overflow-hidden">
         <header className="h-16 min-h-[4rem] bg-white/80 dark:bg-[#0a0a0a]/80 backdrop-blur-md border-b border-slate-100 dark:border-white/5 sticky top-0 z-30 flex-none font-sans transition-colors">
