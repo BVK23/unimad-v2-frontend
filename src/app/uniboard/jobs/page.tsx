@@ -1,3 +1,4 @@
+import { requireOnboardingComplete } from "@/features/onboarding/server/requireOnboardingComplete";
 import JobsPageClient from "./JobsPageClient";
 
 export const metadata = {
@@ -5,6 +6,7 @@ export const metadata = {
   description: "Job discovery and applications",
 };
 
-export default function JobsPage() {
+export default async function JobsPage() {
+  await requireOnboardingComplete();
   return <JobsPageClient />;
 }

@@ -1,4 +1,5 @@
 import { Suspense } from "react";
+import { requireOnboardingComplete } from "@/features/onboarding/server/requireOnboardingComplete";
 import ResumePageClient from "./ResumePageClient";
 
 export const metadata = {
@@ -6,7 +7,8 @@ export const metadata = {
   description: "Resume dashboard and editor",
 };
 
-export default function ResumePage() {
+export default async function ResumePage() {
+  await requireOnboardingComplete();
   return (
     <Suspense fallback={null}>
       <ResumePageClient />
