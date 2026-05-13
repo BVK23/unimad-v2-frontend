@@ -5,6 +5,9 @@ export type PdfHighlightKind = "added" | "modified";
 /** Keys match BasicPDF / future templates: section id or `experience:<id>` etc. */
 export type PdfHighlightMap = Partial<Record<string, PdfHighlightKind>>;
 
+/** Stable fallback for Zustand/React selectors — never use inline `{}` as default highlights. */
+export const EMPTY_PDF_HIGHLIGHT_MAP: PdfHighlightMap = {};
+
 function normSummary(html: string | undefined): string {
   return (html ?? "").replace(/\s+/g, " ").trim();
 }
@@ -90,7 +93,10 @@ export function deriveBannerTitle(highlights: PdfHighlightMap): string {
 /**
  * Compare two resume snapshots (same id) and produce PDF highlight keys + a chat banner label.
  */
-export function computeAdkReviewFromDiff(prev: ResumeData | undefined, next: ResumeData | undefined): {
+export function computeAdkReviewFromDiff(
+  prev: ResumeData | undefined,
+  next: ResumeData | undefined
+): {
   highlights: PdfHighlightMap;
   bannerTitle: string;
 } {

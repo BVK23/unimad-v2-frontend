@@ -1,10 +1,11 @@
 import React, { useState, useRef, useMemo, useEffect, useCallback } from "react";
+import { EMPTY_PDF_HIGHLIGHT_MAP } from "@/features/adk-chat/adkResumeHighlightDiff";
+import { useAdkResumeReviewStore } from "@/features/adk-chat/stores/useAdkResumeReviewStore";
 import { mapFrontendResumeToBackend } from "@/features/resume/api/mappers";
 import { useDebouncedResumePreview } from "@/features/resume/hooks/useDebouncedResumePreview";
 import { useUpdateResume } from "@/features/resume/hooks/useUpdateResume";
 import { publishResumeAsset, recordResumeDownload } from "@/features/resume/server-actions/resume-actions";
 import { useResumeStore } from "@/features/resume/store/useResumeStore";
-import { useAdkResumeReviewStore } from "@/features/adk-chat/stores/useAdkResumeReviewStore";
 import {
   ResumeData,
   ResumeExperience,
@@ -971,12 +972,9 @@ const ResumeEditor: React.FC<ResumeEditorProps> = ({
 
   // -- Validation --
   const validationErrors = useMemo(() => validateResume(resume), [resume]);
-  const adkReviewBlocksAutosave = useAdkResumeReviewStore(
-    s => s.showReviewActions && s.resumeId === resumeId
-  );
-  const pdfHighlightRegions = useAdkResumeReviewStore(s => s.highlights);
-  const hasPendingUnsavedChanges =
-    !adkReviewBlocksAutosave && currentSnapshot !== lastAcknowledgedSnapshot;
+  const adkReviewBlocksAutosave = useAdkResumeReviewStore(s => s.hasPendingReviewForResume(resumeId));
+  const pdfHighlightRegions = useAdkResumeReviewStore(s => s.reviewStack.at(-1)?.highlights ?? EMPTY_PDF_HIGHLIGHT_MAP);
+  const hasPendingUnsavedChanges = !adkReviewBlocksAutosave && currentSnapshot !== lastAcknowledgedSnapshot;
   const saveStatusLabel = useMemo(() => {
     if (isSavingRemote) return activeSaveSource === "manual" ? "Saving..." : "Autosaving...";
     if (hasPendingUnsavedChanges) return "Unsaved changes";

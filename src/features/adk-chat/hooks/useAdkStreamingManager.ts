@@ -7,8 +7,8 @@ import { useResumeStore } from "@/src/features/resume/store/useResumeStore";
 import type { ResumeData } from "@/types";
 import { useQueryClient } from "@tanstack/react-query";
 import { usePathname, useSearchParams } from "next/navigation";
-import { computeAdkReviewFromDiff } from "../adkResumeHighlightDiff";
 import { pullSessionStateAction, syncSessionStateAction } from "../actions";
+import { computeAdkReviewFromDiff } from "../adkResumeHighlightDiff";
 import { useAdkResumeReviewStore } from "../stores/useAdkResumeReviewStore";
 import type { AgentMessage, ProcessedEvent } from "../types";
 import { useAdkStreaming } from "./useAdkStreaming";
@@ -49,6 +49,8 @@ export function useAdkStreamingManager({
   const sessionPullDebounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   /** Captures resume snapshot before ADK session GET applies mutating tool results (avoids racing after_stream). */
   const pendingPrePullBaselineRef = useRef<ResumeData | null>(null);
+  /** Captures assistant bubble id for the in-flight stream (review cards attach to this message). */
+  const pendingReviewAssistantIdRef = useRef<string | null>(null);
   const [streamActivityLabel, setStreamActivityLabel] = useState<string | null>(null);
   const resumeId = useMemo(() => {
     const raw = searchParams.get("id");
@@ -198,8 +200,7 @@ export function useAdkStreamingManager({
         return;
       }
 
-      const toolDiffBaseline =
-        reason === "after_tool_response" ? pendingPrePullBaselineRef.current : null;
+      const toolDiffBaseline = reason === "after_tool_response" ? pendingPrePullBaselineRef.current : null;
 
       try {
         const pullResult = await pullSessionStateAction(userId, sessionId);
@@ -235,6 +236,7 @@ export function useAdkStreamingManager({
               baselineResume: toolDiffBaseline,
               highlights,
               bannerTitle,
+              assistantMessageId: pendingReviewAssistantIdRef.current,
             });
           }
         }
@@ -258,6 +260,7 @@ export function useAdkStreamingManager({
       } finally {
         if (reason === "after_tool_response") {
           pendingPrePullBaselineRef.current = null;
+          pendingReviewAssistantIdRef.current = null;
         }
       }
     },
@@ -276,7 +279,8 @@ export function useAdkStreamingManager({
 
   const streamExtras = useMemo(
     () => ({
-      onMutatingToolResponse: (_toolName: string) => {
+      onMutatingToolResponse: (_toolName: string, aiMessageId: string) => {
+        pendingReviewAssistantIdRef.current = aiMessageId;
         if (resumeId) {
           const cur = useResumeStore.getState().getResumeData(resumeId);
           if (cur && !pendingPrePullBaselineRef.current) {
@@ -298,6 +302,7 @@ export function useAdkStreamingManager({
         throw new Error("Message, userId, and sessionId are required");
       }
       await syncCurrentSessionState("before_send");
+      pendingReviewAssistantIdRef.current = options?.aiMessageId ?? null;
 
       await startStream(
         {

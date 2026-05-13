@@ -5,6 +5,7 @@ import type { ActiveSession } from "@/src/features/adk-chat/actions";
 import { loadSessionHistoryAction } from "@/src/features/adk-chat/actions";
 import { useAdkSession } from "@/src/features/adk-chat/hooks/useAdkSession";
 import { useAdkStreamingManager } from "@/src/features/adk-chat/hooks/useAdkStreamingManager";
+import { useAdkResumeReviewStore } from "@/src/features/adk-chat/stores/useAdkResumeReviewStore";
 import type { AgentMessage, ProcessedEvent } from "@/src/features/adk-chat/types";
 import type { ChatMessage } from "@/types";
 import { updateChatMessageInTree } from "./update-chat-message";
@@ -91,6 +92,10 @@ export function AdkChatProvider({ userId, children }: { userId: string; children
     onEventUpdate,
     onWebsiteCountUpdate,
   });
+
+  useEffect(() => {
+    useAdkResumeReviewStore.getState().clearAllReviews();
+  }, [sessionId, userId]);
 
   useEffect(() => {
     if (!userId || !sessionId) return;

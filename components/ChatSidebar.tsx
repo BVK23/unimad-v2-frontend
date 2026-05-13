@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useRef, useCallback } from "react";
 import { syncSessionStateAction } from "@/features/adk-chat/actions";
-import { useAdkResumeReviewStore } from "@/features/adk-chat/stores/useAdkResumeReviewStore";
+import { useAdkResumeReviewStore, type AdkReviewCard } from "@/features/adk-chat/stores/useAdkResumeReviewStore";
 import { buildAdkResumeDataMap } from "@/features/resume/api/mappers";
 import { resumeByIdQueryKey } from "@/features/resume/hooks/useResume";
 import { useResumeStore } from "@/features/resume/store/useResumeStore";
@@ -9,6 +9,7 @@ import { Send, Loader2, Minimize2, Maximize2, ArrowUp, MessageSquare, History, T
 import type { ChatMessage } from "../types";
 import Logo from "./Logo";
 import { useAdkChatContext } from "./chat/AdkChatProvider";
+import { FormattedAgentMessage } from "./chat/FormattedAgentMessage";
 import { type UnibotIncomingRequest, UNIBOT_SECTION_REVIEW_PROMPTS } from "./chat/unibot-incoming-request";
 
 interface ChatSidebarProps {
@@ -18,6 +19,61 @@ interface ChatSidebarProps {
 
 function newId(prefix: string): string {
   return `${prefix}-${Date.now()}-${Math.random().toString(36).slice(2, 9)}`;
+}
+
+function AdkResumeReviewCardBlock({
+  card,
+  isActive,
+  adkReviewBusy,
+  sessionReady,
+  onAccept,
+  onDiscard,
+}: {
+  card: AdkReviewCard;
+  isActive: boolean;
+  adkReviewBusy: boolean;
+  sessionReady: boolean;
+  onAccept: () => void;
+  onDiscard: () => void;
+}) {
+  return (
+    <div
+      className={`mt-2 w-full max-w-[95%] rounded-xl border px-3 py-2.5 shadow-sm transition-opacity ${
+        isActive
+          ? "border-slate-200 bg-slate-50 dark:border-white/10 dark:bg-[#141414]"
+          : "border-slate-100 bg-slate-50/70 opacity-70 dark:border-white/5 dark:bg-[#121212]"
+      }`}
+    >
+      <p className="text-[12px] font-semibold text-slate-800 dark:text-slate-100">{card.bannerTitle}</p>
+      {isActive ? (
+        <div className="mt-2.5 flex flex-wrap gap-2">
+          <button
+            type="button"
+            disabled={adkReviewBusy || !sessionReady}
+            onClick={() => void onAccept()}
+            className="rounded-lg bg-emerald-600 px-3 py-1.5 text-[12px] font-medium text-white hover:bg-emerald-700 disabled:opacity-50"
+          >
+            <span className="inline-flex items-center gap-1.5">
+              {adkReviewBusy ? <Loader2 size={14} className="animate-spin" /> : null}
+              Accept
+            </span>
+          </button>
+          <button
+            type="button"
+            disabled={adkReviewBusy || !sessionReady}
+            onClick={() => void onDiscard()}
+            className="rounded-lg border border-slate-200 bg-white px-3 py-1.5 text-[12px] font-medium text-slate-700 hover:bg-slate-50 dark:border-white/10 dark:bg-[#161616] dark:text-slate-200 dark:hover:bg-white/5 disabled:opacity-50"
+          >
+            Discard
+          </button>
+        </div>
+      ) : (
+        <p className="mt-1.5 text-[11px] leading-snug text-slate-500 dark:text-slate-400">
+          Replaced by a newer edit. Use the latest review below to accept or discard.
+        </p>
+      )}
+    </div>
+  );
 }
 
 const ChatSidebar: React.FC<ChatSidebarProps> = ({ incomingRequest, onRequestHandled }) => {
@@ -51,8 +107,8 @@ const ChatSidebar: React.FC<ChatSidebarProps> = ({ incomingRequest, onRequestHan
   const [topicInputs, setTopicInputs] = useState<{ [key: string]: string }>({});
   const lastIncomingSigRef = useRef<string | null>(null);
   const queryClient = useQueryClient();
-  const adkBannerTitle = useAdkResumeReviewStore(s => s.bannerTitle);
-  const adkShowReviewActions = useAdkResumeReviewStore(s => s.showReviewActions);
+  const adkReviewStack = useAdkResumeReviewStore(s => s.reviewStack);
+  const adkActiveReviewId = useAdkResumeReviewStore(s => s.reviewStack.at(-1)?.id ?? null);
   const [adkReviewBusy, setAdkReviewBusy] = useState(false);
 
   const patchLastMainAssistantError = useCallback(() => {
@@ -190,7 +246,7 @@ const ChatSidebar: React.FC<ChatSidebarProps> = ({ incomingRequest, onRequestHan
 
   useEffect(() => {
     scrollToBottom();
-  }, [messages, isCollapsed, adkBannerTitle, adkShowReviewActions]);
+  }, [messages, isCollapsed, adkReviewStack, adkActiveReviewId]);
 
   useEffect(() => {
     if (!historyOpen) return;
@@ -232,7 +288,7 @@ const ChatSidebar: React.FC<ChatSidebarProps> = ({ incomingRequest, onRequestHan
         current_resume: baseline.id,
         resume_data: buildAdkResumeDataMap(merged),
       });
-      useAdkResumeReviewStore.getState().clearReview();
+      useAdkResumeReviewStore.getState().popReviewAfterDiscard();
       window.dispatchEvent(
         new CustomEvent("resume-adk-discard", {
           detail: { resumeId: baseline.id, baselineJson: JSON.stringify(baseline) },
@@ -400,7 +456,13 @@ const ChatSidebar: React.FC<ChatSidebarProps> = ({ incomingRequest, onRequestHan
                                 : "text-slate-600 dark:text-slate-300"
                             }`}
                           >
-                            {subMsg.text || <Loader2 size={14} className="animate-spin text-slate-400" />}
+                            {subMsg.role === "model" && subMsg.text ? (
+                              <FormattedAgentMessage content={subMsg.text} />
+                            ) : subMsg.text ? (
+                              <span className="whitespace-pre-wrap">{subMsg.text}</span>
+                            ) : (
+                              <Loader2 size={14} className="animate-spin text-slate-400" />
+                            )}
                           </div>
                         </div>
                       ))}
@@ -444,11 +506,47 @@ const ChatSidebar: React.FC<ChatSidebarProps> = ({ incomingRequest, onRequestHan
                     : "bg-transparent text-slate-600 dark:text-slate-300 px-1 max-w-full"
                 }`}
               >
-                {msg.text}
+                {msg.role === "model" && msg.text ? (
+                  <FormattedAgentMessage content={msg.text} />
+                ) : msg.text ? (
+                  <span className="whitespace-pre-wrap">{msg.text}</span>
+                ) : null}
               </div>
+              {msg.role === "model" &&
+                adkReviewStack
+                  .filter(c => c.assistantMessageId === msg.id)
+                  .map(card => (
+                    <AdkResumeReviewCardBlock
+                      key={card.id}
+                      card={card}
+                      isActive={card.id === adkActiveReviewId}
+                      adkReviewBusy={adkReviewBusy}
+                      sessionReady={sessionReady}
+                      onAccept={handleAdkAccept}
+                      onDiscard={handleAdkDiscard}
+                    />
+                  ))}
             </div>
           );
         })}
+
+        {adkReviewStack.some(c => !c.assistantMessageId) && (
+          <div className="flex flex-col gap-2 items-start pl-1">
+            {adkReviewStack
+              .filter(c => !c.assistantMessageId)
+              .map(card => (
+                <AdkResumeReviewCardBlock
+                  key={card.id}
+                  card={card}
+                  isActive={card.id === adkActiveReviewId}
+                  adkReviewBusy={adkReviewBusy}
+                  sessionReady={sessionReady}
+                  onAccept={handleAdkAccept}
+                  onDiscard={handleAdkDiscard}
+                />
+              ))}
+          </div>
+        )}
 
         {isAgentLoading && (
           <div className="flex flex-col gap-1 items-start pl-1">
@@ -458,35 +556,6 @@ const ChatSidebar: React.FC<ChatSidebarProps> = ({ incomingRequest, onRequestHan
             </div>
           </div>
         )}
-
-        {adkBannerTitle ? (
-          <div className="rounded-xl border border-slate-200 dark:border-white/10 bg-slate-50 dark:bg-[#141414] px-3 py-2.5 shadow-sm">
-            <p className="text-[12px] font-semibold text-slate-800 dark:text-slate-100">{adkBannerTitle}</p>
-            {adkShowReviewActions ? (
-              <div className="mt-2.5 flex flex-wrap gap-2">
-                <button
-                  type="button"
-                  disabled={adkReviewBusy || !sessionReady}
-                  onClick={() => void handleAdkAccept()}
-                  className="rounded-lg bg-emerald-600 px-3 py-1.5 text-[12px] font-medium text-white hover:bg-emerald-700 disabled:opacity-50"
-                >
-                  <span className="inline-flex items-center gap-1.5">
-                    {adkReviewBusy ? <Loader2 size={14} className="animate-spin" /> : null}
-                    Accept
-                  </span>
-                </button>
-                <button
-                  type="button"
-                  disabled={adkReviewBusy || !sessionReady}
-                  onClick={() => void handleAdkDiscard()}
-                  className="rounded-lg border border-slate-200 bg-white px-3 py-1.5 text-[12px] font-medium text-slate-700 hover:bg-slate-50 dark:border-white/10 dark:bg-[#161616] dark:text-slate-200 dark:hover:bg-white/5 disabled:opacity-50"
-                >
-                  Discard
-                </button>
-              </div>
-            ) : null}
-          </div>
-        ) : null}
 
         <div ref={messagesEndRef} />
       </div>

@@ -188,6 +188,8 @@ export function labelForToolCall(name: string, args?: Record<string, unknown>): 
       return "Reviewing your education…";
     case "get_education_by_id":
       return "Reviewing an education entry…";
+    case "find_education":
+      return "Reviewing your education…";
     case "update_summary":
       return "Refreshing your summary…";
     case "update_education":

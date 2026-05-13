@@ -1,4 +1,5 @@
 import { ResumeData } from "../types";
+import { compareResumeMonthDates } from "./resumeMonthDate";
 
 export interface ValidationError {
   section: "profile" | "experience" | "education" | "projects" | "certifications" | "custom";
@@ -50,9 +51,10 @@ export const validateResume = (data: ResumeData): ValidationError[] => {
     if (!exp.current && !exp.endDate?.trim()) {
       errors.push({ section: "experience", id: exp.id, field: "endDate", message: "End Date is required" });
     }
-    // Date Logic
+    // Date Logic (compare normalized YYYY-MM; raw string compare breaks for "MMM YYYY" text)
     if (exp.startDate && exp.endDate && !exp.current) {
-      if (exp.startDate > exp.endDate) {
+      const cmp = compareResumeMonthDates(exp.startDate, exp.endDate);
+      if (cmp !== null && cmp > 0) {
         errors.push({ section: "experience", id: exp.id, field: "endDate", message: "End Date cannot be before Start Date" });
       }
     }
@@ -72,9 +74,10 @@ export const validateResume = (data: ResumeData): ValidationError[] => {
     if (!edu.current && !edu.endDate?.trim()) {
       errors.push({ section: "education", id: edu.id, field: "endDate", message: "End Date is required" });
     }
-    // Date Logic
+    // Date Logic (compare normalized YYYY-MM; string compare is wrong for "MMM YYYY" text)
     if (edu.startDate && edu.endDate && !edu.current) {
-      if (edu.startDate > edu.endDate) {
+      const cmp = compareResumeMonthDates(edu.startDate, edu.endDate);
+      if (cmp !== null && cmp > 0) {
         errors.push({ section: "education", id: edu.id, field: "endDate", message: "End Date cannot be before Start Date" });
       }
     }
@@ -111,7 +114,8 @@ export const validateResume = (data: ResumeData): ValidationError[] => {
       }
       // Date Logic for Custom Items
       if (item.hasDates && item.startDate && item.endDate && !item.current) {
-        if (item.startDate > item.endDate) {
+        const cmp = compareResumeMonthDates(item.startDate, item.endDate);
+        if (cmp !== null && cmp > 0) {
           errors.push({ section: "custom", id: item.id, field: "endDate", message: "Invalid Date Range" });
         }
       }

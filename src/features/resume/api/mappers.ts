@@ -5,6 +5,7 @@
  * Usage:
  *   import { mapBackendResumeToFrontend, mapFrontendResumeToBackend } from '@/features/resume/api/mappers';
  */
+import { normalizeResumeMonthStorage } from "@/utils/resumeMonthDate";
 import type {
   ResumeData,
   ResumeTemplateId,
@@ -196,13 +197,18 @@ function mapProfile(p: Record<string, unknown>, topLevelSummary: unknown): Resum
 // ---- Experiences ----
 
 function mapExperience(e: Record<string, unknown>, idx: number): ResumeExperience {
+  const rawStart = String(e.startDate ?? "");
+  const rawEnd = String(e.endDate ?? "");
+  const startDate = normalizeResumeMonthStorage(rawStart) ?? rawStart;
+  const endDate =
+    rawEnd.trim().length > 0 && !/present|current|now/i.test(rawEnd.trim()) ? (normalizeResumeMonthStorage(rawEnd) ?? rawEnd) : rawEnd;
   return {
     id: String(e.id ?? idx),
     company: String(e.organisation ?? e.company ?? ""),
     role: String(e.role ?? ""),
-    startDate: String(e.startDate ?? ""),
-    endDate: String(e.endDate ?? ""),
-    current: e.endDate === "Present" || e.endDate === "present",
+    startDate,
+    endDate,
+    current: /present|current|now/i.test(rawEnd.trim()),
     location: (e.location as string) ?? undefined,
     description: descToString(e.descriptions ?? e.description),
     hidden: Boolean(e.hidden),
@@ -212,13 +218,18 @@ function mapExperience(e: Record<string, unknown>, idx: number): ResumeExperienc
 // ---- Educations ----
 
 function mapEducation(e: Record<string, unknown>, idx: number): ResumeEducation {
+  const rawStart = String(e.startDate ?? "");
+  const rawEnd = String(e.endDate ?? "");
+  const startDate = normalizeResumeMonthStorage(rawStart) ?? rawStart;
+  const endDate =
+    rawEnd.trim().length > 0 && !/present|current|now/i.test(rawEnd.trim()) ? (normalizeResumeMonthStorage(rawEnd) ?? rawEnd) : rawEnd;
   return {
     id: String(e.id ?? idx),
     school: String(e.institution ?? e.school ?? ""),
     degree: String(e.course ?? e.degree ?? ""),
-    startDate: String(e.startDate ?? ""),
-    endDate: String(e.endDate ?? ""),
-    current: e.endDate === "Present" || e.endDate === "present",
+    startDate,
+    endDate,
+    current: /present|current|now/i.test(rawEnd.trim()),
     location: (e.location as string) ?? undefined,
     description: descToString(e.courseWork ?? e.description),
     hidden: Boolean(e.hidden),

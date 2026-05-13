@@ -172,7 +172,7 @@ function processFunctionResponse(
     createDebugLog("ADK SESSION SYNC", "Mutating tool completed; scheduling session refresh", {
       tool: functionResponse.name,
     });
-    callbacks.onMutatingToolResponse?.(functionResponse.name);
+    callbacks.onMutatingToolResponse?.(functionResponse.name, aiMessageId);
     callbacks.onStreamActivityHint?.({ label: labelForMutatingToolResponse(functionResponse.name) });
   }
 

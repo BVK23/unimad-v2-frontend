@@ -74,7 +74,7 @@ export interface StreamProcessingCallbacks {
   onEventUpdate: (messageId: string, event: ProcessedEvent) => void;
   onWebsiteCountUpdate: (count: number) => void;
   /** After a tool mutates ADK session state, frontend can refresh Zustand from GET session. */
-  onMutatingToolResponse?: (toolName: string) => void;
+  onMutatingToolResponse?: (toolName: string, aiMessageId: string) => void;
   /** Short UX line while streaming (agent handoff, tool call, etc.). */
   onStreamActivityHint?: (hint: { label: string }) => void;
 }
