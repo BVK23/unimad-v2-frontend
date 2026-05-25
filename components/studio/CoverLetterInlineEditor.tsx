@@ -6,7 +6,13 @@ import Underline from "@tiptap/extension-underline";
 import { useEditor, EditorContent } from "@tiptap/react";
 import { BubbleMenu } from "@tiptap/react/menus";
 import StarterKit from "@tiptap/starter-kit";
-import { Bold, Italic, Underline as UnderlineIcon, List } from "lucide-react";
+import { Bold as BoldIcon, Italic, Underline as UnderlineIcon, List } from "lucide-react";
+
+const TOOLBAR_BTN = "p-1 rounded-full text-xs transition-colors";
+
+const preventToolbarBlur = (event: React.MouseEvent) => {
+  event.preventDefault();
+};
 
 interface CoverLetterInlineEditorProps {
   value: string;
@@ -150,6 +156,8 @@ const CoverLetterInlineEditor: React.FC<CoverLetterInlineEditorProps> = ({ value
     extensions: [
       StarterKit.configure({
         heading: false,
+        link: false,
+        underline: false,
       }),
       Underline,
       Link.configure({
@@ -160,7 +168,7 @@ const CoverLetterInlineEditor: React.FC<CoverLetterInlineEditorProps> = ({ value
     editorProps: {
       attributes: {
         class:
-          "cover-letter-editor ProseMirror min-h-[400px] font-serif text-base leading-relaxed text-slate-900 dark:text-slate-100 focus:outline-none [&_p]:my-2 [&_ul]:list-disc [&_ul]:pl-6 [&_ul]:my-2 [&_ol]:list-decimal [&_ol]:pl-6 [&_ol]:my-2 [&_li]:my-1 [&_li]:pl-0 [&_li>p]:my-0",
+          "cover-letter-editor ProseMirror min-h-[400px] font-serif text-base font-normal leading-relaxed text-slate-900 dark:text-slate-100 focus:outline-none [&_p]:my-2 [&_strong]:font-bold [&_b]:font-bold [&_ul]:list-disc [&_ul]:pl-6 [&_ul]:my-2 [&_ol]:list-decimal [&_ol]:pl-6 [&_ol]:my-2 [&_li]:my-1 [&_li]:pl-0 [&_li>p]:my-0",
       },
     },
     onUpdate: ({ editor }) => {
@@ -192,7 +200,7 @@ const CoverLetterInlineEditor: React.FC<CoverLetterInlineEditorProps> = ({ value
   }, []);
 
   React.useEffect(() => {
-    if (!editor) return;
+    if (!editor || editor.isFocused) return;
     const current = editor.getHTML();
     const incoming = markdownToHtml(value);
     if (incoming !== current) {
@@ -211,33 +219,41 @@ const CoverLetterInlineEditor: React.FC<CoverLetterInlineEditorProps> = ({ value
       >
         <button
           type="button"
+          onMouseDown={preventToolbarBlur}
           onClick={() => editor.chain().focus().toggleBold().run()}
-          className={`p-1 rounded-full text-xs ${editor.isActive("bold") ? "bg-white text-slate-900" : "hover:bg-slate-700"}`}
+          className={`${TOOLBAR_BTN} ${editor.isActive("bold") ? "bg-white text-slate-900" : "hover:bg-slate-700"}`}
           aria-label="Bold"
+          aria-pressed={editor.isActive("bold")}
         >
-          <Bold size={14} />
+          <BoldIcon size={14} />
         </button>
         <button
           type="button"
+          onMouseDown={preventToolbarBlur}
           onClick={() => editor.chain().focus().toggleItalic().run()}
-          className={`p-1 rounded-full text-xs ${editor.isActive("italic") ? "bg-white text-slate-900" : "hover:bg-slate-700"}`}
+          className={`${TOOLBAR_BTN} ${editor.isActive("italic") ? "bg-white text-slate-900" : "hover:bg-slate-700"}`}
           aria-label="Italic"
+          aria-pressed={editor.isActive("italic")}
         >
           <Italic size={14} />
         </button>
         <button
           type="button"
+          onMouseDown={preventToolbarBlur}
           onClick={() => editor.chain().focus().toggleUnderline().run()}
-          className={`p-1 rounded-full text-xs ${editor.isActive("underline") ? "bg-white text-slate-900" : "hover:bg-slate-700"}`}
+          className={`${TOOLBAR_BTN} ${editor.isActive("underline") ? "bg-white text-slate-900" : "hover:bg-slate-700"}`}
           aria-label="Underline"
+          aria-pressed={editor.isActive("underline")}
         >
           <UnderlineIcon size={14} />
         </button>
         <button
           type="button"
+          onMouseDown={preventToolbarBlur}
           onClick={() => editor.chain().focus().toggleBulletList().run()}
-          className={`p-1 rounded-full text-xs ${editor.isActive("bulletList") ? "bg-white text-slate-900" : "hover:bg-slate-700"}`}
+          className={`${TOOLBAR_BTN} ${editor.isActive("bulletList") ? "bg-white text-slate-900" : "hover:bg-slate-700"}`}
           aria-label="Bullet list"
+          aria-pressed={editor.isActive("bulletList")}
         >
           <List size={14} />
         </button>

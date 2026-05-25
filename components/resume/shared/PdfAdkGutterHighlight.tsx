@@ -1,6 +1,6 @@
 import React from "react";
-import { View, StyleSheet } from "@react-pdf/renderer";
 import type { PdfHighlightKind } from "@/features/adk-chat/adkResumeHighlightDiff";
+import { View, StyleSheet } from "@react-pdf/renderer";
 
 const gutterStyles = StyleSheet.create({
   wrap: {
@@ -24,13 +24,7 @@ const gutterStyles = StyleSheet.create({
  * Thin left gutter stripe for ADK-added/modified regions. Absolutely positioned in the
  * page margin so body text width and padding stay unchanged.
  */
-export function PdfAdkGutterHighlight({
-  kind,
-  children,
-}: {
-  kind?: PdfHighlightKind;
-  children: React.ReactNode;
-}) {
+export function PdfAdkGutterHighlight({ kind, children }: { kind?: PdfHighlightKind; children: React.ReactNode }) {
   if (!kind) return <>{children}</>;
   const backgroundColor = kind === "added" ? "#22c55e" : "#ca8a04";
   return (

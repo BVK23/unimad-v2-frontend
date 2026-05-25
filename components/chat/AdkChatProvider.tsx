@@ -1,10 +1,12 @@
 "use client";
 
-import React, { createContext, useCallback, useContext, useEffect, useMemo, useState } from "react";
+import React, { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState } from "react";
 import type { ActiveSession } from "@/src/features/adk-chat/actions";
 import { loadSessionHistoryAction } from "@/src/features/adk-chat/actions";
 import { useAdkSession } from "@/src/features/adk-chat/hooks/useAdkSession";
 import { useAdkStreamingManager } from "@/src/features/adk-chat/hooks/useAdkStreamingManager";
+import { mergeSubSessionsIntoMainMessages } from "@/src/features/adk-chat/improve-topic-helpers";
+import { getRegistryRow } from "@/src/features/adk-chat/session-registry";
 import { useAdkResumeReviewStore } from "@/src/features/adk-chat/stores/useAdkResumeReviewStore";
 import type { AgentMessage, ProcessedEvent } from "@/src/features/adk-chat/types";
 import type { ChatMessage } from "@/types";
@@ -13,7 +15,7 @@ import { updateChatMessageInTree } from "./update-chat-message";
 const WELCOME_MESSAGE: ChatMessage = {
   id: "welcome",
   role: "model",
-  text: "Hi! I'm Unimad AI. I can help you craft your story, write content for your portfolio, or give feedback on your resume.",
+  text: "Hi! I'm Unibot. I can help you craft your story, write content for your portfolio, or give feedback on your resume.",
   timestamp: new Date(),
 };
 
@@ -31,6 +33,13 @@ function agentMessageToChatMessage(m: AgentMessage): ChatMessage {
   };
 }
 
+export interface SendMainMessageOptions {
+  /** Send in a sub-session after switching and loading its history. */
+  targetSessionId?: string;
+  /** Improve / section-review handoffs — do not use this message for auto chat title. */
+  excludeFromTitleGeneration?: boolean;
+}
+
 export interface AdkChatContextValue {
   userId: string;
   sessionId: string;
@@ -40,15 +49,14 @@ export interface AdkChatContextValue {
   sessionError: string | null;
   isLoadingHistory: boolean;
   isAgentLoading: boolean;
-  /** Live hint while the assistant streams (tool/agent activity). */
   streamActivityLabel: string | null;
   messages: ChatMessage[];
   setMessages: React.Dispatch<React.SetStateAction<ChatMessage[]>>;
-  sendMainMessage: (text: string) => Promise<void>;
-  sendTopicMessage: (prompt: string, assistantMessageId: string) => Promise<void>;
+  sendMainMessage: (text: string, options?: SendMainMessageOptions) => Promise<void>;
+  sendTopicMessage: (prompt: string, assistantMessageId: string, options?: { sessionIdOverride?: string }) => Promise<void>;
   refreshSessions: () => Promise<void>;
   handleSessionSwitch: (newSessionId: string) => void;
-  handleCreateNewSession: () => Promise<void>;
+  handleCreateNewSession: (options?: { kind?: "main" | "sub"; parentSessionId?: string }) => Promise<void>;
   handleDeleteSession: (sessionIdToDelete: string) => Promise<void>;
 }
 
@@ -57,6 +65,11 @@ const AdkChatContext = createContext<AdkChatContextValue | null>(null);
 export function AdkChatProvider({ userId, children }: { userId: string; children: React.ReactNode }): React.JSX.Element {
   const [messages, setMessages] = useState<ChatMessage[]>([WELCOME_MESSAGE]);
   const [isLoadingHistory, setIsLoadingHistory] = useState(false);
+  const pendingSendRef = useRef<{
+    targetSessionId: string;
+    text: string;
+    excludeFromTitleGeneration?: boolean;
+  } | null>(null);
 
   const {
     sessionId,
@@ -101,6 +114,7 @@ export function AdkChatProvider({ userId, children }: { userId: string; children
     if (!userId || !sessionId) return;
 
     let cancelled = false;
+    setMessages([WELCOME_MESSAGE]);
     setIsLoadingHistory(true);
 
     void (async () => {
@@ -115,7 +129,15 @@ export function AdkChatProvider({ userId, children }: { userId: string; children
               timestamp: parseAgentTimestamp(m.timestamp as unknown as Date | string | number),
             })
           );
-          setMessages(mapped.length > 0 ? mapped : [WELCOME_MESSAGE]);
+          let mainMessages = mapped.length > 0 ? mapped : [WELCOME_MESSAGE];
+          const meta = getRegistryRow(sessionId);
+          const isSubSession = meta?.kind === "sub";
+          if (!isSubSession) {
+            mainMessages = await mergeSubSessionsIntoMainMessages(userId, sessionId, mainMessages);
+          }
+          if (!cancelled) {
+            setMessages(mainMessages);
+          }
         }
       } finally {
         if (!cancelled) {
@@ -129,9 +151,9 @@ export function AdkChatProvider({ userId, children }: { userId: string; children
     };
   }, [userId, sessionId]);
 
-  const sendMainMessage = useCallback(
-    async (text: string): Promise<void> => {
-      if (!userId || !sessionId) {
+  const sendMainMessageNow = useCallback(
+    async (text: string, activeSessionId: string, options?: SendMainMessageOptions): Promise<void> => {
+      if (!userId || !activeSessionId) {
         throw new Error("Session not ready");
       }
 
@@ -143,6 +165,7 @@ export function AdkChatProvider({ userId, children }: { userId: string; children
         role: "user",
         text,
         timestamp: new Date(),
+        excludeFromTitleGeneration: options?.excludeFromTitleGeneration,
       };
       const assistantChat: ChatMessage = {
         id: assistantId,
@@ -155,15 +178,52 @@ export function AdkChatProvider({ userId, children }: { userId: string; children
 
       await submitMessage(text, { aiMessageId: assistantId });
     },
-    [userId, sessionId, submitMessage]
+    [userId, submitMessage]
   );
 
+  const sendMainMessage = useCallback(
+    async (text: string, options?: SendMainMessageOptions): Promise<void> => {
+      const targetId = options?.targetSessionId?.trim() || sessionId;
+      if (!userId || !targetId) {
+        throw new Error("Session not ready");
+      }
+
+      if (targetId !== sessionId) {
+        pendingSendRef.current = {
+          targetSessionId: targetId,
+          text,
+          excludeFromTitleGeneration: options?.excludeFromTitleGeneration,
+        };
+        handleSessionSwitch(targetId);
+        return;
+      }
+
+      await sendMainMessageNow(text, targetId, options);
+    },
+    [userId, sessionId, handleSessionSwitch, sendMainMessageNow]
+  );
+
+  useEffect(() => {
+    const pending = pendingSendRef.current;
+    if (!pending) return;
+    if (sessionId !== pending.targetSessionId) return;
+    if (isLoadingHistory || isBootstrappingSession) return;
+
+    pendingSendRef.current = null;
+    void sendMainMessageNow(pending.text, pending.targetSessionId, {
+      excludeFromTitleGeneration: pending.excludeFromTitleGeneration,
+    });
+  }, [sessionId, isLoadingHistory, isBootstrappingSession, sendMainMessageNow]);
+
   const sendTopicMessage = useCallback(
-    async (prompt: string, assistantMessageId: string): Promise<void> => {
+    async (prompt: string, assistantMessageId: string, options?: { sessionIdOverride?: string }): Promise<void> => {
       if (!userId || !sessionId) {
         throw new Error("Session not ready");
       }
-      await submitMessage(prompt, { aiMessageId: assistantMessageId });
+      await submitMessage(prompt, {
+        aiMessageId: assistantMessageId,
+        sessionIdOverride: options?.sessionIdOverride,
+      });
     },
     [userId, sessionId, submitMessage]
   );

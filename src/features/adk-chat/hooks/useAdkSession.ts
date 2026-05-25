@@ -2,6 +2,14 @@
 
 import { useState, useCallback, useEffect, useRef } from "react";
 import { createSessionAction, deleteSessionAction, listSessionsAction, type ActiveSession, type SessionListResult } from "../actions";
+import { UNTITLED_THREAD_TITLE } from "../constants";
+import type { UnibotSessionKind } from "../session-metadata";
+import { getRegistryRow, getSubsForMain, removeRegistrySessions, setSessionRegistry, upsertRegistryRow } from "../session-registry";
+import {
+  deleteUnibotAdkSessionRegistryAction,
+  listUnibotAdkSessionsAction,
+  registerUnibotAdkSessionAction,
+} from "../unibot-adk-session-actions";
 
 function getDeletedSessionsStorageKey(userId: string): string {
   return `unimad_deleted_adk_sessions:${userId}`;
@@ -20,10 +28,10 @@ function getLocallyDeletedSessionIds(userId: string): Set<string> {
   }
 }
 
-function markSessionLocallyDeleted(userId: string, sessionId: string): void {
-  if (typeof window === "undefined" || !userId || !sessionId) return;
+function markSessionsLocallyDeleted(userId: string, sessionIds: string[]): void {
+  if (typeof window === "undefined" || !userId || sessionIds.length === 0) return;
   const deletedIds = getLocallyDeletedSessionIds(userId);
-  deletedIds.add(sessionId);
+  sessionIds.forEach(id => deletedIds.add(id));
   window.localStorage.setItem(getDeletedSessionsStorageKey(userId), JSON.stringify(Array.from(deletedIds)));
 }
 
@@ -62,14 +70,14 @@ export interface UseAdkSessionReturn {
   isBootstrappingSession: boolean;
   sessionError: string | null;
   refreshSessions: () => Promise<void>;
+  refreshRegistry: () => Promise<void>;
   handleSessionSwitch: (newSessionId: string) => void;
-  handleCreateNewSession: () => Promise<void>;
+  handleCreateNewSession: (options?: { kind?: UnibotSessionKind; parentSessionId?: string }) => Promise<void>;
   handleDeleteSession: (sessionIdToDelete: string) => Promise<void>;
 }
 
 /**
- * ADK sessions for one app user: list existing → reuse latest, or create first session.
- * `userId` is the ADK user key (username / email from your app).
+ * ADK sessions + Django registry: load both once, merge for sidebar history.
  */
 export function useAdkSession(userId: string): UseAdkSessionReturn {
   const [sessionId, setSessionId] = useState("");
@@ -78,14 +86,22 @@ export function useAdkSession(userId: string): UseAdkSessionReturn {
   const [sessionError, setSessionError] = useState<string | null>(null);
   const prevUserIdRef = useRef<string>("");
 
+  const refreshRegistry = useCallback(async (): Promise<void> => {
+    const result = await listUnibotAdkSessionsAction();
+    if (result.success) {
+      setSessionRegistry(result.sessions);
+    }
+  }, []);
+
   const refreshSessions = useCallback(async (): Promise<void> => {
     if (!userId) {
       setSessions([]);
       return;
     }
+    await refreshRegistry();
     const result = await listSessionsAction(userId);
     setSessions(filterDeletedSessions(normalizeSessionsFromAction(result), userId));
-  }, [userId]);
+  }, [userId, refreshRegistry]);
 
   const handleSessionSwitch = useCallback(
     (newSessionId: string): void => {
@@ -95,28 +111,44 @@ export function useAdkSession(userId: string): UseAdkSessionReturn {
     [userId, sessionId]
   );
 
-  const handleCreateNewSession = useCallback(async (): Promise<void> => {
-    if (!userId) {
-      throw new Error("User ID is required to create a session");
-    }
-    setIsBootstrappingSession(true);
-    setSessionError(null);
-    try {
-      const result = await createSessionAction(userId);
-      if (result.success && result.sessionId) {
-        setSessionId(result.sessionId);
-        await refreshSessions();
-      } else {
-        throw new Error(result.error || "Session creation failed");
+  const handleCreateNewSession = useCallback(
+    async (options?: { kind?: UnibotSessionKind; parentSessionId?: string }): Promise<void> => {
+      if (!userId) {
+        throw new Error("User ID is required to create a session");
       }
-    } catch (e) {
-      const msg = e instanceof Error ? e.message : String(e);
-      setSessionError(msg);
-      throw e;
-    } finally {
-      setIsBootstrappingSession(false);
-    }
-  }, [userId, refreshSessions]);
+      const kind = options?.kind ?? "main";
+      if (kind === "sub") {
+        throw new Error("Use register sub flow with feature/section/entry_id for sub-sessions");
+      }
+
+      setIsBootstrappingSession(true);
+      setSessionError(null);
+      try {
+        const result = await createSessionAction(userId);
+        if (result.success && result.sessionId) {
+          const reg = await registerUnibotAdkSessionAction({
+            adk_session_id: result.sessionId,
+            kind: "main",
+            title: UNTITLED_THREAD_TITLE,
+          });
+          if (reg.success && reg.session) {
+            upsertRegistryRow(reg.session);
+          }
+          setSessionId(result.sessionId);
+          await refreshSessions();
+        } else {
+          throw new Error(result.error || "Session creation failed");
+        }
+      } catch (e) {
+        const msg = e instanceof Error ? e.message : String(e);
+        setSessionError(msg);
+        throw e;
+      } finally {
+        setIsBootstrappingSession(false);
+      }
+    },
+    [userId, refreshSessions]
+  );
 
   const handleDeleteSession = useCallback(
     async (sessionIdToDelete: string): Promise<void> => {
@@ -126,34 +158,54 @@ export function useAdkSession(userId: string): UseAdkSessionReturn {
 
       const previousSessionId = sessionId;
       const previousSessions = sessions;
-      const remainingSessions = previousSessions.filter(s => s.id !== sessionIdToDelete);
 
+      const row = getRegistryRow(sessionIdToDelete);
+      const optimisticIds = new Set<string>([sessionIdToDelete]);
+      if (row?.kind === "main") {
+        getSubsForMain(sessionIdToDelete).forEach(s => optimisticIds.add(s.adk_session_id));
+      }
+
+      const remainingSessions = previousSessions.filter(s => !optimisticIds.has(s.id));
       setSessions(remainingSessions);
+      removeRegistrySessions(optimisticIds);
 
-      if (previousSessionId === sessionIdToDelete) {
+      if (optimisticIds.has(previousSessionId)) {
         const nextSessionId = pickLatestSessionId(remainingSessions);
-        if (nextSessionId) {
-          setSessionId(nextSessionId);
-        } else {
-          setSessionId("");
+        setSessionId(nextSessionId || "");
+      }
+
+      try {
+        const regResult = await deleteUnibotAdkSessionRegistryAction(sessionIdToDelete);
+        const adkIds = regResult.adk_session_ids_to_delete.length ? regResult.adk_session_ids_to_delete : Array.from(optimisticIds);
+
+        const adkResults = await Promise.allSettled(adkIds.map(id => deleteSessionAction(userId, id)));
+        const failedIds = adkIds.filter((_, i) => {
+          const r = adkResults[i];
+          return r.status === "rejected" || (r.status === "fulfilled" && !r.value.success);
+        });
+        if (failedIds.length > 0) {
+          markSessionsLocallyDeleted(userId, failedIds);
         }
-      }
 
-      const result = await deleteSessionAction(userId, sessionIdToDelete);
-      if (!result.success) {
-        markSessionLocallyDeleted(userId, sessionIdToDelete);
-      }
-
-      if (previousSessionId === sessionIdToDelete && remainingSessions.length === 0) {
-        const created = await createSessionAction(userId);
-        if (created.success && created.sessionId) {
-          setSessionId(created.sessionId);
-        } else {
-          throw new Error(created.error || "Failed to create a new session after deletion");
+        if (optimisticIds.has(previousSessionId) && remainingSessions.length === 0) {
+          const created = await createSessionAction(userId);
+          if (created.success && created.sessionId) {
+            await registerUnibotAdkSessionAction({
+              adk_session_id: created.sessionId,
+              kind: "main",
+              title: UNTITLED_THREAD_TITLE,
+            });
+            setSessionId(created.sessionId);
+          } else {
+            throw new Error(created.error || "Failed to create a new session after deletion");
+          }
         }
-      }
 
-      await refreshSessions();
+        await refreshSessions();
+      } catch (e) {
+        markSessionsLocallyDeleted(userId, Array.from(optimisticIds));
+        throw e;
+      }
     },
     [userId, sessionId, sessions, refreshSessions]
   );
@@ -163,6 +215,7 @@ export function useAdkSession(userId: string): UseAdkSessionReturn {
       prevUserIdRef.current = userId;
       setSessionId("");
       setSessions([]);
+      setSessionRegistry([]);
       setSessionError(null);
     }
 
@@ -177,23 +230,44 @@ export function useAdkSession(userId: string): UseAdkSessionReturn {
 
     void (async () => {
       try {
-        const listResult = await listSessionsAction(userId);
+        const [registryResult, listResult] = await Promise.all([listUnibotAdkSessionsAction(), listSessionsAction(userId)]);
         if (cancelled) return;
+
+        if (registryResult.success) {
+          setSessionRegistry(registryResult.sessions);
+        }
 
         const normalized = normalizeSessionsFromAction(listResult);
         const filtered = filterDeletedSessions(normalized, userId);
         setSessions(filtered);
 
         if (filtered.length > 0) {
-          setSessionId(pickLatestSessionId(filtered));
+          const pickedId = pickLatestSessionId(filtered);
+          setSessionId(pickedId);
+          if (!getRegistryRow(pickedId)) {
+            const reg = await registerUnibotAdkSessionAction({
+              adk_session_id: pickedId,
+              kind: "main",
+              title: UNTITLED_THREAD_TITLE,
+            });
+            if (!cancelled && reg.success && reg.session) {
+              upsertRegistryRow(reg.session);
+            }
+          }
         } else {
           const created = await createSessionAction(userId);
           if (cancelled) return;
           if (created.success && created.sessionId) {
+            await registerUnibotAdkSessionAction({
+              adk_session_id: created.sessionId,
+              kind: "main",
+              title: UNTITLED_THREAD_TITLE,
+            });
             setSessionId(created.sessionId);
             const again = await listSessionsAction(userId);
             if (!cancelled) {
-              setSessions(normalizeSessionsFromAction(again));
+              setSessions(filterDeletedSessions(normalizeSessionsFromAction(again), userId));
+              await refreshRegistry();
             }
           } else {
             setSessionError(created.error || "Session creation failed");
@@ -213,7 +287,7 @@ export function useAdkSession(userId: string): UseAdkSessionReturn {
     return () => {
       cancelled = true;
     };
-  }, [userId]);
+  }, [userId, refreshRegistry]);
 
   return {
     sessionId,
@@ -221,6 +295,7 @@ export function useAdkSession(userId: string): UseAdkSessionReturn {
     isBootstrappingSession,
     sessionError,
     refreshSessions,
+    refreshRegistry,
     handleSessionSwitch,
     handleCreateNewSession,
     handleDeleteSession,

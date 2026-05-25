@@ -27,7 +27,6 @@ const NAV_ITEMS = [
   { href: "/uniboard/jobs", label: "Jobs" },
   { href: "/uniboard/unicoach", label: "Unicoach" },
   { href: "/uniboard/studio", label: "Studio" },
-  { href: "/uniboard/community", label: "Community" },
 ] as const;
 
 export default function UniboardShell({ children, userData }: { children: React.ReactNode; userData: UserData | null }) {
@@ -47,9 +46,35 @@ export default function UniboardShell({ children, userData }: { children: React.
 
   useEffect(() => {
     const handleOpenUnibot = (e: Event) => {
-      const d = (e as CustomEvent<{ text?: string; section?: UnibotResumeSection; requestKey?: number }>).detail;
+      const d = (
+        e as CustomEvent<{
+          type?: string;
+          text?: string;
+          section?: UnibotResumeSection;
+          requestKey?: number;
+          improveType?: string;
+          topicTitle?: string;
+          feature?: string;
+          featureId?: string;
+          entryId?: string;
+        }>
+      ).detail;
       if (!d) return;
-      if (d.section) {
+      if (d.type === "improve" || (d.improveType === "resume" && d.featureId && d.section)) {
+        setPendingAIRequest({
+          type: "improve",
+          text: d.text ?? "",
+          improveType: d.improveType ?? "resume",
+          topicTitle: d.topicTitle,
+          feature: d.feature,
+          featureId: d.featureId,
+          section: d.section,
+          entryId: d.entryId,
+          requestKey: typeof d.requestKey === "number" ? d.requestKey : undefined,
+        });
+        return;
+      }
+      if (d.section && d.requestKey != null && !d.featureId) {
         setPendingAIRequest({
           type: "section_review",
           section: d.section,
@@ -58,7 +83,13 @@ export default function UniboardShell({ children, userData }: { children: React.
         return;
       }
       if (d.text != null && d.text !== "") {
-        setPendingAIRequest({ type: "improve", text: d.text });
+        setPendingAIRequest({
+          type: "improve",
+          text: d.text,
+          improveType: d.improveType,
+          topicTitle: d.topicTitle,
+          requestKey: typeof d.requestKey === "number" ? d.requestKey : undefined,
+        });
       }
     };
     window.addEventListener("open-unibot", handleOpenUnibot);
@@ -106,12 +137,6 @@ export default function UniboardShell({ children, userData }: { children: React.
             </nav>
 
             <div className="flex items-center gap-4">
-              <Link
-                href="/signin"
-                className="hidden sm:inline-flex text-slate-600 dark:text-slate-400 hover:text-brand-600 dark:hover:text-brand-400 text-sm font-medium transition-colors"
-              >
-                Sign in
-              </Link>
               <button
                 type="button"
                 className="hidden sm:flex bg-brand-600 hover:bg-brand-700 text-white px-5 py-2 rounded-full text-xs font-medium shadow-sm transition-transform active:scale-95 items-center gap-2"

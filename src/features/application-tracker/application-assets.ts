@@ -1,0 +1,21 @@
+/** Linked asset ids returned on Application.assets from the backend serializer. */
+export interface ApplicationAssets {
+  resume?: string | number;
+  coverletter?: string | number;
+  coldemail?: string | number;
+  referral?: string | number;
+  interview?: string | number;
+  vpd?: string | number;
+}
+
+export function parseApplicationAssets(raw?: Record<string, unknown> | null): ApplicationAssets {
+  if (!raw || typeof raw !== "object") return {};
+  return raw as ApplicationAssets;
+}
+
+export function getLinkedAssetId(assets: ApplicationAssets, kind: "resume" | "cover-letter" | "cold-email"): string | null {
+  if (kind === "resume" && assets.resume != null) return String(assets.resume);
+  if (kind === "cover-letter" && assets.coverletter != null) return String(assets.coverletter);
+  if (kind === "cold-email" && assets.coldemail != null) return String(assets.coldemail);
+  return null;
+}

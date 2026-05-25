@@ -34,11 +34,11 @@ import {
   History,
   Upload,
   Copy,
+  Info,
 } from "lucide-react";
 import { usePathname, useRouter, useSearchParams } from "next/navigation";
 import { PortfolioItem } from "../../types";
 import { GeneratorContext } from "../../types/jobs";
-import ProjectDetailView from "../ProjectDetailView";
 import AllPostsModal from "./AllPostsModal";
 import AllVPDsModal from "./AllVPDsModal";
 import ContentLabColdEmailLeft from "./ContentLabColdEmailLeft";
@@ -46,8 +46,16 @@ import ContentLabColdEmailPreview from "./ContentLabColdEmailPreview";
 import ContentLabCoverLetterLeft from "./ContentLabCoverLetterLeft";
 import ContentLabCoverLetterPreview from "./ContentLabCoverLetterPreview";
 import ContentLabReferralPreview from "./ContentLabReferralPreview";
+import LinkedInOptimizeBanner from "./LinkedInOptimizeBanner";
+import LinkedInPostListCard from "./LinkedInPostListCard";
 import PostSchedulerModal from "./PostSchedulerModal";
 import ReferralHistoryModal from "./ReferralHistoryModal";
+import StudioSectionDot from "./StudioSectionDot";
+import VpdEditorWindow from "./VpdEditorWindow";
+import VpdLibraryCard, { type VpdLibraryItem } from "./VpdLibraryCard";
+import VpdPreview from "./VpdPreview";
+import { getTopicDescription, getTopicMeta, TOPIC_GROUPS } from "./studioTopicConfig";
+import { STUDIO_VPD_LIBRARY_ITEMS } from "./studioVpdMocks";
 
 interface StudioMainProps {
   initialContext?: GeneratorContext | null;
@@ -153,6 +161,8 @@ const StudioMainV2: React.FC<StudioMainProps> = ({ initialContext, initialAssetI
   const searchParams = useSearchParams();
   const isHydratingFromUrlRef = useRef(false);
   const hydratedAssetKeyRef = useRef<string | null>(null);
+  /** Prevents URL→state sync from undoing an in-flight topic tab click before the router updates. */
+  const pendingTopicRef = useRef<string | null>(null);
   /** After generate, asset `content` is still empty on server; URL hydration must not overwrite the in-memory draft. */
   const linkedinPreserveDraftForAssetIdRef = useRef<string | null>(null);
   const linkedinPersistDebounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -232,7 +242,9 @@ const StudioMainV2: React.FC<StudioMainProps> = ({ initialContext, initialAssetI
 
   // "All VPDs" Modal State
   const [showAllVPDsModal, setShowAllVPDsModal] = useState(false);
-
+  const [showVpdEditor, setShowVpdEditor] = useState(false);
+  const [savedVpds] = useState<VpdLibraryItem[]>(STUDIO_VPD_LIBRARY_ITEMS);
+  const [vpdLibraryTab, setVpdLibraryTab] = useState<"recents" | "templates">("recents");
   // Edit/View Post State
   const [selectedPostData, setSelectedPostData] = useState<ComposerPost | null>(null); // For editing/viewing existing posts
 
@@ -383,7 +395,7 @@ const StudioMainV2: React.FC<StudioMainProps> = ({ initialContext, initialAssetI
       params.delete("id");
     }
     const query = params.toString();
-    router.push(query ? `${pathname}?${query}` : pathname, { scroll: false });
+    router.replace(query ? `${pathname}?${query}` : pathname, { scroll: false });
   };
 
   const handleCopyReferralOrVpd = () => {
@@ -405,6 +417,7 @@ const StudioMainV2: React.FC<StudioMainProps> = ({ initialContext, initialAssetI
   };
 
   const handleTopicChange = (topicId: string) => {
+    pendingTopicRef.current = topicId;
     setSelectedTopic(topicId);
     updateStudioUrl({ type: topicId });
     if (topicId !== "linkedin-post") {
@@ -435,7 +448,13 @@ const StudioMainV2: React.FC<StudioMainProps> = ({ initialContext, initialAssetI
 
   useEffect(() => {
     const urlType = searchParams.get("type");
-    if (!urlType || urlType === selectedTopic) {
+    if (!urlType) return;
+    if (urlType === selectedTopic) {
+      pendingTopicRef.current = null;
+      return;
+    }
+    if (pendingTopicRef.current === urlType) {
+      pendingTopicRef.current = null;
       return;
     }
     setSelectedTopic(urlType);
@@ -954,32 +973,66 @@ const StudioMainV2: React.FC<StudioMainProps> = ({ initialContext, initialAssetI
               <span>Create New VPD</span>
             </button>
 
-            <div>
-              <div className="flex items-center justify-between mb-3">
-                <label className="block text-xs font-medium text-slate-500 uppercase">Previously Created</label>
+            <div className="mt-2 border-t border-slate-100 pt-5 dark:border-slate-800">
+              <div className="mb-3 flex items-center justify-between gap-2">
+                <div className="inline-flex rounded-full bg-slate-100 p-0.5 dark:bg-slate-900">
+                  <button
+                    type="button"
+                    onClick={() => setVpdLibraryTab("recents")}
+                    className={`rounded-full px-3 py-1.5 text-xs font-medium transition-all ${
+                      vpdLibraryTab === "recents"
+                        ? "bg-white text-slate-900 shadow-sm dark:bg-slate-800 dark:text-white"
+                        : "text-slate-500 hover:text-slate-700 dark:text-slate-400"
+                    }`}
+                  >
+                    Recents
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setVpdLibraryTab("templates")}
+                    className={`rounded-full px-3 py-1.5 text-xs font-medium transition-all ${
+                      vpdLibraryTab === "templates"
+                        ? "bg-white text-slate-900 shadow-sm dark:bg-slate-800 dark:text-white"
+                        : "text-slate-500 hover:text-slate-700 dark:text-slate-400"
+                    }`}
+                  >
+                    Templates
+                  </button>
+                </div>
                 <button
+                  type="button"
                   onClick={() => setShowAllVPDsModal(true)}
-                  className="text-xs text-blue-600 hover:text-blue-700 font-medium hover:underline"
+                  className="text-xs font-medium text-brand-600 hover:underline dark:text-brand-400"
                 >
                   See all
                 </button>
               </div>
-              <div className="space-y-2">
-                {MOCK_VPDS.map(vpd => (
-                  <div
-                    key={vpd.id}
-                    className="p-4 bg-slate-50 dark:bg-slate-900 rounded-xl border border-slate-100 dark:border-slate-800 flex items-center gap-3 cursor-pointer hover:border-blue-500 transition-all"
-                  >
-                    <div className="w-10 h-10 rounded-lg bg-blue-100 text-blue-600 flex items-center justify-center">
-                      <FileText size={20} />
-                    </div>
-                    <div>
-                      <h4 className="font-medium text-sm text-slate-900 dark:text-white">{vpd.title}</h4>
-                      <p className="text-xs text-slate-500">{vpd.date}</p>
-                    </div>
+              {(() => {
+                const recents = savedVpds.filter(v => !v.isTemplate);
+                const templates = savedVpds.filter(v => v.isTemplate);
+                const activeList = vpdLibraryTab === "recents" ? recents : templates;
+                if (activeList.length === 0) {
+                  return (
+                    <p className="rounded-xl border border-dashed border-slate-200 px-4 py-6 text-center text-xs text-slate-400 dark:border-slate-700">
+                      {vpdLibraryTab === "recents" ? "No recent VPDs yet. Generate a draft to create one." : "No templates available yet."}
+                    </p>
+                  );
+                }
+                return (
+                  <div className="grid grid-cols-3 gap-2.5">
+                    {activeList.slice(0, 6).map(vpd => (
+                      <VpdLibraryCard
+                        key={vpd.id}
+                        vpd={vpd}
+                        onClick={() => {
+                          setVpdProject(vpd.project);
+                          setVpdMode("create");
+                        }}
+                      />
+                    ))}
                   </div>
-                ))}
-              </div>
+                );
+              })()}
             </div>
           </div>
         );
@@ -1046,16 +1099,38 @@ const StudioMainV2: React.FC<StudioMainProps> = ({ initialContext, initialAssetI
                 </select>
               </div>
               <div>
-                <label className="block text-xs font-medium text-slate-500 mb-2">Content Type</label>
-                <input
+                <div className="mb-2 flex items-center gap-2">
+                  <label className="block text-xs font-medium text-slate-500">Content Type</label>
+                  <div className="group/tooltip relative">
+                    <Info size={14} className="cursor-help text-slate-400" />
+                    <div className="invisible absolute bottom-full left-1/2 z-50 mb-2 w-64 -translate-x-1/2 rounded-lg border border-slate-700 bg-slate-900 p-3 text-xs text-white opacity-0 shadow-xl transition-all group-hover/tooltip:visible group-hover/tooltip:opacity-100">
+                      <div className="space-y-2">
+                        <p>
+                          <strong>Top of Funnel:</strong> Broad appeal content to drive awareness and views.
+                        </p>
+                        <p>
+                          <strong>Middle of Funnel:</strong> Demonstrating expertise to build trust and authority.
+                        </p>
+                        <p>
+                          <strong>Bottom of Funnel:</strong> Direct conversion content (e.g., looking for roles).
+                        </p>
+                      </div>
+                      <div className="absolute top-full left-1/2 -translate-x-1/2 border-4 border-transparent border-t-slate-900" />
+                    </div>
+                  </div>
+                </div>
+                <select
                   value={contentType}
                   disabled
                   aria-disabled
                   title="Coming soon"
                   onChange={e => setContentType(e.target.value)}
-                  className="w-full bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-xl px-4 py-3 text-sm font-medium outline-none focus:ring-2 focus:ring-blue-500/20 opacity-60 cursor-not-allowed"
-                  placeholder="e.g. Career Update"
-                />
+                  className="w-full cursor-not-allowed appearance-none rounded-xl border border-slate-200 bg-slate-50 px-4 py-3 text-sm font-medium opacity-60 outline-none focus:ring-2 focus:ring-blue-500/20 dark:border-slate-700 dark:bg-slate-900"
+                >
+                  <option value="Top of Funnel">Top of Funnel</option>
+                  <option value="Middle of Funnel">Middle of Funnel</option>
+                  <option value="Bottom of Funnel">Bottom of Funnel</option>
+                </select>
               </div>
             </div>
 
@@ -1133,10 +1208,9 @@ const StudioMainV2: React.FC<StudioMainProps> = ({ initialContext, initialAssetI
           </>
         )}
 
-        {/* LinkedIn: History & Scheduled (Only show when not generating) */}
-        {
+        {/* Scheduled & History row (non-LinkedIn topics) */}
+        {selectedTopic !== "linkedin-post" && (
           <div className="pt-6 border-t border-slate-100 dark:border-slate-800 space-y-6">
-            {/* Scheduled & History - Sleek Row */}
             <div className="flex gap-3">
               {selectedTopic !== "referral" && (
                 <button
@@ -1175,7 +1249,7 @@ const StudioMainV2: React.FC<StudioMainProps> = ({ initialContext, initialAssetI
               </button>
             </div>
           </div>
-        }
+        )}
 
         {/* Shared Inputs (Role, Company) for Non-LinkedIn */}
         {selectedTopic !== "linkedin-post" && (
@@ -1267,6 +1341,56 @@ const StudioMainV2: React.FC<StudioMainProps> = ({ initialContext, initialAssetI
                 ? "Enhance Draft"
                 : "Generate Draft"}
         </button>
+
+        {selectedTopic === "linkedin-post" && (
+          <div className="mt-5 flex min-h-[min(58vh,560px)] flex-1 flex-col border-t border-slate-100 pt-5 dark:border-slate-800">
+            <div className="mb-3 flex items-center gap-3">
+              <div className="flex min-w-0 flex-1 items-center gap-2">
+                <StudioSectionDot />
+                <h3 className="truncate text-sm font-semibold text-slate-800 dark:text-slate-100">Scheduled posts</h3>
+                <span className="shrink-0 rounded-md bg-blue-50 px-1.5 py-0.5 text-[10px] font-medium text-blue-700 dark:bg-blue-900/40 dark:text-blue-300">
+                  {scheduledPostsForModal.length}
+                </span>
+              </div>
+              <button
+                type="button"
+                onClick={() => handleViewAll("history")}
+                title="Post history"
+                aria-label={`Post history, ${historyPostsForModal.length} entries`}
+                className="inline-flex h-9 w-9 shrink-0 items-center justify-center rounded-lg border border-slate-200 bg-white text-orange-600 shadow-sm transition-all hover:border-orange-300 hover:bg-orange-50 dark:border-slate-700 dark:bg-slate-900 dark:hover:border-orange-600/50 dark:hover:bg-orange-950/30"
+              >
+                <History size={18} />
+              </button>
+            </div>
+
+            <div className="scrollbar-on-hover flex min-h-0 flex-1 flex-col gap-2 overflow-y-auto pr-1">
+              {scheduledPostsForModal.length === 0 ? (
+                <p className="rounded-xl border border-dashed border-slate-200 px-4 py-8 text-center text-xs text-slate-400 dark:border-slate-700">
+                  Nothing scheduled yet. Generate a draft, then schedule it from the preview.
+                </p>
+              ) : (
+                scheduledPostsForModal.map(post => (
+                  <LinkedInPostListCard
+                    key={post.id}
+                    post={post}
+                    onClick={() => handlePostClick(post, "scheduled")}
+                    onDelete={id => void handleDeleteLinkedinPost(String(id))}
+                  />
+                ))
+              )}
+            </div>
+
+            <div className="flex shrink-0 justify-center pt-3">
+              <button
+                type="button"
+                onClick={() => handleViewAll("scheduled")}
+                className="text-[11px] font-medium text-blue-600 hover:underline dark:text-blue-400"
+              >
+                View all
+              </button>
+            </div>
+          </div>
+        )}
       </div>
     );
   };
@@ -1277,9 +1401,14 @@ const StudioMainV2: React.FC<StudioMainProps> = ({ initialContext, initialAssetI
         {/* LEFT: Input / Generator */}
         <div className="w-full lg:w-[45%] h-1/2 lg:h-full bg-white dark:bg-[#111] border-b lg:border-b-0 lg:border-r border-slate-100 dark:border-slate-800 p-8 overflow-y-auto">
           <div className="mb-8">
-            {/* Typography Update: Standardized Header */}
-            <h1 className="text-2xl font-medium text-slate-900 dark:text-white mb-2 font-['Onest']">Content Lab</h1>
-            <p className="text-[14px] text-slate-500 dark:text-slate-400">Generate high-quality application materials in seconds.</p>
+            <h1 className="mb-2 font-['Onest'] text-2xl font-medium text-slate-900 dark:text-white">
+              {selectedTopic === "cover-letter" || selectedTopic === "cold-email" ? "Content Lab" : getTopicMeta(selectedTopic).label}
+            </h1>
+            <p className="text-[14px] text-slate-500 dark:text-slate-400">
+              {selectedTopic === "cover-letter" || selectedTopic === "cold-email"
+                ? "Generate high-quality application materials in seconds."
+                : getTopicDescription(selectedTopic)}
+            </p>
           </div>
 
           {selectedTopic === "cover-letter" ? (
@@ -1307,219 +1436,234 @@ const StudioMainV2: React.FC<StudioMainProps> = ({ initialContext, initialAssetI
         <div className="flex-1 bg-slate-100 dark:bg-[#050505] flex flex-col relative">
           {/* Top Bar for Tabs - Sticky */}
           <div className="w-full px-8 py-6 border-b border-slate-200/50 dark:border-slate-800/50 bg-slate-100/50 dark:bg-[#050505] backdrop-blur-sm sticky top-0 z-20">
-            {/* Pill Tabs - Fully Rounded */}
-            <div className="inline-flex p-1 bg-slate-200/50 dark:bg-slate-900 rounded-full">
-              {TOPICS.map(t => (
-                <button
-                  key={t.id}
-                  onClick={() => handleTopicChange(t.id)}
-                  className={`
-                                        px-4 py-2 rounded-full text-sm font-medium transition-all whitespace-nowrap
-                                        ${
-                                          selectedTopic === t.id
-                                            ? "bg-white dark:bg-slate-800 text-slate-900 dark:text-white shadow-sm"
-                                            : "text-slate-500 dark:text-slate-400 hover:text-slate-700 dark:hover:text-slate-200"
-                                        }
-                                    `}
+            <div className="flex flex-wrap items-center gap-3">
+              {TOPIC_GROUPS.map((group, gi) => (
+                <div
+                  key={gi}
+                  className={`inline-flex rounded-full bg-slate-200/50 p-1 dark:bg-slate-900 ${
+                    group.blueStroke ? "border border-brand-500/25 dark:border-brand-400/30" : "border border-transparent"
+                  }`}
                 >
-                  {t.label}
-                </button>
+                  {group.topics.map(t => (
+                    <button
+                      key={t.id}
+                      type="button"
+                      onClick={() => handleTopicChange(t.id)}
+                      className={`whitespace-nowrap rounded-full px-4 py-2 text-sm font-medium transition-all ${
+                        selectedTopic === t.id
+                          ? "bg-white text-slate-900 shadow-sm dark:bg-slate-800 dark:text-white"
+                          : "text-slate-500 hover:text-slate-700 dark:text-slate-400 dark:hover:text-slate-200"
+                      }`}
+                    >
+                      {t.label}
+                    </button>
+                  ))}
+                </div>
               ))}
             </div>
           </div>
 
-          <div className="flex-1 overflow-y-auto flex items-stretch justify-center px-8 pb-8 pt-10 min-h-0">
-            <div className="w-full max-w-2xl relative group/preview min-h-full flex flex-col gap-3">
-              {selectedTopic === "linkedin-post" ? (
-                <div className="flex justify-end shrink-0 min-h-[2.75rem] items-center">
-                  <button
-                    type="button"
-                    onClick={() => {
-                      setGeneratedContent(generatedContent);
-                      setSelectedPostData(null);
-                      setShowScheduler(true);
-                    }}
-                    className="flex items-center gap-2 bg-white text-slate-900 border border-slate-200 px-4 py-2 rounded-full text-xs font-medium shadow-sm transition-all opacity-0 group-hover/preview:opacity-100 focus-visible:opacity-100"
-                  >
-                    <Send size={14} /> Schedule / Post
-                  </button>
-                </div>
-              ) : null}
-              {/* Conditional Preview Rendering */}
-              {selectedTopic === "vpd" && vpdMode === "create" ? (
-                <div className="absolute inset-0 bg-white dark:bg-[#050505] z-10 flex flex-col">
-                  <ProjectDetailView
-                    project={vpdProject}
-                    onBack={() => setVpdMode("list")}
-                    onUpdateProject={updated => setVpdProject(updated)}
-                    allowedBlockTypes={["text", "media", "link-box"]}
-                    gridColumns={12}
-                    maxWidthClassName="max-w-5xl"
-                  />
-                </div>
-              ) : selectedTopic === "linkedin-post" ? (
-                /* LinkedIn Card Preview */
-                <div className="bg-white border border-slate-200 rounded-2xl shadow-sm p-5 flex flex-col min-h-0 max-h-[min(640px,calc(100vh-10rem))]">
-                  <div className="flex justify-between items-start mb-3 shrink-0">
-                    <div className="flex gap-3">
-                      <div className="w-12 h-12 rounded-full bg-[#3b82f6] flex items-center justify-center text-white font-medium text-lg shrink-0">
-                        AB
-                      </div>
-                      <div>
-                        <h3 className="font-semibold text-slate-900 text-sm leading-tight hover:text-blue-600 hover:underline cursor-pointer">
-                          Abhi B.
-                        </h3>
-                        <p className="text-xs text-slate-500 leading-tight mt-0.5">Product Designer @ Unimad</p>
-                        <div className="flex items-center gap-1 text-xs text-slate-400 mt-1">
-                          <span>1h</span> • <Globe size={10} />
-                        </div>
-                      </div>
-                    </div>
-                    <button type="button" className="text-slate-500 hover:bg-slate-100 p-1 rounded-full">
-                      <MoreHorizontal size={20} />
-                    </button>
-                  </div>
-                  {linkedinPersistError ? (
-                    <p className="text-xs text-red-600 dark:text-red-400 mb-2 shrink-0" role="alert">
-                      {linkedinPersistError}
-                    </p>
-                  ) : null}
-                  <textarea
-                    value={generatedContent}
-                    onChange={e => {
-                      setLinkedinPersistError(null);
-                      setGeneratedContent(e.target.value);
-                    }}
-                    onBlur={handleLinkedinPreviewBlur}
-                    placeholder="Your content preview will appear here..."
-                    aria-label="LinkedIn post content"
-                    className="w-full min-h-[160px] max-h-[min(320px,45vh)] overflow-y-auto text-sm text-slate-800 whitespace-pre-wrap leading-relaxed bg-transparent border-none outline-none resize-none placeholder:text-slate-300 mb-2"
-                  />
-                  {linkedinPendingMedia.length > 0 || linkedinImages.length > 0 ? (
-                    <div className="grid grid-cols-2 gap-2 mb-3 shrink-0">
-                      {linkedinPendingMedia.map(p => (
-                        <div key={p.id} className="relative rounded-lg border border-amber-200 overflow-hidden">
-                          <img src={p.objectUrl} alt="" className="w-full h-32 object-cover" />
-                          <span className="absolute bottom-1 left-1 text-[10px] font-medium bg-amber-100/90 text-amber-900 px-1 rounded">
-                            Pending upload
-                          </span>
-                        </div>
-                      ))}
-                      {linkedinImages.map(url => (
-                        <img
-                          key={url}
-                          src={url}
-                          alt="LinkedIn media preview"
-                          className="w-full h-32 object-cover rounded-lg border border-slate-200"
-                        />
-                      ))}
-                    </div>
-                  ) : null}
-                  <div className="flex items-center justify-between text-xs text-slate-500 border-b border-slate-100 pb-3 mt-2 shrink-0">
-                    <div className="flex items-center gap-1.5 cursor-pointer hover:text-blue-600 hover:underline">
-                      <div className="flex -space-x-1">
-                        <div className="w-4 h-4 rounded-full bg-blue-500 flex items-center justify-center ring-2 ring-white">
-                          <ThumbsUp size={8} className="text-white fill-current" />
-                        </div>
-                        <div className="w-4 h-4 rounded-full bg-red-500 flex items-center justify-center ring-2 ring-white">
-                          <span className="text-[6px] text-white">❤️</span>
-                        </div>
-                      </div>
-                      <span>1,245</span>
-                    </div>
-                    <div className="hover:text-blue-600 hover:underline cursor-pointer">88 comments • 12 reposts</div>
-                  </div>
-                  <div className="flex items-center justify-between pt-1 px-2 shrink-0">
-                    <button className="py-3 px-2 rounded hover:bg-slate-100 flex items-center gap-2 text-slate-600 text-sm font-semibold transition-colors">
-                      <ThumbsUp size={18} /> <span className="hidden sm:inline">Like</span>
-                    </button>
-                    <button className="py-3 px-2 rounded hover:bg-slate-100 flex items-center gap-2 text-slate-600 text-sm font-semibold transition-colors">
-                      <MessageSquare size={18} /> <span className="hidden sm:inline">Comment</span>
-                    </button>
-                    <button className="py-3 px-2 rounded hover:bg-slate-100 flex items-center gap-2 text-slate-600 text-sm font-semibold transition-colors">
-                      <Repeat size={18} /> <span className="hidden sm:inline">Repost</span>
-                    </button>
-                    <button className="py-3 px-2 rounded hover:bg-slate-100 flex items-center gap-2 text-slate-600 text-sm font-semibold transition-colors">
-                      <Send size={18} /> <span className="hidden sm:inline">Send</span>
-                    </button>
-                  </div>
-                </div>
-              ) : selectedTopic === "cover-letter" ? (
-                <ContentLabCoverLetterPreview
-                  draft={currentCoverLetterDraft}
-                  onCopy={() => {
-                    setCopyToast(true);
-                    setTimeout(() => setCopyToast(false), 2000);
-                  }}
-                  copyFeedback={copyToast}
-                  onEditorActivate={() => setIsCoverLetterEditorActive(true)}
-                  onEditorDeactivate={() => setIsCoverLetterEditorActive(false)}
-                  isGenerating={isCoverLetterGenerating}
-                />
-              ) : selectedTopic === "cold-email" ? (
-                <ContentLabColdEmailPreview
-                  draft={currentColdEmailDraft}
-                  onCopy={() => {
-                    setColdEmailCopyToast(true);
-                    setTimeout(() => setColdEmailCopyToast(false), 2000);
-                  }}
-                  copyFeedback={coldEmailCopyToast}
-                  onEditorActivate={() => setIsColdEmailEditorActive(true)}
-                  onEditorDeactivate={() => setIsColdEmailEditorActive(false)}
-                  isGenerating={isColdEmailGenerating}
-                  onDraftContentChange={content => {
-                    if (!currentColdEmailDraft) return;
-                    setCurrentColdEmailDraft({
-                      ...currentColdEmailDraft,
-                      content,
-                    });
-                  }}
-                />
-              ) : selectedTopic === "referral" ? (
-                <ContentLabReferralPreview
-                  draft={currentReferralDraft}
-                  onCopy={() => {
-                    setReferralCopyToast(true);
-                    setTimeout(() => setReferralCopyToast(false), 2000);
-                  }}
-                  copyFeedback={referralCopyToast}
-                  onEditorActivate={() => setIsReferralEditorActive(true)}
-                  onEditorDeactivate={() => setIsReferralEditorActive(false)}
-                  isGenerating={generateReferralMutation.isPending}
-                  onDraftContentChange={content => {
-                    if (!currentReferralDraft) return;
-                    setCurrentReferralDraft({
-                      ...currentReferralDraft,
-                      content,
-                    });
-                  }}
-                />
-              ) : (
-                /* Plain Text / Document Preview for VPD (structure matches Cold Email preview) */
-                <div className="bg-white dark:bg-[#111] border border-slate-200 dark:border-slate-800 rounded-xl shadow-lg w-full max-w-xl mx-auto flex flex-col min-h-[600px]">
-                  <div className="border-b border-slate-100 dark:border-slate-800 p-4 flex justify-end items-center gap-2">
+          <div
+            className={`relative flex min-h-0 flex-1 flex-col ${
+              selectedTopic === "linkedin-post" || selectedTopic === "referral" ? "" : "overflow-y-auto"
+            }`}
+          >
+            <div
+              className={`scrollbar-on-hover flex flex-1 items-stretch justify-center px-8 pb-8 pt-10 min-h-0 ${
+                selectedTopic === "linkedin-post" || selectedTopic === "referral" ? "overflow-y-auto pb-28" : ""
+              }`}
+            >
+              <div className="w-full max-w-2xl relative group/preview min-h-full flex flex-col gap-3">
+                {selectedTopic === "linkedin-post" ? (
+                  <div className="flex justify-end shrink-0 min-h-[2.75rem] items-center">
                     <button
                       type="button"
-                      onClick={handleCopyReferralOrVpd}
-                      aria-label="Copy to clipboard"
-                      disabled={!generatedContent.trim()}
-                      className="flex items-center gap-2 bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-300 px-4 py-2 rounded-lg text-xs font-medium hover:bg-slate-200 dark:hover:bg-slate-700 transition-all disabled:opacity-50 disabled:cursor-not-allowed"
+                      onClick={() => {
+                        setGeneratedContent(generatedContent);
+                        setSelectedPostData(null);
+                        setShowScheduler(true);
+                      }}
+                      className="flex items-center gap-2 bg-white text-slate-900 border border-slate-200 px-4 py-2 rounded-full text-xs font-medium shadow-sm transition-all opacity-0 group-hover/preview:opacity-100 focus-visible:opacity-100"
                     >
-                      <Copy size={14} />
-                      {referralCopyToast ? "Copied!" : "Copy"}
+                      <Send size={14} /> Schedule / Post
                     </button>
                   </div>
-                  <div className="flex-1 p-12 overflow-y-auto">
+                ) : null}
+                {selectedTopic === "vpd" ? (
+                  <div className="flex h-full min-h-[min(70vh,640px)] w-full max-w-3xl flex-col">
+                    <VpdPreview project={vpdProject} onOpenEditor={() => setShowVpdEditor(true)} variant="panel" />
+                  </div>
+                ) : selectedTopic === "linkedin-post" ? (
+                  /* LinkedIn Card Preview */
+                  <div className="bg-white border border-slate-200 rounded-2xl shadow-sm p-5 flex flex-col min-h-0 max-h-[min(640px,calc(100vh-10rem))]">
+                    <div className="flex justify-between items-start mb-3 shrink-0">
+                      <div className="flex gap-3">
+                        <div className="w-12 h-12 rounded-full bg-[#3b82f6] flex items-center justify-center text-white font-medium text-lg shrink-0">
+                          AB
+                        </div>
+                        <div>
+                          <h3 className="font-semibold text-slate-900 text-sm leading-tight hover:text-blue-600 hover:underline cursor-pointer">
+                            Abhi B.
+                          </h3>
+                          <p className="text-xs text-slate-500 leading-tight mt-0.5">Product Designer @ Unimad</p>
+                          <div className="flex items-center gap-1 text-xs text-slate-400 mt-1">
+                            <span>1h</span> • <Globe size={10} />
+                          </div>
+                        </div>
+                      </div>
+                      <button type="button" className="text-slate-500 hover:bg-slate-100 p-1 rounded-full">
+                        <MoreHorizontal size={20} />
+                      </button>
+                    </div>
+                    {linkedinPersistError ? (
+                      <p className="text-xs text-red-600 dark:text-red-400 mb-2 shrink-0" role="alert">
+                        {linkedinPersistError}
+                      </p>
+                    ) : null}
                     <textarea
                       value={generatedContent}
-                      onChange={e => setGeneratedContent(e.target.value)}
-                      placeholder="Your value prop doc draft will appear here..."
-                      className="w-full min-h-[400px] text-base text-slate-900 dark:text-slate-100 whitespace-pre-wrap leading-relaxed bg-transparent border-none outline-none resize-none placeholder:text-slate-300 dark:placeholder:text-slate-700 font-serif"
+                      onChange={e => {
+                        setLinkedinPersistError(null);
+                        setGeneratedContent(e.target.value);
+                      }}
+                      onBlur={handleLinkedinPreviewBlur}
+                      placeholder="Your content preview will appear here..."
+                      aria-label="LinkedIn post content"
+                      className="w-full min-h-[160px] max-h-[min(320px,45vh)] overflow-y-auto text-sm text-slate-800 whitespace-pre-wrap leading-relaxed bg-transparent border-none outline-none resize-none placeholder:text-slate-300 mb-2"
                     />
+                    {linkedinPendingMedia.length > 0 || linkedinImages.length > 0 ? (
+                      <div className="grid grid-cols-2 gap-2 mb-3 shrink-0">
+                        {linkedinPendingMedia.map(p => (
+                          <div key={p.id} className="relative rounded-lg border border-amber-200 overflow-hidden">
+                            <img src={p.objectUrl} alt="" className="w-full h-32 object-cover" />
+                            <span className="absolute bottom-1 left-1 text-[10px] font-medium bg-amber-100/90 text-amber-900 px-1 rounded">
+                              Pending upload
+                            </span>
+                          </div>
+                        ))}
+                        {linkedinImages.map(url => (
+                          <img
+                            key={url}
+                            src={url}
+                            alt="LinkedIn media preview"
+                            className="w-full h-32 object-cover rounded-lg border border-slate-200"
+                          />
+                        ))}
+                      </div>
+                    ) : null}
+                    <div className="flex items-center justify-between text-xs text-slate-500 border-b border-slate-100 pb-3 mt-2 shrink-0">
+                      <div className="flex items-center gap-1.5 cursor-pointer hover:text-blue-600 hover:underline">
+                        <div className="flex -space-x-1">
+                          <div className="w-4 h-4 rounded-full bg-blue-500 flex items-center justify-center ring-2 ring-white">
+                            <ThumbsUp size={8} className="text-white fill-current" />
+                          </div>
+                          <div className="w-4 h-4 rounded-full bg-red-500 flex items-center justify-center ring-2 ring-white">
+                            <span className="text-[6px] text-white">❤️</span>
+                          </div>
+                        </div>
+                        <span>1,245</span>
+                      </div>
+                      <div className="hover:text-blue-600 hover:underline cursor-pointer">88 comments • 12 reposts</div>
+                    </div>
+                    <div className="flex items-center justify-between pt-1 px-2 shrink-0">
+                      <button className="py-3 px-2 rounded hover:bg-slate-100 flex items-center gap-2 text-slate-600 text-sm font-semibold transition-colors">
+                        <ThumbsUp size={18} /> <span className="hidden sm:inline">Like</span>
+                      </button>
+                      <button className="py-3 px-2 rounded hover:bg-slate-100 flex items-center gap-2 text-slate-600 text-sm font-semibold transition-colors">
+                        <MessageSquare size={18} /> <span className="hidden sm:inline">Comment</span>
+                      </button>
+                      <button className="py-3 px-2 rounded hover:bg-slate-100 flex items-center gap-2 text-slate-600 text-sm font-semibold transition-colors">
+                        <Repeat size={18} /> <span className="hidden sm:inline">Repost</span>
+                      </button>
+                      <button className="py-3 px-2 rounded hover:bg-slate-100 flex items-center gap-2 text-slate-600 text-sm font-semibold transition-colors">
+                        <Send size={18} /> <span className="hidden sm:inline">Send</span>
+                      </button>
+                    </div>
                   </div>
-                </div>
-              )}
+                ) : selectedTopic === "cover-letter" ? (
+                  <ContentLabCoverLetterPreview
+                    draft={currentCoverLetterDraft}
+                    onCopy={() => {
+                      setCopyToast(true);
+                      setTimeout(() => setCopyToast(false), 2000);
+                    }}
+                    copyFeedback={copyToast}
+                    onEditorActivate={() => setIsCoverLetterEditorActive(true)}
+                    onEditorDeactivate={() => setIsCoverLetterEditorActive(false)}
+                    isGenerating={isCoverLetterGenerating}
+                  />
+                ) : selectedTopic === "cold-email" ? (
+                  <ContentLabColdEmailPreview
+                    draft={currentColdEmailDraft}
+                    onCopy={() => {
+                      setColdEmailCopyToast(true);
+                      setTimeout(() => setColdEmailCopyToast(false), 2000);
+                    }}
+                    copyFeedback={coldEmailCopyToast}
+                    onEditorActivate={() => setIsColdEmailEditorActive(true)}
+                    onEditorDeactivate={() => setIsColdEmailEditorActive(false)}
+                    isGenerating={isColdEmailGenerating}
+                    onDraftContentChange={content => {
+                      if (!currentColdEmailDraft) return;
+                      setCurrentColdEmailDraft({
+                        ...currentColdEmailDraft,
+                        content,
+                      });
+                    }}
+                  />
+                ) : selectedTopic === "referral" ? (
+                  <ContentLabReferralPreview
+                    draft={currentReferralDraft}
+                    onCopy={() => {
+                      setReferralCopyToast(true);
+                      setTimeout(() => setReferralCopyToast(false), 2000);
+                    }}
+                    copyFeedback={referralCopyToast}
+                    onEditorActivate={() => setIsReferralEditorActive(true)}
+                    onEditorDeactivate={() => setIsReferralEditorActive(false)}
+                    isGenerating={generateReferralMutation.isPending}
+                    onDraftContentChange={content => {
+                      if (!currentReferralDraft) return;
+                      setCurrentReferralDraft({
+                        ...currentReferralDraft,
+                        content,
+                      });
+                    }}
+                  />
+                ) : (
+                  /* Plain Text / Document Preview for VPD (structure matches Cold Email preview) */
+                  <div className="bg-white dark:bg-[#111] border border-slate-200 dark:border-slate-800 rounded-xl shadow-lg w-full max-w-xl mx-auto flex flex-col min-h-[600px]">
+                    <div className="border-b border-slate-100 dark:border-slate-800 p-4 flex justify-end items-center gap-2">
+                      <button
+                        type="button"
+                        onClick={handleCopyReferralOrVpd}
+                        aria-label="Copy to clipboard"
+                        disabled={!generatedContent.trim()}
+                        className="flex items-center gap-2 bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-300 px-4 py-2 rounded-lg text-xs font-medium hover:bg-slate-200 dark:hover:bg-slate-700 transition-all disabled:opacity-50 disabled:cursor-not-allowed"
+                      >
+                        <Copy size={14} />
+                        {referralCopyToast ? "Copied!" : "Copy"}
+                      </button>
+                    </div>
+                    <div className="flex-1 p-12 overflow-y-auto">
+                      <textarea
+                        value={generatedContent}
+                        onChange={e => setGeneratedContent(e.target.value)}
+                        placeholder="Your value prop doc draft will appear here..."
+                        className="w-full min-h-[400px] text-base text-slate-900 dark:text-slate-100 whitespace-pre-wrap leading-relaxed bg-transparent border-none outline-none resize-none placeholder:text-slate-300 dark:placeholder:text-slate-700 font-serif"
+                      />
+                    </div>
+                  </div>
+                )}
+              </div>
             </div>
+            {(selectedTopic === "linkedin-post" || selectedTopic === "referral") && (
+              <div className="pointer-events-none absolute inset-x-0 bottom-0 z-10 bg-gradient-to-t from-slate-100 via-slate-100/95 to-transparent px-8 pb-6 pt-10 dark:from-[#050505] dark:via-[#050505]/95">
+                <div className="pointer-events-auto">
+                  <LinkedInOptimizeBanner />
+                </div>
+              </div>
+            )}
           </div>
         </div>
       </div>
@@ -1562,14 +1706,19 @@ const StudioMainV2: React.FC<StudioMainProps> = ({ initialContext, initialAssetI
 
       {showAllVPDsModal && (
         <AllVPDsModal
-          vpds={MOCK_VPDS}
+          vpds={savedVpds}
+          initialTab={vpdLibraryTab}
           onClose={() => setShowAllVPDsModal(false)}
           onVPClick={vpd => {
             setShowAllVPDsModal(false);
-            // Future: Load VPD into editor
-            alert(`Load VPD: ${vpd.title}`);
+            setVpdProject(vpd.project);
+            setVpdMode("create");
           }}
         />
+      )}
+
+      {showVpdEditor && (
+        <VpdEditorWindow project={vpdProject} onClose={() => setShowVpdEditor(false)} onUpdateProject={updated => setVpdProject(updated)} />
       )}
 
       {showReferralModal && (

@@ -17,6 +17,7 @@ interface ApplicationManagerProps {
   handleCardUpdate: () => void;
   initialStatusForAdd?: ApplicationStatus;
   onPrepare: (application: Application) => void;
+  onStatusChange: (applicationId: string, status: ApplicationStatus) => Promise<void>;
 }
 
 const ApplicationManager: React.FC<ApplicationManagerProps> = ({
@@ -29,6 +30,7 @@ const ApplicationManager: React.FC<ApplicationManagerProps> = ({
   handleCardUpdate,
   initialStatusForAdd = "draft",
   onPrepare,
+  onStatusChange,
 }) => {
   const handleUpdate = async (applicationId: string, data: UpdateApplicationInput) => {
     await updateApplication(applicationId, data);
@@ -50,6 +52,7 @@ const ApplicationManager: React.FC<ApplicationManagerProps> = ({
         setMode={m => setTabState(m === "edit" ? "toEdit" : "toView")}
         application={selectedApplication}
         onUpdate={handleUpdate}
+        onStatusChange={onStatusChange}
         onPrepare={onPrepare}
       />
     );

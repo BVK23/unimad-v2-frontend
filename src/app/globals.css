@@ -19,4 +19,119 @@
       background-position: 0% 50%;
     }
   }
+
+  /**
+   * Hide the native scrollbar entirely. Used for nav rails and horizontal
+   * carousels where the scrollbar would be visual noise.
+   */
+  .no-scrollbar {
+    scrollbar-width: none;
+    -ms-overflow-style: none;
+  }
+  .no-scrollbar::-webkit-scrollbar {
+    display: none;
+  }
+
+  /**
+   * Scrollbar hidden by default; revealed when the user hovers the scroll
+   * container or starts scrolling it. Used in the Unibot chat area so the
+   * scrollbar isn't permanently visible while the user is reading.
+   */
+  .scrollbar-on-hover {
+    scrollbar-width: thin;
+    scrollbar-color: transparent transparent;
+    transition: scrollbar-color 200ms ease;
+  }
+  .scrollbar-on-hover:hover,
+  .scrollbar-on-hover:focus-within {
+    scrollbar-color: rgb(203 213 225) transparent;
+  }
+  .scrollbar-on-hover::-webkit-scrollbar {
+    width: 6px;
+    height: 6px;
+  }
+  .scrollbar-on-hover::-webkit-scrollbar-track {
+    background: transparent;
+  }
+  .scrollbar-on-hover::-webkit-scrollbar-thumb {
+    background-color: transparent;
+    border-radius: 9999px;
+    transition: background-color 200ms ease;
+  }
+  .scrollbar-on-hover:hover::-webkit-scrollbar-thumb,
+  .scrollbar-on-hover:focus-within::-webkit-scrollbar-thumb {
+    background-color: rgb(203 213 225 / 0.9);
+  }
+  .dark .scrollbar-on-hover:hover::-webkit-scrollbar-thumb,
+  .dark .scrollbar-on-hover:focus-within::-webkit-scrollbar-thumb {
+    background-color: rgb(71 85 105 / 0.9);
+  }
+
+  @keyframes linkedin-unicoach-cta-shimmer {
+    0%,
+    84%,
+    100% {
+      transform: translateX(-160%) skewX(-12deg);
+    }
+    16% {
+      transform: translateX(380%) skewX(-12deg);
+    }
+  }
+
+  .linkedin-unicoach-cta-shimmer {
+    width: 40%;
+    background: linear-gradient(
+      90deg,
+      transparent,
+      rgba(255, 255, 255, 0.08) 40%,
+      rgba(255, 255, 255, 0.22) 50%,
+      rgba(255, 255, 255, 0.08) 60%,
+      transparent
+    );
+    transform: translateX(-160%) skewX(-12deg);
+    animation: linkedin-unicoach-cta-shimmer 10s ease-in-out infinite;
+  }
+
+  @keyframes linkedin-lab-bubble-rise {
+    0% {
+      transform: translate3d(0, 0, 0) scale(0.82);
+    }
+    30% {
+      transform: translate3d(10px, -150px, 0) scale(1);
+    }
+    70% {
+      transform: translate3d(-8px, -310px, 0) scale(1.06);
+    }
+    100% {
+      transform: translate3d(6px, -480px, 0) scale(1.15);
+      opacity: 0;
+    }
+  }
+
+  .minimal-scrollbar,
+  .scrollbar-thin {
+    scrollbar-width: thin;
+    scrollbar-color: #b8d4f8 #ffffff;
+  }
+  .scrollbar-thin::-webkit-scrollbar {
+    width: 6px;
+    height: 6px;
+  }
+  .scrollbar-thin::-webkit-scrollbar-track {
+    background: #ffffff;
+    border-radius: 9999px;
+  }
+  .scrollbar-thin::-webkit-scrollbar-thumb {
+    background-color: #b8d4f8;
+    border-radius: 9999px;
+  }
+  .dark .scrollbar-thin {
+    scrollbar-color: #3b4f6b #0f172a;
+  }
+  .dark .scrollbar-thin::-webkit-scrollbar-track {
+    background: #0f172a;
+  }
+  .dark .scrollbar-thin::-webkit-scrollbar-thumb {
+    background-color: #3b4f6b;
+  }
 }

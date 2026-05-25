@@ -1,5 +1,5 @@
 import React, { useState } from "react";
-import { getTemplate } from "@/components/resume/templates";
+import ResumeThumbnail from "@/components/resume/ResumeThumbnail";
 import { useResumesList } from "@/features/resume/hooks/useResumesList";
 import {
   duplicateResume,
@@ -28,66 +28,12 @@ import {
   ArrowLeft,
   Loader2,
   AlertCircle,
-  Star,
 } from "lucide-react";
 
 interface ResumeDashboardProps {
   onEditResume: (resume: ResumeData) => void;
   onCreateResume: (type: "scratch" | "jd" | "upload", resumeId?: string) => void;
 }
-
-interface ResumeThumbnailProps {
-  resume: ResumeData;
-}
-
-const ResumeThumbnail = React.memo(
-  ({ resume }: ResumeThumbnailProps) => {
-    const templateRenderer = getTemplate(resume.templateId);
-
-    if (!templateRenderer) {
-      return (
-        <div className="h-40 bg-slate-100 relative overflow-hidden flex items-center justify-center rounded-t-xl">
-          <div className="flex flex-col items-center gap-2 text-slate-400">
-            <FileText size={18} />
-            <span className="text-xs font-medium">Preview unavailable</span>
-          </div>
-          <div className="pointer-events-none absolute inset-0 bg-black/0 transition-colors group-hover:bg-black/5" />
-          {resume.isBase && (
-            <div className="pointer-events-none absolute top-3 right-3 z-[35] inline-flex items-center gap-1.5 rounded-full border border-brand-100 bg-white/95 px-2.5 py-1 text-[10px] font-bold uppercase tracking-wider text-brand-600 shadow-sm backdrop-blur-sm">
-              <Star size={10} fill="currentColor" aria-hidden /> Base Resume
-            </div>
-          )}
-        </div>
-      );
-    }
-
-    return (
-      <div className="h-40 bg-slate-100 relative overflow-hidden rounded-t-xl">
-        <div className="absolute inset-0 z-0 flex min-w-0 justify-center pointer-events-none select-none">
-          <div className="origin-top" style={{ transform: "translateY(6px)" }}>
-            {templateRenderer.renderPreview(resume, { previewScale: 0.26, isModal: false })}
-          </div>
-        </div>
-        <div className="pointer-events-none absolute inset-0 z-[1] bg-black/0 transition-colors group-hover:bg-black/5" />
-        {resume.isBase && (
-          <div className="pointer-events-none absolute top-3 right-3 z-[35] inline-flex items-center gap-1.5 rounded-full border border-brand-100 bg-white/95 px-2.5 py-1 text-[10px] font-bold uppercase tracking-wider text-brand-600 shadow-sm backdrop-blur-sm">
-            <Star size={10} fill="currentColor" aria-hidden /> Base Resume
-          </div>
-        )}
-      </div>
-    );
-  },
-  (prevProps, nextProps) => {
-    return (
-      prevProps.resume.id === nextProps.resume.id &&
-      prevProps.resume.templateId === nextProps.resume.templateId &&
-      prevProps.resume.lastModified.getTime() === nextProps.resume.lastModified.getTime() &&
-      prevProps.resume.isBase === nextProps.resume.isBase
-    );
-  }
-);
-
-ResumeThumbnail.displayName = "ResumeThumbnail";
 
 const ResumeDashboard: React.FC<ResumeDashboardProps> = ({ onEditResume, onCreateResume }) => {
   const queryClient = useQueryClient();
@@ -276,7 +222,7 @@ const ResumeDashboard: React.FC<ResumeDashboardProps> = ({ onEditResume, onCreat
   };
 
   return (
-    <div className="flex-1 bg-slate-50 h-full overflow-y-auto p-8 relative" onClick={() => setActiveMenuId(null)}>
+    <div className="flex-1 bg-slate-50 h-full overflow-y-auto p-8 relative scrollbar-on-hover" onClick={() => setActiveMenuId(null)}>
       <div className="max-w-6xl mx-auto">
         <div className="mb-8">
           <h1 className="text-2xl font-normal text-slate-900">Resumes</h1>

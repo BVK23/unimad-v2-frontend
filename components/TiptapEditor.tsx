@@ -5,19 +5,19 @@ import Underline from "@tiptap/extension-underline";
 import { useEditor, EditorContent } from "@tiptap/react";
 import StarterKit from "@tiptap/starter-kit";
 import { Bold, Italic, Underline as UnderlineIcon, List, Wand2 } from "lucide-react";
-import type { UnibotResumeSection } from "./chat/unibot-incoming-request";
+import type { UnibotImproveTarget } from "./chat/unibot-incoming-request";
 
 interface TiptapEditorProps {
   value: string;
   onChange: (val: string) => void;
   onImprove: (val: string) => void;
-  /** When set, the wand asks Unibot to review this resume section (main chat) instead of rewriting the selection. */
-  unibotImproveContext?: UnibotResumeSection;
+  /** Opens a resume improve sub-session (reused per entry/section under the active main chat). */
+  unibotImproveTarget?: UnibotImproveTarget;
   placeholder?: string;
   className?: string;
 }
 
-const TiptapEditor: React.FC<TiptapEditorProps> = ({ value, onChange, onImprove, unibotImproveContext, placeholder, className }) => {
+const TiptapEditor: React.FC<TiptapEditorProps> = ({ value, onChange, onImprove, unibotImproveTarget, placeholder, className }) => {
   const editor = useEditor({
     extensions: [
       StarterKit,
@@ -97,10 +97,20 @@ const TiptapEditor: React.FC<TiptapEditorProps> = ({ value, onChange, onImprove,
         <button
           type="button"
           onClick={() => {
-            if (unibotImproveContext) {
+            if (unibotImproveTarget) {
+              const text = editor.getText().trim();
               window.dispatchEvent(
                 new CustomEvent("open-unibot", {
-                  detail: { section: unibotImproveContext, requestKey: Date.now() },
+                  detail: {
+                    type: "improve",
+                    improveType: "resume",
+                    text: text || "Please help me improve this section.",
+                    feature: "resume",
+                    featureId: unibotImproveTarget.resumeId,
+                    section: unibotImproveTarget.section,
+                    entryId: unibotImproveTarget.entryId ?? "",
+                    requestKey: Date.now(),
+                  },
                 })
               );
               return;

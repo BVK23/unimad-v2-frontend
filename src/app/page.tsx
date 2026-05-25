@@ -1,6 +1,5 @@
-import type { Metadata } from "next";
-
 import { UniLandingPage } from "@/components/uni-landing/UniLandingPage";
+import type { Metadata } from "next";
 
 export const metadata: Metadata = {
   title: "Unimad — The platform behind 200+ job offers",

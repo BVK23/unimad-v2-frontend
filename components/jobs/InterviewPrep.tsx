@@ -1,189 +1,487 @@
-import React, { useState, useEffect, useRef } from "react";
+"use client";
+
+import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { consumeInterviewLaunch } from "@/src/features/interview-prep/interview-launch";
 import {
-  Mic,
-  Play,
-  Square,
-  SkipForward,
-  BarChart2,
-  Clock,
-  Calendar,
-  ChevronRight,
-  Volume2,
-  MicOff,
-  MessageSquare,
-  X,
-  Smartphone,
-  Globe,
-  Bot,
-  Trash2,
-} from "lucide-react";
-import { MOCK_INTERVIEWS, InterviewSession } from "../../types/jobs";
-import InterviewReportModal from "./InterviewReportModal";
+  analyzeVoiceInterview,
+  deleteInterviewSession,
+  fetchInterviewSessions,
+  startInterviewSession,
+} from "@/src/features/interview-prep/server-actions/interview-actions";
+import type {
+  InterviewAutoStart,
+  InterviewPrepContext,
+  InterviewPrepListItem,
+  InterviewQuestion,
+  InterviewRoundType,
+  InterviewSessionMode,
+} from "@/src/features/interview-prep/types";
+import type { InterviewView } from "@/src/features/jobs/jobs-url";
+import { Mic, Bot, Calendar, Clock, Trash2, Loader2 } from "lucide-react";
+import InterviewActiveSession from "../interview-prep/InterviewActiveSession";
+import InterviewAnalyzingView from "../interview-prep/InterviewAnalyzingView";
+import InterviewLaunchOverlay from "../interview-prep/InterviewLaunchOverlay";
+import InterviewReportView from "../interview-prep/InterviewReportView";
+import InterviewSetupModal from "../interview-prep/InterviewSetupModal";
+import VoiceInterviewSession from "../interview-prep/VoiceInterviewSession";
 
-const InterviewPrep: React.FC = () => {
-  const [view, setView] = useState<"dashboard" | "setup" | "active" | "report">("dashboard");
-  const [isListening, setIsListening] = useState(false);
-  const [currentQuestionIndex, setCurrentQuestionIndex] = useState(0);
-  const [transcript, setTranscript] = useState("");
-  const [company, setCompany] = useState("");
-  const [role, setRole] = useState("");
-  const [selectedSession, setSelectedSession] = useState<InterviewSession | null>(null);
-  const [pastSessions, setPastSessions] = useState<InterviewSession[]>(MOCK_INTERVIEWS);
+type View = InterviewView;
 
-  // Web Speech API Refs
-  const recognitionRef = useRef<any>(null);
-  const synthRef = useRef<SpeechSynthesis | null>(null);
+interface InterviewPrepProps {
+  initialContext?: InterviewPrepContext | null;
+  autoStart?: InterviewAutoStart | null;
+  onAutoStartConsumed?: () => void;
+  openSetupOnMount?: boolean;
+  urlInterviewId?: string | null;
+  urlView?: InterviewView | null;
+  urlRound?: string | null;
+  onUrlChange?: (
+    updates: Partial<{
+      interview_id: string | null;
+      view: InterviewView | null;
+      round: string | null;
+      setup: string | null;
+    }>
+  ) => void;
+}
 
-  const questions = [
-    "Tell me about a time you handled a difficult stakeholder.",
-    "How do you prioritize your design tasks when under a tight deadline?",
-    "Walk me through your portfolio piece for the Fintech app.",
-  ];
+const InterviewPrep: React.FC<InterviewPrepProps> = ({
+  initialContext,
+  autoStart,
+  onAutoStartConsumed,
+  openSetupOnMount,
+  urlInterviewId,
+  urlView,
+  urlRound,
+  onUrlChange,
+}) => {
+  const launchPayload = useMemo(() => (typeof window !== "undefined" ? consumeInterviewLaunch() : null), []);
+
+  const initialView: View = urlView ?? (openSetupOnMount ? "setup" : "dashboard");
+
+  const [view, setView] = useState<View>(initialView);
+  const [sessions, setSessions] = useState<InterviewPrepListItem[]>([]);
+  const [loadingSessions, setLoadingSessions] = useState(true);
+  const [isStarting, setIsStarting] = useState(false);
+  const [isAnalyzing, setIsAnalyzing] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  const [interviewId, setInterviewId] = useState<string | null>(urlInterviewId ?? launchPayload?.interviewId ?? null);
+  const [roundType, setRoundType] = useState<InterviewRoundType>(() => {
+    if (urlRound === "screening" || urlRound === "technical" || urlRound === "behavioral") {
+      return urlRound;
+    }
+    if (launchPayload?.roundType === "screening" || launchPayload?.roundType === "technical" || launchPayload?.roundType === "behavioral") {
+      return launchPayload.roundType;
+    }
+    return "technical";
+  });
+  const [questions, setQuestions] = useState<InterviewQuestion[]>(launchPayload?.questions ?? []);
+  const launchContext = launchPayload?.context ?? initialContext;
+  const [sessionMeta, setSessionMeta] = useState({
+    company: launchContext?.company ?? "",
+    role: launchContext?.role ?? "",
+    jobDescription: launchContext?.jobDescription ?? "",
+  });
+  const [reportInterviewId, setReportInterviewId] = useState<string | null>(urlInterviewId ?? launchPayload?.interviewId ?? null);
+  const [reportRoundType, setReportRoundType] = useState<string | undefined>(urlRound ?? launchPayload?.roundType ?? undefined);
+
+  const navigate = useCallback(
+    (patch: { view?: View; interviewId?: string | null; round?: string | null; setup?: string | null }) => {
+      const nextView = patch.view ?? view;
+      const nextId = patch.interviewId !== undefined ? patch.interviewId : (reportInterviewId ?? interviewId);
+      const nextRound = patch.round !== undefined ? patch.round : reportRoundType;
+
+      if (patch.view !== undefined) setView(patch.view);
+      if (patch.interviewId !== undefined) {
+        setInterviewId(patch.interviewId);
+        setReportInterviewId(patch.interviewId);
+      }
+      if (patch.round !== undefined) setReportRoundType(patch.round ?? undefined);
+
+      onUrlChange?.({
+        view: nextView === "dashboard" ? null : nextView,
+        interview_id: nextView === "report" ? nextId : nextView === "active" || nextView === "voice" ? nextId : null,
+        round: nextView === "report" ? (nextRound ?? null) : null,
+        setup: patch.setup !== undefined ? patch.setup : nextView === "setup" ? "1" : null,
+      });
+    },
+    [view, reportInterviewId, interviewId, reportRoundType, onUrlChange]
+  );
 
   useEffect(() => {
-    // Initialize Speech Synthesis
-    if (typeof window !== "undefined") {
-      synthRef.current = window.speechSynthesis;
+    if (!urlView) return;
+    setView(urlView);
+    if (urlView === "report" && urlInterviewId) {
+      setReportInterviewId(urlInterviewId);
     }
+    if (urlRound) setReportRoundType(urlRound);
+  }, [urlView, urlInterviewId, urlRound]);
 
-    // Initialize Speech Recognition
-    if ("webkitSpeechRecognition" in window) {
-      const SpeechRecognition = (window as any).webkitSpeechRecognition;
-      recognitionRef.current = new SpeechRecognition();
-      recognitionRef.current.continuous = true;
-      recognitionRef.current.interimResults = true;
-
-      recognitionRef.current.onresult = (event: any) => {
-        let interimTranscript = "";
-        for (let i = event.resultIndex; i < event.results.length; ++i) {
-          if (event.results[i].isFinal) {
-            setTranscript(prev => prev + " " + event.results[i][0].transcript);
-          } else {
-            interimTranscript += event.results[i][0].transcript;
-          }
-        }
-      };
+  const loadSessions = useCallback(async () => {
+    setLoadingSessions(true);
+    try {
+      const data = await fetchInterviewSessions();
+      setSessions(data);
+    } catch (e) {
+      setError(e instanceof Error ? e.message : "Failed to load sessions");
+    } finally {
+      setLoadingSessions(false);
     }
   }, []);
 
-  const speakQuestion = (text: string) => {
-    if (synthRef.current) {
-      synthRef.current.cancel(); // Stop previous
-      const utterance = new SpeechSynthesisUtterance(text);
-      utterance.rate = 1;
-      utterance.pitch = 1;
-      synthRef.current.speak(utterance);
+  useEffect(() => {
+    loadSessions();
+  }, [loadSessions]);
+
+  const handleStart = useCallback(
+    async (payload: {
+      company: string;
+      role: string;
+      jobDescription: string;
+      roundType: InterviewRoundType;
+      mode: InterviewSessionMode;
+      applicationId?: string;
+    }) => {
+      setIsStarting(true);
+      setError(null);
+      setSessionMeta({
+        company: payload.company,
+        role: payload.role,
+        jobDescription: payload.jobDescription,
+      });
+      setRoundType(payload.roundType);
+
+      try {
+        if (payload.mode === "live") {
+          setInterviewId(null);
+          navigate({ view: "voice", interviewId: null, round: payload.roundType, setup: null });
+          return;
+        }
+
+        const result = await startInterviewSession({
+          role: payload.role,
+          company: payload.company,
+          jobDescription: payload.jobDescription,
+          roundType: payload.roundType,
+          applicationId: payload.applicationId,
+        });
+
+        setInterviewId(result.id);
+        setQuestions(result.questions);
+        navigate({ view: "active", interviewId: result.id, round: payload.roundType, setup: null });
+      } catch (e) {
+        setError(e instanceof Error ? e.message : "Failed to start interview");
+      } finally {
+        setIsStarting(false);
+      }
+    },
+    [navigate]
+  );
+
+  const autoStartHandledRef = useRef(false);
+
+  useEffect(() => {
+    if (launchPayload) {
+      autoStartHandledRef.current = true;
+      onAutoStartConsumed?.();
+    }
+  }, [launchPayload, onAutoStartConsumed]);
+
+  useEffect(() => {
+    if (!autoStart || !initialContext || autoStartHandledRef.current) return;
+
+    const jobDescription =
+      initialContext.jobDescription?.trim() || `${initialContext.role ?? ""} at ${initialContext.company ?? ""}`.trim();
+
+    if (!initialContext.company?.trim() || !initialContext.role?.trim()) return;
+
+    autoStartHandledRef.current = true;
+    onAutoStartConsumed?.();
+    void handleStart({
+      company: initialContext.company,
+      role: initialContext.role,
+      jobDescription,
+      roundType: autoStart.roundType,
+      mode: autoStart.mode,
+      applicationId: initialContext.applicationId,
+    });
+  }, [autoStart, initialContext, handleStart, onAutoStartConsumed]);
+
+  const handleVoiceEnd = async (transcript: { role: "user" | "model"; text: string; timestamp?: number }[]) => {
+    navigate({ view: "analyzing", setup: null });
+    setIsAnalyzing(true);
+    try {
+      const result = await analyzeVoiceInterview({
+        transcript,
+        interviewId: interviewId ?? undefined,
+        config: {
+          role: sessionMeta.role,
+          company: sessionMeta.company,
+          jobDescription: sessionMeta.jobDescription,
+          roundType,
+          interviewId: interviewId ?? undefined,
+        },
+      });
+      setReportInterviewId(result.interview_id);
+      setReportRoundType(result.round_type);
+      navigate({
+        view: "report",
+        interviewId: result.interview_id,
+        round: result.round_type,
+        setup: null,
+      });
+      await loadSessions();
+    } catch (e) {
+      setError(e instanceof Error ? e.message : "Failed to analyze interview");
+      navigate({ view: "dashboard", interviewId: null, round: null, setup: null });
+    } finally {
+      setIsAnalyzing(false);
     }
   };
 
-  const startInterview = () => {
-    setView("active");
-    setCurrentQuestionIndex(0);
-    setTranscript("");
-    // Delay speaking slightly for transition
-    setTimeout(() => speakQuestion(questions[0]), 500);
-  };
-
-  const toggleMic = () => {
-    if (isListening) {
-      recognitionRef.current?.stop();
-      setIsListening(false);
-    } else {
-      recognitionRef.current?.start();
-      setIsListening(true);
+  const handleDelete = async (id: string) => {
+    try {
+      await deleteInterviewSession(id);
+      setSessions(prev => prev.filter(s => s.interview_id !== id));
+      if (reportInterviewId === id) {
+        navigate({ view: "dashboard", interviewId: null, round: null, setup: null });
+      }
+    } catch (e) {
+      setError(e instanceof Error ? e.message : "Failed to delete");
     }
   };
 
-  const handleSkip = () => {
-    const nextIndex = currentQuestionIndex + 1;
-    if (nextIndex < questions.length) {
-      setCurrentQuestionIndex(nextIndex);
-      setTranscript("");
-      setIsListening(false);
-      recognitionRef.current?.stop();
-      setTimeout(() => speakQuestion(questions[nextIndex]), 500);
-    } else {
-      handleFinish();
+  const formatDate = (iso?: string) => {
+    if (!iso) return "—";
+    try {
+      return new Date(iso).toLocaleDateString(undefined, { month: "short", day: "numeric", year: "numeric" });
+    } catch {
+      return "—";
     }
   };
 
-  const handleFinish = () => {
-    setView("report");
-    recognitionRef.current?.stop();
-    setIsListening(false);
-    synthRef.current?.cancel();
-  };
+  const goDashboard = () => navigate({ view: "dashboard", interviewId: null, round: null, setup: null });
 
-  // Dashboard View
-  if (view === "dashboard") {
+  const handleRetake = useCallback(
+    async (opts: {
+      interviewId: string;
+      roundType: InterviewRoundType;
+      mode: InterviewSessionMode;
+      company: string;
+      role: string;
+      jobDescription: string;
+      applicationId?: string;
+    }) => {
+      setIsStarting(true);
+      setError(null);
+      setSessionMeta({
+        company: opts.company,
+        role: opts.role,
+        jobDescription: opts.jobDescription,
+      });
+      setRoundType(opts.roundType);
+
+      try {
+        if (opts.mode === "live") {
+          setInterviewId(opts.interviewId);
+          navigate({ view: "voice", interviewId: opts.interviewId, round: opts.roundType, setup: null });
+          return;
+        }
+
+        const result = await startInterviewSession({
+          role: opts.role,
+          company: opts.company,
+          jobDescription: opts.jobDescription,
+          roundType: opts.roundType,
+          interviewId: opts.interviewId,
+          applicationId: opts.applicationId,
+        });
+
+        setInterviewId(result.id);
+        setQuestions(result.questions);
+        navigate({ view: "active", interviewId: result.id, round: opts.roundType, setup: null });
+      } catch (e) {
+        setError(e instanceof Error ? e.message : "Failed to start interview");
+      } finally {
+        setIsStarting(false);
+      }
+    },
+    [navigate]
+  );
+
+  if (autoStart && isStarting && view === "dashboard") {
+    return <InterviewLaunchOverlay />;
+  }
+
+  if (view === "setup") {
+    return <InterviewSetupModal initialContext={initialContext} isStarting={isStarting} onClose={goDashboard} onStart={handleStart} />;
+  }
+
+  if (view === "active" && interviewId && questions.length === 0 && isStarting) {
+    return <InterviewLaunchOverlay />;
+  }
+
+  if (view === "active" && interviewId && questions.length > 0) {
     return (
-      <div className="p-8 max-w-5xl mx-auto animate-in fade-in duration-500">
-        {/* Content Lab Style Start Card */}
-        <div className="bg-[#0B1121] rounded-3xl p-10 text-white mb-10 shadow-2xl relative overflow-hidden group border border-slate-800">
-          {/* Blue Glow Effect */}
-          <div className="absolute top-0 right-0 w-[500px] h-[500px] bg-blue-600/20 rounded-full -mr-32 -mt-32 blur-[100px] pointer-events-none group-hover:bg-blue-600/30 transition-all duration-700"></div>
+      <InterviewActiveSession
+        interviewId={interviewId}
+        roundType={roundType}
+        company={sessionMeta.company}
+        role={sessionMeta.role}
+        questions={questions}
+        onEnd={goDashboard}
+        onComplete={id => {
+          setReportRoundType(roundType);
+          navigate({ view: "report", interviewId: id, round: roundType, setup: null });
+          loadSessions();
+        }}
+      />
+    );
+  }
 
-          <div className="relative z-10 max-w-2xl">
-            <div className="inline-flex items-center gap-2 px-3 py-1 bg-blue-500/10 border border-blue-500/20 rounded-full text-blue-400 text-xs font-medium mb-6">
-              <Bot size={12} fill="currentColor" /> AI Interview Coach
-            </div>
-            <h2 className="text-4xl font-semibold mb-4 tracking-tight">Ace Your Next Interview</h2>
-            <p className="text-slate-400 mb-8 text-lg leading-relaxed">
-              Practice with our AI interviewer. Get real-time feedback on your answers, pacing, and tone. Tailored to your target job
-              description.
-            </p>
-            <button
-              onClick={() => setView("setup")}
-              className="bg-blue-600 hover:bg-blue-500 text-white px-8 py-3.5 rounded-xl font-medium shadow-lg shadow-blue-600/20 hover:shadow-blue-600/40 hover:-translate-y-0.5 transition-all active:scale-95 flex items-center gap-2.5"
-            >
-              <Mic size={20} /> Start New Session
-            </button>
+  if (view === "voice") {
+    return (
+      <VoiceInterviewSession
+        config={{
+          role: sessionMeta.role,
+          company: sessionMeta.company,
+          jobDescription: sessionMeta.jobDescription,
+          roundType,
+          interviewId: interviewId ?? undefined,
+        }}
+        onEnd={handleVoiceEnd}
+        onCancel={goDashboard}
+      />
+    );
+  }
+
+  if (view === "analyzing") {
+    return <InterviewAnalyzingView />;
+  }
+
+  if (view === "report" && reportInterviewId) {
+    return (
+      <InterviewReportView
+        interviewId={reportInterviewId}
+        roundType={reportRoundType}
+        onBack={goDashboard}
+        onRetake={handleRetake}
+        isRetakeStarting={isStarting}
+      />
+    );
+  }
+
+  return (
+    <div className="mx-auto max-w-5xl animate-in p-8 font-sans fade-in duration-500">
+      {error && (
+        <div className="mb-4 rounded-xl border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700 dark:border-red-900 dark:bg-red-950/30 dark:text-red-300">
+          {error}
+          <button type="button" className="ml-2 underline" onClick={() => setError(null)}>
+            Dismiss
+          </button>
+        </div>
+      )}
+
+      <div className="relative mb-10 overflow-hidden rounded-3xl border border-slate-800 bg-[#0B1121] p-10 text-white shadow-2xl">
+        <div className="pointer-events-none absolute -right-32 -top-32 h-[500px] w-[500px] rounded-full bg-blue-600/20 blur-[100px]" />
+        <div className="relative z-10 max-w-2xl">
+          <div className="mb-6 inline-flex items-center gap-2 rounded-full border border-blue-500/20 bg-blue-500/10 px-3 py-1 text-xs font-medium text-blue-400">
+            <Bot size={12} fill="currentColor" /> AI Interview Coach
           </div>
+          <h2 className="mb-4 text-4xl font-medium tracking-tight">Ace Your Next Interview</h2>
+          <p className="mb-8 text-lg font-light leading-relaxed text-slate-400">
+            Practice screening, technical, or behavioral rounds tailored to your target company and job description. Choose guided questions
+            or a live voice mock interview.
+          </p>
+          <button
+            type="button"
+            onClick={() => navigate({ view: "setup", setup: "1" })}
+            className="flex items-center gap-2.5 rounded-xl bg-blue-600 px-8 py-3.5 font-medium text-white shadow-lg shadow-blue-600/20 transition-all hover:bg-blue-500 active:scale-95"
+          >
+            <Mic size={20} /> Start New Session
+          </button>
         </div>
+      </div>
 
-        <div className="flex items-center justify-between mb-6">
-          <h3 className="text-xl font-medium text-slate-900 dark:text-white">Past Sessions</h3>
+      <h3 className="mb-6 text-xl font-medium tracking-tight text-slate-900 dark:text-white">Past Sessions</h3>
+
+      {loadingSessions ? (
+        <div className="flex justify-center py-12">
+          <Loader2 className="h-8 w-8 animate-spin text-slate-400" />
         </div>
-
-        <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-          {pastSessions.map(session => (
+      ) : sessions.length === 0 ? (
+        <p className="rounded-xl border border-dashed border-slate-200 py-12 text-center text-slate-500 dark:border-slate-700">
+          No sessions yet. Start your first mock interview above.
+        </p>
+      ) : (
+        <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
+          {sessions.map(session => (
             <div
-              key={session.id}
-              onClick={() => setSelectedSession(session)}
-              className="bg-white dark:bg-[#1a1a1a] border border-slate-200 dark:border-slate-800 p-4 rounded-xl flex items-center justify-between hover:shadow-md transition-all cursor-pointer group"
+              key={session.interview_id}
+              role="button"
+              tabIndex={0}
+              onClick={() => {
+                const round =
+                  session.rounds?.length && !session.active_round
+                    ? session.rounds[session.rounds.length - 1]
+                    : (session.active_round ?? session.rounds?.[0]);
+                navigate({
+                  view: "report",
+                  interviewId: session.interview_id,
+                  round: round ?? null,
+                  setup: null,
+                });
+              }}
+              onKeyDown={e => {
+                if (e.key === "Enter") {
+                  navigate({
+                    view: "report",
+                    interviewId: session.interview_id,
+                    round: session.rounds?.[0] ?? null,
+                    setup: null,
+                  });
+                }
+              }}
+              className="flex cursor-pointer items-center justify-between rounded-xl border border-slate-200 bg-white p-4 transition-all hover:shadow-md dark:border-slate-800 dark:bg-[#1a1a1a]"
             >
               <div className="flex items-center gap-4">
-                <div className="w-12 h-12 rounded-lg bg-slate-50 dark:bg-slate-900 border border-slate-100 dark:border-slate-800 flex items-center justify-center text-lg font-medium text-slate-500 overflow-hidden">
-                  {session.company[0]}
+                <div className="flex h-12 w-12 items-center justify-center overflow-hidden rounded-lg border border-slate-100 bg-slate-50 text-lg font-medium text-slate-500 dark:border-slate-800 dark:bg-slate-900">
+                  {(session.company ?? "?")[0]}
                 </div>
                 <div>
-                  <h4 className="font-medium text-base text-slate-900 dark:text-white mb-0.5">{session.jobRole}</h4>
-                  <div className="flex items-center gap-2 text-xs text-slate-500 dark:text-slate-400">
+                  <h4 className="mb-0.5 text-base font-medium text-slate-900 dark:text-white">{session.role ?? "Role"}</h4>
+                  <div className="flex flex-wrap items-center gap-2 text-xs text-slate-500">
                     <span className="font-medium text-slate-700 dark:text-slate-300">{session.company}</span>
-                    <div className="w-0.5 h-0.5 bg-slate-300 rounded-full"></div>
+                    {session.rounds?.length > 0 && (
+                      <>
+                        <span className="h-0.5 w-0.5 rounded-full bg-slate-300" />
+                        <span>{session.rounds.join(", ")}</span>
+                      </>
+                    )}
                     <span className="flex items-center gap-1">
-                      <Calendar size={12} /> {session.date}
+                      <Calendar size={12} /> {formatDate(session.created_at)}
                     </span>
-                    <div className="w-0.5 h-0.5 bg-slate-300 rounded-full"></div>
-                    <span className="flex items-center gap-1">
-                      <Clock size={12} /> {session.duration}
-                    </span>
+                    {session.active_round && <span className="text-amber-600">In progress: {session.active_round}</span>}
                   </div>
                 </div>
               </div>
               <div className="flex items-center gap-4">
-                <div className="text-right">
-                  <span className={`block text-xl font-medium ${session.score >= 80 ? "text-green-600" : "text-orange-500"}`}>
-                    {session.score}
-                  </span>
-                  <span className="text-[10px] font-medium text-slate-400 uppercase tracking-wider">Score</span>
-                </div>
+                {session.score != null && (
+                  <div className="text-right">
+                    <span className={`block text-xl font-medium ${session.score >= 80 ? "text-green-600" : "text-orange-500"}`}>
+                      {Math.round(session.score)}
+                    </span>
+                    <span className="text-[10px] font-medium uppercase tracking-wider text-slate-400">Score</span>
+                  </div>
+                )}
                 <button
+                  type="button"
                   onClick={e => {
                     e.stopPropagation();
-                    setPastSessions(prev => prev.filter(s => s.id !== session.id));
+                    handleDelete(session.interview_id);
                   }}
-                  className="p-2 hover:bg-red-50 dark:hover:bg-red-900/20 text-slate-400 hover:text-red-500 rounded-lg transition-colors ml-2"
+                  className="ml-2 rounded-lg p-2 text-slate-400 transition-colors hover:bg-red-50 hover:text-red-500 dark:hover:bg-red-900/20"
                   title="Delete Session"
                 >
                   <Trash2 size={16} />
@@ -192,215 +490,13 @@ const InterviewPrep: React.FC = () => {
             </div>
           ))}
         </div>
+      )}
 
-        {selectedSession && (
-          <InterviewReportModal
-            session={selectedSession}
-            onClose={() => setSelectedSession(null)}
-            onRetake={() => {
-              setSelectedSession(null);
-              setView("setup");
-            }}
-          />
-        )}
-      </div>
-    );
-  }
-
-  // Setup Modal
-  if (view === "setup") {
-    return (
-      <div className="fixed inset-0 z-50 bg-black/50 backdrop-blur-sm flex items-center justify-center p-4 animate-in fade-in duration-200">
-        <div className="bg-white dark:bg-[#1a1a1a] w-full max-w-2xl rounded-3xl p-8 shadow-2xl border border-slate-200 dark:border-slate-800 animate-in zoom-in-95 duration-200">
-          <div className="flex justify-between items-center mb-8">
-            <div>
-              <h3 className="text-2xl font-medium text-slate-900 dark:text-white">Setup Interview</h3>
-              <p className="text-slate-500 mt-1">Configure your AI interviewer context.</p>
-            </div>
-            <button
-              onClick={() => setView("dashboard")}
-              className="p-2 hover:bg-slate-100 dark:hover:bg-slate-800 rounded-full text-slate-400 transition-colors"
-            >
-              <X size={24} />
-            </button>
-          </div>
-
-          <div className="space-y-6 mb-10">
-            <div>
-              <label className="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-2">Target Company</label>
-              <div className="relative">
-                <span className="absolute left-4 top-3.5 text-slate-400">
-                  <Globe size={18} />
-                </span>
-                <input
-                  type="text"
-                  value={company}
-                  onChange={e => setCompany(e.target.value)}
-                  className="w-full bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-xl pl-11 pr-4 py-3 text-sm focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500 outline-none transition-all"
-                  placeholder="e.g. Google, Airbnb, Stripe"
-                />
-              </div>
-            </div>
-            <div>
-              <label className="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-2">Job Description / Role</label>
-              <textarea
-                value={role}
-                onChange={e => setRole(e.target.value)}
-                className="w-full bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-xl px-4 py-3 text-sm h-40 resize-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500 outline-none transition-all"
-                placeholder="Paste the JD here or type the role title (e.g. Senior Product Designer)..."
-              />
-            </div>
-          </div>
-
-          <div className="flex gap-4 pt-6 border-t border-slate-100 dark:border-slate-800">
-            <button
-              onClick={() => setView("dashboard")}
-              className="flex-1 py-3.5 bg-white border border-slate-200 dark:bg-slate-800 dark:border-slate-700 text-slate-700 dark:text-slate-300 font-medium rounded-xl hover:bg-slate-50 transition-colors"
-            >
-              Cancel
-            </button>
-            <button
-              onClick={startInterview}
-              className="flex-1 py-3.5 bg-blue-600 hover:bg-blue-700 text-white font-medium rounded-xl shadow-lg shadow-blue-500/20 transition-all active:scale-95 flex items-center justify-center gap-2"
-            >
-              Start Interview <ChevronRight size={18} />
-            </button>
-          </div>
+      {isAnalyzing && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40">
+          <Loader2 className="h-10 w-10 animate-spin text-white" />
         </div>
-      </div>
-    );
-  }
-
-  // Active Interview UI
-  if (view === "active") {
-    return (
-      <div className="fixed inset-0 z-50 flex flex-col bg-[#0B1121] text-white">
-        {/* Visualizer Background */}
-        <div className="absolute inset-0 flex items-center justify-center opacity-30 pointer-events-none">
-          <div
-            className={`w-[600px] h-[600px] bg-blue-600/20 rounded-full blur-[120px] transition-all duration-300 ${isListening ? "scale-110 opacity-50" : "scale-100"}`}
-          ></div>
-        </div>
-
-        {/* Header */}
-        <div className="p-8 flex justify-between items-center relative z-20">
-          <div className="flex items-center gap-3 opacity-60">
-            <div className="w-2 h-2 bg-red-500 rounded-full animate-pulse"></div>
-            <span className="text-sm font-medium uppercase tracking-widest">Live Session</span>
-          </div>
-          <button
-            onClick={handleFinish}
-            className="px-4 py-2 rounded-lg bg-white/10 hover:bg-white/20 text-sm font-medium transition-colors"
-          >
-            End Interview
-          </button>
-        </div>
-
-        <div className="relative z-10 flex-1 flex flex-col items-center justify-center p-8 text-center max-w-4xl mx-auto w-full">
-          <span className="text-blue-400 font-medium tracking-widest text-sm uppercase mb-8">
-            Question {currentQuestionIndex + 1} of {questions.length}
-          </span>
-          <h2 className="text-4xl md:text-5xl font-semibold leading-tight mb-16 animate-in fade-in slide-in-from-bottom-4 duration-700">
-            &quot;{questions[currentQuestionIndex]}&quot;
-          </h2>
-
-          {/* Audio Visualizer (CSS Bars) */}
-          {isListening && (
-            <div className="flex items-center justify-center gap-1.5 h-16 mb-12">
-              {[...Array(10)].map((_, i) => (
-                <div
-                  key={i}
-                  className="w-1.5 bg-blue-400 rounded-full animate-bounce"
-                  style={{
-                    height: `${Math.random() * 100}%`,
-                    animationDuration: `${0.5 + Math.random() * 0.5}s`,
-                  }}
-                ></div>
-              ))}
-            </div>
-          )}
-
-          <div className="w-full max-w-2xl bg-white/5 border border-white/10 rounded-2xl p-8 mb-12 text-left min-h-[120px] backdrop-blur-sm relative">
-            <div className="absolute -top-3 left-6 px-3 py-1 bg-blue-600 rounded-md text-xs font-semibold uppercase tracking-wider shadow-lg">
-              You
-            </div>
-            <p className="text-slate-200 text-xl leading-relaxed">
-              {transcript || <span className="text-slate-500 italic">Tap the mic to start speaking...</span>}
-            </p>
-          </div>
-
-          <div className="flex items-center gap-8">
-            <button
-              onClick={toggleMic}
-              className={`w-20 h-20 rounded-full flex items-center justify-center text-white text-3xl shadow-2xl transition-all hover:scale-105 active:scale-95 ${isListening ? "bg-red-500 ring-4 ring-red-500/30" : "bg-blue-600 hover:bg-blue-500"}`}
-            >
-              {isListening ? <MicOff size={32} /> : <Mic size={32} />}
-            </button>
-            <button
-              onClick={handleSkip}
-              className="w-14 h-14 rounded-full bg-white/10 hover:bg-white/20 flex items-center justify-center text-white transition-all hover:scale-105"
-              title="Next Question"
-            >
-              <SkipForward size={24} />
-            </button>
-          </div>
-          <p className="mt-8 text-slate-500 text-sm font-medium">{isListening ? "Listening..." : "Tap microphone to answer"}</p>
-        </div>
-      </div>
-    );
-  }
-
-  // Report View
-  return (
-    <div className="p-8 max-w-5xl mx-auto animate-in fade-in">
-      <div className="flex items-center gap-4 mb-8">
-        <button
-          onClick={() => setView("dashboard")}
-          className="p-2 hover:bg-slate-100 dark:hover:bg-slate-800 rounded-xl transition-colors"
-        >
-          <ChevronRight className="rotate-180" />
-        </button>
-        <h2 className="text-2xl font-semibold text-slate-900 dark:text-white">Interview Report</h2>
-      </div>
-
-      <div className="grid grid-cols-1 md:grid-cols-3 gap-6 mb-8">
-        <div className="bg-white dark:bg-[#1a1a1a] p-8 rounded-2xl border border-slate-200 dark:border-slate-800 text-center shadow-sm">
-          <span className="block text-5xl font-medium text-blue-600 mb-2">85</span>
-          <span className="text-sm font-medium text-slate-500 uppercase tracking-wider">Overall Score</span>
-        </div>
-        <div className="bg-white dark:bg-[#1a1a1a] p-8 rounded-2xl border border-slate-200 dark:border-slate-800 text-center shadow-sm">
-          <span className="block text-5xl font-medium text-green-500 mb-2">High</span>
-          <span className="text-sm font-medium text-slate-500 uppercase tracking-wider">Confidence</span>
-        </div>
-        <div className="bg-white dark:bg-[#1a1a1a] p-8 rounded-2xl border border-slate-200 dark:border-slate-800 text-center shadow-sm">
-          <span className="block text-5xl font-medium text-orange-500 mb-2">3</span>
-          <span className="text-sm font-medium text-slate-500 uppercase tracking-wider">Improvements</span>
-        </div>
-      </div>
-
-      <div className="bg-white dark:bg-[#1a1a1a] p-8 rounded-2xl border border-slate-200 dark:border-slate-800 shadow-sm">
-        <h3 className="font-medium text-lg mb-4 text-slate-900 dark:text-white">Feedback Summary</h3>
-        <p className="text-slate-600 dark:text-slate-300 mb-8 leading-relaxed">
-          You demonstrated strong problem-solving skills and provided clear examples. However, try to be more concise when describing the
-          &quot;Situation&quot; in your STAR method answers.
-        </p>
-        <h4 className="font-medium text-sm text-slate-400 uppercase tracking-wider mb-4">Question Breakdown</h4>
-        <div className="space-y-4">
-          {questions.map((q, i) => (
-            <div key={i} className="p-5 bg-slate-50 dark:bg-slate-900/50 rounded-xl border border-slate-100 dark:border-slate-800/50">
-              <div className="flex justify-between items-start mb-2">
-                <h5 className="font-medium text-base text-slate-800 dark:text-slate-200 mb-1">{q}</h5>
-                <span className="px-2 py-0.5 bg-green-100 dark:bg-green-900/30 text-green-700 dark:text-green-400 text-xs font-medium rounded-full">
-                  Good
-                </span>
-              </div>
-              <p className="text-sm text-slate-500 dark:text-slate-400">
-                Strong opening, but the conclusion was a bit rushed. Consider summarizing your impact more clearly.
-              </p>
-            </div>
-          ))}
-        </div>
-      </div>
+      )}
     </div>
   );
 };

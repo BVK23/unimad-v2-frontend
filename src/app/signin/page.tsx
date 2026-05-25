@@ -1,10 +1,9 @@
 "use client";
 
-import Link from "next/link";
 import { Suspense, useEffect } from "react";
-import { useRouter, useSearchParams } from "next/navigation";
-
 import { useAuthStatus } from "@/hooks/useAuthStatus";
+import Link from "next/link";
+import { useRouter, useSearchParams } from "next/navigation";
 
 const backendUrl = process.env.NEXT_PUBLIC_BACKEND_URL ?? "";
 
@@ -27,8 +26,7 @@ function SigninForm() {
   }, [isAuthenticated, isLoading, redirect, from, router]);
 
   const handleOAuthLogin = (provider: "linkedin" | "google") => {
-    const oauthRedirect =
-      from && from.startsWith("/uniboard") ? from.replace("/uniboard/", "") : redirect;
+    const oauthRedirect = from && from.startsWith("/uniboard") ? from.replace("/uniboard/", "") : redirect;
     if (provider === "linkedin") {
       window.location.href = `${backendUrl}/linkedin-login?redirect=${encodeURIComponent(oauthRedirect)}`;
     } else {
@@ -66,16 +64,11 @@ function SigninForm() {
               uni<span className="text-[#346DE0]">mad</span>
             </span>
           </h1>
-          <p className="text-[15px] font-light leading-relaxed text-[#4A5568]">
-            Sign in or create an account — your toolkit is free.
-          </p>
+          <p className="text-[15px] font-light leading-relaxed text-[#4A5568]">Sign in or create an account — your toolkit is free.</p>
         </div>
 
         {decodedMessage ? (
-          <div
-            className="mb-6 rounded-[10px] border border-amber-200/80 bg-amber-50 px-4 py-3 text-sm text-amber-900"
-            role="alert"
-          >
+          <div className="mb-6 rounded-[10px] border border-amber-200/80 bg-amber-50 px-4 py-3 text-sm text-amber-900" role="alert">
             {decodedMessage}
           </div>
         ) : null}

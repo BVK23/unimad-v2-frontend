@@ -23,7 +23,6 @@ import Portfolio from "./components/Portfolio";
 import ProfileMenu from "./components/ProfileMenu";
 import ResumeDashboard from "./components/ResumeDashboard";
 import ResumeEditor from "./components/ResumeEditor";
-import Unicoach from "./components/Unicoach";
 import { AdkChatProvider } from "./components/chat/AdkChatProvider";
 import type { UnibotIncomingRequest } from "./components/chat/unibot-incoming-request";
 import CommunityMain from "./components/community/CommunityMain";
@@ -144,8 +143,14 @@ const App: React.FC = () => {
     setCurrentResume(data);
   };
 
+  // Legacy resume editor still passes a plain string; the newer
+  // UnibotIncomingRequest payload is used by LinkedInDashboard via an
+  // adapter below.
   const handleImproveWithAI = (text: string) => {
     setPendingAIRequest({ type: "improve", text });
+  };
+  const handleImproveStructured = (detail: { type: "improve"; text: string; improveType?: string; topicTitle?: string }) => {
+    setPendingAIRequest(detail);
   };
 
   // ... (existing handleSaveResume, handleImproveWithAI)
@@ -244,9 +249,17 @@ const App: React.FC = () => {
             )
           ))}
 
-        {activeTab === "linkedin" && <LinkedInDashboard onImprove={handleImproveWithAI} />}
+        {activeTab === "linkedin" && <LinkedInDashboard onImprove={handleImproveStructured} />}
 
-        {activeTab === "jobs" && <JobsMain onNavigateToStudio={handleNavigateToStudio} />}
+        {activeTab === "jobs" && (
+          <JobsMain
+            onNavigateToStudio={handleNavigateToStudio}
+            activeTab="discovery"
+            onTabChange={() => {}}
+            interviewUrl={{ interviewId: null, view: null, round: null }}
+            onInterviewUrlChange={() => {}}
+          />
+        )}
         {activeTab === "studio" && <StudioMainV2 initialContext={studioContext} />}
 
         {activeTab === "community" && <CommunityMain />}

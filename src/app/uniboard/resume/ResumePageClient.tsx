@@ -189,7 +189,11 @@ export default function ResumePageClient() {
   };
 
   const handleImproveWithAI = (text: string) => {
-    window.dispatchEvent(new CustomEvent("open-unibot", { detail: { text } }));
+    window.dispatchEvent(
+      new CustomEvent("open-unibot", {
+        detail: { type: "improve", text, requestKey: Date.now() },
+      })
+    );
   };
 
   const urlIdLoading = Boolean(urlId && resumeView === "list" && !resumeQuery.isSuccess && !resumeQuery.isError);

@@ -71,7 +71,9 @@ export class StreamingConnectionManager {
       );
 
       if (!response.ok) {
-        throw new Error(`API error: ${response.status} ${response.statusText}`);
+        const errorBody = await response.text().catch(() => "");
+        const detail = errorBody.trim() ? ` ${errorBody.slice(0, 800)}` : "";
+        throw new Error(`API error: ${response.status} ${response.statusText}${detail}`);
       }
 
       this.connectionState = "connected";
@@ -90,9 +92,10 @@ export class StreamingConnectionManager {
         createDebugLog("CONNECTION", "Streaming error", error);
       }
 
-      // Don't create fake error messages - let the UI handle error states
-      // The error will be propagated up to the calling code
       setIsLoading(false);
+      if ((error as Error).name !== "AbortError") {
+        throw error;
+      }
     } finally {
       this.abortController = null;
     }

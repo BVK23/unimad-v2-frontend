@@ -110,11 +110,18 @@ export interface ChatMessage {
   role: "user" | "model";
   text: string;
   timestamp: Date;
-  // Topic / Context Support
+  // Topic / Context Support (improve sub-chats embedded in main transcript)
   isTopic?: boolean;
   topicTitle?: string;
   isExpanded?: boolean;
   messages?: ChatMessage[]; // Nested messages for this topic
+  /** ADK session id for this improve thread (backend sub-session). */
+  subSessionAdkId?: string;
+  /** Set on auto-sent improve/section-review handoffs — excluded from chat title generation. */
+  excludeFromTitleGeneration?: boolean;
+  /** Assistant bubble failed (rate limit, stream error, etc.). */
+  isError?: boolean;
+  errorKind?: "rate_limit" | "generic";
 }
 
 // --- Resume Types ---

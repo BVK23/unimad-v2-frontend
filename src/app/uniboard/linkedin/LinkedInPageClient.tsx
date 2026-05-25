@@ -1,11 +1,25 @@
 "use client";
 
 import LinkedInDashboard from "@/components/LinkedInDashboard";
+import type { UnibotIncomingRequest } from "@/components/chat/unibot-incoming-request";
+import type { GeneratorContext } from "@/types/jobs";
+import { useRouter } from "next/navigation";
 
 export default function LinkedInPageClient() {
-  const handleImproveWithAI = (text: string) => {
-    // Could be wired to ChatSidebar via context in a later iteration
-    console.log("Improve with AI:", text);
+  const router = useRouter();
+
+  const handleImproveWithAI = (detail: Extract<UnibotIncomingRequest, { type: "improve" }>) => {
+    window.dispatchEvent(new CustomEvent("open-unibot", { detail }));
   };
-  return <LinkedInDashboard onImprove={handleImproveWithAI} />;
+
+  const handleNavigateToStudio = (context: GeneratorContext) => {
+    const params = new URLSearchParams();
+    if (context.type) params.set("type", context.type);
+    if (context.jobId) params.set("jobId", context.jobId);
+    if (context.company) params.set("company", context.company);
+    if (context.role) params.set("role", context.role);
+    router.push(`/uniboard/studio?${params.toString()}`);
+  };
+
+  return <LinkedInDashboard onImprove={handleImproveWithAI} onNavigateToStudio={handleNavigateToStudio} />;
 }

@@ -1,5 +1,6 @@
 import React, { useState } from "react";
 import type { ColdEmailAsset } from "@/features/cold-email/types";
+import { htmlToPlainText } from "@/utils/html-to-text";
 import { X, History, Search } from "lucide-react";
 
 interface ColdEmailHistoryModalProps {
@@ -15,7 +16,7 @@ const ColdEmailHistoryModal: React.FC<ColdEmailHistoryModalProps> = ({ onClose, 
 
   const normalizedItems = currentItems.map(item => ({
     ...item,
-    searchable: `${item.company ?? ""} ${item.role ?? ""} ${item.content ?? ""}`.toLowerCase(),
+    searchable: `${item.company ?? ""} ${item.role ?? ""} ${htmlToPlainText(item.content ?? "")}`.toLowerCase(),
     createdLabel: item.created_at ?? "",
   }));
 
@@ -67,7 +68,9 @@ const ColdEmailHistoryModal: React.FC<ColdEmailHistoryModalProps> = ({ onClose, 
                   </div>
                   {item.createdLabel && <span className="text-[11px] text-slate-400">{item.createdLabel}</span>}
                 </div>
-                <p className="text-sm text-slate-800 dark:text-slate-200 line-clamp-2 leading-relaxed">{item.content}</p>
+                <p className="text-sm text-slate-800 dark:text-slate-200 line-clamp-2 leading-relaxed">
+                  {htmlToPlainText(item.content ?? "")}
+                </p>
               </button>
             ))
           ) : (

@@ -1,7 +1,7 @@
 "use server";
 
 import { cookies } from "next/headers";
-import type { BackendJob, JobListResponse, JobSearchParams } from "../types";
+import type { BackendJob, ImportJobFromUrlResponse, JobListResponse, JobSearchParams } from "../types";
 
 // -----------------------------------------------------------------------------
 // Shared helpers (mirrors resume server-actions pattern)
@@ -57,6 +57,22 @@ function buildQueryString(params: Record<string, unknown>): string {
 
   const queryString = searchParams.toString();
   return queryString ? `?${queryString}` : "";
+}
+
+/** Avoid surfacing Django HTML debug pages or other non-JSON error bodies in the UI. */
+function messageFromFailedResponse(status: number, bodyText: string, jsonError?: string): string {
+  const candidate = (jsonError ?? bodyText).trim();
+  const lower = candidate.toLowerCase();
+  const looksLikeHtml =
+    lower.startsWith("<!doctype") || lower.startsWith("<html") || lower.includes("<title>") || lower.includes("attributeerror at /api");
+
+  if (looksLikeHtml || !candidate) {
+    return status >= 500
+      ? "Import failed due to a server error. Please try again in a moment."
+      : "Failed to import job from URL. Please try again.";
+  }
+
+  return candidate.length > 400 ? `${candidate.slice(0, 400)}…` : candidate;
 }
 
 // -----------------------------------------------------------------------------
@@ -168,6 +184,42 @@ export async function getSavedJobs(page = 1): Promise<JobListResponse> {
   }
 
   return data;
+}
+
+/**
+ * POST /api/jobs/import-from-url/
+ * Extracts job data from a public posting URL and creates/links a draft application.
+ */
+export async function importJobFromUrl(url: string): Promise<ImportJobFromUrlResponse> {
+  const trimmed = url.trim();
+  if (!trimmed) {
+    throw new Error("Paste a job posting URL to continue.");
+  }
+
+  const res = await authedFetch("/api/jobs/import-from-url/", {
+    method: "POST",
+    body: JSON.stringify({ url: trimmed }),
+  });
+
+  const contentType = res.headers.get("content-type") ?? "";
+  const bodyText = await res.text();
+
+  let data: ImportJobFromUrlResponse & { error?: string; code?: string };
+  if (contentType.includes("application/json")) {
+    try {
+      data = JSON.parse(bodyText) as ImportJobFromUrlResponse & { error?: string; code?: string };
+    } catch {
+      data = { error: bodyText } as ImportJobFromUrlResponse & { error?: string };
+    }
+  } else {
+    data = { error: bodyText } as ImportJobFromUrlResponse & { error?: string };
+  }
+
+  if (!res.ok) {
+    throw new Error(messageFromFailedResponse(res.status, bodyText, data.error));
+  }
+
+  return data as ImportJobFromUrlResponse;
 }
 
 export async function getRecentJobs(limit = 10): Promise<JobListResponse> {

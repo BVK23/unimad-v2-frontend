@@ -18,6 +18,8 @@ export interface BackendJob {
   salary_currency: string | null;
   apply_url: string | null;
   posted_at: string | null;
+  fetched_at?: string | null;
+  source_url?: string | null;
   about_company: string | null;
   is_saved: boolean;
   // Optional fields used in v1 for analytics / applications
@@ -54,4 +56,27 @@ export interface JobSearchParams {
   experience_level?: string;
   page?: number;
   page_size?: number;
+}
+
+export type JobImportMatchCode = "new" | "exact" | "similar";
+
+export interface ImportJobFromUrlApplication {
+  application_id: string;
+  status: string;
+  role: string;
+  company: string;
+  job_description: string;
+  applied_date: string | null;
+  interview_date: string | null;
+  job_id?: string;
+  assets?: Record<string, unknown>;
+}
+
+export interface ImportJobFromUrlResponse {
+  message: string;
+  code: JobImportMatchCode;
+  job_created: boolean;
+  application_created: boolean;
+  job: BackendJob;
+  application: ImportJobFromUrlApplication;
 }

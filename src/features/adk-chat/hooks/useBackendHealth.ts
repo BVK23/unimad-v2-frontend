@@ -1,6 +1,7 @@
 "use client";
 
 import { useState, useEffect, useCallback } from "react";
+import { isNonRetryableStreamError } from "../format-stream-error";
 
 export interface UseBackendHealthReturn {
   isBackendReady: boolean;
@@ -30,6 +31,9 @@ export function useBackendHealth(): UseBackendHealthReturn {
           return await fn();
         } catch (error) {
           lastError = error as Error;
+          if (isNonRetryableStreamError(error)) {
+            throw error;
+          }
           const delay = Math.min(1000 * Math.pow(2, attempt), 5000);
           await new Promise(resolve => setTimeout(resolve, delay));
         }

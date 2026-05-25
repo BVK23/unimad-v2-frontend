@@ -1,13 +1,14 @@
 import React, { useState } from "react";
-import { X, Calendar, History, Search, Trash2, Filter } from "lucide-react";
+import { X, Search, Filter } from "lucide-react";
+import LinkedInPostListCard, { LinkedInListItem } from "./LinkedInPostListCard";
 
 interface AllPostsModalProps {
   onClose: () => void;
   initialTab: "scheduled" | "history";
-  scheduledPosts: any[];
-  historyPosts: any[];
-  onPostClick: (post: any, type: "scheduled" | "history") => void;
-  onDeletePost?: (id: string, type: "scheduled" | "history") => void;
+  scheduledPosts: LinkedInListItem[];
+  historyPosts: Array<LinkedInListItem & { status?: string; stats?: string }>;
+  onPostClick: (post: LinkedInListItem, type: "scheduled" | "history") => void;
+  onDeletePost?: (id: string | number, type: "scheduled" | "history") => void;
 }
 
 const AllPostsModal: React.FC<AllPostsModalProps> = ({ onClose, initialTab, scheduledPosts, historyPosts, onPostClick, onDeletePost }) => {
@@ -16,48 +17,63 @@ const AllPostsModal: React.FC<AllPostsModalProps> = ({ onClose, initialTab, sche
   const [filterStatus, setFilterStatus] = useState<"All" | "Posted" | "Draft">("All");
 
   const currentPosts = activeTab === "scheduled" ? scheduledPosts : historyPosts;
+
   const filteredPosts = currentPosts.filter(post => {
     const matchesSearch = post.content.toLowerCase().includes(searchQuery.toLowerCase());
-    const matchesStatus = filterStatus === "All" || post.status === filterStatus;
+    if (activeTab !== "history") return matchesSearch;
+    const historyPost = post as LinkedInListItem & { status?: string };
+    const matchesStatus = filterStatus === "All" || historyPost.status === filterStatus;
     return matchesSearch && matchesStatus;
   });
 
   return (
-    <div className="fixed inset-0 bg-black/60 backdrop-blur-sm z-50 flex items-center justify-center p-4 animate-in fade-in duration-200">
-      <div className="bg-white dark:bg-[#1a1a1a] w-full max-w-3xl rounded-2xl shadow-2xl overflow-hidden flex flex-col border border-slate-200 dark:border-slate-800 animate-in zoom-in-95 duration-200 h-[80vh]">
-        {/* Header */}
-        <div className="p-6 border-b border-slate-100 dark:border-slate-800 flex justify-between items-center bg-white dark:bg-[#1a1a1a]">
-          <div className="flex items-center gap-4">
-            <h2 className="text-xl font-semibold text-slate-900 dark:text-white font-sans tracking-tight">All Posts</h2>
-            <div className="flex bg-slate-100 dark:bg-slate-800 rounded-lg p-0.5">
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 p-4 backdrop-blur-sm animate-in fade-in duration-200">
+      <div className="flex h-[80vh] w-full max-w-3xl flex-col overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-2xl animate-in zoom-in-95 duration-200 dark:border-slate-800 dark:bg-[#1a1a1a]">
+        <div className="flex items-center justify-between border-b border-slate-100 p-6 dark:border-slate-800">
+          <div className="flex min-w-0 flex-wrap items-center gap-3">
+            <h2 className="text-xl font-semibold tracking-tight text-slate-900 dark:text-white">All Posts</h2>
+            <div className="inline-flex rounded-full bg-slate-100 p-0.5 dark:bg-slate-900">
               <button
+                type="button"
                 onClick={() => setActiveTab("scheduled")}
-                className={`px-4 py-1.5 rounded-md text-xs font-medium transition-all flex items-center gap-2 ${activeTab === "scheduled" ? "bg-white dark:bg-slate-700 text-blue-600 shadow-sm" : "text-slate-500 hover:text-slate-700"}`}
+                className={`rounded-full px-3 py-1.5 text-xs font-medium transition-all ${
+                  activeTab === "scheduled"
+                    ? "bg-white text-slate-900 shadow-sm dark:bg-slate-800 dark:text-white"
+                    : "text-slate-500 hover:text-slate-700 dark:text-slate-400"
+                }`}
               >
-                <Calendar size={12} /> Scheduled ({scheduledPosts.length})
+                Scheduled ({scheduledPosts.length})
               </button>
               <button
+                type="button"
                 onClick={() => setActiveTab("history")}
-                className={`px-4 py-1.5 rounded-md text-xs font-medium transition-all flex items-center gap-2 ${activeTab === "history" ? "bg-white dark:bg-slate-700 text-blue-600 shadow-sm" : "text-slate-500 hover:text-slate-700"}`}
+                className={`rounded-full px-3 py-1.5 text-xs font-medium transition-all ${
+                  activeTab === "history"
+                    ? "bg-white text-slate-900 shadow-sm dark:bg-slate-800 dark:text-white"
+                    : "text-slate-500 hover:text-slate-700 dark:text-slate-400"
+                }`}
               >
-                <History size={12} /> History ({historyPosts.length})
+                History ({historyPosts.length})
               </button>
             </div>
           </div>
-          <button onClick={onClose} className="p-2 hover:bg-slate-100 dark:hover:bg-slate-800 rounded-full transition-colors">
-            <X size={20} className="text-slate-400 hover:text-slate-600" />
+          <button
+            type="button"
+            onClick={onClose}
+            className="shrink-0 rounded-full p-2 transition-colors hover:bg-slate-100 dark:hover:bg-slate-800"
+          >
+            <X size={20} className="text-slate-400" />
           </button>
         </div>
 
-        {/* Search & Filters */}
-        <div className="p-4 border-b border-slate-100 dark:border-slate-800 bg-white dark:bg-[#1a1a1a] flex gap-3">
+        <div className="flex gap-3 border-b border-slate-100 p-4 dark:border-slate-800">
           <div className="relative flex-1">
             <Search size={16} className="absolute left-4 top-1/2 -translate-y-1/2 text-slate-400" />
             <input
               value={searchQuery}
               onChange={e => setSearchQuery(e.target.value)}
               placeholder="Search posts..."
-              className="w-full bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-xl pl-11 pr-4 py-2.5 text-sm outline-none focus:ring-2 focus:ring-blue-500/20 font-medium"
+              className="w-full rounded-xl border border-slate-200 bg-slate-50 py-2.5 pl-11 pr-4 text-sm font-medium outline-none focus:ring-2 focus:ring-blue-500/20 dark:border-slate-700 dark:bg-slate-900"
             />
           </div>
           {activeTab === "history" && (
@@ -65,8 +81,8 @@ const AllPostsModal: React.FC<AllPostsModalProps> = ({ onClose, initialTab, sche
               <Filter size={14} className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" />
               <select
                 value={filterStatus}
-                onChange={e => setFilterStatus(e.target.value as any)}
-                className="w-full h-full bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-xl pl-8 pr-4 py-2.5 text-sm outline-none focus:ring-2 focus:ring-blue-500/20 font-medium appearance-none cursor-pointer"
+                onChange={e => setFilterStatus(e.target.value as "All" | "Posted" | "Draft")}
+                className="h-full w-full cursor-pointer appearance-none rounded-xl border border-slate-200 bg-slate-50 py-2.5 pl-8 pr-4 text-sm font-medium outline-none focus:ring-2 focus:ring-blue-500/20 dark:border-slate-700 dark:bg-slate-900"
               >
                 <option value="All">All Status</option>
                 <option value="Posted">Posted</option>
@@ -76,47 +92,35 @@ const AllPostsModal: React.FC<AllPostsModalProps> = ({ onClose, initialTab, sche
           )}
         </div>
 
-        {/* List */}
-        <div className="flex-1 overflow-y-auto p-4 space-y-3 bg-slate-50/30 dark:bg-[#111]">
+        <div className="flex-1 space-y-3 overflow-y-auto bg-slate-50/30 p-4 dark:bg-[#111]">
           {filteredPosts.length > 0 ? (
-            filteredPosts.map(post => (
-              <div
-                key={post.id}
-                onClick={() => onPostClick(post, activeTab)}
-                className="p-4 bg-white dark:bg-[#1a1a1a] rounded-xl border border-slate-200 dark:border-slate-800 hover:border-blue-500 transition-all cursor-pointer group shadow-sm hover:shadow-md"
-              >
-                <p className="text-sm text-slate-800 dark:text-slate-200 line-clamp-2 mb-3 leading-relaxed">"{post.content}"</p>
-                <div className="flex items-center justify-between text-xs border-t border-slate-100 dark:border-slate-800 pt-3">
-                  <div className="flex items-center gap-2 text-slate-500">
-                    {activeTab === "scheduled" ? <Calendar size={12} /> : <History size={12} />}
-                    <span className="font-medium">{post.date}</span>
-                    {activeTab === "history" && post.status && (
-                      <span
-                        className={`px-2 py-0.5 rounded-full text-[10px] font-semibold tracking-wide ml-2 ${post.status === "Posted" ? "bg-green-100 text-green-700 dark:bg-green-900/30 dark:text-green-400" : "bg-amber-100 text-amber-700 dark:bg-amber-900/30 dark:text-amber-400"}`}
-                      >
-                        {post.status.toUpperCase()}
-                      </span>
-                    )}
-                  </div>
-                  <div className="flex items-center gap-3 text-slate-500">
-                    {activeTab === "history" && <span>{post.stats}</span>}
-                    <button
-                      onClick={e => {
-                        e.stopPropagation();
-                        onDeletePost?.(post.id, activeTab);
-                      }}
-                      className="p-1 hover:text-red-500 hover:bg-red-50 dark:hover:bg-red-900/20 rounded transition-colors ml-2"
-                      title="Delete post"
-                    >
-                      <Trash2 size={14} />
-                    </button>
-                  </div>
+            filteredPosts.map(post => {
+              const historyPost = post as LinkedInListItem & { status?: string; stats?: string };
+              return (
+                <div key={post.id}>
+                  <LinkedInPostListCard
+                    post={{
+                      ...post,
+                      date: activeTab === "history" && historyPost.status ? `${post.date} · ${historyPost.status}` : post.date,
+                    }}
+                    onClick={() => onPostClick(post, activeTab)}
+                    onDelete={onDeletePost ? id => onDeletePost(id, activeTab) : undefined}
+                  />
+                  {activeTab === "history" && historyPost.stats && (
+                    <p className="mt-1 px-1 text-[10px] text-slate-400">{historyPost.stats}</p>
+                  )}
                 </div>
-              </div>
-            ))
+              );
+            })
           ) : (
-            <div className="flex flex-col items-center justify-center h-48 text-slate-400">
-              <p>No posts found matching "{searchQuery}"</p>
+            <div className="flex h-48 flex-col items-center justify-center text-slate-400">
+              <p className="text-sm">
+                {searchQuery
+                  ? `No matches for "${searchQuery}"`
+                  : activeTab === "scheduled"
+                    ? "No scheduled posts yet."
+                    : "No history yet."}
+              </p>
             </div>
           )}
         </div>

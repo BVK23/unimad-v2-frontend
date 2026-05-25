@@ -1,6 +1,7 @@
 "use server";
 
 import { cookies } from "next/headers";
+import type { AtsScorePayload, CalculateAtsScoreResult, ResumeAtsCacheResult } from "../api/ats-types";
 
 // ---------------------------------------------------------------------------
 // Helpers
@@ -393,6 +394,104 @@ export async function deleteResume(resumeId: string): Promise<boolean> {
   }
 
   return true;
+}
+
+type AtsApiBody = {
+  error?: string;
+  code?: string;
+  ats_score?: AtsScorePayload | null;
+  resume_id?: string;
+  application_id?: string;
+  role?: string;
+  company?: string;
+  scored_at?: string | null;
+  ats_calc_count?: number;
+  from_cache?: boolean;
+};
+
+function parseAtsMeta(data: AtsApiBody) {
+  return {
+    scored_at: typeof data.scored_at === "string" ? data.scored_at : null,
+    ats_calc_count: typeof data.ats_calc_count === "number" ? data.ats_calc_count : 0,
+    from_cache: Boolean(data.from_cache),
+  };
+}
+
+/**
+ * Cached ATS score for a resume (no LLM). GET `/api/resume/ats-score/?resume_id=`
+ */
+export async function fetchResumeAtsScore(resumeId: string): Promise<ResumeAtsCacheResult> {
+  const trimmed = typeof resumeId === "string" ? resumeId.trim() : "";
+  if (!trimmed) {
+    return { ok: false, error: "resume_id is required", status: 400 };
+  }
+
+  const res = await authedFetch(`/api/resume/ats-score/?resume_id=${encodeURIComponent(trimmed)}`, {
+    method: "GET",
+  });
+
+  const data = (await res.json().catch(() => ({}))) as AtsApiBody;
+
+  if (!res.ok) {
+    const err = typeof data.error === "string" && data.error.trim() ? data.error : "Failed to load ATS score";
+    return { ok: false, error: err, status: res.status };
+  }
+
+  const ats_score = data.ats_score && typeof data.ats_score === "object" ? (data.ats_score as AtsScorePayload) : null;
+
+  return {
+    ok: true,
+    ats_score,
+    resume_id: typeof data.resume_id === "string" ? data.resume_id : trimmed,
+    ...parseAtsMeta(data),
+  };
+}
+
+/**
+ * ATS compatibility score for a resume vs its linked job description.
+ *
+ * POST `/api/resume/ats-score/` with `{ resume_id, force? }`.
+ */
+export async function calculateResumeAtsScore(resumeId: string, options?: { force?: boolean }): Promise<CalculateAtsScoreResult> {
+  const trimmed = typeof resumeId === "string" ? resumeId.trim() : "";
+  if (!trimmed) {
+    return { ok: false, error: "resume_id is required", status: 400 };
+  }
+
+  const res = await authedFetch("/api/resume/ats-score/", {
+    method: "POST",
+    body: JSON.stringify({
+      resume_id: trimmed,
+      force: Boolean(options?.force),
+      recalculate: Boolean(options?.force),
+    }),
+  });
+
+  const data = (await res.json().catch(() => ({}))) as AtsApiBody;
+
+  if (!res.ok) {
+    const err = typeof data.error === "string" && data.error.trim() ? data.error : "Failed to calculate ATS score";
+    return {
+      ok: false,
+      error: err,
+      status: res.status,
+      code: typeof data.code === "string" ? data.code : undefined,
+    };
+  }
+
+  if (!data.ats_score || typeof data.ats_score !== "object") {
+    return { ok: false, error: "Invalid ATS score response from server", status: 502 };
+  }
+
+  return {
+    ok: true,
+    ats_score: data.ats_score,
+    resume_id: typeof data.resume_id === "string" ? data.resume_id : trimmed,
+    application_id: data.application_id != null ? String(data.application_id) : undefined,
+    role: typeof data.role === "string" ? data.role : undefined,
+    company: typeof data.company === "string" ? data.company : undefined,
+    ...parseAtsMeta(data),
+  };
 }
 
 // ---------------------------------------------------------------------------

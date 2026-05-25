@@ -90,8 +90,20 @@ function handoffLabelForTarget(targetRaw: string): string {
   switch (id) {
     case "resume_agent":
       return "Pulling your resume together…";
-    case "summary_agent":
-      return "Focusing on your professional summary…";
+    case "linkedin_agent":
+      return "Opening your LinkedIn profile context…";
+    case "profile_pic_agent":
+      return "Reviewing your profile photo…";
+    case "cover_pic_agent":
+      return "Reviewing your cover image…";
+    case "headline_agent":
+      return "Working on your LinkedIn headline…";
+    case "about_agent":
+      return "Working on your About section…";
+    case "linkedin_experience_agent":
+      return "Reviewing your LinkedIn experience…";
+    case "linkedin_skills_agent":
+      return "Tuning your LinkedIn skills…";
     case "experience_agent":
       return "Going deeper on your work experience…";
     case "education_agent":
@@ -100,6 +112,12 @@ function handoffLabelForTarget(targetRaw: string): string {
       return "Polishing how your skills come across…";
     case "projects_agent":
       return "Highlighting your projects…";
+    case "summary_agent":
+      return "Focusing on your professional summary…";
+    case "connection_agent":
+      return "Drafting your connection request…";
+    case "comment_agent":
+      return "Crafting your comment…";
     case "unibot":
       return "Continuing with your request…";
     default:
@@ -127,14 +145,32 @@ function humanizeUnknownToolName(name: string): string {
     .replace(/\b\w/g, c => c.toUpperCase());
 }
 
+function linkedInSectionLabel(sectionName: string): string {
+  const s = sectionName.trim().toLowerCase();
+  if (s.includes("headline")) return "your LinkedIn headline";
+  if (s.includes("about")) return "your About section";
+  if (s.includes("skill")) return "your LinkedIn skills";
+  if (s.includes("exp")) return "your LinkedIn experience";
+  if (s === "pic" || s.includes("profile_pic") || s.includes("picture")) return "your profile photo";
+  if (s.includes("cover")) return "your cover image";
+  if (s.includes("connection") || s.includes("connect")) return "your connection request";
+  if (s.includes("comment")) return "your comment draft";
+  return "your LinkedIn profile";
+}
+
 function sectionLabel(sectionName: string): string {
   const s = sectionName.trim().toLowerCase();
+  if (s.includes("headline")) return linkedInSectionLabel(s);
+  if (s.includes("about") && !s.includes("resume")) return linkedInSectionLabel(s);
   if (s.includes("skill")) return "your skills";
   if (s.includes("exp")) return "your experience";
   if (s.includes("project")) return "your projects";
   if (s.includes("edu")) return "your education";
   if (s.includes("summary") || s === "profile") return "your summary";
   if (s.includes("cert")) return "your certifications";
+  if (s.includes("connection") || s.includes("comment") || s === "pic" || s.includes("cover")) {
+    return linkedInSectionLabel(s);
+  }
   return "your resume";
 }
 
@@ -145,8 +181,22 @@ export function labelForAgent(author: string): string {
       return "Working on your request…";
     case "resume_agent":
       return "Coordinating your resume…";
+    case "linkedin_agent":
+      return "Coordinating your LinkedIn profile…";
+    case "profile_pic_agent":
+      return "Reviewing your profile photo…";
+    case "cover_pic_agent":
+      return "Reviewing your cover image…";
+    case "headline_agent":
+      return "Improving your LinkedIn headline…";
+    case "about_agent":
+      return "Improving your About section…";
     case "summary_agent":
       return "Shaping your professional summary…";
+    case "linkedin_experience_agent":
+      return "Improving your LinkedIn experience…";
+    case "linkedin_skills_agent":
+      return "Improving your LinkedIn skills…";
     case "experience_agent":
       return "Refining your work history…";
     case "education_agent":
@@ -155,6 +205,10 @@ export function labelForAgent(author: string): string {
       return "Tuning your skills section…";
     case "projects_agent":
       return "Reviewing your projects…";
+    case "connection_agent":
+      return "Working on your connection request…";
+    case "comment_agent":
+      return "Drafting your LinkedIn comment…";
     default:
       if (!a) return "Thinking…";
       return "Making progress on your request…";
@@ -174,6 +228,10 @@ export function labelForToolCall(name: string, args?: Record<string, unknown>): 
       return "Reviewing your resume…";
     case "get_section":
       return `Reviewing ${sectionLabel(readSectionNameArg(args))}…`;
+    case "get_linkedin":
+      return "Reviewing your LinkedIn profile…";
+    case "get_linkedin_section":
+      return `Reviewing ${linkedInSectionLabel(readSectionNameArg(args))}…`;
     case "get_experiences":
       return "Reviewing your experience…";
     case "get_experience_by_id":

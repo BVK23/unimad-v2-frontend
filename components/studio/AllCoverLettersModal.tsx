@@ -1,5 +1,6 @@
 import React, { useState } from "react";
 import type { CoverLetterAsset } from "@/features/cover-letter/types";
+import { htmlToPlainText } from "@/utils/html-to-text";
 import { X, History, Search } from "lucide-react";
 
 interface AllCoverLettersModalProps {
@@ -17,7 +18,7 @@ const AllCoverLettersModal: React.FC<AllCoverLettersModalProps> = ({ onClose, hi
   const filteredItems = currentItems.filter(item => {
     const company = (item.company || "").toLowerCase();
     const role = (item.role || "").toLowerCase();
-    const content = (item.content || "").toLowerCase();
+    const content = htmlToPlainText(item.content || "").toLowerCase();
     return company.includes(normalized) || role.includes(normalized) || content.includes(normalized);
   });
 
@@ -70,7 +71,9 @@ const AllCoverLettersModal: React.FC<AllCoverLettersModalProps> = ({ onClose, hi
                     <span>{item.created_at ? new Date(item.created_at).toLocaleDateString() : "—"}</span>
                   </div>
                 </div>
-                <p className="text-xs text-slate-700 dark:text-slate-300 line-clamp-2 leading-relaxed">{item.content}</p>
+                <p className="text-xs text-slate-700 dark:text-slate-300 line-clamp-2 leading-relaxed">
+                  {htmlToPlainText(item.content || "")}
+                </p>
               </button>
             ))
           ) : (

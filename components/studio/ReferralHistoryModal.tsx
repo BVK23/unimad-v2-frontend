@@ -1,5 +1,6 @@
 import React, { useState } from "react";
 import type { ReferralAsset } from "@/features/referral/types";
+import { htmlToPlainText } from "@/utils/html-to-text";
 import { X, History, Search } from "lucide-react";
 
 interface ReferralHistoryModalProps {
@@ -15,7 +16,7 @@ const ReferralHistoryModal: React.FC<ReferralHistoryModalProps> = ({ onClose, hi
 
   const normalizedItems = currentItems.map(item => ({
     ...item,
-    searchable: `${item.company ?? ""} ${item.role ?? ""} ${item.conname ?? ""} ${item.content ?? ""}`.toLowerCase(),
+    searchable: `${item.company ?? ""} ${item.role ?? ""} ${item.conname ?? ""} ${htmlToPlainText(item.content ?? "")}`.toLowerCase(),
     createdLabel: item.created_at ?? "",
   }));
 
@@ -66,7 +67,9 @@ const ReferralHistoryModal: React.FC<ReferralHistoryModalProps> = ({ onClose, hi
                   </div>
                   {item.created_at && <span className="text-[11px] text-slate-400">{item.created_at}</span>}
                 </div>
-                <p className="text-sm text-slate-800 dark:text-slate-200 line-clamp-2 leading-relaxed">{item.content}</p>
+                <p className="text-sm text-slate-800 dark:text-slate-200 line-clamp-2 leading-relaxed">
+                  {htmlToPlainText(item.content ?? "")}
+                </p>
               </button>
             ))
           ) : (

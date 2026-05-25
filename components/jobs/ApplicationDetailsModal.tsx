@@ -2,15 +2,23 @@
 
 import React, { useState, useEffect } from "react";
 import type { Application, ApplicationStatus, UpdateApplicationInput } from "@/features/application-tracker/types";
-import { X, FileText, ExternalLink, Pencil } from "lucide-react";
+import { X, FileText, ExternalLink, Pencil, ChevronDown, CheckCircle2 } from "lucide-react";
 
 const STATUS_OPTIONS: { value: ApplicationStatus; label: string }[] = [
   { value: "draft", label: "Draft" },
   { value: "applied", label: "Applied" },
   { value: "interviewing", label: "Interviewing" },
-  { value: "offered", label: "Offered" },
+  { value: "offered", label: "Offer" },
   { value: "rejected", label: "Rejected" },
 ];
+
+const statusColors: Record<ApplicationStatus, string> = {
+  draft: "bg-slate-200 text-slate-700 dark:bg-slate-700 dark:text-slate-300",
+  applied: "bg-slate-500 text-white",
+  interviewing: "bg-blue-500 text-white",
+  offered: "bg-green-500 text-white",
+  rejected: "bg-red-500 text-white",
+};
 
 interface ApplicationDetailsModalProps {
   isOpen: boolean;
@@ -19,6 +27,7 @@ interface ApplicationDetailsModalProps {
   setMode: (m: "view" | "edit") => void;
   application: Application | null;
   onUpdate: (applicationId: string, data: UpdateApplicationInput) => Promise<void>;
+  onStatusChange: (applicationId: string, status: ApplicationStatus) => Promise<void>;
   onPrepare: (application: Application) => void;
 }
 
@@ -29,6 +38,7 @@ const ApplicationDetailsModal: React.FC<ApplicationDetailsModalProps> = ({
   setMode,
   application,
   onUpdate,
+  onStatusChange,
   onPrepare,
 }) => {
   const [role, setRole] = useState("");
@@ -38,6 +48,8 @@ const ApplicationDetailsModal: React.FC<ApplicationDetailsModalProps> = ({
   const [appliedDate, setAppliedDate] = useState("");
   const [interviewDate, setInterviewDate] = useState("");
   const [saving, setSaving] = useState(false);
+  const [isStatusDropdownOpen, setIsStatusDropdownOpen] = useState(false);
+  const [statusUpdating, setStatusUpdating] = useState(false);
 
   useEffect(() => {
     if (application) {
@@ -51,6 +63,9 @@ const ApplicationDetailsModal: React.FC<ApplicationDetailsModalProps> = ({
   }, [application]);
 
   if (!isOpen || !application) return null;
+
+  const isManualEntry = !application.job_id;
+  const currentStatusLabel = STATUS_OPTIONS.find(o => o.value === application.status)?.label ?? application.status;
 
   const handleSave = async () => {
     setSaving(true);
@@ -69,64 +84,88 @@ const ApplicationDetailsModal: React.FC<ApplicationDetailsModalProps> = ({
     }
   };
 
-  const hasLocationOrDate = Boolean(application.location || application.applied_date);
+  const handleStatusSelect = async (next: ApplicationStatus) => {
+    if (next === application.status) {
+      setIsStatusDropdownOpen(false);
+      return;
+    }
+    setStatusUpdating(true);
+    try {
+      await onStatusChange(application.application_id, next);
+      setStatus(next);
+      setIsStatusDropdownOpen(false);
+    } finally {
+      setStatusUpdating(false);
+    }
+  };
+
+  const formatShort = (iso: string) => new Intl.DateTimeFormat("en-US", { month: "short", day: "numeric" }).format(new Date(iso));
+
+  const dateLabel = application.applied_date
+    ? application.applied_date
+    : application.posted_at
+      ? formatShort(application.posted_at)
+      : application.created_at
+        ? formatShort(application.created_at)
+        : null;
+  const hasLocationOrDate = Boolean(application.location?.trim() || dateLabel);
   const applyUrl = application.apply_url;
 
   if (mode === "edit") {
     return (
-      <div className="fixed inset-0 bg-black/50 backdrop-blur-sm z-50 flex items-center justify-center p-4 animate-in fade-in duration-200">
-        <div className="bg-white dark:bg-[#1a1a1a] w-full max-w-2xl max-h-[90vh] rounded-2xl shadow-2xl border border-slate-200 dark:border-slate-800 flex flex-col">
-          <div className="p-6 border-b border-slate-200 dark:border-slate-800 flex items-center justify-between shrink-0">
+      <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4 backdrop-blur-sm animate-in fade-in duration-200">
+        <div className="flex max-h-[90vh] w-full max-w-2xl flex-col rounded-2xl border border-slate-200 bg-white shadow-2xl dark:border-slate-800 dark:bg-[#1a1a1a]">
+          <div className="flex shrink-0 items-center justify-between border-b border-slate-200 p-6 dark:border-slate-800">
             <h2 className="text-xl font-semibold text-slate-900 dark:text-white">Edit application</h2>
             <button
               type="button"
               onClick={() => setMode("view")}
-              className="p-2 hover:bg-slate-100 dark:hover:bg-slate-800 rounded-full text-slate-500"
+              className="rounded-full p-2 text-slate-500 hover:bg-slate-100 dark:hover:bg-slate-800"
             >
               <X size={20} />
             </button>
           </div>
 
-          <div className="p-6 overflow-y-auto flex-1 space-y-4">
+          <div className="flex-1 space-y-4 overflow-y-auto p-6">
             <div className="grid grid-cols-2 gap-4">
               <div>
-                <label className="block text-xs font-medium text-slate-500 dark:text-slate-400 mb-1">Role</label>
+                <label className="mb-1 block text-xs font-medium text-slate-500 dark:text-slate-400">Role</label>
                 <input
                   value={role}
                   onChange={e => setRole(e.target.value)}
-                  className="w-full px-3 py-2 rounded-lg border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 text-slate-900 dark:text-white text-sm"
+                  className="w-full rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm text-slate-900 dark:border-slate-700 dark:bg-slate-900 dark:text-white"
                 />
               </div>
               <div>
-                <label className="block text-xs font-medium text-slate-500 dark:text-slate-400 mb-1">Company</label>
+                <label className="mb-1 block text-xs font-medium text-slate-500 dark:text-slate-400">Company</label>
                 <input
                   value={company}
                   onChange={e => setCompany(e.target.value)}
-                  className="w-full px-3 py-2 rounded-lg border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 text-slate-900 dark:text-white text-sm"
+                  className="w-full rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm text-slate-900 dark:border-slate-700 dark:bg-slate-900 dark:text-white"
                 />
               </div>
             </div>
 
             <div>
-              <label className="block text-xs font-medium text-slate-500 dark:text-slate-400 mb-1">Job description</label>
+              <label className="mb-1 block text-xs font-medium text-slate-500 dark:text-slate-400">Job description</label>
               <textarea
                 value={jobDescription}
                 onChange={e => setJobDescription(e.target.value)}
                 rows={5}
-                className="w-full px-3 py-2 rounded-lg border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 text-slate-900 dark:text-white text-sm resize-none"
+                className="w-full resize-none rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm text-slate-900 dark:border-slate-700 dark:bg-slate-900 dark:text-white"
               />
             </div>
 
             <div>
-              <label className="block text-xs font-medium text-slate-500 dark:text-slate-400 mb-1">Status</label>
+              <label className="mb-1 block text-xs font-medium text-slate-500 dark:text-slate-400">Status</label>
               <div className="flex flex-wrap gap-1.5">
                 {STATUS_OPTIONS.map(opt => (
                   <button
                     key={opt.value}
                     type="button"
                     onClick={() => setStatus(opt.value)}
-                    className={`px-2.5 py-1 rounded-md text-xs font-medium ${
-                      status === opt.value ? "bg-blue-600 text-white" : "bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-400"
+                    className={`rounded-md px-2.5 py-1 text-xs font-medium ${
+                      status === opt.value ? "bg-brand-600 text-white" : "bg-slate-100 text-slate-600 dark:bg-slate-800 dark:text-slate-400"
                     }`}
                   >
                     {opt.label}
@@ -137,31 +176,31 @@ const ApplicationDetailsModal: React.FC<ApplicationDetailsModalProps> = ({
 
             <div className="grid grid-cols-2 gap-4">
               <div>
-                <label className="block text-xs font-medium text-slate-500 dark:text-slate-400 mb-1">Applied date</label>
+                <label className="mb-1 block text-xs font-medium text-slate-500 dark:text-slate-400">Applied date</label>
                 <input
                   type="date"
                   value={appliedDate}
                   onChange={e => setAppliedDate(e.target.value)}
-                  className="w-full px-3 py-2 rounded-lg border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 text-slate-900 dark:text-white text-sm"
+                  className="w-full rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm dark:border-slate-700 dark:bg-slate-900 dark:text-white"
                 />
               </div>
               <div>
-                <label className="block text-xs font-medium text-slate-500 dark:text-slate-400 mb-1">Interview date</label>
+                <label className="mb-1 block text-xs font-medium text-slate-500 dark:text-slate-400">Interview date</label>
                 <input
                   type="date"
                   value={interviewDate}
                   onChange={e => setInterviewDate(e.target.value)}
-                  className="w-full px-3 py-2 rounded-lg border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 text-slate-900 dark:text-white text-sm"
+                  className="w-full rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm dark:border-slate-700 dark:bg-slate-900 dark:text-white"
                 />
               </div>
             </div>
           </div>
 
-          <div className="p-6 border-t border-slate-200 dark:border-slate-800 flex justify-end gap-2 shrink-0">
+          <div className="flex shrink-0 justify-end gap-2 border-t border-slate-200 p-6 dark:border-slate-800">
             <button
               type="button"
               onClick={() => setMode("view")}
-              className="px-4 py-2 bg-slate-100 dark:bg-slate-800 text-slate-700 dark:text-slate-300 font-medium rounded-lg"
+              className="rounded-lg bg-slate-100 px-4 py-2 font-medium text-slate-700 dark:bg-slate-800 dark:text-slate-300"
             >
               Cancel
             </button>
@@ -169,7 +208,7 @@ const ApplicationDetailsModal: React.FC<ApplicationDetailsModalProps> = ({
               type="button"
               onClick={handleSave}
               disabled={saving}
-              className="px-4 py-2 bg-blue-600 text-white font-medium rounded-lg hover:bg-blue-700 disabled:opacity-50"
+              className="rounded-lg bg-brand-600 px-4 py-2 font-medium text-white hover:bg-brand-700 disabled:opacity-50"
             >
               {saving ? "Saving…" : "Save"}
             </button>
@@ -180,98 +219,118 @@ const ApplicationDetailsModal: React.FC<ApplicationDetailsModalProps> = ({
   }
 
   return (
-    <div className="fixed inset-0 bg-black/50 backdrop-blur-sm z-50 flex items-center justify-center p-4 animate-in fade-in duration-200">
-      <div className="bg-white dark:bg-[#1a1a1a] w-full max-w-3xl max-h-[90vh] rounded-3xl shadow-2xl overflow-hidden flex flex-col border border-slate-200 dark:border-slate-800 animate-in zoom-in-95 duration-200">
-        {/* Header – Role, Company, Location, Application date (hide when no data) */}
-        <div className="p-6 border-b border-slate-100 dark:border-slate-800 flex justify-between items-start bg-slate-50/50 dark:bg-slate-900/50">
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4 backdrop-blur-sm animate-in fade-in duration-200">
+      <div className="flex max-h-[90vh] w-full max-w-3xl flex-col overflow-hidden rounded-3xl border border-slate-200 bg-white shadow-2xl dark:border-slate-800 dark:bg-[#1a1a1a] animate-in zoom-in-95 duration-200">
+        <div className="flex items-start justify-between border-b border-slate-100 bg-slate-50/50 p-6 dark:border-slate-800 dark:bg-slate-900/50">
           <div className="flex gap-4">
-            <div className="w-16 h-16 rounded-2xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 flex items-center justify-center p-3 shadow-sm overflow-hidden">
-              <div className="w-full h-full rounded-xl bg-gradient-to-br from-blue-500 via-purple-500 to-pink-500 flex items-center justify-center">
-                <span className="text-white font-bold text-2xl">{application.company?.charAt(0)?.toUpperCase() || "?"}</span>
+            <div className="flex h-16 w-16 items-center justify-center overflow-hidden rounded-2xl border border-slate-200 bg-white p-3 shadow-sm dark:border-slate-800 dark:bg-slate-900">
+              <div className="flex h-full w-full items-center justify-center rounded-xl bg-gradient-to-br from-blue-500 via-purple-500 to-pink-500">
+                <span className="text-2xl font-bold text-white">{application.company?.charAt(0)?.toUpperCase() || "?"}</span>
               </div>
             </div>
             <div>
-              <h2 className="text-2xl font-semibold text-slate-900 dark:text-white mb-1">{application.role}</h2>
-              <div className="flex items-center gap-3 text-sm text-slate-500 dark:text-slate-400 flex-wrap">
+              <h2 className="mb-1 text-2xl font-semibold text-slate-900 dark:text-white">{application.role}</h2>
+              <div className="flex flex-wrap items-center gap-3 text-sm text-slate-500 dark:text-slate-400">
                 <span className="font-medium text-slate-700 dark:text-slate-300">{application.company}</span>
                 {hasLocationOrDate && (
                   <>
-                    <span>•</span>
-                    {application.location && <span className="flex items-center gap-1">{application.location}</span>}
-                    {application.location && application.applied_date && <span>•</span>}
-                    {application.applied_date && <span>{application.applied_date}</span>}
+                    {application.location?.trim() && (
+                      <>
+                        <span>•</span>
+                        <span>{application.location}</span>
+                      </>
+                    )}
+                    {dateLabel && (
+                      <>
+                        <span>•</span>
+                        <span>{dateLabel}</span>
+                      </>
+                    )}
                   </>
                 )}
               </div>
             </div>
           </div>
           <div className="flex items-center gap-2">
-            <button
-              type="button"
-              onClick={() => setMode("edit")}
-              className="p-2 hover:bg-slate-200 dark:hover:bg-slate-800 rounded-full transition-colors text-slate-500"
-              title="Edit"
-            >
-              <Pencil size={20} />
-            </button>
-            <button onClick={onClose} className="p-2 hover:bg-slate-200 dark:hover:bg-slate-800 rounded-full transition-colors">
+            <div className="relative z-50">
+              <button
+                type="button"
+                disabled={statusUpdating}
+                onClick={() => setIsStatusDropdownOpen(!isStatusDropdownOpen)}
+                className={`flex cursor-pointer items-center gap-2 rounded-lg px-3 py-2 text-sm font-medium transition-opacity disabled:opacity-60 ${statusColors[application.status]}`}
+              >
+                {currentStatusLabel} <ChevronDown size={14} />
+              </button>
+              {isStatusDropdownOpen && (
+                <>
+                  <div className="absolute right-0 top-full z-50 mt-2 w-40 overflow-hidden rounded-lg border border-slate-200 bg-white shadow-xl dark:border-slate-700 dark:bg-slate-800">
+                    {STATUS_OPTIONS.map(opt => (
+                      <button
+                        key={opt.value}
+                        type="button"
+                        onClick={() => handleStatusSelect(opt.value)}
+                        className={`w-full px-4 py-3 text-left text-sm font-medium transition-colors hover:bg-slate-50 dark:hover:bg-slate-700 ${
+                          application.status === opt.value
+                            ? "bg-brand-50 text-brand-600 dark:bg-brand-900/20 dark:text-brand-400"
+                            : "text-slate-700 dark:text-slate-200"
+                        }`}
+                      >
+                        {opt.label}
+                      </button>
+                    ))}
+                  </div>
+                  <div className="fixed inset-0 z-40" onClick={() => setIsStatusDropdownOpen(false)} aria-hidden />
+                </>
+              )}
+            </div>
+            {isManualEntry && (
+              <button
+                type="button"
+                onClick={() => setMode("edit")}
+                className="rounded-full p-2 text-slate-500 transition-colors hover:bg-slate-200 dark:hover:bg-slate-800"
+                title="Edit application"
+              >
+                <Pencil size={20} />
+              </button>
+            )}
+            <button onClick={onClose} className="rounded-full p-2 transition-colors hover:bg-slate-200 dark:hover:bg-slate-800">
               <X size={24} className="text-slate-500" />
             </button>
           </div>
         </div>
 
-        {/* Content – tags (commented out), About the Role, Requirements (commented out) */}
-        <div className="flex-1 overflow-y-auto p-8 space-y-8">
-          {/* Match %, Visa, Salary – commented out for now, restore when backend supports */}
-          {/* {matchScore >= 90 && (
-            <div className="flex flex-wrap gap-2">
-              <span className="px-3 py-1 bg-green-100 dark:bg-green-900/30 text-green-700 dark:text-green-400 text-xs font-medium rounded-full">
-                {matchScore}% Match
-              </span>
-              {isSponsoring && (
-                <span className="px-3 py-1 bg-gradient-to-b from-amber-200 to-yellow-400 text-yellow-900 text-xs font-semibold rounded-full border border-yellow-300">
-                  Visa Sponsorship
-                </span>
-              )}
-              {salaryRange && (
-                <span className="px-3 py-1 bg-slate-100 dark:bg-slate-800 text-slate-700 dark:text-slate-300 text-xs font-medium rounded-full">
-                  {salaryRange}
-                </span>
-              )}
-            </div>
-          )} */}
-
+        <div className="flex-1 space-y-8 overflow-y-auto p-8">
           <section>
-            <h3 className="font-medium text-lg text-slate-900 dark:text-white mb-3">About the Role</h3>
-            <p className="text-slate-600 dark:text-slate-300 leading-relaxed whitespace-pre-wrap">{application.job_description || "—"}</p>
+            <h3 className="mb-3 text-lg font-medium text-slate-900 dark:text-white">About the Role</h3>
+            <p className="whitespace-pre-wrap leading-relaxed text-slate-600 dark:text-slate-300">{application.job_description || "—"}</p>
           </section>
 
-          {/* Requirements – commented out for future use when we have structured requirements */}
-          {/* <section>
-            <h3 className="font-medium text-lg text-slate-900 dark:text-white mb-3">Requirements</h3>
-            <ul className="space-y-2">
-              {(application.requirements || []).map((req, i) => (
-                <li key={i} className="flex items-start gap-2 text-slate-600 dark:text-slate-300">
-                  <CheckCircle2 size={16} className="text-green-500 mt-0.5 shrink-0" />
-                  <span>{req}</span>
-                </li>
-              ))}
-            </ul>
-          </section> */}
+          {application.requirements && application.requirements.length > 0 && (
+            <section>
+              <h3 className="mb-3 text-lg font-medium text-slate-900 dark:text-white">Requirements</h3>
+              <ul className="space-y-2">
+                {application.requirements.map((req, i) => (
+                  <li key={i} className="flex items-start gap-2 text-slate-600 dark:text-slate-300">
+                    <CheckCircle2 size={16} className="mt-0.5 shrink-0 text-green-500" />
+                    <span>{req}</span>
+                  </li>
+                ))}
+              </ul>
+            </section>
+          )}
         </div>
 
-        {/* Footer – Prepare Application + Apply Now (disabled when no apply link) */}
-        <div className="p-6 border-t border-slate-100 dark:border-slate-800 bg-white dark:bg-[#1a1a1a] flex items-center gap-4">
+        <div className="flex items-center gap-4 border-t border-slate-100 bg-white p-6 dark:border-slate-800 dark:bg-[#1a1a1a]">
           <button
             onClick={() => onPrepare(application)}
-            className="flex-1 py-3 bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 hover:bg-slate-50 dark:hover:bg-slate-700 text-slate-900 dark:text-white font-medium rounded-xl transition-all shadow-sm flex items-center justify-center gap-2 active:scale-95"
+            className="flex flex-1 items-center justify-center gap-2 rounded-xl border border-slate-200 bg-white py-3 font-medium text-slate-900 shadow-sm transition-all hover:bg-slate-50 active:scale-95 dark:border-slate-700 dark:bg-slate-800 dark:text-white dark:hover:bg-slate-700"
           >
-            <FileText size={18} className="text-blue-500" /> Prepare Application
+            <FileText size={18} className="text-brand-500" /> Prepare Application
           </button>
           <button
             onClick={() => applyUrl && window.open(applyUrl, "_blank")}
             disabled={!applyUrl}
-            className="flex-1 py-3 bg-blue-600 hover:bg-blue-700 disabled:opacity-50 disabled:cursor-not-allowed text-white font-medium rounded-xl shadow-lg shadow-blue-500/20 transition-all flex items-center justify-center gap-2 active:scale-95 disabled:shadow-none"
+            className="flex flex-1 items-center justify-center gap-2 rounded-xl bg-brand-600 py-3 font-medium text-white shadow-lg shadow-brand-500/20 transition-all hover:bg-brand-700 active:scale-95 disabled:cursor-not-allowed disabled:opacity-50 disabled:shadow-none"
           >
             Apply Now <ExternalLink size={18} />
           </button>

@@ -50,10 +50,7 @@ const ResumePDFPreviewInner: React.FC<ResumePDFPreviewProps> = ({
     highlightsRef.current = highlights;
   }, [highlights]);
 
-  const contentSignature = useMemo(
-    () => `${getResumeContentSignature(data)}|${JSON.stringify(highlights ?? {})}`,
-    [data, highlights]
-  );
+  const contentSignature = useMemo(() => `${getResumeContentSignature(data)}|${JSON.stringify(highlights ?? {})}`, [data, highlights]);
 
   const [slot0Url, setSlot0Url] = useState<string | null>(null);
   const [slot1Url, setSlot1Url] = useState<string | null>(null);

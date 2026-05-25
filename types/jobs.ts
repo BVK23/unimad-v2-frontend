@@ -29,7 +29,7 @@ export interface InterviewSession {
   status: "completed" | "in-progress";
 }
 
-export type ContentGeneratorType = "cover-letter" | "cold-email" | "referral" | "vpd" | "resume";
+export type ContentGeneratorType = "cover-letter" | "cold-email" | "referral" | "vpd" | "resume" | "linkedin-post";
 
 export interface GeneratorContext {
   type: ContentGeneratorType;
@@ -38,6 +38,8 @@ export interface GeneratorContext {
   role?: string;
   description?: string;
   recipientName?: string; // For cold emails
+  /** Existing asset id when opening studio (cover letter, cold email, etc.). */
+  assetId?: string;
 }
 
 // Mock Data for Discovery

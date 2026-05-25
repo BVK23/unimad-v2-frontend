@@ -1,11 +1,9 @@
 "use client";
 
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import Logo from "@/components/Logo";
 import Link from "next/link";
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-
 import { feats, mocks, ppl, revLines, ribbonItems } from "./landing-data";
-
 import "./uni-landing.css";
 
 function cx(...parts: Array<string | false | undefined>) {
@@ -23,31 +21,31 @@ export function UniLandingPage() {
   const [deckAnim, setDeckAnim] = useState(false);
 
   const [revLit, setRevLit] = useState(0);
-  const revTotal = useMemo(
-    () => revLines.reduce((n, line) => n + line.split(" ").length, 0),
-    [],
-  );
+  const revTotal = useMemo(() => revLines.reduce((n, line) => n + line.split(" ").length, 0), []);
 
   const [curFeat, setCurFeat] = useState(0);
   const [featTick, setFeatTick] = useState(0);
   const [webinarOpen, setWebinarOpen] = useState(false);
 
-  const cy = useCallback((dir: "left" | "right") => {
-    if (deckAnim) return;
-    setDeckAnim(true);
-    setDeckExit(dir === "left" ? "xl" : "xr");
-    window.setTimeout(() => {
-      setDeckCur(c => (c + 1) % 3);
-      setDeckExit(null);
-      setDeckAnim(false);
-    }, 440);
-  }, [deckAnim]);
+  const cy = useCallback(
+    (dir: "left" | "right") => {
+      if (deckAnim) return;
+      setDeckAnim(true);
+      setDeckExit(dir === "left" ? "xl" : "xr");
+      window.setTimeout(() => {
+        setDeckCur(c => (c + 1) % 3);
+        setDeckExit(null);
+        setDeckAnim(false);
+      }, 440);
+    },
+    [deckAnim]
+  );
 
   const gt = useCallback(
     (t: number) => {
       if (!deckAnim && t !== deckCur) cy("right");
     },
-    [cy, deckAnim, deckCur],
+    [cy, deckAnim, deckCur]
   );
 
   const jumpFeat = useCallback((idx: number) => {
@@ -86,10 +84,7 @@ export function UniLandingPage() {
       const rev = revRef.current;
       if (rev) {
         const rt = rev.getBoundingClientRect().top + st;
-        const prog = Math.max(
-          0,
-          Math.min(1, (st - (rt - ph * 0.75)) / (rt + rev.offsetHeight * 0.55 - (rt - ph * 0.75))),
-        );
+        const prog = Math.max(0, Math.min(1, (st - (rt - ph * 0.75)) / (rt + rev.offsetHeight * 0.55 - (rt - ph * 0.75))));
         const lit = Math.floor(prog * revTotal);
         setRevLit(lit);
       }
@@ -154,8 +149,8 @@ export function UniLandingPage() {
             Free, for everyone.
           </div>
           <div className="hero-sub a3">
-            Stop getting ghosted by recruiters. A completely free toolkit to build a personal brand that gets you noticed —
-            resumes, LinkedIn, portfolio, tailored applications. No paywalls. No catch.
+            Stop getting ghosted by recruiters. A completely free toolkit to build a personal brand that gets you noticed — resumes,
+            LinkedIn, portfolio, tailored applications. No paywalls. No catch.
           </div>
           <div className="cta-group a4">
             <Link href="/signin" className="btn-blue">
@@ -359,11 +354,7 @@ export function UniLandingPage() {
               Free forever — no upgrade needed
             </div>
           </div>
-          <div
-            className="feat-right"
-            key={`m-${curFeat}-${featTick}`}
-            dangerouslySetInnerHTML={{ __html: mocks[f.mock] }}
-          />
+          <div className="feat-right" key={`m-${curFeat}-${featTick}`} dangerouslySetInnerHTML={{ __html: mocks[f.mock] }} />
         </div>
       </div>
 
@@ -380,8 +371,8 @@ export function UniLandingPage() {
               The shortcut isn&apos;t.
             </div>
             <p className="uc-body">
-              Unimad gives you every tool to succeed on your own. Unicoach gives you a coach who has cracked the job market —
-              someone in your corner, building the strategy with you. Students who join Unicoach land jobs significantly faster.
+              Unimad gives you every tool to succeed on your own. Unicoach gives you a coach who has cracked the job market — someone in
+              your corner, building the strategy with you. Students who join Unicoach land jobs significantly faster.
             </p>
             <Link href="/signin" className="btn-white">
               Book Your Discovery Call →
@@ -459,8 +450,8 @@ export function UniLandingPage() {
             <div className="ht-alumni">Unicoach Alumni</div>
             <span className="ht-quote-mark">&quot;</span>
             <div className="ht-quote">
-              From <em>2,000 applications</em> and one pulled offer to working in the US. The Portfolio, the VPD — it helped me get
-              seen for who I truly was. Every rejection before just made this win mean more.
+              From <em>2,000 applications</em> and one pulled offer to working in the US. The Portfolio, the VPD — it helped me get seen for
+              who I truly was. Every rejection before just made this win mean more.
             </div>
             <div className="ht-person">
               <div className="ht-avatar">MD</div>
@@ -607,9 +598,7 @@ export function UniLandingPage() {
             <Link href="/" className="foot-logo" aria-label="Unimad home">
               <Logo className="h-7 w-auto shrink-0 md:h-8" />
             </Link>
-            <div className="foot-tagline">
-              Personal branding simplified. Become unignorable to recruiters and land your next role.
-            </div>
+            <div className="foot-tagline">Personal branding simplified. Become unignorable to recruiters and land your next role.</div>
           </div>
           <div>
             <div className="foot-col-label">Platform</div>

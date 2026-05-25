@@ -22,12 +22,6 @@ const JobCard: React.FC<JobCardProps> = ({
   onApply,
   onClick,
 }) => {
-  // Calculate stroke dashoffset for the match percentage circle
-  // Circumference = 2 * PI * r. For r=16 (approx), C ≈ 100.
-  const radius = 16; // Reduced radius for compactness
-  const circumference = 2 * Math.PI * radius;
-  const strokeDashoffset = circumference - (job.matchScore / 100) * circumference;
-
   const [logoError, setLogoError] = useState(false);
 
   const isValidUrl = (url: string | undefined) => {
@@ -67,9 +61,7 @@ const JobCard: React.FC<JobCardProps> = ({
         </div>
 
         {/* Text - Right */}
-        <div className="flex-1 min-w-0 pr-8">
-          {" "}
-          {/* pr-8 to make space for the absolute badge */}
+        <div className="min-w-0 flex-1">
           <h3 className="font-medium text-slate-900 dark:text-white leading-tight truncate text-base mb-1 group-hover:text-blue-600 transition-colors">
             {job.role}
           </h3>
@@ -93,33 +85,11 @@ const JobCard: React.FC<JobCardProps> = ({
           </div>
         </div>
 
-        {/* Circular Match Badge - Absolute Top Right */}
-        <div className="absolute top-4 right-4 flex items-center justify-center w-10 h-10">
-          <svg className="transform -rotate-90 w-10 h-10">
-            <circle
-              cx="20"
-              cy="20"
-              r={radius}
-              stroke="currentColor"
-              strokeWidth="2.5"
-              fill="transparent"
-              className="text-slate-100 dark:text-slate-800"
-            />
-            <circle
-              cx="20"
-              cy="20"
-              r={radius}
-              stroke="currentColor"
-              strokeWidth="2.5"
-              fill="transparent"
-              strokeDasharray={circumference}
-              strokeDashoffset={strokeDashoffset}
-              strokeLinecap="round"
-              className={job.matchScore >= 90 ? "text-blue-500" : job.matchScore >= 70 ? "text-green-500" : "text-yellow-500"}
-            />
-          </svg>
-          <span className="absolute text-[9px] font-medium text-slate-700 dark:text-slate-200">{job.matchScore}</span>
+        {/* Job match score — hidden until backend match scoring is wired
+        <div className="absolute top-4 right-4 flex h-10 w-10 items-center justify-center">
+          ...
         </div>
+        */}
       </div>
 
       {/* Buttons - Conditional Render */}

@@ -1,15 +1,15 @@
 import React from "react";
-import { Page, View, Text, StyleSheet, Link } from "@react-pdf/renderer";
 import type { PdfHighlightMap } from "@/features/adk-chat/adkResumeHighlightDiff";
-import { PdfAdkGutterHighlight } from "../../shared/PdfAdkGutterHighlight";
+import { htmlToPlainText } from "@/utils/html-to-text";
+import { Page, View, Text, StyleSheet, Link } from "@react-pdf/renderer";
 import { ResumeData } from "../../../../types";
 import { SECTIONS, isCustomSection } from "../../config/constants";
 import HtmlRenderer from "../../shared/HtmlRenderer";
+import { PdfAdkGutterHighlight } from "../../shared/PdfAdkGutterHighlight";
 import { parseDate as formatDateMonthYear } from "../../shared/dateUtils";
 import { baseStyles } from "../../shared/pdf-base-styles";
 import { deduplicateSectionOrder } from "../../shared/sectionOrderUtils";
 import { getGithubUrl, getLinkedinUrl, getPortfolioUrl } from "../../shared/urlUtils";
-import { htmlToPlainText } from "@/utils/html-to-text";
 
 const TOKENS = {
   colors: {
@@ -150,17 +150,17 @@ const Experiences = ({ experiences, highlights }: { experiences: ResumeData["exp
             {/* Anchor: SectionHeading glued to first entry */}
             {idx === 0 && <SectionHeading title="Work Experience" />}
             <View style={styles.entryHeader}>
-            <View style={styles.entryRow}>
-              <Text style={styles.entryLeft}>{exp.role}</Text>
-              <Text style={styles.entryRight}>
-                {formatDateMonthYear(exp.startDate)} — {exp.current ? "Present" : formatDateMonthYear(exp.endDate)}
-              </Text>
+              <View style={styles.entryRow}>
+                <Text style={styles.entryLeft}>{exp.role}</Text>
+                <Text style={styles.entryRight}>
+                  {formatDateMonthYear(exp.startDate)} — {exp.current ? "Present" : formatDateMonthYear(exp.endDate)}
+                </Text>
+              </View>
+              <View style={styles.entryRow}>
+                <Text style={styles.entryLeft}>{exp.company}</Text>
+                <Text style={styles.entryRight}>{exp.location || ""}</Text>
+              </View>
             </View>
-            <View style={styles.entryRow}>
-              <Text style={styles.entryLeft}>{exp.company}</Text>
-              <Text style={styles.entryRight}>{exp.location || ""}</Text>
-            </View>
-          </View>
             {exp.description && (
               <View style={styles.descriptionWrapper}>
                 <HtmlRenderer
@@ -191,18 +191,18 @@ const Educations = ({ educations, highlights }: { educations: ResumeData["educat
         <PdfAdkGutterHighlight key={idx} kind={highlights[`education:${edu.id}`]}>
           <View style={styles.entryWrapper} wrap={false}>
             {idx === 0 && <SectionHeading title="Education" />}
-          <View style={styles.entryHeader}>
-            <View style={styles.entryRow}>
-              <Text style={styles.entryLeft}>{edu.degree}</Text>
-              <Text style={styles.entryRight}>
-                {formatDateMonthYear(edu.startDate)} — {edu.current ? "Present" : formatDateMonthYear(edu.endDate)}
-              </Text>
+            <View style={styles.entryHeader}>
+              <View style={styles.entryRow}>
+                <Text style={styles.entryLeft}>{edu.degree}</Text>
+                <Text style={styles.entryRight}>
+                  {formatDateMonthYear(edu.startDate)} — {edu.current ? "Present" : formatDateMonthYear(edu.endDate)}
+                </Text>
+              </View>
+              <View style={styles.entryRow}>
+                <Text style={styles.entryLeft}>{edu.school}</Text>
+                <Text style={styles.entryRight}>{edu.location || ""}</Text>
+              </View>
             </View>
-            <View style={styles.entryRow}>
-              <Text style={styles.entryLeft}>{edu.school}</Text>
-              <Text style={styles.entryRight}>{edu.location || ""}</Text>
-            </View>
-          </View>
             {edu.description && (
               <View style={styles.descriptionWrapper}>
                 <HtmlRenderer
@@ -233,16 +233,16 @@ const Projects = ({ projects, highlights }: { projects: ResumeData["projects"]; 
         <PdfAdkGutterHighlight key={idx} kind={highlights[`projects:${project.id}`]}>
           <View style={styles.entryWrapper} wrap={false}>
             {idx === 0 && <SectionHeading title="Projects" />}
-          {project.url ? (
-            <Link
-              style={{ ...styles.link, fontWeight: 600, fontSize: 9 }}
-              src={project.url.startsWith("http") ? project.url : `https://${project.url}`}
-            >
-              {project.title}
-            </Link>
-          ) : (
-            <Text style={{ fontWeight: 600, fontSize: 9 }}>{project.title}</Text>
-          )}
+            {project.url ? (
+              <Link
+                style={{ ...styles.link, fontWeight: 600, fontSize: 9 }}
+                src={project.url.startsWith("http") ? project.url : `https://${project.url}`}
+              >
+                {project.title}
+              </Link>
+            ) : (
+              <Text style={{ fontWeight: 600, fontSize: 9 }}>{project.title}</Text>
+            )}
             {project.description && (
               <View style={styles.descriptionWrapper}>
                 <HtmlRenderer
@@ -263,13 +263,7 @@ const Projects = ({ projects, highlights }: { projects: ResumeData["projects"]; 
   );
 };
 
-const Certifications = ({
-  certifications,
-  highlights,
-}: {
-  certifications: ResumeData["certifications"];
-  highlights: PdfHighlightMap;
-}) => {
+const Certifications = ({ certifications, highlights }: { certifications: ResumeData["certifications"]; highlights: PdfHighlightMap }) => {
   const visibleCertifications = (certifications || []).filter(c => !c.hidden);
   if (!visibleCertifications.length) return null;
 
@@ -287,29 +281,32 @@ const Certifications = ({
             wrap={false}
           >
             {idx === 0 && <SectionHeading title="Certifications" />}
-          <View
-            style={{
-              display: "flex",
-              flexDirection: "row",
-              justifyContent: "space-between",
-              alignItems: "center",
-              fontSize: 9,
-              fontWeight: 600,
-            }}
-          >
-            {cert.credentialUrl ? (
-              <Link style={styles.link} src={cert.credentialUrl.startsWith("http") ? cert.credentialUrl : `https://${cert.credentialUrl}`}>
+            <View
+              style={{
+                display: "flex",
+                flexDirection: "row",
+                justifyContent: "space-between",
+                alignItems: "center",
+                fontSize: 9,
+                fontWeight: 600,
+              }}
+            >
+              {cert.credentialUrl ? (
+                <Link
+                  style={styles.link}
+                  src={cert.credentialUrl.startsWith("http") ? cert.credentialUrl : `https://${cert.credentialUrl}`}
+                >
+                  <Text>{cert.title}</Text>
+                </Link>
+              ) : (
                 <Text>{cert.title}</Text>
-              </Link>
-            ) : (
-              <Text>{cert.title}</Text>
-            )}
-            <Text style={{ fontSize: 8, color: "#666666", fontWeight: "normal" }}>
-              {cert.issuer}
-              {cert.issuer && cert.date ? " - " : ""}
-              {cert.date ? formatDateMonthYear(cert.date) : ""}
-            </Text>
-          </View>
+              )}
+              <Text style={{ fontSize: 8, color: "#666666", fontWeight: "normal" }}>
+                {cert.issuer}
+                {cert.issuer && cert.date ? " - " : ""}
+                {cert.date ? formatDateMonthYear(cert.date) : ""}
+              </Text>
+            </View>
             {cert.description && (
               <View style={styles.descriptionWrapper}>
                 <HtmlRenderer
@@ -398,16 +395,16 @@ const SectionRenderer = ({ resume, type, highlights }: { resume: ResumeData; typ
                 wrap={false}
               >
                 {i === 0 && <SectionHeading title={customSection.title || "Custom Section"} />}
-              <View
-                style={{
-                  display: "flex",
-                  flexDirection: "row",
-                  justifyContent: "space-between",
-                  alignItems: "center",
-                }}
-              >
-                <View>{item.title && <Text style={{ fontWeight: 600 }}>{item.title}</Text>}</View>
-              </View>
+                <View
+                  style={{
+                    display: "flex",
+                    flexDirection: "row",
+                    justifyContent: "space-between",
+                    alignItems: "center",
+                  }}
+                >
+                  <View>{item.title && <Text style={{ fontWeight: 600 }}>{item.title}</Text>}</View>
+                </View>
                 {item.description && (
                   <View style={styles.descriptionWrapper}>
                     <HtmlRenderer

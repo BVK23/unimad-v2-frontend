@@ -1,6 +1,6 @@
 import React from "react";
-import { Document } from "@react-pdf/renderer";
 import type { PdfHighlightMap } from "@/features/adk-chat/adkResumeHighlightDiff";
+import { Document } from "@react-pdf/renderer";
 import { ResumeData } from "../types";
 // Import fonts side-effect (ensures fonts are registered before any template renders)
 import "./resume/config/fonts";

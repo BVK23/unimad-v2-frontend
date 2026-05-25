@@ -1,11 +1,18 @@
 import React, { useState, useRef, useMemo, useEffect, useCallback } from "react";
+import ResumeKnowledgeBaseModal from "@/components/resume/ResumeKnowledgeBaseModal";
 import { EMPTY_PDF_HIGHLIGHT_MAP } from "@/features/adk-chat/adkResumeHighlightDiff";
 import { useAdkResumeReviewStore } from "@/features/adk-chat/stores/useAdkResumeReviewStore";
+import { mapAtsScoreToViewModel } from "@/features/resume/api/mapAtsScoreToViewModel";
 import { mapFrontendResumeToBackend } from "@/features/resume/api/mappers";
+import { useCalculateAtsScore } from "@/features/resume/hooks/useCalculateAtsScore";
 import { useDebouncedResumePreview } from "@/features/resume/hooks/useDebouncedResumePreview";
+import { resumeAtsQueryKey, useResumeAtsScore } from "@/features/resume/hooks/useResumeAtsScore";
 import { useUpdateResume } from "@/features/resume/hooks/useUpdateResume";
 import { publishResumeAsset, recordResumeDownload } from "@/features/resume/server-actions/resume-actions";
 import { useResumeStore } from "@/features/resume/store/useResumeStore";
+import { ATS_COMPLETE_THRESHOLD, MAX_RECALCULATIONS } from "@/lib/resume/atsConstants";
+import { getAtsScoreQuote } from "@/lib/resume/atsScoreQuote";
+import { loadResumeAtsSession, saveResumeAtsSession } from "@/lib/resume/atsStorage";
 import {
   ResumeData,
   ResumeExperience,
@@ -54,12 +61,16 @@ import {
   Star,
   Lock,
   TrendingUp,
+  Loader2,
   CheckSquare,
   Square,
   FolderKanban,
   Award,
   Eye,
   EyeOff,
+  Info,
+  RefreshCw,
+  Wand2,
 } from "lucide-react";
 import ResumePDF from "./ResumePDF";
 import ResumePDFPreview from "./ResumePDFPreview";
@@ -81,6 +92,8 @@ interface ResumeEditorProps {
 }
 
 const AUTOSAVE_DELAY_MS = 5000;
+
+const scoreTone = (score: number) => (score >= 80 ? "green" : score >= ATS_COMPLETE_THRESHOLD ? "yellow" : "red");
 
 const TEMPLATES = [
   {
@@ -650,6 +663,15 @@ const ResumeEditor: React.FC<ResumeEditorProps> = ({
   );
 
   const { mutateAsync: updateResumeMutation, isPending: isSavingRemote } = useUpdateResume();
+  const { data: atsCache, isLoading: atsCacheLoading } = useResumeAtsScore(resumeId, Boolean(resumeId?.trim()));
+  const {
+    mutateAsync: runAtsScore,
+    data: atsMutationVm,
+    isPending: atsScorePending,
+    isError: atsScoreError,
+    error: atsScoreErr,
+    reset: resetAtsMutation,
+  } = useCalculateAtsScore();
   const queryClient = useQueryClient();
 
   const [activeSection, setActiveSection] = useState<string>("profile");
@@ -680,6 +702,9 @@ const ResumeEditor: React.FC<ResumeEditorProps> = ({
 
   // -- ATS Modal State --
   const [showAtsModal, setShowAtsModal] = useState(false);
+  const [fixAllUsed, setFixAllUsed] = useState(false);
+  const [recalcError, setRecalcError] = useState<string | null>(null);
+  const [showKnowledgeBaseModal, setShowKnowledgeBaseModal] = useState(false);
   const [pendingDeleteSectionId, setPendingDeleteSectionId] = useState<string | null>(null);
   const [pendingDeleteEntry, setPendingDeleteEntry] = useState<{
     type: "experience" | "education" | "projects" | "certifications" | "customItem";
@@ -869,106 +894,67 @@ const ResumeEditor: React.FC<ResumeEditorProps> = ({
     setActiveSaveSource(null);
   }, [resumeId, getInitialResume]);
 
-  // -- ATS Calculation --
-  const atsAnalysis = useMemo(() => {
-    let score = 100;
-    const improvements: string[] = [];
-    const sectionAnalysis: {
-      name: string;
-      status: "good" | "warning" | "critical";
-      feedback: string;
-    }[] = [];
+  useEffect(() => {
+    resetAtsMutation();
+  }, [resumeId, resetAtsMutation]);
 
-    // Profile Check
-    if (!resume.profile.summary || resume.profile.summary.length < 50) {
-      score -= 10;
-      improvements.push("Add a comprehensive professional summary");
-      sectionAnalysis.push({
-        name: "Profile",
-        status: "warning",
-        feedback: "Summary is too brief.",
-      });
-    } else {
-      sectionAnalysis.push({
-        name: "Profile",
-        status: "good",
-        feedback: "Strong summary.",
-      });
+  useEffect(() => {
+    if (!resumeId?.trim()) return;
+    const session = loadResumeAtsSession(resumeId);
+    setFixAllUsed(session.fixAllUsed);
+  }, [resumeId]);
+
+  const cachedAtsVm = useMemo(() => {
+    if (atsCache?.ok && atsCache.ats_score) {
+      return mapAtsScoreToViewModel(atsCache.ats_score);
     }
+    return null;
+  }, [atsCache]);
 
-    // Experience Check
-    if (resume.experience.length === 0) {
-      score -= 30;
-      improvements.push("Add work experience to showcase history");
-      sectionAnalysis.push({
-        name: "Experience",
-        status: "critical",
-        feedback: "Missing experience.",
-      });
-    } else {
-      const shortDesc = resume.experience.some(e => e.description.length < 20);
-      if (shortDesc) {
-        score -= 15;
-        improvements.push("Expand role descriptions with achievements");
-        sectionAnalysis.push({
-          name: "Experience",
-          status: "warning",
-          feedback: "Descriptions lack detail.",
-        });
-      } else {
-        sectionAnalysis.push({
-          name: "Experience",
-          status: "good",
-          feedback: "Good role depth.",
-        });
-      }
+  const atsVm = atsMutationVm ?? cachedAtsVm;
+  const atsCalcCount = atsMutationVm?.ats_calc_count ?? (atsCache?.ok ? atsCache.ats_calc_count : 0);
+
+  useEffect(() => {
+    if (!showAtsModal || !resumeId?.trim()) return;
+    if (atsCacheLoading) return;
+    if (cachedAtsVm) return;
+    void runAtsScore({ resumeId, force: false }).catch(() => {});
+  }, [showAtsModal, resumeId, atsCacheLoading, cachedAtsVm, runAtsScore]);
+
+  const atsPillScore = atsVm?.score;
+  const atsScoreQuote = useMemo(() => getAtsScoreQuote(atsPillScore ?? 0), [atsPillScore]);
+  const atsTone = scoreTone(atsPillScore ?? 0);
+  const atsScoreClass = atsTone === "green" ? "text-green-600" : atsTone === "yellow" ? "text-yellow-600" : "text-red-600";
+  const atsBarClass = atsTone === "green" ? "bg-green-500" : atsTone === "yellow" ? "bg-yellow-500" : "bg-red-500";
+  const atsHeaderBg = atsTone === "green" ? "bg-green-50/50" : atsTone === "yellow" ? "bg-yellow-50/50" : "bg-red-50/50";
+
+  const handleRecalculate = async () => {
+    if (!resumeId?.trim() || atsScorePending) return;
+    setRecalcError(null);
+    try {
+      await runAtsScore({ resumeId, force: true });
+      void queryClient.invalidateQueries({ queryKey: resumeAtsQueryKey(resumeId) });
+    } catch (err) {
+      const message = err instanceof Error ? err.message : "Something went wrong while recalculating. Please try again.";
+      setRecalcError(message);
     }
+  };
 
-    // Skills Check
-    if (resume.skills.length < 4) {
-      score -= 20;
-      improvements.push("Add more skills to match job descriptions");
-      sectionAnalysis.push({
-        name: "Skills",
-        status: "warning",
-        feedback: "Under 4 skills listed.",
-      });
-    } else {
-      sectionAnalysis.push({
-        name: "Skills",
-        status: "good",
-        feedback: "Solid skill set.",
-      });
-    }
+  const handleFixWithUnibot = () => {
+    if (fixAllUsed || !atsVm?.improvements.length) return;
+    setFixAllUsed(true);
+    saveResumeAtsSession(resumeId, { recalcAttemptsUsed: atsCalcCount, fixAllUsed: true });
+    setRecalcError(null);
+    const improvementList = atsVm.improvements.map(item => `- ${item}`).join("\n");
+    onImprove(`Please help me improve my resume based on these ATS recommendations:\n${improvementList}`);
+    setShowAtsModal(false);
+  };
 
-    // Education Check
-    if (resume.education.length === 0) {
-      score -= 10;
-      improvements.push("Add education details");
-      sectionAnalysis.push({
-        name: "Education",
-        status: "warning",
-        feedback: "Education section is missing.",
-      });
-    } else {
-      sectionAnalysis.push({
-        name: "Education",
-        status: "good",
-        feedback: "Education included.",
-      });
-    }
-
-    // Formatting/General (Mock)
-    if (resume.customSections.length > 0) {
-      score += 5; // Bonus for custom sections
-    }
-
-    return {
-      score: Math.min(100, Math.max(0, score)),
-      improvements,
-      sectionAnalysis,
-    };
-  }, [resume]);
+  const handleFixWithCareerCoach = () => {
+    setShowAtsModal(false);
+    setRecalcError(null);
+    window.location.href = "/uniboard/unicoach";
+  };
 
   // -- Validation --
   const validationErrors = useMemo(() => validateResume(resume), [resume]);
@@ -1641,6 +1627,15 @@ const ResumeEditor: React.FC<ResumeEditorProps> = ({
 
         <div className="flex items-center gap-3">
           <span className="text-xs text-slate-500 dark:text-slate-400">{saveStatusLabel}</span>
+          <button
+            type="button"
+            onClick={() => setShowKnowledgeBaseModal(true)}
+            className="flex items-center justify-center p-2 rounded-lg border border-slate-200 dark:border-slate-700 hover:border-brand-300 text-slate-600 dark:text-slate-300 bg-white dark:bg-slate-800 transition-all hover:shadow-sm"
+            title="Resume knowledge base"
+            aria-label="Resume knowledge base"
+          >
+            <Info size={18} className="text-brand-600" />
+          </button>
           {/* Template Button */}
           <button
             onClick={() => setShowTemplateModal(true)}
@@ -1656,16 +1651,10 @@ const ResumeEditor: React.FC<ResumeEditorProps> = ({
             onClick={() => setShowAtsModal(true)}
             className="flex items-center gap-2 px-3 py-2 rounded-lg border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 text-sm font-medium text-slate-700 dark:text-slate-200 transition-all hover:shadow-md hover:border-brand-200"
           >
-            <TrendingUp
-              size={16}
-              className={atsAnalysis.score >= 80 ? "text-green-600" : atsAnalysis.score >= 50 ? "text-yellow-600" : "text-red-600"}
-            />
+            <TrendingUp size={16} className={atsPillScore == null ? "text-slate-400" : atsScoreClass} />
             <span className="text-slate-600 dark:text-slate-400">
               ATS Score:{" "}
-              <span className={atsAnalysis.score >= 80 ? "text-green-600" : atsAnalysis.score >= 50 ? "text-yellow-600" : "text-red-600"}>
-                {" "}
-                {atsAnalysis.score}
-              </span>
+              <span className={atsPillScore == null ? "text-slate-400" : atsScoreClass}>{atsPillScore == null ? "—" : atsPillScore}</span>
             </span>
           </button>
 
@@ -1687,7 +1676,7 @@ const ResumeEditor: React.FC<ResumeEditorProps> = ({
         <div className="w-[72px] bg-white dark:bg-slate-900 border-r border-slate-200 dark:border-slate-700 flex flex-col h-full overflow-hidden flex-shrink-0 z-10 items-center">
           <div className="h-4 flex-shrink-0 w-full" />
 
-          <div className="flex-1 overflow-y-auto w-full p-3 space-y-3 minimal-scrollbar flex flex-col items-center">
+          <div className="flex-1 overflow-y-auto w-full p-3 space-y-3 scrollbar-on-hover flex flex-col items-center">
             {resume.sectionOrder.map(secItem => {
               const secId = secItem.id;
               const isReorderableSection = secId !== "profile";
@@ -1743,7 +1732,7 @@ const ResumeEditor: React.FC<ResumeEditorProps> = ({
         </div>
         {/* 2. Forms Panel */}
         <div className="w-[360px] bg-white dark:bg-slate-900 border-r border-slate-200 dark:border-slate-700 flex flex-col h-full overflow-hidden shadow-[4px_0_24px_rgba(0,0,0,0.02)] flex-shrink-0 z-0 relative">
-          <div className="flex-1 overflow-y-auto p-6 bg-white dark:bg-slate-900">
+          <div className="flex-1 overflow-y-auto p-6 bg-white dark:bg-slate-900 scrollbar-on-hover">
             {activeSection === "profile" && (
               <div className="space-y-5 animate-in fade-in slide-in-from-left-2 duration-200">
                 <h2 className="text-lg font-medium text-slate-900 dark:text-white flex items-center gap-2">Personal Details</h2>
@@ -1824,7 +1813,7 @@ const ResumeEditor: React.FC<ResumeEditorProps> = ({
                       value={resume.profile.summary ?? ""}
                       onChange={val => handleProfileChange("summary", val)}
                       onImprove={onImprove}
-                      unibotImproveContext="summary"
+                      unibotImproveTarget={{ section: "summary", resumeId }}
                     />
                   </div>
                 </div>
@@ -1977,7 +1966,7 @@ const ResumeEditor: React.FC<ResumeEditorProps> = ({
                           value={exp.description}
                           onChange={val => updateExperience(exp.id, "description", val)}
                           onImprove={onImprove}
-                          unibotImproveContext="experience"
+                          unibotImproveTarget={{ section: "experience", resumeId, entryId: exp.id }}
                         />
                       </div>
                     )}
@@ -2132,7 +2121,7 @@ const ResumeEditor: React.FC<ResumeEditorProps> = ({
                           value={edu.description || ""}
                           onChange={val => updateEducation(edu.id, "description", val)}
                           onImprove={onImprove}
-                          unibotImproveContext="education"
+                          unibotImproveTarget={{ section: "education", resumeId, entryId: edu.id }}
                         />
                       </div>
                     )}
@@ -2378,7 +2367,7 @@ const ResumeEditor: React.FC<ResumeEditorProps> = ({
                           value={proj.description}
                           onChange={html => updateProject(proj.id, "description", html)}
                           onImprove={onImprove}
-                          unibotImproveContext="projects"
+                          unibotImproveTarget={{ section: "projects", resumeId, entryId: proj.id }}
                           placeholder="Description of the Project..."
                         />
                       </div>
@@ -2492,7 +2481,7 @@ const ResumeEditor: React.FC<ResumeEditorProps> = ({
                           value={cert.description || ""}
                           onChange={html => updateCertification(cert.id, "description", html)}
                           onImprove={onImprove}
-                          unibotImproveContext="certifications"
+                          unibotImproveTarget={{ section: "certifications", resumeId, entryId: cert.id }}
                           placeholder="Description (optional)..."
                         />
                       </div>
@@ -2683,7 +2672,7 @@ const ResumeEditor: React.FC<ResumeEditorProps> = ({
                             value={item.description}
                             onChange={val => updateCustomSectionItem(sec.id, item.id, "description", val)}
                             onImprove={onImprove}
-                            unibotImproveContext="custom"
+                            unibotImproveTarget={{ section: "custom", resumeId, entryId: item.id }}
                           />
                         </div>
                       )}
@@ -2733,7 +2722,7 @@ const ResumeEditor: React.FC<ResumeEditorProps> = ({
           </div>
 
           <div
-            className="flex-1 w-full min-w-0 overflow-y-auto p-12 flex justify-center [scrollbar-gutter:stable]"
+            className="flex-1 w-full min-w-0 overflow-y-auto p-12 flex justify-center [scrollbar-gutter:stable] scrollbar-on-hover"
             onWheel={handleWheel} // Enable scroll zoom
           >
             <div
@@ -2783,18 +2772,16 @@ const ResumeEditor: React.FC<ResumeEditorProps> = ({
                                         `}
                   >
                     {/* Preview Thumbnail */}
-                    <div className={`h-48 ${t.color} relative overflow-hidden p-4`}>
+                    <div className={`h-48 ${t.color} relative overflow-hidden p-3`}>
                       {TEMPLATE_THUMBNAILS[t.id] ? (
-                        <div className="w-full h-full flex items-center justify-center">
-                          <div className="h-full aspect-[210/297] rounded-md bg-white shadow-[0_14px_34px_rgba(15,23,42,0.18)] overflow-hidden">
-                            <img
-                              src={TEMPLATE_THUMBNAILS[t.id]}
-                              alt={`${t.name} template preview`}
-                              className="h-full w-full object-contain object-top"
-                              loading="lazy"
-                              draggable={false}
-                            />
-                          </div>
+                        <div className="relative h-full w-full overflow-hidden rounded-md bg-white shadow-[0_14px_34px_rgba(15,23,42,0.18)]">
+                          <img
+                            src={TEMPLATE_THUMBNAILS[t.id]}
+                            alt={`${t.name} template preview`}
+                            className="pointer-events-none block h-auto w-full max-w-none select-none"
+                            loading="lazy"
+                            draggable={false}
+                          />
                         </div>
                       ) : (
                         <div className="w-full h-full bg-white shadow-sm rounded-md opacity-80 flex flex-col gap-2 p-2 scale-90 origin-top">
@@ -3071,10 +3058,10 @@ const ResumeEditor: React.FC<ResumeEditorProps> = ({
 
       {/* ATS Score Modal */}
       {showAtsModal && (
-        <div className="fixed inset-0 z-[70] flex items-center justify-center bg-slate-900/50 backdrop-blur-sm animate-in fade-in duration-200">
-          <div className="bg-white dark:bg-slate-900 w-full max-w-lg rounded-2xl shadow-2xl flex flex-col overflow-hidden border border-slate-200 dark:border-slate-800">
-            <div className="flex items-center justify-between p-6 border-b border-slate-100 dark:border-slate-800">
-              <h2 className="text-lg font-medium text-slate-900 dark:text-white">ATS Score Report</h2>
+        <div className="fixed inset-0 z-[70] flex items-center justify-center bg-slate-900/50 backdrop-blur-sm animate-in fade-in duration-200 p-4 sm:p-6">
+          <div className="bg-white dark:bg-slate-900 w-full max-w-3xl min-h-[min(640px,85vh)] max-h-[90vh] rounded-2xl shadow-2xl flex flex-col overflow-hidden border border-slate-200 dark:border-slate-800">
+            <div className="flex items-center justify-between px-8 py-6 border-b border-slate-100 dark:border-slate-800">
+              <h2 className="text-xl font-semibold text-slate-900 dark:text-white">ATS Score Report</h2>
               <button
                 onClick={() => setShowAtsModal(false)}
                 className="p-2 hover:bg-slate-100 dark:hover:bg-slate-800 rounded-full transition-colors text-slate-500 dark:text-slate-400"
@@ -3083,73 +3070,176 @@ const ResumeEditor: React.FC<ResumeEditorProps> = ({
               </button>
             </div>
 
-            <div
-              className={`p-6 ${atsAnalysis.score >= 80 ? "bg-green-50/50" : atsAnalysis.score >= 50 ? "bg-yellow-50/50" : "bg-red-50/50"}`}
-            >
-              <div className="flex justify-between items-center mb-2">
-                <span className="text-sm font-medium uppercase tracking-wider opacity-70 text-slate-700 dark:text-slate-300">
-                  Resume Strength
-                </span>
-                <span className="font-semibold text-3xl text-slate-900 dark:text-white">{atsAnalysis.score}/100</span>
-              </div>
-              <div className="w-full h-3 bg-white/50 rounded-full overflow-hidden border border-black/5">
-                <div
-                  className={`h-full rounded-full transition-all duration-1000 ease-out ${atsAnalysis.score >= 80 ? "bg-green-500" : atsAnalysis.score >= 50 ? "bg-yellow-500" : "bg-red-500"}`}
-                  style={{ width: `${atsAnalysis.score}%` }}
-                ></div>
-              </div>
-            </div>
-
-            <div className="p-6 space-y-6 overflow-y-auto max-h-[60vh]">
-              <div>
-                <h4 className="text-xs font-medium text-slate-400 uppercase tracking-wider mb-3">Improvements Needed</h4>
-                {atsAnalysis.improvements.length > 0 ? (
-                  <ul className="space-y-3">
-                    {atsAnalysis.improvements.map((imp, i) => (
-                      <li
-                        key={i}
-                        className="flex items-start gap-3 text-sm text-slate-700 dark:text-slate-300 bg-slate-50 dark:bg-slate-800 p-3 rounded-lg"
-                      >
-                        <AlertCircle size={16} className="text-red-500 mt-0.5 flex-shrink-0" />
-                        <span>{imp}</span>
-                      </li>
-                    ))}
-                  </ul>
-                ) : (
-                  <div className="p-4 bg-green-50 dark:bg-green-900/20 rounded-lg flex items-center gap-3 text-green-700 dark:text-green-400">
-                    <div className="p-1 bg-green-200 dark:bg-green-800 rounded-full">
-                      <Check size={14} />
-                    </div>
-                    <span className="font-medium text-sm">Great job! No critical issues found.</span>
-                  </div>
-                )}
-              </div>
-
-              <div>
-                <h4 className="text-xs font-medium text-slate-400 uppercase tracking-wider mb-3">Section Analysis</h4>
-                <div className="space-y-2">
-                  {atsAnalysis.sectionAnalysis.map((sec, i) => (
+            <div className={`px-8 py-8 ${atsVm ? atsHeaderBg : "bg-slate-50/80 dark:bg-slate-800/50"}`}>
+              <div className="flex flex-col sm:flex-row sm:items-start sm:justify-between gap-6">
+                <div className="flex-1 min-w-0">
+                  <span className="text-sm font-medium uppercase tracking-wider opacity-70 text-slate-700 dark:text-slate-300">
+                    Resume Strength
+                  </span>
+                  <div className="mt-4 w-full h-3 bg-white/50 rounded-full overflow-hidden border border-black/5">
                     <div
-                      key={i}
-                      className="flex items-center justify-between p-3 rounded-lg border border-slate-100 dark:border-slate-800 hover:bg-slate-50 dark:hover:bg-slate-800/50 transition-colors"
-                    >
-                      <span className="font-medium text-slate-700 dark:text-slate-300 text-sm">{sec.name}</span>
-                      <div className="flex items-center gap-2">
-                        <span className="text-xs text-slate-500">{sec.feedback}</span>
-                        {sec.status === "good" && <div className="w-2.5 h-2.5 rounded-full bg-green-500 shadow-sm shadow-green-200"></div>}
-                        {sec.status === "warning" && (
-                          <div className="w-2.5 h-2.5 rounded-full bg-yellow-500 shadow-sm shadow-yellow-200"></div>
-                        )}
-                        {sec.status === "critical" && <div className="w-2.5 h-2.5 rounded-full bg-red-500 shadow-sm shadow-red-200"></div>}
-                      </div>
-                    </div>
-                  ))}
+                      className={`h-full rounded-full transition-all duration-1000 ease-out ${atsVm ? atsBarClass : "bg-slate-300"}`}
+                      style={{ width: `${atsVm?.score ?? 0}%` }}
+                    />
+                  </div>
+                  {atsVm && (
+                    <>
+                      <p className="mt-4 flex gap-2 text-sm leading-relaxed text-slate-600 dark:text-slate-300">
+                        <Quote size={16} className="mt-0.5 flex-shrink-0 opacity-50" />
+                        <span className="italic">{atsScoreQuote}</span>
+                      </p>
+                      {atsVm.score >= ATS_COMPLETE_THRESHOLD && (
+                        <p className="mt-2 text-xs font-medium text-green-700 dark:text-green-400">
+                          Meets the {ATS_COMPLETE_THRESHOLD}% completion threshold.
+                        </p>
+                      )}
+                    </>
+                  )}
+                </div>
+                <div className="flex flex-col items-end gap-2 flex-shrink-0">
+                  <span className="font-semibold text-5xl text-slate-900 dark:text-white tabular-nums">
+                    {atsScorePending && !atsVm ? "—" : atsVm != null ? atsVm.score : "—"}
+                    {atsVm != null && <span className="text-2xl text-slate-500 dark:text-slate-400 font-medium">/100</span>}
+                  </span>
+                  <button
+                    type="button"
+                    onClick={() => void handleRecalculate()}
+                    disabled={atsScorePending || atsScoreError}
+                    title="Recalculate your ATS score"
+                    className="inline-flex items-center justify-center gap-2 px-5 py-2.5 rounded-lg border text-sm font-medium shadow-sm transition-colors disabled:opacity-50 disabled:cursor-not-allowed border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 text-slate-800 dark:text-slate-100 hover:bg-slate-50 dark:hover:bg-slate-800"
+                  >
+                    {atsScorePending ? (
+                      <Loader2 size={16} className="animate-spin text-brand-600" />
+                    ) : (
+                      <RefreshCw size={16} className="text-slate-500" />
+                    )}
+                    {atsScorePending ? "Recalculating…" : "Recalculate"}
+                  </button>
+                  {atsCalcCount > 0 ? (
+                    <p className="max-w-[220px] text-right text-xs text-slate-500 dark:text-slate-400">
+                      Calculated {atsCalcCount} {atsCalcCount === 1 ? "time" : "times"}
+                    </p>
+                  ) : null}
                 </div>
               </div>
             </div>
+
+            {recalcError && (
+              <div className="mx-8 flex items-start gap-3 rounded-lg border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-800 dark:border-red-900/50 dark:bg-red-950/40 dark:text-red-200">
+                <AlertCircle size={18} className="mt-0.5 flex-shrink-0" />
+                <div>
+                  <p className="font-medium">Recalculation failed</p>
+                  <p className="mt-0.5 opacity-90">{recalcError}</p>
+                </div>
+              </div>
+            )}
+
+            <div className="flex-1 px-8 py-6 space-y-8 overflow-y-auto min-h-0 scrollbar-on-hover">
+              {(atsScorePending || atsCacheLoading) && !atsVm && (
+                <div className="flex flex-col items-center justify-center gap-3 py-12 text-slate-500">
+                  <Loader2 className="h-8 w-8 animate-spin text-brand-500" />
+                  <p className="text-sm">Analyzing your resume against the job description…</p>
+                </div>
+              )}
+
+              {atsScoreError && !atsScorePending && (
+                <div className="space-y-4">
+                  <div className="p-4 bg-red-50 dark:bg-red-900/20 rounded-lg border border-red-100 dark:border-red-900/40 text-sm text-red-800 dark:text-red-200">
+                    <p className="font-medium">Could not load ATS score</p>
+                    <p className="mt-1 text-red-700/90 dark:text-red-300/90">
+                      {atsScoreErr instanceof Error ? atsScoreErr.message : "Something went wrong."}
+                    </p>
+                    <p className="mt-2 text-xs text-red-600/80 dark:text-red-400/80">
+                      ATS scoring needs a resume linked to a job application with a job description. Create or open this resume from your
+                      applications flow if you have not yet.
+                    </p>
+                  </div>
+                  <button
+                    type="button"
+                    onClick={() => void runAtsScore({ resumeId, force: false }).catch(() => {})}
+                    className="w-full py-2.5 rounded-lg bg-slate-900 dark:bg-slate-100 text-white dark:text-slate-900 text-sm font-medium hover:opacity-90 transition-opacity"
+                  >
+                    Retry
+                  </button>
+                </div>
+              )}
+
+              {!atsScorePending && !atsScoreError && atsVm && (
+                <>
+                  <div>
+                    <h4 className="text-xs font-medium text-slate-400 uppercase tracking-wider mb-3">Improvements Needed</h4>
+                    {atsVm.improvements.length > 0 ? (
+                      <ul className="space-y-3">
+                        {atsVm.improvements.map((imp, i) => (
+                          <li
+                            key={i}
+                            className="flex items-start gap-3 text-sm text-slate-700 dark:text-slate-300 bg-slate-50 dark:bg-slate-800 p-3 rounded-lg"
+                          >
+                            <AlertCircle size={16} className="text-red-500 mt-0.5 flex-shrink-0" />
+                            <span>{imp}</span>
+                          </li>
+                        ))}
+                      </ul>
+                    ) : (
+                      <div className="p-4 bg-green-50 dark:bg-green-900/20 rounded-lg flex items-center gap-3 text-green-700 dark:text-green-400">
+                        <div className="p-1 bg-green-200 dark:bg-green-800 rounded-full">
+                          <Check size={14} />
+                        </div>
+                        <span className="font-medium text-sm">Great job! No critical issues found.</span>
+                      </div>
+                    )}
+                  </div>
+
+                  <div>
+                    <h4 className="text-xs font-medium text-slate-400 uppercase tracking-wider mb-3">Section Analysis</h4>
+                    <div className="space-y-2">
+                      {atsVm.sectionAnalysis.map((sec, i) => (
+                        <div
+                          key={i}
+                          className="flex items-center justify-between p-3 rounded-lg border border-slate-100 dark:border-slate-800 hover:bg-slate-50 dark:hover:bg-slate-800/50 transition-colors"
+                        >
+                          <span className="font-medium text-slate-700 dark:text-slate-300 text-sm">{sec.name}</span>
+                          <div className="flex items-center gap-2">
+                            <span className="text-xs text-slate-500">{sec.feedback}</span>
+                            {sec.status === "good" && <div className="w-2.5 h-2.5 rounded-full bg-green-500 shadow-sm shadow-green-200" />}
+                            {sec.status === "warning" && (
+                              <div className="w-2.5 h-2.5 rounded-full bg-yellow-500 shadow-sm shadow-yellow-200" />
+                            )}
+                            {sec.status === "critical" && <div className="w-2.5 h-2.5 rounded-full bg-red-500 shadow-sm shadow-red-200" />}
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                </>
+              )}
+            </div>
+
+            {atsVm && !atsScoreError && (
+              <div className="px-8 py-6 border-t border-slate-100 dark:border-slate-800 bg-slate-50/80 dark:bg-slate-900/80 flex flex-col sm:flex-row gap-4">
+                <button
+                  type="button"
+                  onClick={handleFixWithUnibot}
+                  disabled={fixAllUsed || atsVm.improvements.length === 0}
+                  className="flex-1 px-5 py-3 rounded-xl bg-brand-600 hover:bg-brand-700 text-white text-sm font-medium transition-colors disabled:opacity-50 disabled:cursor-not-allowed inline-flex items-center justify-center gap-2"
+                >
+                  <Wand2 size={18} />
+                  {fixAllUsed ? "Unibot fix applied" : "Fix once with Unibot"}
+                </button>
+                <button
+                  type="button"
+                  onClick={handleFixWithCareerCoach}
+                  className="flex-1 px-5 py-3 rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 text-slate-800 dark:text-slate-100 text-sm font-medium hover:bg-slate-50 dark:hover:bg-slate-800 transition-colors"
+                >
+                  Fix with a career coach
+                </button>
+              </div>
+            )}
           </div>
         </div>
       )}
+
+      <ResumeKnowledgeBaseModal open={showKnowledgeBaseModal} onClose={() => setShowKnowledgeBaseModal(false)} />
 
       {pendingDeleteSectionId && (
         <div className="fixed inset-0 z-[80] flex items-center justify-center bg-slate-900/50 backdrop-blur-sm animate-in fade-in duration-200">

@@ -1,6 +1,9 @@
 "use client";
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { buildAdkLinkedInStateDelta } from "@/src/features/linkedin/api/adk-mappers";
+import { linkedinAnalysisQueryKey, useLinkedInAnalysis } from "@/src/features/linkedin/hooks/useLinkedInAnalysis";
+import type { LinkedInAnalysisSnapshot } from "@/src/features/linkedin/types";
 import { buildAdkResumeDataMap, buildAdkResumeStateDelta, mapAdkResumeDataMapToFrontend } from "@/src/features/resume/api/mappers";
 import { resumeByIdQueryKey } from "@/src/features/resume/hooks/useResume";
 import { useResumeStore } from "@/src/features/resume/store/useResumeStore";
@@ -28,7 +31,7 @@ export interface UseAdkStreamingManagerReturn {
   currentAgent: string;
   /** User-facing line derived from streaming agent/tool events (sidebar UX). */
   streamActivityLabel: string | null;
-  submitMessage: (message: string, options?: { aiMessageId?: string }) => Promise<void>;
+  submitMessage: (message: string, options?: { aiMessageId?: string; sessionIdOverride?: string }) => Promise<void>;
 }
 
 export function useAdkStreamingManager({
@@ -57,6 +60,9 @@ export function useAdkStreamingManager({
     return raw && raw.trim().length > 0 ? raw.trim() : null;
   }, [searchParams]);
 
+  const isLinkedInRoute = pathname.startsWith("/uniboard/linkedin");
+  const { data: linkedInSnapshot } = useLinkedInAnalysis({ enabled: isLinkedInRoute });
+
   const { isLoading, currentAgent, startStream } = useAdkStreaming(retryWithBackoff);
 
   useEffect(() => {
@@ -79,10 +85,29 @@ export function useAdkStreamingManager({
 
   const getStateDeltaForCurrentRoute = useCallback((): {
     stateDelta: Record<string, unknown>;
-    source: "zustand" | "react_query" | "list_zustand" | "clear_context";
+    source: "zustand" | "react_query" | "list_zustand" | "clear_context" | "linkedin_query";
   } => {
     const isResumeRoute = pathname.startsWith("/uniboard/resume");
+    const isLinkedInRoute = pathname.startsWith("/uniboard/linkedin");
     const allStoreResumes = useResumeStore.getState().resumeData;
+
+    if (isLinkedInRoute) {
+      const snapshot = linkedInSnapshot ?? queryClient.getQueryData<LinkedInAnalysisSnapshot | null>(linkedinAnalysisQueryKey);
+      if (snapshot?.result) {
+        return {
+          stateDelta: buildAdkLinkedInStateDelta(snapshot),
+          source: "linkedin_query",
+        };
+      }
+      return {
+        stateDelta: {
+          active_context: "linkedin",
+          current_linkedin: null,
+          linkedin_data: {},
+        },
+        source: "linkedin_query",
+      };
+    }
 
     if (isResumeRoute && !resumeId) {
       return {
@@ -124,7 +149,7 @@ export function useAdkStreamingManager({
       },
       source: "clear_context",
     };
-  }, [pathname, resumeId, queryClient]);
+  }, [pathname, resumeId, queryClient, linkedInSnapshot]);
 
   const syncCurrentSessionState = useCallback(
     async (reason: "route_change" | "before_send" | "store_change"): Promise<void> => {
@@ -178,6 +203,14 @@ export function useAdkStreamingManager({
   useEffect(() => {
     void syncCurrentSessionState("route_change");
   }, [syncCurrentSessionState]);
+
+  /** Re-PATCH when LinkedIn analysis loads or updates while on the LinkedIn page. */
+  useEffect(() => {
+    if (!isLinkedInRoute || !linkedInSnapshot?.result) {
+      return;
+    }
+    void syncCurrentSessionState("store_change");
+  }, [isLinkedInRoute, linkedInSnapshot, syncCurrentSessionState]);
 
   useEffect(() => {
     const unsubscribe = useResumeStore.subscribe(state => {
@@ -297,18 +330,22 @@ export function useAdkStreamingManager({
   );
 
   const submitMessage = useCallback(
-    async (message: string, options?: { aiMessageId?: string }): Promise<void> => {
-      if (!message.trim() || !userId || !sessionId) {
+    async (message: string, options?: { aiMessageId?: string; sessionIdOverride?: string }): Promise<void> => {
+      const targetSessionId = options?.sessionIdOverride?.trim() || sessionId;
+      if (!message.trim() || !userId || !targetSessionId) {
         throw new Error("Message, userId, and sessionId are required");
       }
-      await syncCurrentSessionState("before_send");
+      const isSubSend = Boolean(options?.sessionIdOverride && options.sessionIdOverride !== sessionId);
+      if (!isSubSend) {
+        await syncCurrentSessionState("before_send");
+      }
       pendingReviewAssistantIdRef.current = options?.aiMessageId ?? null;
 
       await startStream(
         {
           message: message.trim(),
           userId,
-          sessionId,
+          sessionId: targetSessionId,
           aiMessageId: options?.aiMessageId,
         },
         onMessageUpdate,
@@ -316,7 +353,9 @@ export function useAdkStreamingManager({
         onWebsiteCountUpdate,
         streamExtras
       );
-      await syncResumeStoreFromSessionState("after_stream");
+      if (!isSubSend) {
+        await syncResumeStoreFromSessionState("after_stream");
+      }
     },
     [
       userId,

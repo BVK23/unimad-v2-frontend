@@ -1,46 +1,117 @@
+"use client";
+
 import React, { useState } from "react";
+import type { InterviewAutoStart, InterviewPrepContext, StartInterviewFromJobPayload } from "@/src/features/interview-prep/types";
+import type { InterviewView, JobsTab } from "@/src/features/jobs/jobs-url";
 import { Search, Map, Mic2 } from "lucide-react";
 import { GeneratorContext } from "../../types/jobs";
 import ApplicationTracker from "./ApplicationTracker";
 import InterviewPrep from "./InterviewPrep";
 import JobDiscovery from "./JobDiscovery";
 
-interface JobsMainProps {
-  onNavigateToStudio: (context: GeneratorContext) => void;
+interface InterviewUrlState {
+  interviewId: string | null;
+  view: InterviewView | null;
+  round: string | null;
+  openSetupOnMount?: boolean;
 }
 
-const JobsMain: React.FC<JobsMainProps> = ({ onNavigateToStudio }) => {
-  const [activeTab, setActiveTab] = useState<"discovery" | "tracker" | "interview">("discovery");
+interface JobsMainProps {
+  onNavigateToStudio: (context: GeneratorContext) => void;
+  activeTab: JobsTab;
+  onTabChange: (tab: JobsTab) => void;
+  interviewUrl: InterviewUrlState;
+  onInterviewUrlChange: (
+    updates: Partial<{
+      interview_id: string | null;
+      view: InterviewView | null;
+      round: string | null;
+      setup: string | null;
+    }>
+  ) => void;
+}
+
+const JobsMain: React.FC<JobsMainProps> = ({ onNavigateToStudio, activeTab, onTabChange, interviewUrl, onInterviewUrlChange }) => {
+  const [interviewPrepContext, setInterviewPrepContext] = useState<InterviewPrepContext | null>(null);
+  const [interviewAutoStart, setInterviewAutoStart] = useState<InterviewAutoStart | null>(null);
+  const goToTracker = () => onTabChange("tracker");
+
+  const jobDescriptionForInterview = (job: StartInterviewFromJobPayload["job"]) =>
+    job.description?.trim() || `${job.role} at ${job.company}`;
+
+  const openInterviewPrepSetup = (job: StartInterviewFromJobPayload["job"]) => {
+    setInterviewPrepContext({
+      company: job.company,
+      role: job.role,
+      jobDescription: jobDescriptionForInterview(job),
+      applicationId: job.id,
+    });
+    setInterviewAutoStart(null);
+    onTabChange("interview");
+    onInterviewUrlChange({ setup: "1", view: "setup", interview_id: null, round: null });
+  };
+
+  const startInterviewFromJob = (payload: StartInterviewFromJobPayload) => {
+    setInterviewPrepContext({
+      company: payload.job.company,
+      role: payload.job.role,
+      jobDescription: jobDescriptionForInterview(payload.job),
+      applicationId: payload.applicationId ?? payload.job.id,
+    });
+    setInterviewAutoStart({ roundType: payload.roundType, mode: payload.mode });
+    onTabChange("interview");
+    onInterviewUrlChange({
+      setup: null,
+      view: payload.mode === "live" ? "voice" : null,
+      interview_id: null,
+      round: payload.roundType,
+    });
+  };
 
   return (
-    <div className="flex-1 bg-slate-50 dark:bg-[#0a0a0a] h-full overflow-hidden flex flex-col font-sans">
-      {/* Jobs Navigation Header */}
-      <div className="bg-white dark:bg-[#0a0a0a] border-b border-slate-200 dark:border-slate-800 sticky top-0 z-20">
-        <div className="max-w-7xl mx-auto px-6 py-4 flex items-center justify-between">
-          <div className="flex items-center gap-2">
-            {/* Icon Removed as requested */}
-            <div>
-              <h1 className="text-2xl font-medium text-slate-900 dark:text-white leading-none">Jobs & Career</h1>
-              <p className="text-xs text-slate-500 dark:text-slate-400 mt-1">Find, Apply, and Prepare for your dream role</p>
-            </div>
+    <div className="flex h-full flex-1 flex-col overflow-hidden bg-slate-50 font-sans dark:bg-[#0a0a0a]">
+      <div className="sticky top-0 z-20 border-b border-slate-200 bg-white dark:border-slate-800 dark:bg-[#0a0a0a]">
+        <div className="mx-auto flex max-w-7xl items-center justify-between px-6 py-4">
+          <div>
+            <h1 className="text-2xl font-medium leading-none tracking-tight text-slate-900 dark:text-white">Jobs & Career</h1>
+            <p className="mt-1 text-xs text-slate-500 dark:text-slate-400">Find, apply, and prepare for your dream role</p>
           </div>
 
-          <div className="flex bg-slate-100 dark:bg-slate-900 p-1 rounded-full">
+          <div className="flex rounded-full bg-slate-100 p-1 dark:bg-slate-900">
             <button
-              onClick={() => setActiveTab("discovery")}
-              className={`px-4 py-2 rounded-full text-xs font-medium flex items-center gap-2 transition-all ${activeTab === "discovery" ? "bg-white dark:bg-slate-800 text-blue-600 dark:text-blue-400 shadow-sm" : "text-slate-500 hover:text-slate-900 dark:text-slate-400 dark:hover:text-white"}`}
+              type="button"
+              onClick={() => onTabChange("discovery")}
+              className={`flex items-center gap-2 rounded-full px-4 py-2 text-xs font-medium transition-all ${
+                activeTab === "discovery"
+                  ? "bg-white text-blue-600 shadow-sm dark:bg-slate-800 dark:text-blue-400"
+                  : "text-slate-500 hover:text-slate-900 dark:text-slate-400 dark:hover:text-white"
+              }`}
             >
               <Search size={14} /> Discovery
             </button>
             <button
-              onClick={() => setActiveTab("tracker")}
-              className={`px-4 py-2 rounded-full text-xs font-medium flex items-center gap-2 transition-all ${activeTab === "tracker" ? "bg-white dark:bg-slate-800 text-blue-600 dark:text-blue-400 shadow-sm" : "text-slate-500 hover:text-slate-900 dark:text-slate-400 dark:hover:text-white"}`}
+              type="button"
+              onClick={() => onTabChange("tracker")}
+              className={`flex items-center gap-2 rounded-full px-4 py-2 text-xs font-medium transition-all ${
+                activeTab === "tracker"
+                  ? "bg-white text-blue-600 shadow-sm dark:bg-slate-800 dark:text-blue-400"
+                  : "text-slate-500 hover:text-slate-900 dark:text-slate-400 dark:hover:text-white"
+              }`}
             >
               <Map size={14} /> Tracker
             </button>
             <button
-              onClick={() => setActiveTab("interview")}
-              className={`px-4 py-2 rounded-full text-xs font-medium flex items-center gap-2 transition-all ${activeTab === "interview" ? "bg-white dark:bg-slate-800 text-blue-600 dark:text-blue-400 shadow-sm" : "text-slate-500 hover:text-slate-900 dark:text-slate-400 dark:hover:text-white"}`}
+              type="button"
+              onClick={() => {
+                setInterviewPrepContext(null);
+                onInterviewUrlChange({ setup: null, view: null, interview_id: null, round: null });
+                onTabChange("interview");
+              }}
+              className={`flex items-center gap-2 rounded-full px-4 py-2 text-xs font-medium transition-all ${
+                activeTab === "interview"
+                  ? "bg-white text-blue-600 shadow-sm dark:bg-slate-800 dark:text-blue-400"
+                  : "text-slate-500 hover:text-slate-900 dark:text-slate-400 dark:hover:text-white"
+              }`}
             >
               <Mic2 size={14} /> Interview Prep
             </button>
@@ -48,11 +119,29 @@ const JobsMain: React.FC<JobsMainProps> = ({ onNavigateToStudio }) => {
         </div>
       </div>
 
-      {/* Content Area */}
       <div className="flex-1 overflow-y-auto">
-        {activeTab === "discovery" && <JobDiscovery onNavigateToStudio={onNavigateToStudio} />}
-        {activeTab === "tracker" && <ApplicationTracker onNavigateToStudio={onNavigateToStudio} />}
-        {activeTab === "interview" && <InterviewPrep />}
+        {activeTab === "discovery" && (
+          <JobDiscovery onNavigateToStudio={onNavigateToStudio} onGoToTracker={goToTracker} onStartInterviewPrep={startInterviewFromJob} />
+        )}
+        {activeTab === "tracker" && (
+          <ApplicationTracker
+            onNavigateToStudio={onNavigateToStudio}
+            onStartInterviewPrep={openInterviewPrepSetup}
+            onStartInterviewFromPrepare={startInterviewFromJob}
+          />
+        )}
+        {activeTab === "interview" && (
+          <InterviewPrep
+            initialContext={interviewPrepContext}
+            autoStart={interviewAutoStart}
+            onAutoStartConsumed={() => setInterviewAutoStart(null)}
+            urlInterviewId={interviewUrl.interviewId}
+            urlView={interviewUrl.view}
+            urlRound={interviewUrl.round}
+            openSetupOnMount={interviewUrl.openSetupOnMount}
+            onUrlChange={onInterviewUrlChange}
+          />
+        )}
       </div>
     </div>
   );

@@ -1,11 +1,11 @@
 import React from "react";
+import { htmlToPlainText } from "@/utils/html-to-text";
 import { ResumeData } from "../../../../types";
 import { SECTIONS, isCustomSection } from "../../config/constants";
 import HtmlDisplay from "../../shared/HtmlDisplay";
 import ScaledA4PreviewShell from "../../shared/ScaledA4PreviewShell";
 import { parseDate as formatDateMonthYear } from "../../shared/dateUtils";
 import { getGithubUrl, getLinkedinUrl, getPortfolioUrl } from "../../shared/urlUtils";
-import { htmlToPlainText } from "@/utils/html-to-text";
 
 interface BasicPreviewProps {
   data: ResumeData;

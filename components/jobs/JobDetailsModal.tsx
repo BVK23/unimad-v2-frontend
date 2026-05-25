@@ -1,7 +1,8 @@
 import React, { useState } from "react";
-import { X, Building2, MapPin, Clock, ExternalLink, FileText, CheckCircle2, DollarSign } from "lucide-react";
+import type { StartInterviewFromJobPayload } from "@/src/features/interview-prep/types";
+import { X, ExternalLink, FileText, CheckCircle2, DollarSign, ChevronDown } from "lucide-react";
 import Image from "next/image";
-import { Job } from "../../types/jobs";
+import { Job, ApplicationStatus, GeneratorContext } from "../../types/jobs";
 import PrepareApplicationModal from "./PrepareApplicationModal";
 
 interface JobDetailsModalProps {
@@ -10,9 +11,38 @@ interface JobDetailsModalProps {
   onApply?: (job: Job) => void;
   onToggleSave?: (e: React.MouseEvent, jobId: string) => void;
   isSaved?: boolean;
+  onStatusChange?: (jobId: string, status: ApplicationStatus) => void;
+  onNavigateToStudio?: (context: GeneratorContext) => void;
+  onStartInterviewPrep?: (payload: StartInterviewFromJobPayload) => void;
 }
 
-const JobDetailsModal: React.FC<JobDetailsModalProps> = ({ job, onClose, onApply, onToggleSave, isSaved }) => {
+const statusColors: Record<ApplicationStatus, string> = {
+  draft: "bg-slate-200 text-slate-700 dark:bg-slate-700 dark:text-slate-300",
+  applied: "bg-slate-500 text-white",
+  interviewing: "bg-blue-500 text-white",
+  offer: "bg-green-500 text-white",
+  rejected: "bg-red-500 text-white",
+};
+
+const statusLabels: Record<ApplicationStatus, string> = {
+  draft: "Draft",
+  applied: "Applied",
+  interviewing: "Interviewing",
+  offer: "Offer",
+  rejected: "Rejected",
+};
+
+const JobDetailsModal: React.FC<JobDetailsModalProps> = ({
+  job,
+  onClose,
+  onApply,
+  onToggleSave,
+  isSaved,
+  onStatusChange,
+  onNavigateToStudio,
+  onStartInterviewPrep,
+}) => {
+  const [isStatusDropdownOpen, setIsStatusDropdownOpen] = useState(false);
   const [showPrepareModal, setShowPrepareModal] = useState(false);
   const [logoError, setLogoError] = useState(false);
 
@@ -29,7 +59,15 @@ const JobDetailsModal: React.FC<JobDetailsModalProps> = ({ job, onClose, onApply
   const showFallback = !isValidUrl(job.logo) || logoError;
 
   if (showPrepareModal) {
-    return <PrepareApplicationModal job={job} onClose={() => setShowPrepareModal(false)} />;
+    return (
+      <PrepareApplicationModal
+        job={job}
+        source="discovery"
+        onClose={() => setShowPrepareModal(false)}
+        onNavigateToStudio={onNavigateToStudio}
+        onStartInterviewPrep={onStartInterviewPrep}
+      />
+    );
   }
 
   return (
@@ -81,7 +119,39 @@ const JobDetailsModal: React.FC<JobDetailsModalProps> = ({ job, onClose, onApply
                 {isSaved ? "Saved" : "Save Job"}
               </button>
             )}
-            <button onClick={onClose} className="p-2 hover:bg-slate-200 dark:hover:bg-slate-800 rounded-full transition-colors">
+            {job.applicationStatus && onStatusChange && (
+              <div className="relative z-50">
+                <button
+                  type="button"
+                  onClick={() => setIsStatusDropdownOpen(!isStatusDropdownOpen)}
+                  className={`flex cursor-pointer items-center gap-2 rounded-lg px-3 py-2 text-sm font-medium transition-opacity ${statusColors[job.applicationStatus]}`}
+                >
+                  {statusLabels[job.applicationStatus]} <ChevronDown size={14} />
+                </button>
+                {isStatusDropdownOpen && (
+                  <div className="absolute right-0 top-full mt-2 w-40 overflow-hidden rounded-lg border border-slate-200 bg-white shadow-xl dark:border-slate-700 dark:bg-slate-800">
+                    {(Object.keys(statusLabels) as ApplicationStatus[]).map(status => (
+                      <button
+                        key={status}
+                        type="button"
+                        onClick={() => {
+                          onStatusChange(job.id, status);
+                          setIsStatusDropdownOpen(false);
+                        }}
+                        className={`w-full px-4 py-3 text-left text-sm font-medium transition-colors hover:bg-slate-50 dark:hover:bg-slate-700 ${
+                          job.applicationStatus === status
+                            ? "bg-blue-50 text-blue-600 dark:bg-blue-900/20 dark:text-blue-400"
+                            : "text-slate-700 dark:text-slate-200"
+                        }`}
+                      >
+                        {statusLabels[status]}
+                      </button>
+                    ))}
+                  </div>
+                )}
+              </div>
+            )}
+            <button onClick={onClose} className="p-2 hover:bg-slate-200 dark:hover:bg-slate-800 rounded-full transition-colors ml-2">
               <X size={24} className="text-slate-500" />
             </button>
           </div>
@@ -91,11 +161,13 @@ const JobDetailsModal: React.FC<JobDetailsModalProps> = ({ job, onClose, onApply
         <div className="flex-1 overflow-y-auto p-8 space-y-8">
           {/* Tags */}
           <div className="flex flex-wrap gap-2">
+            {/* Job match % — restore when backend match scoring is available
             {job.matchScore >= 90 && (
               <span className="px-3 py-1 bg-green-100 dark:bg-green-900/30 text-green-700 dark:text-green-400 text-xs font-medium rounded-full flex items-center gap-1">
                 {job.matchScore}% Match
               </span>
             )}
+            */}
             {job.isSponsoring && (
               <span
                 title="This job is highly likely to sponsor a visa"
@@ -114,28 +186,23 @@ const JobDetailsModal: React.FC<JobDetailsModalProps> = ({ job, onClose, onApply
           <section>
             <h3 className="font-medium text-lg text-slate-900 dark:text-white mb-3">About the Role</h3>
             <p className="text-slate-600 dark:text-slate-300 leading-relaxed whitespace-pre-line">
-              {job.description}
-              {/* Mock additional text since real description is short */}
-              {`\n\nIn this role, you will be responsible for defining the user experience for our core products. You'll work closely with product managers and engineers to ship high-quality features that solve real user problems.`}
+              {job.description || "No description available."}
             </p>
           </section>
 
-          <section>
-            <h3 className="font-medium text-lg text-slate-900 dark:text-white mb-3">Requirements</h3>
-            <ul className="space-y-2">
-              {[
-                "3+ years of experience in product design",
-                "Proficiency in Figma and prototyping tools",
-                "Experience with design systems",
-                "Strong communication skills",
-              ].map((req, i) => (
-                <li key={i} className="flex items-start gap-2 text-slate-600 dark:text-slate-300">
-                  <CheckCircle2 size={16} className="text-green-500 mt-0.5 shrink-0" />
-                  <span>{req}</span>
-                </li>
-              ))}
-            </ul>
-          </section>
+          {job.requirements && job.requirements.length > 0 && (
+            <section>
+              <h3 className="font-medium text-lg text-slate-900 dark:text-white mb-3">Requirements</h3>
+              <ul className="space-y-2">
+                {job.requirements.map((req, i) => (
+                  <li key={i} className="flex items-start gap-2 text-slate-600 dark:text-slate-300">
+                    <CheckCircle2 size={16} className="text-green-500 mt-0.5 shrink-0" />
+                    <span>{req}</span>
+                  </li>
+                ))}
+              </ul>
+            </section>
+          )}
         </div>
 
         {/* Footer Actions */}
