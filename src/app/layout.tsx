@@ -1,4 +1,5 @@
 import type { Metadata } from "next";
+import { Analytics } from "@vercel/analytics/next";
 import { ReactQueryProvider } from "./ReactQueryProvider";
 import "./globals.css";
 
@@ -37,6 +38,7 @@ export default function RootLayout({
       </head>
       <body className="bg-slate-50 text-slate-900 text-sm font-light overflow-x-hidden font-sans antialiased" suppressHydrationWarning>
         <ReactQueryProvider>{children}</ReactQueryProvider>
+        <Analytics />
       </body>
     </html>
   );
