@@ -1,6 +1,7 @@
 "use client";
 
 import { useState } from "react";
+import { btnOutline, btnPrimaryBrand } from "@/constants/ui/button-classes";
 import { UNICOACH_PERSONAL_BRANDING_VIDEO_URL } from "@/constants/unicoach-niche-content";
 import { LINKEDIN_COMMENT_EXTENSION_URL } from "@/features/linkedin/constants";
 import { ChevronDown, ChevronUp, ExternalLink } from "lucide-react";
@@ -24,21 +25,30 @@ function Accordion({ title, children, defaultOpen = false }: { title: string; ch
   );
 }
 
-function CtaLink({ href, children, external }: { href: string; children: React.ReactNode; external?: boolean }) {
-  const cls =
-    "inline-flex items-center gap-2 rounded-xl border border-brand-200 bg-brand-50 px-4 py-2 text-sm font-medium text-brand-800 hover:bg-brand-100 dark:border-brand-900 dark:bg-brand-950/40 dark:text-brand-200";
+function CtaLink({
+  href,
+  children,
+  external,
+  variant = "outline",
+}: {
+  href: string;
+  children: React.ReactNode;
+  external?: boolean;
+  variant?: "outline" | "primary";
+}) {
+  const cls = variant === "primary" ? btnPrimaryBrand : btnOutline;
   if (external) {
     return (
       <a href={href} target="_blank" rel="noopener noreferrer" className={cls}>
         {children}
-        <ExternalLink size={14} />
+        <ExternalLink size={14} className="opacity-80" />
       </a>
     );
   }
   return (
     <Link href={href} className={cls}>
       {children}
-      <ExternalLink size={14} />
+      <ExternalLink size={14} className="opacity-80" />
     </Link>
   );
 }
@@ -80,7 +90,7 @@ export const UnicoachStage4OverviewPanel = () => {
         <p className="text-sm text-slate-600 dark:text-slate-300 mb-3">
           Install the Unimad Chrome extension to draft thoughtful comments on posts in your feed.
         </p>
-        <CtaLink href={LINKEDIN_COMMENT_EXTENSION_URL} external>
+        <CtaLink href={LINKEDIN_COMMENT_EXTENSION_URL} external variant="primary">
           Get Chrome extension
         </CtaLink>
       </Accordion>
@@ -94,11 +104,7 @@ export const UnicoachStage4OverviewPanel = () => {
         <p className="text-sm text-slate-600 dark:text-slate-300 mb-3">
           Day-by-day prompts and example posts to kick-start your content rhythm.
         </p>
-        <button
-          type="button"
-          onClick={() => setPostsOpen(true)}
-          className="inline-flex items-center gap-2 rounded-xl border border-brand-200 bg-brand-50 px-4 py-2 text-sm font-medium text-brand-800 hover:bg-brand-100 dark:border-brand-900 dark:bg-brand-950/40 dark:text-brand-200"
-        >
+        <button type="button" onClick={() => setPostsOpen(true)} className={btnOutline}>
           View 30-day post ideas
         </button>
       </Accordion>

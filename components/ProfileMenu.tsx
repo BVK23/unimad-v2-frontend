@@ -1,12 +1,20 @@
+"use client";
+
 import React, { useState, useRef, useEffect } from "react";
-import { User, Settings, CreditCard, LogOut, Sun, Moon, ChevronDown, CheckCircle } from "lucide-react";
-import Image from "next/image";
+import { resolveProfilePictureFromProfile } from "@/features/user-profile/utils/resolve-profile-picture";
+import { Settings, CreditCard, LogOut, Sun, Moon, ChevronDown } from "lucide-react";
+import Link from "next/link";
 
 type UserData = {
   name?: string;
   profilePictureUrl?: string;
   email?: string;
   firstName?: string;
+  profilePictureSources?: {
+    unimad?: string | null;
+    google?: string | null;
+    linkedin?: string | null;
+  };
 };
 
 interface ProfileMenuProps {
@@ -37,7 +45,11 @@ const ProfileMenu: React.FC<ProfileMenuProps> = ({ isDarkMode, toggleTheme, user
 
   const displayName = userData?.name || userData?.firstName || "User";
   const displayEmail = userData?.email || "user@example.com";
-  const avatarUrl = userData?.profilePictureUrl || "https://picsum.photos/200/200";
+  const avatarUrl =
+    resolveProfilePictureFromProfile({
+      profilePictureUrl: userData?.profilePictureUrl,
+      profilePictureSources: userData?.profilePictureSources,
+    }) ?? null;
 
   return (
     <div className="relative" ref={menuRef}>
@@ -47,7 +59,14 @@ const ProfileMenu: React.FC<ProfileMenuProps> = ({ isDarkMode, toggleTheme, user
         className="flex items-center gap-2 hover:bg-slate-100 dark:hover:bg-white/5 p-1 pr-3 rounded-full transition-colors group"
       >
         <div className="w-8 h-8 rounded-full bg-slate-200 dark:bg-slate-700 overflow-hidden ring-2 ring-white dark:ring-slate-800 shadow-sm relative">
-          <Image src={avatarUrl} alt={displayName} fill sizes="32px" className="object-cover" />
+          {avatarUrl ? (
+            // eslint-disable-next-line @next/next/no-img-element
+            <img src={avatarUrl} alt={displayName} className="h-full w-full object-cover" referrerPolicy="no-referrer" />
+          ) : (
+            <span className="flex h-full w-full items-center justify-center text-xs font-medium text-slate-500">
+              {displayName.charAt(0)}
+            </span>
+          )}
         </div>
         <ChevronDown
           size={14}
@@ -63,7 +82,8 @@ const ProfileMenu: React.FC<ProfileMenuProps> = ({ isDarkMode, toggleTheme, user
             <div className="flex items-center gap-3 mb-3">
               <div className="w-12 h-12 rounded-full bg-brand-100 dark:bg-brand-900/30 text-brand-600 dark:text-brand-400 flex items-center justify-center font-medium text-lg overflow-hidden relative">
                 {avatarUrl ? (
-                  <Image src={avatarUrl} alt={displayName} fill sizes="48px" className="object-cover" />
+                  // eslint-disable-next-line @next/next/no-img-element
+                  <img src={avatarUrl} alt={displayName} className="h-full w-full object-cover" referrerPolicy="no-referrer" />
                 ) : (
                   <span>{displayName?.charAt(0) ?? "U"}</span>
                 )}
@@ -88,14 +108,22 @@ const ProfileMenu: React.FC<ProfileMenuProps> = ({ isDarkMode, toggleTheme, user
 
           {/* Items */}
           <div className="p-2 space-y-1">
-            <button className="w-full flex items-center gap-3 p-3 rounded-xl hover:bg-slate-50 dark:hover:bg-white/5 text-sm font-medium text-slate-700 dark:text-slate-200 transition-colors">
+            <Link
+              href="/uniboard/user/profile"
+              onClick={() => setIsOpen(false)}
+              className="w-full flex items-center gap-3 p-3 rounded-xl hover:bg-slate-50 dark:hover:bg-white/5 text-sm font-medium text-slate-700 dark:text-slate-200 transition-colors"
+            >
               <Settings size={18} className="text-slate-400" />
               Profile Settings
-            </button>
-            <button className="w-full flex items-center gap-3 p-3 rounded-xl hover:bg-slate-50 dark:hover:bg-white/5 text-sm font-medium text-slate-700 dark:text-slate-200 transition-colors">
+            </Link>
+            <Link
+              href="/uniboard/user/subscription"
+              onClick={() => setIsOpen(false)}
+              className="w-full flex items-center gap-3 p-3 rounded-xl hover:bg-slate-50 dark:hover:bg-white/5 text-sm font-medium text-slate-700 dark:text-slate-200 transition-colors"
+            >
               <CreditCard size={18} className="text-slate-400" />
               Subscription
-            </button>
+            </Link>
 
             <button
               onClick={toggleTheme}

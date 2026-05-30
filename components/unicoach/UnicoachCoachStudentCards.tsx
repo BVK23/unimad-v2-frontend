@@ -261,59 +261,37 @@ export const UnicoachCoachStudentCards: React.FC<UnicoachCoachStudentCardsProps>
                     if (!disableDropdown) onOpenJourney(user);
                   }
                 }}
-                className={`group cursor-pointer rounded-2xl border border-slate-200 bg-white p-4 text-left shadow-sm transition-all hover:border-brand-300 hover:shadow-md focus:outline-none focus-visible:ring-2 focus-visible:ring-brand-500 dark:border-slate-800 dark:bg-[#111] dark:hover:border-brand-500/40 ${
-                  isCurrentUser ? "ring-2 ring-brand-500" : ""
+                className={`group cursor-pointer rounded-2xl border border-slate-200 bg-white p-4 text-left shadow-sm transition-all hover:border-slate-300 hover:shadow-md focus:outline-none focus-visible:ring-2 focus-visible:ring-brand-500 dark:border-slate-800 dark:bg-[#111] dark:hover:border-slate-600 ${
+                  isCurrentUser
+                    ? "ring-2 ring-brand-500/25 border-brand-500/50 bg-brand-50/30 dark:border-brand-500/40 dark:bg-brand-950/20"
+                    : ""
                 } ${disableDropdown ? "cursor-not-allowed opacity-80" : ""}`}
               >
                 <div className="flex gap-3">
                   <CoachAvatarWithProgressRing pic={pic} name={user.name} percent={progressPct} unreadTotal={unreadTotal} />
                   <div className="min-w-0 flex-1 space-y-2">
-                    <div className="flex flex-wrap items-start justify-between gap-2">
-                      <div className="min-w-0 flex-1 space-y-2">
-                        <div className="flex flex-wrap items-center gap-2">
-                          <p className="min-w-0 flex-1 truncate text-sm font-semibold text-slate-900 dark:text-white">{user.name}</p>
-                          <span
-                            className={`${coachStageBadgeClasses(stageKey)} max-w-[10rem] shrink-0 truncate`}
-                            title={UNICOACH_COACH_STAGE_LABELS[stageKey]}
-                          >
-                            {UNICOACH_COACH_STAGE_LABELS[stageKey]}
-                          </span>
-                        </div>
-                        <a
-                          href={`mailto:${user.email}`}
-                          onClick={e => e.stopPropagation()}
-                          className="block truncate text-xs text-brand-600 hover:underline dark:text-brand-400"
-                        >
-                          {user.email}
-                        </a>
-                        <dl className="space-y-1 text-[11px] text-slate-600 dark:text-slate-400">
-                          <div className="flex gap-1.5">
-                            <dt className="w-14 shrink-0 text-slate-400 dark:text-slate-500">Progress</dt>
-                            <dd className="min-w-0">{progressPct}%</dd>
-                          </div>
-                          {unreadTotal > 0 ? (
-                            <div className="flex gap-1.5">
-                              <dt className="w-14 shrink-0 text-slate-400 dark:text-slate-500">Unread</dt>
-                              <dd className="min-w-0 font-medium text-amber-700 dark:text-amber-300">{unreadTotal} message(s)</dd>
-                            </div>
-                          ) : null}
-                        </dl>
-                      </div>
-                      <button
-                        type="button"
-                        disabled={disableDropdown}
-                        className={`shrink-0 rounded-xl border border-brand-200 px-3 py-1.5 text-xs font-medium text-brand-700 hover:bg-brand-50 dark:border-brand-900 dark:text-brand-300 dark:hover:bg-brand-950/50 ${
-                          disableDropdown ? "cursor-not-allowed opacity-40" : ""
-                        }`}
-                        onClick={e => {
-                          e.stopPropagation();
-                          if (disableDropdown) return;
-                          onOpenJourney(user);
-                        }}
+                    <div className="flex flex-wrap items-center gap-2">
+                      <p className="min-w-0 flex-1 truncate text-sm font-semibold text-slate-900 dark:text-white">{user.name}</p>
+                      <span
+                        className={`${coachStageBadgeClasses(stageKey)} max-w-[10rem] shrink-0 truncate`}
+                        title={UNICOACH_COACH_STAGE_LABELS[stageKey]}
                       >
-                        Open profile
-                      </button>
+                        {UNICOACH_COACH_STAGE_LABELS[stageKey]}
+                      </span>
                     </div>
+                    <p className="truncate text-xs text-brand-600 dark:text-brand-400">{user.email}</p>
+                    <dl className="space-y-1 text-[11px] text-slate-600 dark:text-slate-400">
+                      <div className="flex gap-1.5">
+                        <dt className="w-14 shrink-0 text-slate-400 dark:text-slate-500">Progress</dt>
+                        <dd className="min-w-0">{progressPct}%</dd>
+                      </div>
+                      {unreadTotal > 0 ? (
+                        <div className="flex gap-1.5">
+                          <dt className="w-14 shrink-0 text-slate-400 dark:text-slate-500">Unread</dt>
+                          <dd className="min-w-0 font-medium text-amber-700 dark:text-amber-300">{unreadTotal} message(s)</dd>
+                        </div>
+                      ) : null}
+                    </dl>
                   </div>
                 </div>
               </div>
@@ -322,9 +300,7 @@ export const UnicoachCoachStudentCards: React.FC<UnicoachCoachStudentCardsProps>
         </div>
       )}
 
-      <p className="text-center text-sm text-slate-500 dark:text-slate-400">
-        Click a card or &quot;Open profile&quot; to view the student journey.
-      </p>
+      <p className="text-center text-sm text-slate-500 dark:text-slate-400">Click a card to view the student journey.</p>
     </div>
   );
 };

@@ -1,7 +1,7 @@
 import type { UnicoachCoachStageKey } from "@/constants/unicoach-coach-stages";
 
 export function coachStageBadgeClasses(stage: UnicoachCoachStageKey): string {
-  const base = "shrink-0 inline-flex max-w-full items-center rounded-full px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wide";
+  const base = "shrink-0 inline-flex max-w-full items-center rounded-full px-2.5 py-1 text-[10px] font-bold uppercase tracking-wider";
   switch (stage) {
     case "not_started":
       return `${base} bg-red-100 text-red-900 dark:bg-red-950/55 dark:text-red-200`;

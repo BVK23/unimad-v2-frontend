@@ -1,12 +1,13 @@
 "use client";
 
-import React, { Suspense, useEffect, useState } from "react";
+import React, { Suspense, useEffect, useMemo, useState } from "react";
 import ChatSidebar from "@/components/ChatSidebar";
 import DebugConsole from "@/components/DebugConsole";
 import OnboardingModal from "@/components/OnboardingModal";
 import ProfileMenu from "@/components/ProfileMenu";
 import { AdkChatProvider } from "@/components/chat/AdkChatProvider";
 import type { UnibotIncomingRequest, UnibotResumeSection } from "@/components/chat/unibot-incoming-request";
+import { useUnicoachInit } from "@/features/unicoach/hooks/use-uniboard-unicoach";
 import { computeAdkUserId } from "@/utils/adkUserId";
 import { Bell } from "lucide-react";
 import Link from "next/link";
@@ -21,17 +22,21 @@ type UserData = {
 };
 
 const NAV_ITEMS = [
-  { href: "/uniboard/portfolio", label: "Portfolio" },
   { href: "/uniboard/resume", label: "Resume" },
+  { href: "/uniboard/portfolio", label: "Portfolio" },
   { href: "/uniboard/linkedin", label: "LinkedIn" },
   { href: "/uniboard/jobs", label: "Jobs" },
-  { href: "/uniboard/unicoach", label: "Unicoach" },
   { href: "/uniboard/studio", label: "Studio" },
 ] as const;
+
+const UNICOACH_NAV = { href: "/uniboard/unicoach", label: "Unicoach" } as const;
 
 export default function UniboardShell({ children, userData }: { children: React.ReactNode; userData: UserData | null }) {
   const adkUserId = computeAdkUserId(userData);
   const pathname = usePathname();
+  const { data: unicoachInit } = useUnicoachInit();
+  const showUnicoachNav = Boolean(unicoachInit?.coach_data) || unicoachInit?.subscribed === true;
+  const navItems = useMemo(() => (showUnicoachNav ? [...NAV_ITEMS, UNICOACH_NAV] : [...NAV_ITEMS]), [showUnicoachNav]);
   const [pendingAIRequest, setPendingAIRequest] = useState<UnibotIncomingRequest | null>(null);
   const [showOnboardingModal, setShowOnboardingModal] = useState(false);
   const [isDarkMode, setIsDarkMode] = useState(false);
@@ -118,8 +123,8 @@ export default function UniboardShell({ children, userData }: { children: React.
         <header className="h-16 min-h-[4rem] bg-white/80 dark:bg-[#0a0a0a]/80 backdrop-blur-md border-b border-slate-100 dark:border-white/5 sticky top-0 z-30 flex-none font-sans transition-colors">
           <div className="max-w-7xl mx-auto px-6 h-full flex items-center justify-between">
             <nav className="flex items-center gap-2 overflow-x-auto no-scrollbar max-w-[60vw] md:max-w-none">
-              {NAV_ITEMS.map(({ href, label }) => {
-                const isActive = pathname === href || (href !== "/uniboard/portfolio" && pathname.startsWith(href));
+              {navItems.map(({ href, label }) => {
+                const isActive = pathname === href || (href !== "/uniboard/resume" && pathname.startsWith(href));
                 return (
                   <Link
                     key={href}
@@ -137,12 +142,14 @@ export default function UniboardShell({ children, userData }: { children: React.
             </nav>
 
             <div className="flex items-center gap-4">
-              <button
-                type="button"
-                className="hidden sm:flex bg-brand-600 hover:bg-brand-700 text-white px-5 py-2 rounded-full text-xs font-medium shadow-sm transition-transform active:scale-95 items-center gap-2"
-              >
-                Hire a Career Coach
-              </button>
+              {!showUnicoachNav ? (
+                <Link
+                  href="/uniboard/unicoach"
+                  className="hidden sm:inline-flex bg-brand-600 hover:bg-brand-700 text-white px-5 py-2 rounded-full text-xs font-medium shadow-sm transition-transform active:scale-95 items-center gap-2"
+                >
+                  Hire a Career Coach
+                </Link>
+              ) : null}
               <div className="w-px h-6 bg-slate-200 dark:bg-slate-700 hidden sm:block mx-2" />
               <button
                 type="button"

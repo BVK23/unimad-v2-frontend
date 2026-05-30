@@ -213,9 +213,9 @@ const LinkedInDashboard: React.FC<LinkedInDashboardProps> = ({ onImprove, onNavi
           <span className="text-sm font-medium" style={{ fontFamily: "Onest, sans-serif" }}>
             Get the{" "}
             <span className="font-semibold bg-clip-text text-transparent bg-gradient-to-r from-blue-400 via-blue-300 to-blue-400 animate-gradient-x">
-              Unimad LinkedIn Optimiser
+              Unimad | Comment Generator
             </span>{" "}
-            for Chrome/Brave
+            for Chrome
           </span>
         </div>
         <a
