@@ -31,17 +31,78 @@ export type JourneyChatPeers = {
 
 export type JourneyChecklistBucket = Record<
   string,
-  { completed?: boolean; completed_at?: string | null; metadata?: Record<string, unknown> }
+  { completed?: boolean; completed_at?: string | null; metadata?: Record<string, unknown>; source?: string }
 >;
 
-export type JourneyChecklist = Record<string, JourneyChecklistBucket>;
+export type JourneyChecklist = {
+  schema_version?: number;
+  tasks?: Record<string, JourneyChecklistBucket>;
+  gates?: { prepare_for_interview_at?: string | null };
+  execution_tracker?: ExecutionTracker;
+} & Record<string, JourneyChecklistBucket | unknown>;
+
+export type ExecutionTracker = {
+  quality_application_ids?: string[];
+  quantity_applications_count?: number;
+  connections_count?: number;
+  comments_count?: number;
+  post_dates?: string[];
+  daily_log?: Record<string, DailyExecutionDayEntry | Record<string, unknown>>;
+};
+
+export type DailyExecutionItemKey =
+  | "quality_applications"
+  | "quantity_applications"
+  | "connections"
+  | "comments"
+  | "posts"
+  | "interview_prep"
+  | "vpd";
+
+export type DailyExecutionDayEntry = {
+  /** Tasks placed on this day (week view drag-drop). Day view lists all items with counters. */
+  tasks?: DailyExecutionItemKey[];
+  counts?: Partial<Record<DailyExecutionItemKey, number>>;
+};
+
+export type JourneyFlags = {
+  portfolio_done?: boolean;
+  show_coach_working_on_portfolio?: boolean;
+  max_unlocked_stage?: string;
+  booking_key?: string | null;
+  prepare_for_interview_at?: string | null;
+  prepare_for_interview_enabled?: boolean;
+  prepare_for_interview_block_reason?: string | null;
+  show_booking?: boolean;
+  booking_block_reason?: string | null;
+  has_interview_stage_application?: boolean;
+};
+
+export type StageTaskMeta = {
+  key: string;
+  label: string;
+  completer: string;
+  editable: boolean;
+  disabled_reason?: string | null;
+};
+
+export type StageDefinitionPayload = {
+  id: string;
+  has_dashboard?: boolean;
+  booking?: string | null;
+  tasks_meta?: StageTaskMeta[];
+};
 
 export type JourneyState = {
   ux_stage: string;
+  max_unlocked_stage?: string;
   unicoach_access_level: UnicoachAccessLevel;
   journey_checklist: JourneyChecklist;
   stage_task_keys: Record<string, string[]>;
+  stage_definitions?: Record<string, StageDefinitionPayload>;
   stage_checklist_complete: boolean;
+  journey_flags?: JourneyFlags;
+  execution_tracker?: ExecutionTracker;
   calls: Record<string, unknown>;
   next_call_to_enable: unknown;
   booking_links: Record<string, string>;
@@ -60,6 +121,8 @@ export type AssignedStudent = {
   email: string;
   linkedin_profile_picture?: string | null;
   unimad_profile_picture?: string | null;
+  google_profile_picture?: string | null;
+  profile_picture?: string | null;
   unread_counts?: Record<string, number>;
   has_unread?: boolean;
 };

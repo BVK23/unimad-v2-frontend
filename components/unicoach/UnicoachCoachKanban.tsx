@@ -3,17 +3,27 @@
 import React, { useCallback, useMemo, useRef, useState } from "react";
 import {
   coachColumnId,
+  USER_ONLY_COACH_COLUMNS,
   UNICOACH_COACH_STAGE_LABELS,
   UNICOACH_COACH_STAGE_ORDER,
   type UnicoachCoachStageKey,
 } from "@/constants/unicoach-coach-stages";
 import { useUnicoachStudentsByStage, useUpdateUnicoachStudentCallsMutation } from "@/features/unicoach/hooks/use-uniboard-unicoach";
 import type { AssignedStudent, UnicoachInitResponse, UnicoachStudentsByStage } from "@/features/unicoach/types";
+import { resolveProfilePicture } from "@/features/unicoach/utils/profile-picture";
 import type { DragEndEvent, DragStartEvent } from "@dnd-kit/core";
 import { DndContext, DragOverlay, PointerSensor, rectIntersection, useDraggable, useDroppable, useSensor, useSensors } from "@dnd-kit/core";
 import { Search } from "lucide-react";
-import Image from "next/image";
 import { UnicoachCoachConfirmDialog } from "./UnicoachCoachConfirmDialog";
+
+function studentProfilePicture(user: AssignedStudent): string | null {
+  return resolveProfilePicture({
+    direct: user.profile_picture,
+    unimad: user.unimad_profile_picture,
+    linkedin: user.linkedin_profile_picture,
+    google: user.google_profile_picture,
+  });
+}
 
 const COLUMN_IDS = UNICOACH_COACH_STAGE_ORDER.map(s => coachColumnId(s));
 
@@ -22,8 +32,8 @@ function getStageIndex(stageKey: string): number {
   return i >= 0 ? i : 0;
 }
 
-function DroppableColumnWithRef({ id, children }: { id: string; children: React.ReactNode }) {
-  const { setNodeRef, isOver } = useDroppable({ id });
+function DroppableColumnWithRef({ id, children, droppable }: { id: string; children: React.ReactNode; droppable?: boolean }) {
+  const { setNodeRef, isOver } = useDroppable({ id, disabled: droppable === false });
   return (
     <div ref={setNodeRef} className={`h-full flex flex-col min-h-0 ${isOver ? "bg-slate-100/80 dark:bg-slate-800/40 rounded-xl" : ""}`}>
       <div
@@ -63,7 +73,7 @@ const StudentCard: React.FC<StudentCardProps> = ({ user, stageKey, isCurrentUser
       }
     : undefined;
 
-  const pic = user.unimad_profile_picture || user.linkedin_profile_picture;
+  const pic = studentProfilePicture(user);
   const unreadTotal = user.unread_counts ? Object.values(user.unread_counts).reduce((a, c) => a + c, 0) : 0;
 
   return (
@@ -104,7 +114,8 @@ const StudentCard: React.FC<StudentCardProps> = ({ user, stageKey, isCurrentUser
         ) : null}
         <div className="relative h-8 w-8 rounded-full overflow-hidden flex-shrink-0 bg-slate-100 dark:bg-slate-800">
           {pic ? (
-            <Image src={pic} alt="" fill className="object-cover" sizes="32px" />
+            // eslint-disable-next-line @next/next/no-img-element -- external OAuth/CDN avatars
+            <img src={pic} alt="" className="h-full w-full object-cover" width={32} height={32} referrerPolicy="no-referrer" />
           ) : (
             <div className="h-full w-full flex items-center justify-center text-xs font-medium text-slate-500">
               {(user.name || "?").charAt(0)}
@@ -274,6 +285,7 @@ export const UnicoachCoachKanban: React.FC<UnicoachCoachKanbanProps> = ({ init, 
         if (m) toStageKey = m[2] as UnicoachCoachStageKey;
       }
       if (!toStageKey || toStageKey === fromStageKey) return;
+      if (USER_ONLY_COACH_COLUMNS.has(toStageKey)) return;
       requestMove(userIdNum, toStageKey, fromStageKey as UnicoachCoachStageKey);
     },
     [requestMove]
@@ -349,7 +361,7 @@ export const UnicoachCoachKanban: React.FC<UnicoachCoachKanbanProps> = ({ init, 
                   </div>
                   <div className="flex-1 flex flex-col min-h-0 border border-slate-200 dark:border-slate-700 border-t-0 rounded-b-xl bg-slate-50/50 dark:bg-slate-900/20 overflow-hidden">
                     <div className="flex-1 overflow-y-auto overflow-x-hidden min-h-0 p-2">
-                      <DroppableColumnWithRef id={columnId}>
+                      <DroppableColumnWithRef id={columnId} droppable={!USER_ONLY_COACH_COLUMNS.has(stageKey)}>
                         {users.map(user => (
                           <StudentCard
                             key={`${user.id}-${stageKey}`}
@@ -371,13 +383,15 @@ export const UnicoachCoachKanban: React.FC<UnicoachCoachKanbanProps> = ({ init, 
               <div className="w-[240px] cursor-grabbing">
                 <div className="rounded-xl border-2 border-brand-500 bg-white dark:bg-[#111] p-2 flex items-center gap-2 shadow-lg">
                   <div className="relative h-8 w-8 rounded-full overflow-hidden flex-shrink-0 bg-slate-100">
-                    {activeUser.unimad_profile_picture || activeUser.linkedin_profile_picture ? (
-                      <Image
-                        src={(activeUser.unimad_profile_picture || activeUser.linkedin_profile_picture) as string}
+                    {studentProfilePicture(activeUser) ? (
+                      // eslint-disable-next-line @next/next/no-img-element -- external OAuth/CDN avatars
+                      <img
+                        src={studentProfilePicture(activeUser) as string}
                         alt=""
-                        fill
-                        className="object-cover"
-                        sizes="32px"
+                        className="h-full w-full object-cover"
+                        width={32}
+                        height={32}
+                        referrerPolicy="no-referrer"
                       />
                     ) : (
                       <div className="h-full w-full flex items-center justify-center text-xs text-slate-500">

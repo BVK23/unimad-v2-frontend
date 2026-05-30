@@ -1,4 +1,4 @@
-export type ContentTab = "overview" | "resources";
+export type ContentTab = "overview" | "resources" | "dashboard";
 
 export type OverviewSection = { title: string; body: string };
 
@@ -19,6 +19,7 @@ export type UnicoachCurriculumStage = {
   tasks: string[];
   resources: ResourceItem[];
   nextActionLabel: string;
+  hasDashboard?: boolean;
 };
 
 export const videoUrlToEmbedSrc = (url: string): string | null => {
@@ -58,7 +59,7 @@ export const UNICOACH_STAGES: UnicoachCurriculumStage[] = [
         body: "Optimize your LinkedIn headline and About section so they match your niche story. Recruiters skim both in seconds—make the first lines specific and credible. Add proof (projects, metrics, links) where it strengthens your positioning.",
       },
     ],
-    tasks: ["Complete niche fixing worksheet", "Upload base resume draft", "Update LinkedIn headline and about section"],
+    tasks: ["Add your education", "Add your skills", "Add your work experiences", "Answer a few questions", "Research niche activity"],
     resources: [
       {
         title: "Niche Worksheet",
@@ -95,19 +96,28 @@ export const UNICOACH_STAGES: UnicoachCurriculumStage[] = [
         body: "Your portfolio is built offline by the coach; complete assigned portfolio tasks on your side so assets stay aligned with what you pitch in applications. If something is unclear, note blockers in coach chat early.",
       },
     ],
-    tasks: ["Revise resume", "Complete LinkedIn tasks", "Complete assigned portfolio tasks"],
+    tasks: [
+      "Revise your resume",
+      "Publish your resume",
+      "Add other achievements",
+      "Record your video",
+      "Revise your portfolio",
+      "Fill in your phone number",
+      "Shortlist 3 to 5 applications",
+      "Create a Calendly account",
+    ],
     resources: [
       {
-        title: "Resume Revision Checklist",
-        body: "Section-by-section pass after coach comments.",
+        title: "Resume guidelines",
+        body: "Lead with outcomes, quantify impact, and keep bullets tight. One page for most early-career profiles; two only when every line earns its place.",
       },
       {
-        title: "LinkedIn Task Board",
-        body: "Track each LinkedIn deliverable and mark done when live on your profile.",
+        title: "Portfolio guidelines",
+        body: "Your portfolio tells the full story behind your resume. Focus on clarity, proof, and a human voice—avoid generic template copy.",
       },
       {
-        title: "Portfolio Completion Notes",
-        body: "What to verify before you sign off on portfolio-related tasks.",
+        title: "LinkedIn guidelines",
+        body: "Align headline and About with your niche. Use featured links and recent activity to reinforce the same story you pitch in applications.",
       },
     ],
     nextActionLabel: "Unlock Call 2",
@@ -128,11 +138,7 @@ export const UNICOACH_STAGES: UnicoachCurriculumStage[] = [
         body: "Understand quality application standards: role fit, proof, specificity in answers, and follow-up. Capture the checklist your coach uses so your next solo applications inherit the same bar.",
       },
     ],
-    tasks: [
-      "Shortlist one target role and company",
-      "Submit job description before call",
-      "Attend Call 2 and complete one quality application",
-    ],
+    tasks: ["One quality application", "LinkedIn Optimisation"],
     resources: [
       {
         title: "Quality Application Framework",
@@ -161,7 +167,15 @@ export const UNICOACH_STAGES: UnicoachCurriculumStage[] = [
         body: "Watch the personal branding pre-recorded video and execute the action points. Treat it as implementation homework: pause, take notes, and schedule concrete posts or profile updates on your calendar.",
       },
     ],
-    tasks: ["Complete 5 quality applications", "Watch personal branding video", "Post one personal branding update"],
+    tasks: [
+      "Change your DP",
+      "Change your cover pic",
+      "Change your headline",
+      "Change your about section",
+      "Change your profile picture",
+      "Add 2 recommendations",
+      "Complete personal branding video",
+    ],
     resources: [
       {
         title: "Personal Branding Video",
@@ -181,10 +195,11 @@ export const UNICOACH_STAGES: UnicoachCurriculumStage[] = [
   },
   {
     id: "call-3",
-    title: "Stage 5 - Call 3",
-    subtitle: "Interview preparation and personal branding refinement.",
+    title: "Stage 5 - Call 3 Prep",
+    subtitle: "Check in with your coach, plan your 90-day application roadmap, then use the execution dashboard.",
     callMilestone: 3,
     isCallStage: true,
+    hasDashboard: true,
     overview: [
       {
         title: "Interview strategy",
@@ -195,7 +210,7 @@ export const UNICOACH_STAGES: UnicoachCurriculumStage[] = [
         body: "Refine personal branding with direct feedback from your coach—messaging, proof points, and how you show up in writing versus live conversation. Align public narrative with what you say in interviews.",
       },
     ],
-    tasks: ["Submit interview target companies", "Complete interview prep worksheet", "Attend Call 3"],
+    tasks: ["Check-in About Programme", "90 day Application Roadmap"],
     resources: [
       {
         title: "Interview Preparation Framework",
@@ -210,14 +225,15 @@ export const UNICOACH_STAGES: UnicoachCurriculumStage[] = [
         body: "A coach-led rubric for headlines, About, and activity signals.",
       },
     ],
-    nextActionLabel: "Join Call 3",
+    nextActionLabel: "Prepare for Interview",
   },
   {
     id: "complete",
-    title: "Stage 6 - Program Complete",
-    subtitle: "Continue the system and sustain momentum.",
+    title: "Stage 6 - Post Call 3",
+    subtitle: "Interview prep, VPD session, and following the system before your final call.",
     callMilestone: null,
     isCallStage: false,
+    hasDashboard: true,
     overview: [
       {
         title: "What you have unlocked",
@@ -228,7 +244,7 @@ export const UNICOACH_STAGES: UnicoachCurriculumStage[] = [
         body: "Continue applying the same system with consistency: weekly targets, honest quality checks, and coach updates when you stall. Small steady improvements compound faster than occasional sprints.",
       },
     ],
-    tasks: ["Follow weekly execution system", "Share progress update with your coach"],
+    tasks: ["Interview Preparation", "Watch VPD Session", "Follow the System"],
     resources: [
       {
         title: "Weekly Execution System",
@@ -239,6 +255,6 @@ export const UNICOACH_STAGES: UnicoachCurriculumStage[] = [
         body: "Warm-up drills and last-mile checks before high-stakes rounds.",
       },
     ],
-    nextActionLabel: "Continue System",
+    nextActionLabel: "Book Call 3",
   },
 ];

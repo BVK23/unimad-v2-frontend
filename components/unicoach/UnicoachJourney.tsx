@@ -1,29 +1,33 @@
 "use client";
 
 import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { COACH_LATE_MILESTONES, COACH_MILESTONE_BY_UX_STAGE, COACH_SETTABLE_MILESTONES } from "@/constants/unicoach-journey-coach";
 import {
   markCoachSectionRead,
   qk,
   useJourneyAdvanceMutation,
   useJourneyChecklistMutation,
-  useManageTodosMutation,
   useSendCoachMessageMutation,
   useUnicoachComments,
   useUnicoachInit,
   useUnicoachJourneyState,
   useUnicoachProfileInfo,
+  useUpdateUnicoachStudentCallsMutation,
 } from "@/features/unicoach/hooks/use-uniboard-unicoach";
 import {
   checklistToCompletedCompositeIds,
   callsCompletedCount,
   compositeIdToServerPayload,
-  firstIncompleteStageIndex,
+  deriveCoachSettableMilestone,
   isCallBookingUxStage,
+  isStageCompleteForSidebar,
+  maxUnlockedStageIndex,
   stageChecklistComplete,
 } from "@/features/unicoach/mappers/journey-mapper";
 import { switchUnicoachUser, updateUnicoachStudentMeta } from "@/features/unicoach/server-actions/unicoach-actions";
-import type { JourneyChecklist, UnicoachTodo } from "@/features/unicoach/types";
+import type { JourneyChecklist } from "@/features/unicoach/types";
 import { parseCoachData } from "@/features/unicoach/types";
+import { resolveProfilePicture } from "@/features/unicoach/utils/profile-picture";
 import { useMutation, useQueryClient } from "@tanstack/react-query";
 import confetti from "canvas-confetti";
 import {
@@ -41,11 +45,18 @@ import {
 } from "lucide-react";
 import { useRouter, useSearchParams } from "next/navigation";
 import { UnicoachCoachDashboard } from "./UnicoachCoachDashboard";
-import { UnicoachCoachTodosPanel } from "./UnicoachCoachTodosPanel";
+import { UnicoachExecutionCalendar } from "./UnicoachExecutionCalendar";
+import { UnicoachExecutionDashboard } from "./UnicoachExecutionDashboard";
 import { UnicoachPartialPaymentCta } from "./UnicoachPartialPaymentCta";
 import { UnicoachStageTasksCard } from "./UnicoachStageTasksCard";
 import { UnicoachSubscriptionPage } from "./UnicoachSubscriptionPage";
 import { UNICOACH_STAGES, videoUrlToEmbedSrc, type ContentTab, type UnicoachCurriculumStage } from "./curriculum";
+import { UnicoachStage1NichePanel } from "./stage-content/UnicoachStage1NichePanel";
+import { UnicoachStage1ResourcesPanel } from "./stage-content/UnicoachStage1ResourcesPanel";
+import { UnicoachStage2PostCall1Panel } from "./stage-content/UnicoachStage2PostCall1Panel";
+import { UnicoachStage3OverviewPanel, UnicoachStage3ResourcesPanel } from "./stage-content/UnicoachStage3Panel";
+import { UnicoachStage4OverviewPanel } from "./stage-content/UnicoachStage4OverviewPanel";
+import { UnicoachStage6OverviewPanel, UnicoachStage6ResourcesPanel } from "./stage-content/UnicoachStage6OverviewPanel";
 
 const STAGES = UNICOACH_STAGES;
 
@@ -113,7 +124,9 @@ const UnicoachJourney: React.FC = () => {
   const checklistMutation = useJourneyChecklistMutation(journeyUserId);
   const advanceMutation = useJourneyAdvanceMutation(journeyUserId);
   const sendMessageMutation = useSendCoachMessageMutation(commentSection, journeyUserId);
-  const todosMutation = useManageTodosMutation(journeyUserId);
+  const coachCallsMutation = useUpdateUnicoachStudentCallsMutation();
+
+  const isCoachView = Boolean(coachTargetUserId);
 
   const [activeStageId, setActiveStageId] = useState(STAGES[0].id);
   const [activeTab, setActiveTab] = useState<ContentTab>("overview");
@@ -152,7 +165,13 @@ const UnicoachJourney: React.FC = () => {
 
   const activeStage = STAGES.find(s => s.id === activeStageId) ?? STAGES[0];
 
-  const firstIncompleteIdx = useMemo(() => firstIncompleteStageIndex(STAGES, checklist), [checklist]);
+  const maxUnlockedIdx = useMemo(
+    () => maxUnlockedStageIndex(journey?.max_unlocked_stage ?? journey?.journey_flags?.max_unlocked_stage, STAGES),
+    [journey?.max_unlocked_stage, journey?.journey_flags?.max_unlocked_stage]
+  );
+  const journeyFlags = journey?.journey_flags ?? null;
+  const activeStageDef = journey?.stage_definitions?.[activeStage.id];
+  const tasksMeta = activeStageDef?.tasks_meta;
 
   const totalTaskCount = STAGES.reduce((t, s) => t + s.tasks.length, 0);
   const completionPercent = totalTaskCount === 0 ? 0 : Math.round((completedTaskIds.length / totalTaskCount) * 100);
@@ -274,13 +293,15 @@ const UnicoachJourney: React.FC = () => {
       const c = init ? parseCoachData(init) : null;
       return c?.coach_profile_picture || null;
     }
+    const fromJourney = journey?.chat_peers?.coach?.profile_picture;
+    if (fromJourney?.trim()) return fromJourney.trim();
     const coaches = profile?.coaches;
     if (coaches && typeof coaches === "object") {
       const first = Object.values(coaches)[0];
-      if (first?.profile_picture) return first.profile_picture;
+      if (first?.profile_picture?.trim()) return first.profile_picture.trim();
     }
-    return `https://api.dicebear.com/7.x/notionists/svg?seed=${encodeURIComponent("unicoach-coach")}`;
-  }, [isCoachAccount, init, profile?.coaches]);
+    return null;
+  }, [isCoachAccount, init, journey?.chat_peers?.coach?.profile_picture, profile?.coaches]);
 
   const floatingChatAvatarUrl = useMemo(() => {
     if (coachTargetUserId && journey?.chat_peers?.student?.profile_picture?.trim()) {
@@ -303,9 +324,17 @@ const UnicoachJourney: React.FC = () => {
   };
 
   const getStageStatus = (stage: UnicoachCurriculumStage, index: number) => {
-    if (index > firstIncompleteIdx) return "locked";
-    const stageTasksDone = stageChecklistComplete(checklist, stage.id);
-    if (stageTasksDone) return "complete";
+    if (isCoachView) {
+      if (stage.id === activeStage.id) return "active";
+      if (isStageCompleteForSidebar(stage.id, journey?.calls as Record<string, unknown>, checklist, journeyFlags)) {
+        return "complete";
+      }
+      return "unlocked";
+    }
+    if (index > maxUnlockedIdx) return "locked";
+    if (isStageCompleteForSidebar(stage.id, journey?.calls as Record<string, unknown>, checklist, journeyFlags)) {
+      return "complete";
+    }
     if (stage.id === activeStage.id) return "active";
     return "unlocked";
   };
@@ -325,9 +354,89 @@ const UnicoachJourney: React.FC = () => {
     }
   };
 
-  const showBookingCta = Boolean(journey?.stage_checklist_complete && journey?.booking_url_for_stage && isCallBookingUxStage(serverUx));
+  const showBookingCta = Boolean(journeyFlags?.show_booking && journey?.booking_url_for_stage && isCallBookingUxStage(serverUx));
 
-  const showAdvanceCta = Boolean(journey?.primary_action && journey.primary_action !== "noop_complete");
+  const showAdvanceCta = Boolean(journey?.primary_action === "prepare_for_interview" && serverUx === "call-3");
+
+  const advanceEnabled = Boolean(journeyFlags?.prepare_for_interview_enabled && isActiveStageFullyComplete);
+  const advanceBlockReason = !journeyFlags?.has_interview_stage_application
+    ? journeyFlags?.prepare_for_interview_block_reason
+    : !isActiveStageFullyComplete
+      ? "Complete all Stage 5 tasks first"
+      : null;
+
+  const coachMilestone = COACH_MILESTONE_BY_UX_STAGE[activeStage.id] ?? null;
+  const callsRaw = (journey?.calls ?? {}) as Record<string, unknown>;
+  const c1 = (callsRaw.call_1 ?? {}) as Record<string, unknown>;
+  const c2 = (callsRaw.call_2 ?? {}) as Record<string, unknown>;
+  const c3 = (callsRaw.call_3 ?? {}) as Record<string, unknown>;
+  const activeStageTasksComplete = stageChecklistComplete(checklist, activeStage.id);
+
+  const coachMilestoneEnabled = useMemo(() => {
+    if (!isCoachView || !coachMilestone) return false;
+    const tasksOk = coachMilestone.skipTaskGate || activeStageTasksComplete;
+    if (!tasksOk) return false;
+    switch (activeStage.id) {
+      case "call-1-prep":
+        return !c1.call_completed;
+      case "post-call-1":
+        return Boolean(c1.call_completed) && !c1.portfolio_completed;
+      case "call-2":
+        return Boolean(c1.portfolio_completed || c1.completed) && !c2.completed;
+      case "complete":
+        return !c3.completed;
+      default:
+        return false;
+    }
+  }, [isCoachView, coachMilestone, activeStage.id, activeStageTasksComplete, c1, c2, c3]);
+
+  const handleCoachMilestone = useCallback(async () => {
+    if (!coachTargetUserId || !coachMilestone) return;
+    try {
+      const result = await coachCallsMutation.mutateAsync({
+        userId: Number(coachTargetUserId),
+        targetStage: coachMilestone.targetStage,
+      });
+      if (result?.ux_stage) {
+        setActiveStageId(result.ux_stage);
+        setActiveTab("overview");
+      }
+    } catch {
+      /* ignore */
+    }
+  }, [coachTargetUserId, coachMilestone, coachCallsMutation]);
+
+  const handleCoachMilestoneDropdownChange = useCallback(
+    async (targetStage: string) => {
+      if (!coachTargetUserId) return;
+      try {
+        const result = await coachCallsMutation.mutateAsync({
+          userId: Number(coachTargetUserId),
+          targetStage,
+        });
+        if (result?.ux_stage) {
+          setActiveStageId(result.ux_stage);
+          setActiveTab("overview");
+        }
+      } catch {
+        /* ignore */
+      }
+    },
+    [coachTargetUserId, coachCallsMutation]
+  );
+
+  const coachSettableMilestone = useMemo(() => deriveCoachSettableMilestone(callsRaw), [callsRaw]);
+  const call2DoneForCoach = Boolean(c2.completed);
+  const studentUxStageLabel = STAGES.find(s => s.id === journey?.ux_stage)?.title ?? journey?.ux_stage ?? "";
+
+  const showStudentAwaitingCoach =
+    !isCoachView && activeStage.id === "post-call-1" && activeStageTasksComplete && Boolean(journeyFlags?.show_coach_working_on_portfolio);
+
+  const programCompleted = Boolean((callsRaw as { program_completed?: boolean }).program_completed);
+  const showPostCall3StudentCta = !isCoachView && activeStage.id === "complete" && Boolean(c3.completed) && !programCompleted;
+  const showPostCall3CoachCta = isCoachView && activeStage.id === "complete" && Boolean(c3.completed) && !programCompleted;
+
+  const showExecutionCalendar = activeStage.hasDashboard && (activeStage.id === "call-3" || activeStage.id === "complete");
 
   const handleSubscribeSuccess = useCallback(() => {
     void queryClient.invalidateQueries({ queryKey: ["unicoach", "init"] });
@@ -335,10 +444,32 @@ const UnicoachJourney: React.FC = () => {
     void queryClient.invalidateQueries({ queryKey: ["unicoach", "profile-info"] });
   }, [queryClient]);
 
-  const todos: UnicoachTodo[] = Array.isArray(profile?.todos) ? profile.todos : [];
-
   const [metaDraft, setMetaDraft] = useState({ start: "", closedBy: "", mode: "" });
+  const [metaEditing, setMetaEditing] = useState(false);
   const [switchingProfile, setSwitchingProfile] = useState(false);
+
+  const savedMeta = useMemo(
+    () => ({
+      start: journey?.student_meta?.program_start_date ?? "",
+      closedBy: journey?.student_meta?.closed_by ?? "",
+      mode: journey?.student_meta?.conversion_mode ?? "",
+    }),
+    [journey?.student_meta]
+  );
+
+  const metaDirty = metaDraft.start !== savedMeta.start || metaDraft.closedBy !== savedMeta.closedBy || metaDraft.mode !== savedMeta.mode;
+
+  const metaClosedByLabel = COACH_META_CLOSED_BY.find(o => o.value === savedMeta.closedBy)?.label ?? "Not set";
+  const metaModeLabel = COACH_META_MODE.find(o => o.value === savedMeta.mode)?.label ?? "Not set";
+
+  const formatMetaDate = (iso: string) => {
+    if (!iso) return "—";
+    try {
+      return new Date(iso).toLocaleDateString(undefined, { day: "numeric", month: "short", year: "numeric" });
+    } catch {
+      return iso;
+    }
+  };
 
   useEffect(() => {
     if (!coachTargetUserId || !journey?.student_meta) return;
@@ -361,6 +492,7 @@ const UnicoachJourney: React.FC = () => {
       }),
     onSuccess: () => {
       void queryClient.invalidateQueries({ queryKey: qk.journey(journeyUserId) });
+      setMetaEditing(false);
     },
   });
 
@@ -375,20 +507,6 @@ const UnicoachJourney: React.FC = () => {
       setSwitchingProfile(false);
     }
   }, [journey?.journey_target_profile?.email]);
-
-  const handleToggleTodo = async (todo: UnicoachTodo) => {
-    const id = todo.id;
-    if (!id) return;
-    try {
-      await todosMutation.mutateAsync({
-        action: "update",
-        todo_id: id,
-        isCompleted: !todo.isCompleted,
-      });
-    } catch {
-      /* ignore */
-    }
-  };
 
   if (initQuery.isLoading) {
     return (
@@ -499,6 +617,22 @@ const UnicoachJourney: React.FC = () => {
                             {journey.journey_target_profile.phone_number}
                           </a>
                         ) : null}
+                        {journey.journey_target_profile.linkedin_url ? (
+                          <a
+                            href={journey.journey_target_profile.linkedin_url}
+                            target="_blank"
+                            rel="noopener noreferrer"
+                            className="block truncate text-slate-600 hover:text-brand-600 dark:text-slate-400 dark:hover:text-brand-400"
+                          >
+                            {linkedInPathLabel(journey.journey_target_profile.linkedin_url)}
+                          </a>
+                        ) : null}
+                        <p className="text-slate-600 dark:text-slate-400">
+                          {journey.journey_target_profile.location_display?.trim()
+                            ? journey.journey_target_profile.location_display
+                            : [journey.journey_target_profile.city, journey.journey_target_profile.country].filter(Boolean).join(", ") ||
+                              "Location not set"}
+                        </p>
                         {journey.journey_target_profile.role ? (
                           <p className="text-slate-600 dark:text-slate-300">{journey.journey_target_profile.role}</p>
                         ) : null}
@@ -517,21 +651,31 @@ const UnicoachJourney: React.FC = () => {
                       </div>
                     </div>
                     <div className="flex w-full flex-col gap-2 sm:flex-row sm:items-center sm:justify-end">
-                      <label htmlFor="coach-ux-stage" className="sr-only">
-                        Current program stage
+                      <span
+                        className="inline-flex max-w-[14rem] truncate rounded-full bg-sky-100 px-2.5 py-1 text-[10px] font-semibold uppercase tracking-wide text-sky-900 dark:bg-sky-950/50 dark:text-sky-200"
+                        title="Student's current journey stage"
+                      >
+                        {studentUxStageLabel}
+                      </span>
+                      <label htmlFor="coach-milestone" className="sr-only">
+                        Set coach milestone
                       </label>
                       <select
-                        id="coach-ux-stage"
-                        disabled
-                        value={journey.ux_stage}
-                        className="w-full rounded-lg border border-slate-200 bg-slate-50 py-2 pl-2.5 pr-8 text-xs font-medium text-slate-800 outline-none dark:border-slate-600 dark:bg-slate-900 dark:text-slate-100 sm:w-56"
-                        title="Synced from program state (advance / calls). Use board or journey actions to move students."
+                        id="coach-milestone"
+                        value={coachSettableMilestone}
+                        onChange={e => void handleCoachMilestoneDropdownChange(e.target.value)}
+                        disabled={coachCallsMutation.isPending}
+                        className="w-full rounded-lg border border-slate-200 bg-white py-2 pl-2.5 pr-8 text-xs font-medium text-slate-800 outline-none dark:border-slate-600 dark:bg-slate-900 dark:text-slate-100 sm:w-56 disabled:opacity-60"
+                        title="Coach milestone — syncs with board columns. Stages 5–6 are set by student task progress."
                       >
-                        {STAGES.map(s => (
-                          <option key={s.id} value={s.id}>
-                            {s.title}
-                          </option>
-                        ))}
+                        {COACH_SETTABLE_MILESTONES.map(opt => {
+                          const lateLocked = COACH_LATE_MILESTONES.has(opt.value) && !call2DoneForCoach;
+                          return (
+                            <option key={opt.value} value={opt.value} disabled={lateLocked}>
+                              {opt.label}
+                            </option>
+                          );
+                        })}
                       </select>
                       <button
                         type="button"
@@ -545,86 +689,103 @@ const UnicoachJourney: React.FC = () => {
                   </div>
                 </div>
                 <div className="mt-4 border-t border-slate-100 pt-4 dark:border-slate-800">
-                  <dl className="grid gap-3 text-[11px] text-slate-600 dark:text-slate-400 sm:grid-cols-2 lg:grid-cols-3">
-                    <div className="space-y-1">
-                      <dt className="font-medium text-slate-500 dark:text-slate-500">Start date</dt>
-                      <dd>
-                        <input
-                          type="date"
-                          value={metaDraft.start}
-                          onChange={e => setMetaDraft(d => ({ ...d, start: e.target.value }))}
-                          className="w-full max-w-[11rem] rounded-lg border border-slate-200 bg-white px-2 py-1.5 text-xs text-slate-900 dark:border-slate-600 dark:bg-slate-900 dark:text-slate-100"
-                        />
-                      </dd>
-                    </div>
-                    <div className="space-y-1">
-                      <dt className="font-medium text-slate-500 dark:text-slate-500">LinkedIn</dt>
-                      <dd className="min-w-0">
-                        {journey.journey_target_profile.linkedin_url ? (
-                          <a
-                            href={journey.journey_target_profile.linkedin_url}
-                            target="_blank"
-                            rel="noopener noreferrer"
-                            className="text-brand-600 hover:underline dark:text-brand-400"
-                          >
-                            {linkedInPathLabel(journey.journey_target_profile.linkedin_url)}
-                          </a>
-                        ) : (
-                          "—"
-                        )}
-                      </dd>
-                    </div>
-                    <div className="space-y-1">
-                      <dt className="font-medium text-slate-500 dark:text-slate-500">Location</dt>
-                      <dd>
-                        {journey.journey_target_profile.location_display?.trim()
-                          ? journey.journey_target_profile.location_display
-                          : [journey.journey_target_profile.city, journey.journey_target_profile.country].filter(Boolean).join(", ") || "—"}
-                      </dd>
-                    </div>
-                    <div className="space-y-1">
-                      <dt className="font-medium text-slate-500 dark:text-slate-500">Closed by</dt>
-                      <dd>
-                        <select
-                          value={metaDraft.closedBy}
-                          onChange={e => setMetaDraft(d => ({ ...d, closedBy: e.target.value }))}
-                          className="w-full max-w-[11rem] rounded-lg border border-slate-200 bg-white py-1.5 pl-2 pr-7 text-xs dark:border-slate-600 dark:bg-slate-900 dark:text-slate-100"
-                        >
-                          {COACH_META_CLOSED_BY.map(o => (
-                            <option key={o.value || "none"} value={o.value}>
-                              {o.label}
-                            </option>
-                          ))}
-                        </select>
-                      </dd>
-                    </div>
-                    <div className="space-y-1">
-                      <dt className="font-medium text-slate-500 dark:text-slate-500">Mode</dt>
-                      <dd>
-                        <select
-                          value={metaDraft.mode}
-                          onChange={e => setMetaDraft(d => ({ ...d, mode: e.target.value }))}
-                          className="w-full max-w-[11rem] rounded-lg border border-slate-200 bg-white py-1.5 pl-2 pr-7 text-xs dark:border-slate-600 dark:bg-slate-900 dark:text-slate-100"
-                        >
-                          {COACH_META_MODE.map(o => (
-                            <option key={o.value || "none"} value={o.value}>
-                              {o.label}
-                            </option>
-                          ))}
-                        </select>
-                      </dd>
-                    </div>
-                  </dl>
-                  <div className="mt-3">
-                    <button
-                      type="button"
-                      onClick={() => metaSaveMutation.mutate()}
-                      disabled={metaSaveMutation.isPending}
-                      className="rounded-xl bg-slate-900 px-4 py-2 text-xs font-medium text-white hover:bg-slate-800 disabled:opacity-50 dark:bg-brand-600 dark:hover:bg-brand-700"
-                    >
-                      {metaSaveMutation.isPending ? "Saving…" : "Save program details"}
-                    </button>
+                  <div className="mb-3 flex items-center justify-between gap-2">
+                    <p className="text-xs font-medium text-slate-700 dark:text-slate-300">Program details</p>
+                    {!metaEditing ? (
+                      <button
+                        type="button"
+                        onClick={() => setMetaEditing(true)}
+                        className="rounded-lg border border-slate-200 px-3 py-1 text-[11px] font-medium text-slate-700 hover:bg-slate-50 dark:border-slate-600 dark:text-slate-300 dark:hover:bg-slate-800"
+                      >
+                        Edit
+                      </button>
+                    ) : (
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setMetaDraft(savedMeta);
+                          setMetaEditing(false);
+                        }}
+                        className="rounded-lg px-3 py-1 text-[11px] font-medium text-slate-500 hover:text-slate-700 dark:text-slate-400"
+                      >
+                        Cancel
+                      </button>
+                    )}
                   </div>
+                  {metaEditing ? (
+                    <>
+                      <dl className="grid gap-3 text-[11px] text-slate-600 dark:text-slate-400 sm:grid-cols-3">
+                        <div className="space-y-1">
+                          <dt className="font-medium text-slate-500 dark:text-slate-500">Start date</dt>
+                          <dd>
+                            <input
+                              type="date"
+                              value={metaDraft.start}
+                              onChange={e => setMetaDraft(d => ({ ...d, start: e.target.value }))}
+                              className="w-full max-w-[11rem] rounded-lg border border-slate-200 bg-white px-2 py-1.5 text-xs text-slate-900 dark:border-slate-600 dark:bg-slate-900 dark:text-slate-100"
+                            />
+                          </dd>
+                        </div>
+                        <div className="space-y-1">
+                          <dt className="font-medium text-slate-500 dark:text-slate-500">Closed by</dt>
+                          <dd>
+                            <select
+                              value={metaDraft.closedBy}
+                              onChange={e => setMetaDraft(d => ({ ...d, closedBy: e.target.value }))}
+                              className="w-full max-w-[11rem] rounded-lg border border-slate-200 bg-white py-1.5 pl-2 pr-7 text-xs dark:border-slate-600 dark:bg-slate-900 dark:text-slate-100"
+                            >
+                              {COACH_META_CLOSED_BY.map(o => (
+                                <option key={o.value || "none"} value={o.value}>
+                                  {o.label}
+                                </option>
+                              ))}
+                            </select>
+                          </dd>
+                        </div>
+                        <div className="space-y-1">
+                          <dt className="font-medium text-slate-500 dark:text-slate-500">Mode</dt>
+                          <dd>
+                            <select
+                              value={metaDraft.mode}
+                              onChange={e => setMetaDraft(d => ({ ...d, mode: e.target.value }))}
+                              className="w-full max-w-[11rem] rounded-lg border border-slate-200 bg-white py-1.5 pl-2 pr-7 text-xs dark:border-slate-600 dark:bg-slate-900 dark:text-slate-100"
+                            >
+                              {COACH_META_MODE.map(o => (
+                                <option key={o.value || "none"} value={o.value}>
+                                  {o.label}
+                                </option>
+                              ))}
+                            </select>
+                          </dd>
+                        </div>
+                      </dl>
+                      <div className="mt-3">
+                        <button
+                          type="button"
+                          onClick={() => metaSaveMutation.mutate()}
+                          disabled={!metaDirty || metaSaveMutation.isPending}
+                          className="rounded-xl bg-slate-900 px-4 py-2 text-xs font-medium text-white hover:bg-slate-800 disabled:cursor-not-allowed disabled:opacity-40 dark:bg-brand-600 dark:hover:bg-brand-700"
+                        >
+                          {metaSaveMutation.isPending ? "Saving…" : "Save program details"}
+                        </button>
+                      </div>
+                    </>
+                  ) : (
+                    <dl className="grid gap-3 text-[11px] text-slate-600 dark:text-slate-400 sm:grid-cols-3">
+                      <div className="space-y-0.5">
+                        <dt className="font-medium text-slate-500">Start date</dt>
+                        <dd className="text-slate-800 dark:text-slate-200">{formatMetaDate(savedMeta.start)}</dd>
+                      </div>
+                      <div className="space-y-0.5">
+                        <dt className="font-medium text-slate-500">Closed by</dt>
+                        <dd className="text-slate-800 dark:text-slate-200">{metaClosedByLabel}</dd>
+                      </div>
+                      <div className="space-y-0.5">
+                        <dt className="font-medium text-slate-500">Mode</dt>
+                        <dd className="text-slate-800 dark:text-slate-200">{metaModeLabel}</dd>
+                      </div>
+                    </dl>
+                  )}
                 </div>
               </>
             ) : (
@@ -711,13 +872,14 @@ const UnicoachJourney: React.FC = () => {
             <aside className="lg:col-span-3 space-y-2">
               {STAGES.map((stage, index) => {
                 const status = getStageStatus(stage, index);
-                const isLocked = status === "locked";
+                const lockedForStudent = index > maxUnlockedIdx;
+                const isLocked = !isCoachView && lockedForStudent;
                 return (
                   <button
                     key={stage.id}
                     type="button"
                     onClick={() => {
-                      if (!isLocked) {
+                      if (isCoachView || !isLocked) {
                         setActiveStageId(stage.id);
                         setActiveTab("overview");
                       }
@@ -732,8 +894,10 @@ const UnicoachJourney: React.FC = () => {
                       <div className="mt-0.5">
                         {status === "complete" ? (
                           <CheckCircle2 size={16} className="text-emerald-600 dark:text-emerald-400" />
-                        ) : status === "locked" ? (
-                          <Lock size={16} className="text-slate-400" />
+                        ) : lockedForStudent ? (
+                          <span title="Locked for student">
+                            <Lock size={16} className="text-slate-400" aria-hidden />
+                          </span>
                         ) : (
                           <Circle size={16} className="text-brand-500" />
                         )}
@@ -764,7 +928,7 @@ const UnicoachJourney: React.FC = () => {
                   )}
                 </div>
                 <div className="mt-4 flex flex-wrap gap-2">
-                  {(["overview", "resources"] as const).map(tab => (
+                  {(["overview", ...(activeStage.hasDashboard ? (["dashboard"] as const) : []), "resources"] as ContentTab[]).map(tab => (
                     <button
                       key={tab}
                       type="button"
@@ -782,42 +946,74 @@ const UnicoachJourney: React.FC = () => {
               </div>
 
               <div className="bg-white dark:bg-[#111] border border-slate-200 dark:border-slate-800 rounded-2xl p-5">
-                {activeTab === "overview" && (
-                  <div className="space-y-2">
-                    {activeStage.overview.map((section, index) => {
-                      const open = isAccordionOpen("overview", index);
-                      return (
-                        <div
-                          key={`${activeStage.id}-ov-${index}`}
-                          className="border border-slate-100 dark:border-slate-800 rounded-xl overflow-hidden"
-                        >
-                          <button
-                            type="button"
-                            onClick={() => toggleAccordion("overview", index)}
-                            className="w-full flex items-center justify-between gap-3 text-left px-3 py-3 hover:bg-slate-50 dark:hover:bg-slate-900/50 transition-colors"
-                          >
-                            <div className="flex items-start gap-2 min-w-0">
-                              <Sparkles size={16} className="text-brand-500 mt-0.5 shrink-0" />
-                              <span className="text-sm font-medium text-slate-900 dark:text-slate-100">{section.title}</span>
-                            </div>
-                            {open ? (
-                              <ChevronUp size={16} className="text-slate-400 shrink-0" />
-                            ) : (
-                              <ChevronDown size={16} className="text-slate-400 shrink-0" />
-                            )}
-                          </button>
-                          {open && (
-                            <div className="px-3 pb-3 pl-9 text-sm text-slate-600 dark:text-slate-300 leading-relaxed border-t border-slate-100 dark:border-slate-800/80 pt-3">
-                              {section.body}
-                            </div>
-                          )}
-                        </div>
-                      );
-                    })}
-                  </div>
-                )}
+                {activeTab === "overview" && activeStage.id === "call-1-prep" ? (
+                  <UnicoachStage1NichePanel targetUserId={journeyUserId} readOnly={isCoachView} />
+                ) : null}
 
-                {activeTab === "resources" && (
+                {activeTab === "overview" && activeStage.id === "post-call-1" ? <UnicoachStage2PostCall1Panel /> : null}
+
+                {activeTab === "overview" && activeStage.id === "call-2" ? <UnicoachStage3OverviewPanel /> : null}
+
+                {activeTab === "overview" && activeStage.id === "post-call-2" ? <UnicoachStage4OverviewPanel /> : null}
+
+                {activeTab === "overview" && activeStage.id === "complete" ? <UnicoachStage6OverviewPanel /> : null}
+
+                {activeTab === "overview" &&
+                  activeStage.id !== "call-1-prep" &&
+                  activeStage.id !== "post-call-1" &&
+                  activeStage.id !== "call-2" &&
+                  activeStage.id !== "post-call-2" &&
+                  activeStage.id !== "complete" && (
+                    <div className="space-y-2">
+                      {activeStage.overview.map((section, index) => {
+                        const open = isAccordionOpen("overview", index);
+                        return (
+                          <div
+                            key={`${activeStage.id}-ov-${index}`}
+                            className="border border-slate-100 dark:border-slate-800 rounded-xl overflow-hidden"
+                          >
+                            <button
+                              type="button"
+                              onClick={() => toggleAccordion("overview", index)}
+                              className="w-full flex items-center justify-between gap-3 text-left px-3 py-3 hover:bg-slate-50 dark:hover:bg-slate-900/50 transition-colors"
+                            >
+                              <div className="flex items-start gap-2 min-w-0">
+                                <Sparkles size={16} className="text-brand-500 mt-0.5 shrink-0" />
+                                <span className="text-sm font-medium text-slate-900 dark:text-slate-100">{section.title}</span>
+                              </div>
+                              {open ? (
+                                <ChevronUp size={16} className="text-slate-400 shrink-0" />
+                              ) : (
+                                <ChevronDown size={16} className="text-slate-400 shrink-0" />
+                              )}
+                            </button>
+                            {open && (
+                              <div className="px-3 pb-3 pl-9 text-sm text-slate-600 dark:text-slate-300 leading-relaxed border-t border-slate-100 dark:border-slate-800/80 pt-3">
+                                {section.body}
+                              </div>
+                            )}
+                          </div>
+                        );
+                      })}
+                    </div>
+                  )}
+
+                {activeTab === "dashboard" && activeStage.hasDashboard ? (
+                  <UnicoachExecutionCalendar
+                    tracker={journey?.execution_tracker}
+                    includeStage6Items={activeStage.id === "complete"}
+                    journeyUserId={journeyUserId}
+                    readOnly={isCoachView}
+                  />
+                ) : null}
+
+                {activeTab === "resources" && activeStage.id === "call-1-prep" ? (
+                  <UnicoachStage1ResourcesPanel />
+                ) : activeTab === "resources" && activeStage.id === "call-2" ? (
+                  <UnicoachStage3ResourcesPanel />
+                ) : activeTab === "resources" && activeStage.id === "complete" ? (
+                  <UnicoachStage6ResourcesPanel />
+                ) : activeTab === "resources" ? (
                   <div className="space-y-2">
                     {activeStage.resources.map((resource, index) => {
                       const open = isAccordionOpen("resources", index);
@@ -883,7 +1079,7 @@ const UnicoachJourney: React.FC = () => {
                       );
                     })}
                   </div>
-                )}
+                ) : null}
               </div>
             </section>
 
@@ -893,24 +1089,41 @@ const UnicoachJourney: React.FC = () => {
                   activeStage={activeStage}
                   serverUx={serverUx}
                   completedTaskIds={completedTaskIds}
+                  tasksMeta={tasksMeta}
                   checklistMutationPending={checklistMutation.isPending}
                   onToggleTask={handleToggleTask}
                   showBookingCta={showBookingCta}
                   showAdvanceCta={showAdvanceCta}
-                  isActiveStageFullyComplete={isActiveStageFullyComplete}
+                  advanceLabel={activeStage.nextActionLabel}
+                  bookingBlockReason={journeyFlags?.booking_block_reason}
+                  advanceBlockReason={advanceBlockReason}
+                  isActiveStageFullyComplete={showAdvanceCta ? advanceEnabled : isActiveStageFullyComplete}
                   advancePending={advanceMutation.isPending}
                   onOpenBooking={handleOpenBooking}
                   onAdvance={() => void handleAdvance()}
                   advanceError={advanceError}
+                  journeyFlags={journeyFlags}
+                  isCoachView={isCoachView}
+                  coachMilestone={coachMilestone}
+                  coachMilestoneEnabled={coachMilestoneEnabled}
+                  coachMilestonePending={coachCallsMutation.isPending}
+                  onCoachMilestone={() => void handleCoachMilestone()}
+                  showStudentAwaitingCoach={showStudentAwaitingCoach}
+                  showPostCall3StudentCta={showPostCall3StudentCta}
+                  showPostCall3CoachCta={showPostCall3CoachCta}
                 />
-                {/*
-                  Legacy coach task[] panel (UnicoachCoachTodosPanel): separate from curriculum journey_checklist.
-                  journey_checklist / STAGE_TASK_KEYS is the checklist of record in this view; task JSON is deprecated for UI here.
-                */}
-                {!coachTargetUserId ? (
-                  <UnicoachCoachTodosPanel todos={todos} isPending={todosMutation.isPending} onToggleTodo={handleToggleTodo} />
-                ) : null}
               </div>
+
+              {showExecutionCalendar ? (
+                <div className="bg-white dark:bg-[#111] border border-slate-200 dark:border-slate-800 rounded-2xl p-4">
+                  <UnicoachExecutionDashboard
+                    tracker={journey?.execution_tracker}
+                    flags={journeyFlags}
+                    includeInterviewPrep={activeStage.id === "complete"}
+                    variant="sidebar"
+                  />
+                </div>
+              ) : null}
             </aside>
           </div>
         </div>
@@ -1022,11 +1235,14 @@ const UnicoachJourney: React.FC = () => {
                   const alignEnd = (isCoachViewer && msg.sender === "coach") || (!isCoachViewer && msg.sender === "student");
                   const st = journey?.chat_peers?.student;
                   const ch = journey?.chat_peers?.coach;
-                  const studentPic = st?.profile_picture?.trim() || journey?.journey_target_profile?.profile_picture?.trim() || "";
+                  const studentPic =
+                    resolveProfilePicture({
+                      direct: st?.profile_picture ?? journey?.journey_target_profile?.profile_picture,
+                    }) ?? "";
                   const coachPic =
-                    ch?.profile_picture?.trim() ||
-                    (coachFabAvatarUrl ?? "").trim() ||
-                    `https://api.dicebear.com/7.x/notionists/svg?seed=${encodeURIComponent("unicoach-coach")}`;
+                    resolveProfilePicture({
+                      direct: ch?.profile_picture ?? coachFabAvatarUrl,
+                    }) ?? `https://api.dicebear.com/7.x/notionists/svg?seed=${encodeURIComponent("unicoach-coach")}`;
                   const showPic = msg.sender === "student" ? studentPic : coachPic;
                   const initial =
                     msg.sender === "student"

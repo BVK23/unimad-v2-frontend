@@ -83,8 +83,11 @@ export const useUpdateUnicoachStudentCallsMutation = () => {
   const qc = useQueryClient();
   return useMutation({
     mutationFn: updateUnicoachStudentCalls,
-    onSuccess: () => {
+    onSuccess: (_data, variables) => {
       void qc.invalidateQueries({ queryKey: qk.studentsByStage });
+      void qc.invalidateQueries({
+        queryKey: qk.journey(normalizeTargetId(String(variables.userId))),
+      });
     },
   });
 };

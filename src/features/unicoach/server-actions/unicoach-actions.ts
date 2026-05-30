@@ -148,6 +148,29 @@ export async function postJourneyChecklist(payload: {
   return data as { journey_checklist: Record<string, unknown>; ux_stage: string };
 }
 
+export async function postExecutionDaily(payload: {
+  date: string;
+  entry: { tasks?: string[]; counts?: Record<string, number> };
+  user_id?: string | null;
+}): Promise<{ execution_tracker?: Record<string, unknown> }> {
+  const body: Record<string, unknown> = {
+    date: payload.date,
+    entry: payload.entry,
+  };
+  if (payload.user_id) {
+    body.user_id = payload.user_id;
+  }
+  const res = await authedFetch("/api/unicoach/execution-daily/", {
+    method: "POST",
+    body: JSON.stringify(body),
+  });
+  const data = await res.json().catch(() => ({}));
+  if (!res.ok) {
+    throw new Error((data as { error?: string })?.error ?? "Failed to update daily log");
+  }
+  return data as { execution_tracker?: Record<string, unknown> };
+}
+
 export async function postJourneyAdvance(payload: {
   action: string;
   user_id?: string | null;
@@ -284,7 +307,12 @@ export async function updateUnicoachStudentCalls(payload: {
   userId: number;
   targetStage?: string;
   enableCallNumber?: number | null;
-}): Promise<unknown> {
+}): Promise<{
+  message?: string;
+  calls_data?: Record<string, unknown>;
+  ux_stage?: string;
+  max_unlocked_stage?: string;
+}> {
   const body: Record<string, unknown> = { user_id: payload.userId };
   if (payload.enableCallNumber != null) {
     body.enable_call_number = payload.enableCallNumber;
@@ -399,4 +427,64 @@ export async function fetchUserDataForPaymentPrefill(): Promise<{
     email: d.email,
     fullName: d.fullName ?? d.name,
   };
+}
+
+export type UnicoachModuleData = {
+  niche?: {
+    education?: string[][];
+    experiences?: Array<string[] | { company?: string; enjoyment?: string }>;
+    question_answers?: Record<string, string>;
+    niche_analysis?: {
+      ideal_role?: string;
+      roles?: Array<{ role?: string; reason?: string }>;
+    };
+  };
+};
+
+export async function fetchUnicoachStudentModuleData(userId?: string | null): Promise<UnicoachModuleData> {
+  const path =
+    userId != null && String(userId).length > 0
+      ? `/api/unicoach/student-data?user_id=${encodeURIComponent(String(userId))}`
+      : "/api/unicoach/student-data";
+  const res = await authedFetch(path, { method: "GET" });
+  const data = await res.json().catch(() => ({}));
+  if (!res.ok) {
+    throw new Error((data as { error?: string })?.error ?? "Failed to fetch student module data");
+  }
+  const usersData = (data as { users_data?: UnicoachModuleData }).users_data ?? {};
+  return usersData;
+}
+
+export async function updateUnicoachModuleData(payload: {
+  mode: "education" | "experiences" | "question_answers";
+  data: unknown;
+  userId?: string | null;
+}): Promise<UnicoachModuleData> {
+  const body: Record<string, unknown> = { mode: payload.mode, data: payload.data };
+  if (payload.userId) body.user_id = payload.userId;
+  const res = await authedFetch("/api/unicoach/update-user-data", {
+    method: "POST",
+    body: JSON.stringify(body),
+  });
+  const data = await res.json().catch(() => ({}));
+  if (!res.ok) {
+    throw new Error((data as { error?: string })?.error ?? "Failed to update module data");
+  }
+  return ((data as { users_data?: UnicoachModuleData }).users_data ?? {}) as UnicoachModuleData;
+}
+
+export async function generateUnicoachNiche(
+  userId?: string | null
+): Promise<{ niche?: UnicoachModuleData["niche"] extends infer N ? N : unknown }> {
+  const body: Record<string, unknown> = {};
+  if (userId) body.user_id = userId;
+  const res = await authedFetch("/api/unicoach/generate-niche", {
+    method: "POST",
+    body: JSON.stringify(body),
+  });
+  const data = await res.json().catch(() => ({}));
+  if (!res.ok) {
+    throw new Error((data as { error?: string })?.error ?? "Failed to generate niche");
+  }
+  return data as { niche?: UnicoachModuleData["niche"] };
 }

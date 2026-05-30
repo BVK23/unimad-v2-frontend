@@ -4,8 +4,9 @@ import React, { useCallback, useMemo, useState } from "react";
 import { UNICOACH_COACH_STAGE_LABELS, UNICOACH_COACH_STAGE_ORDER, type UnicoachCoachStageKey } from "@/constants/unicoach-coach-stages";
 import { useUnicoachStudentsByStage } from "@/features/unicoach/hooks/use-uniboard-unicoach";
 import type { AssignedStudent, CoachData, UnicoachInitResponse, UnicoachStudentsByStage } from "@/features/unicoach/types";
+import { coachStageBadgeClasses } from "@/features/unicoach/utils/coach-stage-badge";
+import { resolveProfilePicture } from "@/features/unicoach/utils/profile-picture";
 import { ArrowDownUp, Filter, Search } from "lucide-react";
-import Image from "next/image";
 
 export type UnicoachCoachStudentCardsProps = {
   coach: CoachData;
@@ -41,23 +42,6 @@ function stageToProgressPercent(stageKey: UnicoachCoachStageKey): number {
   const n = UNICOACH_COACH_STAGE_ORDER.length - 1;
   if (n <= 0) return 100;
   return Math.round((getStageIndex(stageKey) / n) * 100);
-}
-
-function coachStageBadgeClasses(stage: UnicoachCoachStageKey): string {
-  const base = "shrink-0 inline-flex max-w-full items-center rounded-full px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wide";
-  switch (stage) {
-    case "not_started":
-      return `${base} bg-red-100 text-red-900 dark:bg-red-950/55 dark:text-red-200`;
-    case "call_1":
-    case "portfolio":
-    case "call_2":
-    case "call_3":
-      return `${base} bg-amber-100 text-amber-950 dark:bg-amber-950/60 dark:text-amber-200`;
-    case "completed":
-      return `${base} bg-emerald-100 text-emerald-900 dark:bg-emerald-950/50 dark:text-emerald-200`;
-    default:
-      return `${base} bg-slate-100 text-slate-700 dark:bg-slate-800 dark:text-slate-200`;
-  }
 }
 
 function CoachAvatarWithProgressRing({
@@ -114,7 +98,8 @@ function CoachAvatarWithProgressRing({
         style={{ width: img, height: img, left: pad, top: pad }}
       >
         {pic ? (
-          <Image src={pic} alt="" width={img} height={img} className="h-full w-full object-cover" sizes="48px" />
+          // eslint-disable-next-line @next/next/no-img-element -- external OAuth/CDN avatars
+          <img src={pic} alt="" width={img} height={img} className="h-full w-full object-cover" referrerPolicy="no-referrer" />
         ) : (
           <div className="flex h-full w-full items-center justify-center text-sm font-medium text-slate-500">{(name || "?").charAt(0)}</div>
         )}
@@ -252,7 +237,12 @@ export const UnicoachCoachStudentCards: React.FC<UnicoachCoachStudentCardsProps>
           {filteredUsers.map(user => {
             const isCurrentUser = sessionEmail === user.email;
             const disableDropdown = isImpersonating && isCurrentUser;
-            const pic = user.unimad_profile_picture || user.linkedin_profile_picture || null;
+            const pic = resolveProfilePicture({
+              direct: user.profile_picture,
+              unimad: user.unimad_profile_picture,
+              linkedin: user.linkedin_profile_picture,
+              google: user.google_profile_picture,
+            });
             const unreadTotal = unreadTotalFor(user);
             const stageKey = stageKeyForUser(stages, user.id);
             const progressPct = stageToProgressPercent(stageKey);
