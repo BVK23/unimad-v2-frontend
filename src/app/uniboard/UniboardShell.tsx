@@ -121,8 +121,8 @@ export default function UniboardShell({ children, userData }: { children: React.
 
       <div className="flex-1 flex flex-col h-full overflow-hidden">
         <header className="h-16 min-h-[4rem] bg-white/80 dark:bg-[#0a0a0a]/80 backdrop-blur-md border-b border-slate-100 dark:border-white/5 sticky top-0 z-30 flex-none font-sans transition-colors">
-          <div className="max-w-7xl mx-auto px-6 h-full flex items-center justify-between">
-            <nav className="flex items-center gap-2 overflow-x-auto no-scrollbar max-w-[60vw] md:max-w-none">
+          <div className="flex h-full w-full items-center justify-between gap-4 px-6">
+            <nav className="flex min-w-0 flex-1 items-center gap-2 overflow-x-auto no-scrollbar">
               {navItems.map(({ href, label }) => {
                 const isActive = pathname === href || (href !== "/uniboard/resume" && pathname.startsWith(href));
                 return (
@@ -141,7 +141,7 @@ export default function UniboardShell({ children, userData }: { children: React.
               })}
             </nav>
 
-            <div className="flex items-center gap-4">
+            <div className="flex shrink-0 items-center gap-4">
               {!showUnicoachNav ? (
                 <Link
                   href="/uniboard/unicoach"

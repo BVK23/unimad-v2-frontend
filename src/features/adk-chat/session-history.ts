@@ -387,6 +387,11 @@ export class AdkSessionService {
           stateDelta.resume_data && typeof stateDelta.resume_data === "object"
             ? Object.keys(stateDelta.resume_data as Record<string, unknown>).length
             : 0,
+        currentPortfolio: stateDelta.current_portfolio,
+        portfolioDataCount:
+          stateDelta.portfolio_data && typeof stateDelta.portfolio_data === "object"
+            ? Object.keys(stateDelta.portfolio_data as Record<string, unknown>).length
+            : 0,
       });
       const response = await fetch(endpoint, {
         method: "PATCH",

@@ -5,6 +5,7 @@
  * It contains complex JSON parsing logic for various types of SSE messages
  * including text content, thoughts, function calls, and function responses.
  */
+import { extractStreamErrorFromSsePayload } from "../format-stream-error";
 import { ParsedSSEData, RawSSEData } from "./types";
 
 /**
@@ -18,6 +19,11 @@ import { ParsedSSEData, RawSSEData } from "./types";
  * @returns Structured data object with extracted information
  */
 export function extractDataFromSSE(data: string): ParsedSSEData {
+  const sseError = extractStreamErrorFromSsePayload(data);
+  if (sseError) {
+    throw sseError;
+  }
+
   try {
     const parsed: RawSSEData = JSON.parse(data);
 
@@ -119,6 +125,11 @@ export function extractDataFromSSE(data: string): ParsedSSEData {
  * @returns Default parsed data structure with error information logged
  */
 function handleSSEParsingError(data: string, error: unknown): ParsedSSEData {
+  const sseError = extractStreamErrorFromSsePayload(data);
+  if (sseError) {
+    throw sseError;
+  }
+
   const truncatedData = data.length > 200 ? data.substring(0, 200) + "..." : data;
   console.error('Error parsing SSE data. Raw data (truncated): "', truncatedData, '". Error details:', error);
 

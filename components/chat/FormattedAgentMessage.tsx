@@ -8,12 +8,17 @@ import remarkGfm from "remark-gfm";
 
 const markdownComponents: Components = {
   a: ({ node: _node, ...props }) => (
-    <a {...props} target="_blank" rel="noopener noreferrer" className="text-brand-600 underline underline-offset-2" />
+    <a
+      {...props}
+      target="_blank"
+      rel="noopener noreferrer"
+      className="text-brand-600 underline underline-offset-2 break-all [overflow-wrap:anywhere]"
+    />
   ),
 };
 
 const wrapperClass =
-  "formatted-agent-message max-w-none text-[13px] leading-relaxed text-inherit " +
+  "formatted-agent-message max-w-none min-w-0 text-[13px] leading-relaxed text-inherit break-words [overflow-wrap:anywhere] " +
   "[&_p]:mb-2 [&_p:last-child]:mb-0 " +
   "[&_ul]:my-2 [&_ul]:list-disc [&_ul]:pl-5 " +
   "[&_ol]:my-2 [&_ol]:list-decimal [&_ol]:pl-5 " +

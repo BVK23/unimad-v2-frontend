@@ -84,5 +84,5 @@ export default async function PublicPortfolioPage({ params }: Props) {
     slug: mapped.slug ?? portfolioSlug,
   };
 
-  return <Portfolio initialData={dataWithSlug} isReadOnly />;
+  return <Portfolio portfolioId={dataWithSlug.id || `public-${portfolioSlug}`} initialData={dataWithSlug} isReadOnly />;
 }

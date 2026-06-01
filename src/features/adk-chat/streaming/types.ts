@@ -29,6 +29,10 @@ export interface ParsedSSEData {
  */
 export interface RawSSEData {
   id?: string; // Message ID from backend
+  /** ADK /run_sse error object: `{"error":"..."}` */
+  error?: string;
+  errorCode?: string;
+  errorMessage?: string;
   content?: {
     parts?: Array<{
       text?: string;

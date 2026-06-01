@@ -12,7 +12,6 @@ export type ContentType =
   | "media"
   | "link-box"
   | "page-card"
-  | "divider"
   | "table"
   | "embed"
   | "box";
@@ -28,6 +27,8 @@ export interface PortfolioItem {
   span: ColumnSpan;
   colStart?: number; // Optional fixed grid start column for predictable horizontal resizing
   height?: number; // Optional fixed block height in px for stretch resize
+  /** True after manual Y edge resize; auto-grow will not shrink below stored height */
+  heightUserSet?: boolean;
   fontSize?: "sm" | "base" | "lg" | "xl" | "2xl";
   fontWeight?: "normal" | "medium" | "bold";
 
@@ -45,6 +46,8 @@ export interface PortfolioItem {
   linkIcon?: string;
   detailedBlocks?: PortfolioItem[]; // For rich project pages
   variant?: string;
+  /** Template layout slot; used to preserve old BlockNote width semantics on the 12-col grid */
+  layoutRole?: "section" | "halfCard" | "linkChip" | "inlineMedia" | "quote" | "mediaHero";
 }
 
 export interface EducationItem {
@@ -69,6 +72,8 @@ export interface UserProfile {
   email: string;
   phone: string;
   website: string;
+  /** Hero link chip label for profile.website (default Website). */
+  websiteLabel?: string;
   avatarUrl: string;
   coverUrl: string;
   experience: ExperienceItem[];
@@ -81,6 +86,10 @@ export interface UserProfile {
   coverCropRatio?: "1:1" | "3:4" | "4:5" | "16:9";
   showAvatar?: boolean;
   showCover?: boolean;
+  /** When false, the profile card is hidden; blocks can still sit above where it was. */
+  showProfileSection?: boolean;
+  /** Number of portfolio blocks rendered above the profile card (0 = all blocks below). */
+  itemsAboveProfileCount?: number;
   contactButtons?: ContactButton[];
 }
 

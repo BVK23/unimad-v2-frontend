@@ -86,6 +86,23 @@ export async function createInitialPortfolio(body: Record<string, unknown> = {})
   return res.json();
 }
 
+export async function createPortfolioFromBase(body: Record<string, unknown> = {}): Promise<{ assetData: Record<string, unknown> }> {
+  const res = await authedFetch("/api/portfolio/create/", {
+    method: "POST",
+    body: JSON.stringify({
+      clone_from_base: true,
+      ...body,
+    }),
+  });
+
+  if (!res.ok) {
+    const data = await res.json().catch(() => ({}));
+    throw new Error(data?.error ?? "Failed to create portfolio from base");
+  }
+
+  return res.json();
+}
+
 export async function updatePortfolioContent(body: Record<string, unknown>): Promise<{
   message: string;
   portfolio: Record<string, unknown>;

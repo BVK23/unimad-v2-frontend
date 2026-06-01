@@ -1,5 +1,6 @@
 "use client";
 import React from "react";
+import PortfolioImage from "./PortfolioImage";
 
 interface BioSectionProps {
   variant?: string;
@@ -41,8 +42,14 @@ const BioSection: React.FC<BioSectionProps> = ({ variant = "standard", data }) =
         </div>
 
         <div className="relative">
-          <div className="aspect-square rounded-3xl overflow-hidden shadow-2xl rotate-3 hover:rotate-0 transition-transform duration-500 ring-1 ring-slate-200 dark:ring-white/10">
-            <img src={image || "https://picsum.photos/800/800"} alt="Bio profile" className="w-full h-full object-cover" />
+          <div className="aspect-square rounded-3xl overflow-hidden shadow-2xl rotate-3 hover:rotate-0 transition-transform duration-500 ring-1 ring-slate-200 dark:ring-white/10 relative">
+            <PortfolioImage
+              src={image || "https://picsum.photos/800/800"}
+              alt="Bio profile"
+              fill
+              sizes="(max-width: 768px) 100vw, 400px"
+              className="object-cover"
+            />
           </div>
           {/* Accent decoration */}
           <div className="absolute -top-10 -right-10 w-40 h-40 bg-brand-500/10 rounded-full blur-3xl -z-10 animate-pulse"></div>

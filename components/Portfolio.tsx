@@ -1,5 +1,22 @@
 "use client";
-import React, { useState, useRef, useEffect } from "react";
+import React, { useState, useRef, useEffect, useLayoutEffect, useCallback } from "react";
+import { EMPTY_PORTFOLIO_HIGHLIGHT_MAP } from "@/features/adk-chat/adkPortfolioHighlightDiff";
+import { useAdkPortfolioReviewStore } from "@/features/adk-chat/stores/useAdkPortfolioReviewStore";
+import { mapFrontendPortfolioToBackend } from "@/features/portfolio/api/mappers";
+import {
+  getDefaultItemHeightPx,
+  getDefaultSpanForContentType,
+  getMinGridRowsForItem,
+  gridRowSpanForHeightPx,
+} from "@/features/portfolio/constants/portfolioLayout";
+import { useAutoItemHeights } from "@/features/portfolio/hooks/useAutoItemHeights";
+import { usePortfolioAutosave } from "@/features/portfolio/hooks/usePortfolioAutosave";
+import { usePortfolioGridRemeasure } from "@/features/portfolio/hooks/usePortfolioGridRemeasure";
+import { flushPortfolioLayoutRemeasure } from "@/features/portfolio/layout/portfolioLayoutRemeasure";
+import { publishPortfolioAsset } from "@/features/portfolio/server-actions/portfolio-actions";
+import { usePortfolioStore } from "@/features/portfolio/store/usePortfolioStore";
+import { normalizePortfolioItems } from "@/features/portfolio/utils/normalizePortfolioItems";
+import { loadPublishedUrl, savePublishedUrl } from "@/lib/portfolio/portfolioStorage";
 import { motion } from "framer-motion";
 import {
   Edit3,
@@ -38,6 +55,23 @@ import { PortfolioItem, UserProfile, ContentType, PortfolioData, ContactButton }
 import BlockRenderer from "./BlockRenderer";
 import FloatingToolbar from "./FloatingToolbar";
 import ProjectDetailView from "./ProjectDetailView";
+import { PortfolioAdkBlockHighlight } from "./portfolio/PortfolioAdkBlockHighlight";
+import PortfolioImage from "./portfolio/PortfolioImage";
+
+const PortfolioLiveDot = () => (
+  <span className="relative flex h-2 w-2 shrink-0" aria-hidden>
+    <span className="absolute inline-flex h-full w-full animate-ping rounded-full bg-green-400 opacity-75" />
+    <span className="relative inline-flex h-2 w-2 rounded-full bg-green-500 shadow-[0_0_8px_rgba(34,197,94,0.85)]" />
+  </span>
+);
+
+const buildPortfolioPublicUrl = (slug: string) => {
+  const trimmed = slug.trim();
+  if (typeof window !== "undefined") {
+    return `${window.location.origin}/portfolio/${trimmed}`;
+  }
+  return `/portfolio/${trimmed}`;
+};
 
 // Mock Initial Data (Enhanced for Notion-style Grid)
 const INITIAL_PROFILE: UserProfile = {
@@ -67,73 +101,19 @@ const INITIAL_ITEMS: PortfolioItem[] = [
   {
     id: "1",
     type: "text",
-    content: "Drafting the future of interaction",
-    span: 2,
-    fontSize: "2xl",
-    fontWeight: "medium",
-  },
-  {
-    id: "2",
-    type: "text",
-    content:
-      "I believe that good design is invisible. It should solve problems without drawing attention to itself. Currently focused on building modular ecosystems.",
-    span: 1,
+    title: "Quick Summary",
+    content: "<p>Start writing your portfolio summary here.</p>",
+    span: 12,
+    layoutRole: "section",
     fontSize: "base",
-  },
-  {
-    id: "3",
-    type: "link-box",
-    title: "Dribbble Portfolio",
-    linkUrl: "dribbble.com/alex",
-    content: "",
-    span: 1,
-  },
-  {
-    id: "4",
-    type: "page-card",
-    content: "https://images.unsplash.com/photo-1558655146-d09347e92766?auto=format&fit=crop&q=80",
-    title: "Santana Rock",
-    description: "A digital presence for the legendary Santana Rock band.",
-    variant: "image-text",
-    span: 1,
-  },
-  {
-    id: "5",
-    type: "page-card",
-    content: "https://images.unsplash.com/photo-1626785774573-4b799315345d?auto=format&fit=crop&q=80",
-    title: "Burr - App UI",
-    description: "An elegant app UI design for the Burr mobile platform.",
-    variant: "text-image",
-    span: 1,
-  },
-  {
-    id: "7",
-    type: "page-card",
-    content: "https://images.unsplash.com/photo-1551288049-bebda4e38f71?auto=format&fit=crop&q=80",
-    title: "Aura Meditation App",
-    description: "A complete redesign of the mindfulness experience for Gen Z.",
-    variant: "text-image",
-    span: 2,
-  },
-  {
-    id: "6",
-    type: "text",
-    content: "My Stack",
-    title: "Stack",
-    isCollapsible: true,
-    isCollapsed: false,
-    span: 1,
-    fontSize: "xl",
-    fontWeight: "medium",
+    height: 160,
   },
 ];
 
 interface PortfolioProps {
+  portfolioId: string;
   initialData?: PortfolioData;
   onBack?: () => void;
-  onSave?: (portfolio: PortfolioData) => Promise<void>;
-  isSaving?: boolean;
-  saveError?: string | null;
   isReadOnly?: boolean;
 }
 
@@ -142,29 +122,83 @@ interface PortfolioSnapshot {
   profile: UserProfile;
 }
 
-const getDefaultContactButtons = (profile: UserProfile): ContactButton[] => [
-  {
-    id: "contact-phone",
-    label: profile.phone || "Phone",
-    url: profile.phone || "",
-    icon: "phone",
-    isVisible: Boolean(profile.phone),
-  },
-  {
-    id: "contact-email",
-    label: profile.email || "Email",
-    url: profile.email || "",
-    icon: "mail",
-    isVisible: Boolean(profile.email),
-  },
-  {
-    id: "contact-site",
-    label: profile.website || "Website",
-    url: profile.website || "",
-    icon: "link",
-    isVisible: Boolean(profile.website),
-  },
-];
+const buildLocationButtonUrl = (location: string) => {
+  const trimmed = location.trim();
+  if (!trimmed) return "";
+  if (trimmed.startsWith("http://") || trimmed.startsWith("https://")) return trimmed;
+  return `https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(trimmed)}`;
+};
+
+/**
+ * Contact buttons for the hero. If a location chip already exists in the store, use it as-is.
+ * Otherwise append one from profile.location (one-time hydrate for legacy/API data).
+ */
+const resolveContactButtons = (profile: UserProfile): ContactButton[] => {
+  const stored = profile.contactButtons ?? [];
+  const base = stored.length > 0 ? [...stored] : getDefaultContactButtons(profile);
+
+  if (base.some(button => button.icon === "location" || button.id === "contact-location")) {
+    return base;
+  }
+
+  const locationText = profile.location?.trim();
+  if (!locationText) {
+    return base;
+  }
+
+  return [
+    ...base,
+    {
+      id: "contact-location",
+      label: locationText,
+      url: buildLocationButtonUrl(locationText),
+      icon: "location",
+      isVisible: true,
+    },
+  ];
+};
+
+const getDefaultContactButtons = (profile: UserProfile): ContactButton[] => {
+  const buttons: ContactButton[] = [
+    {
+      id: "contact-phone",
+      label: profile.phone || "Phone",
+      url: profile.phone || "",
+      icon: "phone",
+      isVisible: Boolean(profile.phone),
+    },
+    {
+      id: "contact-email",
+      label: profile.email || "Email",
+      url: profile.email || "",
+      icon: "mail",
+      isVisible: Boolean(profile.email),
+    },
+  ];
+
+  const locationText = profile.location?.trim();
+  if (locationText) {
+    buttons.push({
+      id: "contact-location",
+      label: locationText,
+      url: buildLocationButtonUrl(locationText),
+      icon: "location",
+      isVisible: true,
+    });
+  }
+
+  if (profile.website?.trim()) {
+    buttons.push({
+      id: "contact-site",
+      label: profile.websiteLabel?.trim() || "Website",
+      url: profile.website || "",
+      icon: "link",
+      isVisible: true,
+    });
+  }
+
+  return buttons;
+};
 
 const iconOptions: Array<{ value: ContactButton["icon"]; label: string }> = [
   { value: "phone", label: "Phone" },
@@ -174,9 +208,13 @@ const iconOptions: Array<{ value: ContactButton["icon"]; label: string }> = [
 ];
 
 const getContactHref = (button: ContactButton) => {
-  if (!button.url) return "#";
+  if (!button.url && button.icon !== "location") return "#";
   if (button.icon === "mail") return button.url.startsWith("mailto:") ? button.url : `mailto:${button.url}`;
   if (button.icon === "phone") return button.url.startsWith("tel:") ? button.url : `tel:${button.url}`;
+  if (button.icon === "location") {
+    const target = button.url?.trim() || button.label?.trim() || "";
+    return buildLocationButtonUrl(target) || "#";
+  }
   if (button.url.startsWith("http://") || button.url.startsWith("https://")) return button.url;
   return `https://${button.url}`;
 };
@@ -188,38 +226,81 @@ const ContactIcon: React.FC<{ icon: ContactButton["icon"]; size?: number }> = ({
   return <LinkIcon size={size} className="text-slate-500" />;
 };
 
-const normalizePortfolioItem = (item: PortfolioItem): PortfolioItem => {
-  const legacySpanMap: Record<number, number> = {
-    1: 4,
-    2: 8,
-    3: 12,
-  };
-  const mapped = legacySpanMap[item.span as number] ?? (item.span as number);
-  const normalizedSpan = Math.max(1, Math.min(12, mapped));
-  return {
-    ...item,
-    span: normalizedSpan as PortfolioItem["span"],
-    colStart: item.colStart ? Math.max(1, Math.min(12, Math.round(item.colStart))) : item.colStart,
-    detailedBlocks: item.detailedBlocks?.map(normalizePortfolioItem),
-  };
-};
+const buildFallbackPortfolio = (portfolioId: string, initialData?: PortfolioData): PortfolioData => ({
+  id: portfolioId,
+  title: initialData?.title ?? "Untitled Portfolio",
+  lastModified: initialData?.lastModified ?? new Date(),
+  slug: initialData?.slug,
+  isBase: initialData?.isBase,
+  themeMode: initialData?.themeMode,
+  profile: initialData?.profile ?? INITIAL_PROFILE,
+  items: normalizePortfolioItems(initialData?.items ?? INITIAL_ITEMS),
+});
 
-const normalizePortfolioItems = (items: PortfolioItem[]): PortfolioItem[] => items.map(normalizePortfolioItem);
+const Portfolio: React.FC<PortfolioProps> = ({ portfolioId, initialData, onBack, isReadOnly = false }) => {
+  const updatePortfolio = usePortfolioStore(s => s.updatePortfolio);
+  const portfolioFromStore = usePortfolioStore(s => s.getPortfolioData(portfolioId));
 
-const Portfolio: React.FC<PortfolioProps> = ({ initialData, onBack }) => {
-  const [isEditMode, setIsEditMode] = useState(true);
-  const [profile, setProfile] = useState<UserProfile>(initialData?.profile || INITIAL_PROFILE);
-  const [items, setItems] = useState<PortfolioItem[]>(
-    normalizePortfolioItems(initialData?.items || INITIAL_ITEMS).map(i => ({
-      ...i,
-      height: i.height ?? 160,
-    }))
+  const getFallbackPortfolio = useCallback(() => buildFallbackPortfolio(portfolioId, initialData), [portfolioId, initialData]);
+
+  useEffect(() => {
+    const seed = initialData ?? getFallbackPortfolio();
+    if (!usePortfolioStore.getState().getPortfolioData(portfolioId)) {
+      usePortfolioStore.getState().setPortfolioData(portfolioId, seed);
+    }
+  }, [portfolioId, initialData, getFallbackPortfolio]);
+
+  const portfolio = portfolioFromStore ?? getFallbackPortfolio();
+  const profile = portfolio.profile;
+  const items = portfolio.items;
+
+  const setProfile = useCallback(
+    (profileOrUpdater: UserProfile | ((prev: UserProfile) => UserProfile)) => {
+      updatePortfolio(portfolioId, prev => ({
+        ...prev,
+        profile: typeof profileOrUpdater === "function" ? profileOrUpdater(prev.profile) : profileOrUpdater,
+      }));
+    },
+    [portfolioId, updatePortfolio]
   );
-  const [selectedProjectId, setSelectedProjectId] = useState<string | null>(null);
+
+  const setItems = useCallback(
+    (itemsOrUpdater: PortfolioItem[] | ((prev: PortfolioItem[]) => PortfolioItem[])) => {
+      updatePortfolio(portfolioId, prev => ({
+        ...prev,
+        items: typeof itemsOrUpdater === "function" ? itemsOrUpdater(prev.items) : itemsOrUpdater,
+      }));
+    },
+    [portfolioId, updatePortfolio]
+  );
+
+  const hasPendingAdkReview = useAdkPortfolioReviewStore(s => s.hasPendingReviewForPortfolio(portfolioId));
+  const adkPortfolioHighlights = useAdkPortfolioReviewStore(s =>
+    s.hasPendingReviewForPortfolio(portfolioId) ? s.getActiveHighlights() : EMPTY_PORTFOLIO_HIGHLIGHT_MAP
+  );
+
+  const { saveStatusLabel, runSave } = usePortfolioAutosave(portfolioId, {
+    enabled: !isReadOnly && !hasPendingAdkReview,
+  });
+
+  useEffect(() => {
+    useAdkPortfolioReviewStore.getState().registerSaveHandler(portfolioId, async () => {
+      await runSave("manual");
+    });
+    return () => {
+      useAdkPortfolioReviewStore.getState().unregisterSaveHandler(portfolioId);
+    };
+  }, [portfolioId, runSave]);
+
+  const [isEditMode, setIsEditMode] = useState(true);
+  const selectedProjectId = usePortfolioStore(s => s.getFocusedPageCardId(portfolioId));
+  const setFocusedPageCardId = usePortfolioStore(s => s.setFocusedPageCardId);
   const [contextMenu, setContextMenu] = useState<{ x: number; y: number; targetId: string | null } | null>(null);
-  const [showPublishModal, setShowPublishModal] = useState(false);
+  const [showPublishMenu, setShowPublishMenu] = useState(false);
   const [publishUrlInput, setPublishUrlInput] = useState("");
   const [publishedUrl, setPublishedUrl] = useState<string | null>(null);
+  const [isPublishing, setIsPublishing] = useState(false);
+  const publishMenuRef = useRef<HTMLDivElement>(null);
   const [toastMessage, setToastMessage] = useState<string | null>(null);
   const [coverCropModal, setCoverCropModal] = useState<{ source: string; mimeType?: string } | null>(null);
   const [selectedCoverCropRatio, setSelectedCoverCropRatio] = useState<NonNullable<UserProfile["coverCropRatio"]>>(
@@ -268,6 +349,14 @@ const Portfolio: React.FC<PortfolioProps> = ({ initialData, onBack }) => {
   }, []);
 
   const selectedProject = selectedProjectId ? (items.find(item => item.id === selectedProjectId) ?? null) : null;
+
+  useEffect(() => {
+    if (!selectedProjectId) return;
+    const stillExists = items.some(item => item.id === selectedProjectId);
+    if (!stillExists) {
+      setFocusedPageCardId(portfolioId, null);
+    }
+  }, [items, portfolioId, selectedProjectId, setFocusedPageCardId]);
 
   useEffect(() => {
     const currentSnapshot: PortfolioSnapshot = { items, profile };
@@ -325,59 +414,187 @@ const Portfolio: React.FC<PortfolioProps> = ({ initialData, onBack }) => {
 
     window.addEventListener("keydown", onKeyDown);
     return () => window.removeEventListener("keydown", onKeyDown);
-  }, [isEditMode, items, profile]);
+  }, [isEditMode, items, profile, setItems, setProfile]);
 
-  const openPublishModal = () => {
-    setPublishUrlInput(publishedUrl ?? "");
-    setShowPublishModal(true);
-  };
-
-  const handlePublish = () => {
-    const trimmed = publishUrlInput.trim();
-    if (!trimmed) {
-      showToast("Enter a URL");
+  useEffect(() => {
+    const saved = loadPublishedUrl(portfolioId);
+    if (saved) {
+      setPublishedUrl(saved);
       return;
     }
-    setPublishedUrl(trimmed);
-    showToast("Published");
+    if (portfolio.slug?.trim()) {
+      setPublishedUrl(buildPortfolioPublicUrl(portfolio.slug));
+    }
+  }, [portfolioId, portfolio.slug]);
+
+  useEffect(() => {
+    if (!showPublishMenu) return;
+    const onPointerDown = (event: MouseEvent) => {
+      if (publishMenuRef.current?.contains(event.target as Node)) return;
+      setShowPublishMenu(false);
+    };
+    document.addEventListener("mousedown", onPointerDown);
+    return () => document.removeEventListener("mousedown", onPointerDown);
+  }, [showPublishMenu]);
+
+  useEffect(() => {
+    const cap = items.length;
+    const raw = profile.itemsAboveProfileCount ?? 0;
+    if (raw > cap) {
+      setProfile(p => ({ ...p, itemsAboveProfileCount: cap }));
+    }
+  }, [items.length, profile.itemsAboveProfileCount, setProfile]);
+
+  const showProfileSection = profile.showProfileSection !== false;
+  const itemsAboveProfile = Math.min(Math.max(0, profile.itemsAboveProfileCount ?? 0), items.length);
+  const isPortfolioLive = Boolean(publishedUrl);
+
+  const togglePublishMenu = () => {
+    setPublishUrlInput(publishedUrl ? (portfolio.slug ?? publishUrlInput) : publishUrlInput);
+    if (publishedUrl && portfolio.slug) {
+      setPublishUrlInput(portfolio.slug);
+    }
+    setShowPublishMenu(open => !open);
+  };
+
+  const handlePublish = async () => {
+    if (isPublishing) return;
+
+    if (publishedUrl) {
+      try {
+        await runSave("manual");
+        showToast("Changes saved");
+        setShowPublishMenu(false);
+      } catch {
+        showToast("Could not save changes");
+      }
+      return;
+    }
+
+    const slug = publishUrlInput
+      .trim()
+      .toLowerCase()
+      .replace(/[^a-z0-9-]/g, "-")
+      .replace(/^-|-$/g, "");
+    if (!slug) {
+      showToast("Enter a link name");
+      return;
+    }
+
+    setIsPublishing(true);
+    try {
+      await runSave("manual");
+
+      const current = usePortfolioStore.getState().getPortfolioData(portfolioId) ?? portfolio;
+      const content = mapFrontendPortfolioToBackend({ ...current, id: portfolioId });
+      const result = await publishPortfolioAsset(content, slug);
+
+      if (!result.ok) {
+        showToast(result.error || "Failed to publish");
+        return;
+      }
+
+      const publicUrl = buildPortfolioPublicUrl(result.slug);
+      setPublishedUrl(publicUrl);
+      savePublishedUrl(portfolioId, publicUrl);
+      updatePortfolio(portfolioId, prev => ({ ...prev, slug: result.slug }));
+      showToast("Published");
+      setShowPublishMenu(false);
+    } finally {
+      setIsPublishing(false);
+    }
   };
 
   const handleCopyPublishedLink = async () => {
-    if (!publishedUrl) return;
+    const url = (publishedUrl ?? (publishUrlInput.trim() ? buildPortfolioPublicUrl(publishUrlInput.trim()) : "")).trim();
+    if (!url) {
+      showToast("Enter a link name to copy");
+      return;
+    }
     try {
-      await navigator.clipboard.writeText(publishedUrl);
+      await navigator.clipboard.writeText(url);
       showToast("Link copied");
     } catch {
       showToast("Could not copy link");
     }
   };
 
+  const publishMenuDropdown = showPublishMenu ? (
+    <div className="absolute right-0 top-[calc(100%+0.5rem)] z-50 w-[min(20rem,calc(100vw-2rem))] rounded-2xl border border-slate-200 bg-white p-4 shadow-xl dark:border-white/10 dark:bg-[#0b0b0b]">
+      <p className="text-sm font-semibold text-slate-900 dark:text-white">Publish portfolio</p>
+      {!publishedUrl && (
+        <p className="mt-2 rounded-lg border border-amber-200/80 bg-amber-50 px-3 py-2 text-[11px] leading-snug text-amber-800 dark:border-amber-500/20 dark:bg-amber-950/40 dark:text-amber-200/90">
+          Your portfolio URL can only be chosen once. Pick carefully — it cannot be changed after you publish.
+        </p>
+      )}
+      <label className="mt-3 block text-[10px] font-semibold uppercase tracking-widest text-slate-500 dark:text-slate-400">Link name</label>
+      <input
+        value={publishUrlInput}
+        onChange={e => setPublishUrlInput(e.target.value)}
+        readOnly={Boolean(publishedUrl)}
+        disabled={Boolean(publishedUrl) || isPublishing}
+        placeholder="e.g. alex-morgan"
+        className={`mt-1.5 w-full rounded-xl border border-slate-200 bg-white px-3 py-2.5 text-sm text-slate-800 outline-none focus:border-brand-500/40 focus:ring-2 focus:ring-brand-500/30 dark:border-white/10 dark:bg-[#0f0f0f] dark:text-slate-100 ${
+          publishedUrl ? "cursor-not-allowed opacity-70" : ""
+        }`}
+      />
+      <div className="mt-3 flex items-center gap-2">
+        <button
+          type="button"
+          onClick={handleCopyPublishedLink}
+          disabled={!publishedUrl && !publishUrlInput.trim()}
+          className={`inline-flex items-center justify-center gap-1.5 rounded-full border border-slate-200 px-3 py-2 text-xs font-semibold text-slate-700 transition-all hover:border-brand-500/40 disabled:cursor-not-allowed disabled:opacity-40 dark:border-white/10 dark:text-slate-200 ${isEditMode ? "flex-1" : "w-full"}`}
+        >
+          <Copy size={13} /> Copy URL
+        </button>
+        {isEditMode && (
+          <button
+            type="button"
+            onClick={handlePublish}
+            disabled={isPublishing}
+            className="inline-flex flex-1 items-center justify-center gap-1.5 rounded-full bg-brand-600 px-3 py-2 text-xs font-semibold text-white shadow-md shadow-brand-500/20 transition-all hover:scale-[1.02] active:scale-95 disabled:opacity-60"
+          >
+            <ExternalLink size={13} />
+            {isPublishing ? "Publishing…" : publishedUrl ? "Save" : "Publish"}
+          </button>
+        )}
+      </div>
+    </div>
+  ) : null;
+
   const updateItemContent = (id: string, updates: Partial<PortfolioItem>) => {
-    setItems(items.map(item => (item.id === id ? { ...item, ...updates } : item)));
+    setItems(prev => prev.map(item => (item.id === id ? { ...item, ...updates } : item)));
   };
 
   const addItem = (type: ContentType, preset?: Partial<PortfolioItem>) => {
-    const getDefaultSpanForType = (contentType: ContentType): PortfolioItem["span"] => {
-      if (contentType === "link-box") return 4;
-      if (contentType === "text") return 4;
-      if (contentType === "page-card") return 6;
-      if (contentType === "media") return 6;
-      if (contentType === "table") return 8;
-      if (contentType === "embed") return 8;
-      return 4;
-    };
-
     const newItem: PortfolioItem = {
       id: getNextId("item"),
       type,
       content: "",
-      span: getDefaultSpanForType(type),
+      span: getDefaultSpanForContentType(type),
       title: type === "page-card" ? "New Page" : type === "link-box" ? "New Link" : undefined,
       fontSize: "base",
-      height: DEFAULT_ITEM_HEIGHT_PX,
+      height: getDefaultItemHeightPx(type),
       ...preset,
     };
     setItems([...items, newItem]);
+  };
+
+  const insertItemAfter = (index: number, type: ContentType = "text") => {
+    const newItem: PortfolioItem = {
+      id: getNextId("item"),
+      type,
+      content: "",
+      span: getDefaultSpanForContentType(type),
+      title: type === "page-card" ? "New Page" : type === "link-box" ? "New Link" : undefined,
+      fontSize: "base",
+      height: getDefaultItemHeightPx(type),
+    };
+    setItems(prev => {
+      const next = [...prev];
+      next.splice(index + 1, 0, newItem);
+      return next;
+    });
   };
 
   const fileToDataUrl = (file: File) =>
@@ -532,10 +749,62 @@ const Portfolio: React.FC<PortfolioProps> = ({ initialData, onBack }) => {
   const [draggedItemId, setDraggedItemId] = useState<string | null>(null);
   const itemRefs = useRef<Record<string, HTMLDivElement | null>>({});
   const dragHandleArmedItemIdRef = useRef<string | null>(null);
+  const [measuredHeights, setMeasuredHeights] = useState<Record<string, number>>({});
 
   const GRID_ROW_PX = 12;
-  const DEFAULT_ITEM_HEIGHT_PX = 160;
   const COLLAPSIBLE_TEXT_COLLAPSED_HEIGHT_PX = 72;
+
+  const handleMeasuredHeightOnly = useCallback((id: string, height: number) => {
+    setMeasuredHeights(prev => {
+      if (prev[id] === height) return prev;
+      return { ...prev, [id]: height };
+    });
+  }, []);
+
+  const handleAutoItemHeight = useCallback(
+    (id: string, height: number) => {
+      handleMeasuredHeightOnly(id, height);
+      setItems(prev => {
+        const target = prev.find(item => item.id === id);
+        if (!target || target.heightUserSet) return prev;
+        const stored = target.height ?? getDefaultItemHeightPx(target.type);
+        if (Math.abs(stored - height) <= 2) return prev;
+        return prev.map(item => (item.id === id ? { ...item, height } : item));
+      });
+    },
+    [handleMeasuredHeightOnly, setItems]
+  );
+
+  const { handleMeasureContentHeight } = useAutoItemHeights({
+    items,
+    onUpdateHeight: handleAutoItemHeight,
+    resizingId: resizing?.id ?? null,
+  });
+
+  const { handleMeasureContentHeight: handleMeasureForLayout } = useAutoItemHeights({
+    items,
+    onUpdateHeight: handleMeasuredHeightOnly,
+    resizingId: resizing?.id ?? null,
+  });
+
+  // Grid row spans use measuredHeights — keep measuring during ADK preview; only skip persisting height to store.
+  const blockContentMeasure = hasPendingAdkReview ? handleMeasureForLayout : handleMeasureContentHeight;
+
+  usePortfolioGridRemeasure({
+    portfolioId,
+    items,
+    itemRefs,
+    gridRef,
+    onMeasureContentHeight: handleMeasureForLayout,
+  });
+
+  useEffect(() => {
+    if (!hasPendingAdkReview) return;
+    const raf = requestAnimationFrame(() => {
+      flushPortfolioLayoutRemeasure();
+    });
+    return () => cancelAnimationFrame(raf);
+  }, [hasPendingAdkReview, items]);
 
   useEffect(() => {
     if (!gridRef.current) return;
@@ -562,16 +831,24 @@ const Portfolio: React.FC<PortfolioProps> = ({ initialData, onBack }) => {
     });
   };
 
+  const getLayoutHeightPx = (item: PortfolioItem) => {
+    if (item.type === "text" && item.isCollapsible && item.isCollapsed) {
+      return collapsedHeights[item.id] ?? COLLAPSIBLE_TEXT_COLLAPSED_HEIGHT_PX;
+    }
+
+    if (!item.heightUserSet) {
+      const stored = item.height ?? getDefaultItemHeightPx(item.type);
+      const live = measuredHeights[item.id];
+      if (live) return Math.max(stored, live);
+      return stored;
+    }
+
+    return item.height ?? getDefaultItemHeightPx(item.type);
+  };
+
   const getRowSpanForItem = (item: PortfolioItem) => {
-    const measuredCollapsedHeight = collapsedHeights[item.id];
-    const heightPx =
-      item.type === "text" && item.isCollapsible && item.isCollapsed
-        ? (measuredCollapsedHeight ?? COLLAPSIBLE_TEXT_COLLAPSED_HEIGHT_PX)
-        : (item.height ?? DEFAULT_ITEM_HEIGHT_PX);
-    const minRows = item.type === "text" || item.type === "link-box" ? 3 : 8; // 3=36px, 8=96px
-    const rowUnit = gridMetrics.rowHeight + gridMetrics.rowGap;
-    const span = Math.ceil((heightPx + gridMetrics.rowGap) / Math.max(1, rowUnit));
-    return Math.max(minRows, span);
+    const heightPx = getLayoutHeightPx(item);
+    return gridRowSpanForHeightPx(heightPx, getMinGridRowsForItem(item.type), gridMetrics.rowHeight, gridMetrics.rowGap);
   };
 
   const EDGE_RESIZE_HIT_AREA_PX = 18;
@@ -629,26 +906,110 @@ const Portfolio: React.FC<PortfolioProps> = ({ initialData, onBack }) => {
     };
     setProfile(prev => ({
       ...prev,
-      contactButtons: [...(prev.contactButtons || []), newButton],
+      contactButtons: [...resolveContactButtons(prev), newButton],
     }));
   };
 
   const updateContactButton = (id: string, updates: Partial<ContactButton>) => {
-    setProfile(prev => ({
-      ...prev,
-      contactButtons: (prev.contactButtons || []).map(button => (button.id === id ? { ...button, ...updates } : button)),
-    }));
+    setProfile(prev => {
+      const base = resolveContactButtons(prev);
+      const nextButtons = base.map(button => {
+        if (button.id !== id) {
+          return button;
+        }
+        const updated = { ...button, ...updates };
+        if (updated.icon === "location") {
+          const label = updated.label.trim();
+          return {
+            ...updated,
+            url: buildLocationButtonUrl(label),
+          };
+        }
+        return updated;
+      });
+      const locationButton = nextButtons.find(button => button.id === id && button.icon === "location");
+      const websiteButton = nextButtons.find(button => button.id === id && button.id === "contact-site");
+
+      if (locationButton) {
+        return {
+          ...prev,
+          contactButtons: nextButtons,
+          location: locationButton.label.trim(),
+        };
+      }
+
+      if (websiteButton) {
+        return {
+          ...prev,
+          contactButtons: nextButtons,
+          website: websiteButton.url.trim(),
+          websiteLabel: websiteButton.label.trim() || "Website",
+        };
+      }
+
+      return { ...prev, contactButtons: nextButtons };
+    });
   };
 
   const removeContactButton = (id: string) => {
-    setProfile(prev => ({
-      ...prev,
-      contactButtons: (prev.contactButtons || []).filter(button => button.id !== id),
-    }));
+    setProfile(prev => {
+      const base = resolveContactButtons(prev);
+      const removed = base.find(button => button.id === id);
+      return {
+        ...prev,
+        contactButtons: base.filter(button => button.id !== id),
+        ...(removed?.icon === "location" ? { location: "" } : {}),
+        ...(removed?.id === "contact-site" ? { website: "", websiteLabel: "" } : {}),
+      };
+    });
   };
 
   const removeItem = (id: string) => {
+    const idx = items.findIndex(item => item.id === id);
+    const k = profile.itemsAboveProfileCount ?? 0;
     setItems(items.filter(item => item.id !== id));
+    if (idx !== -1 && idx < k) {
+      setProfile(p => ({
+        ...p,
+        itemsAboveProfileCount: Math.max(0, (p.itemsAboveProfileCount ?? 0) - 1),
+      }));
+    }
+  };
+
+  const moveItemFromBelowToAboveProfile = (fromIndex: number) => {
+    if (!showProfileSection) return;
+    const k = Math.min(profile.itemsAboveProfileCount ?? 0, items.length);
+    if (fromIndex < k) return;
+    const next = [...items];
+    const [el] = next.splice(fromIndex, 1);
+    next.splice(k, 0, el);
+    setItems(next);
+    setProfile(p => ({ ...p, itemsAboveProfileCount: k + 1 }));
+    handleDragEnd();
+  };
+
+  const moveItemFromAboveToBelowProfile = (fromIndex: number) => {
+    if (!showProfileSection) return;
+    const k = Math.min(profile.itemsAboveProfileCount ?? 0, items.length);
+    if (fromIndex >= k) return;
+    const next = [...items];
+    const [el] = next.splice(fromIndex, 1);
+    const newK = Math.max(0, k - 1);
+    next.splice(newK, 0, el);
+    setItems(next);
+    setProfile(p => ({ ...p, itemsAboveProfileCount: newK }));
+    handleDragEnd();
+  };
+
+  const resolveDropSourceIndex = (): number => {
+    if (draggedItemId) {
+      const i = items.findIndex(it => it.id === draggedItemId);
+      if (i !== -1) return i;
+    }
+    if (draggedItemIndex !== null && draggedItemIndex >= 0 && draggedItemIndex < items.length) {
+      return draggedItemIndex;
+    }
+    return -1;
   };
 
   const getSpanClass = (span: number) => {
@@ -670,7 +1031,8 @@ const Portfolio: React.FC<PortfolioProps> = ({ initialData, onBack }) => {
     return spanClasses[clampedSpan];
   };
 
-  const visibleContactButtons = (profile.contactButtons || []).filter(button => button.isVisible && button.label.trim());
+  const heroContactButtons = resolveContactButtons(profile);
+  const visibleContactButtons = heroContactButtons.filter(button => button.isVisible && button.label.trim());
 
   // -- Drag & Drop Logic --
   const handleDragStart = (e: React.DragEvent, index: number, itemId: string) => {
@@ -793,16 +1155,119 @@ const Portfolio: React.FC<PortfolioProps> = ({ initialData, onBack }) => {
     scheduleReorder(fromIndex, targetIndex);
   };
 
+  const renderPortfolioGridItem = (item: PortfolioItem, index: number) => {
+    const fillsGridHeight = item.heightUserSet === true;
+    const layoutHeightPx = getLayoutHeightPx(item);
+    const blockHighlight = adkPortfolioHighlights[`block:${item.id}`];
+
+    return (
+      <motion.div
+        key={item.id}
+        ref={el => {
+          itemRefs.current[item.id] = el;
+        }}
+        onDragOver={e => handleDragOver(e, index)}
+        onDragEnd={handleDragEnd}
+        onContextMenu={e => handleContextMenu(e, item.id)}
+        onMouseUpCapture={() => {
+          dragHandleArmedItemIdRef.current = null;
+        }}
+        className={`
+          ${getSpanClass(item.span)}
+          relative transition-all duration-300
+          ${isEditMode ? "rounded-[2rem]" : ""}
+          ${draggedItemIndex === index ? "opacity-30 scale-[0.98]" : "opacity-100"}
+        `}
+        style={{
+          gridColumnStart: item.colStart,
+          gridRowEnd: `span ${getRowSpanForItem(item)}`,
+          height: fillsGridHeight ? "100%" : `${layoutHeightPx}px`,
+          alignSelf: "start",
+        }}
+      >
+        <PortfolioAdkBlockHighlight kind={blockHighlight} className="h-full w-full">
+          <div
+            className={`relative w-full h-full group/block ${fillsGridHeight ? "h-full" : ""}`}
+            onMouseDown={e => handleEdgeResizeStart(e, item)}
+            onMouseMove={handleEdgeResizeHover}
+            onMouseLeave={e => {
+              e.currentTarget.style.cursor = "default";
+            }}
+          >
+            {isEditMode && (
+              <div className="absolute -left-6 top-1/2 -translate-y-1/2 opacity-0 pointer-events-none group-hover/block:opacity-100 group-hover/block:pointer-events-auto transition-opacity flex flex-col gap-2 z-30">
+                <div
+                  className="p-1.5 cursor-move text-slate-400 hover:text-slate-600 bg-white dark:bg-slate-800 rounded-lg shadow-xl border border-slate-100 dark:border-white/5"
+                  draggable={!resizing}
+                  onMouseDown={e => {
+                    e.stopPropagation();
+                    dragHandleArmedItemIdRef.current = item.id;
+                  }}
+                  onDragStart={e => handleDragStart(e, index, item.id)}
+                  onDragEnd={handleDragEnd}
+                  onMouseUp={() => {
+                    dragHandleArmedItemIdRef.current = null;
+                  }}
+                  title="Move block"
+                >
+                  <GripVertical size={14} />
+                </div>
+
+                <button
+                  type="button"
+                  onClick={e => {
+                    e.stopPropagation();
+                    removeItem(item.id);
+                  }}
+                  className="p-1.5 text-slate-400 hover:text-red-500 bg-white dark:bg-slate-800 rounded-lg shadow-xl border border-slate-100 dark:border-white/5 transition-colors"
+                  title="Delete block"
+                >
+                  <Trash2 size={14} />
+                </button>
+              </div>
+            )}
+            <BlockRenderer
+              item={item}
+              isEditMode={isEditMode}
+              onUpdate={updateItemContent}
+              onSelectProject={project => setFocusedPageCardId(portfolioId, project.id)}
+              onMeasureCollapsedHeight={handleCollapsedHeightMeasure}
+              onMeasureContentHeight={blockContentMeasure}
+            />
+
+            {isEditMode && (
+              <>
+                <div
+                  className="absolute inset-y-0 left-0 w-[18px] cursor-ew-resize z-20"
+                  onMouseDown={e => initResize(e, item, "x", "left")}
+                  title="Resize width"
+                />
+                <div
+                  className="absolute inset-y-0 right-0 w-[18px] cursor-ew-resize z-20"
+                  onMouseDown={e => initResize(e, item, "x", "right")}
+                  title="Resize width"
+                />
+              </>
+            )}
+          </div>
+        </PortfolioAdkBlockHighlight>
+      </motion.div>
+    );
+  };
+
   return (
     <>
       {selectedProject ? (
         <ProjectDetailView
           project={selectedProject}
-          onBack={() => setSelectedProjectId(null)}
+          onBack={() => setFocusedPageCardId(portfolioId, null)}
           onUpdateProject={updated => {
             updateItemContent(updated.id, updated);
-            setSelectedProjectId(updated.id);
+            setFocusedPageCardId(portfolioId, updated.id);
           }}
+          adkHighlights={adkPortfolioHighlights}
+          gridColumns={12}
+          maxWidthClassName="max-w-5xl"
         />
       ) : (
         <div className="flex-1 bg-slate-50 dark:bg-[#080808] h-full overflow-y-auto no-scrollbar relative">
@@ -835,29 +1300,85 @@ const Portfolio: React.FC<PortfolioProps> = ({ initialData, onBack }) => {
             </div>
           )}
 
-          {/* Editor Header */}
-          {isEditMode && onBack && (
-            <div className="sticky top-0 z-40 bg-white/80 dark:bg-[#080808]/80 backdrop-blur-md border-b border-slate-100 dark:border-white/5 py-4 px-6 flex items-center justify-between">
-              <button
-                onClick={onBack}
-                className="flex items-center gap-2 text-slate-600 hover:text-slate-900 dark:text-slate-400 dark:hover:text-white transition-colors text-sm font-medium"
-              >
-                <ArrowLeft size={18} /> Back to Dashboard
-              </button>
+          {/* Editor / preview header */}
+          {(isEditMode || onBack) && (
+            <div className="sticky top-0 z-40 flex items-center justify-between border-b border-slate-100 bg-white/80 px-6 py-4 backdrop-blur-md dark:border-white/5 dark:bg-[#080808]/80">
+              {onBack ? (
+                <button
+                  type="button"
+                  onClick={onBack}
+                  className="flex items-center gap-2 text-sm font-medium text-slate-600 transition-colors hover:text-slate-900 dark:text-slate-400 dark:hover:text-white"
+                >
+                  <ArrowLeft size={18} /> Back to Dashboard
+                </button>
+              ) : (
+                <div className="text-sm font-medium text-slate-500 dark:text-slate-400">{portfolio.title || "Portfolio"}</div>
+              )}
               <div className="flex items-center gap-3">
-                <button
-                  onClick={openPublishModal}
-                  className="flex items-center gap-2 px-5 py-2 rounded-full text-xs font-semibold border border-slate-200 dark:border-white/10 bg-white/80 dark:bg-white/5 text-slate-700 dark:text-slate-200 hover:border-brand-500/40 hover:text-brand-700 dark:hover:text-white transition-all"
-                  title="Publish"
-                >
-                  <ExternalLink size={14} /> Publish
-                </button>
-                <button
-                  onClick={() => setIsEditMode(false)}
-                  className="flex items-center gap-2 px-6 py-2 bg-brand-600 text-white rounded-full text-xs font-semibold hover:scale-105 active:scale-95 transition-all shadow-lg shadow-brand-500/30"
-                >
-                  <Eye size={14} /> Preview Mode
-                </button>
+                {isEditMode && saveStatusLabel ? (
+                  <span className="text-xs text-slate-500 dark:text-slate-400 tabular-nums" aria-live="polite">
+                    {saveStatusLabel}
+                  </span>
+                ) : null}
+                {isEditMode ? (
+                  <>
+                    <div className="relative" ref={publishMenuRef}>
+                      <button
+                        type="button"
+                        onClick={togglePublishMenu}
+                        aria-expanded={showPublishMenu}
+                        aria-haspopup="true"
+                        className={`flex items-center gap-2 rounded-full border px-5 py-2 text-xs font-semibold transition-all ${
+                          showPublishMenu
+                            ? "border-brand-500/50 bg-brand-50 text-brand-800 dark:border-brand-500/40 dark:bg-brand-950/50 dark:text-brand-200"
+                            : "border-slate-200 bg-white/80 text-slate-700 hover:border-brand-500/40 hover:text-brand-700 dark:border-white/10 dark:bg-white/5 dark:text-slate-200 dark:hover:text-white"
+                        }`}
+                        title="Save and publish your portfolio"
+                      >
+                        <ExternalLink size={14} />
+                        Save and publish
+                      </button>
+                      {publishMenuDropdown}
+                    </div>
+                    <button
+                      type="button"
+                      onClick={() => setIsEditMode(false)}
+                      className="flex items-center gap-2 rounded-full bg-brand-600 px-6 py-2 text-xs font-semibold text-white shadow-lg shadow-brand-500/30 transition-all hover:scale-105 active:scale-95"
+                    >
+                      <Eye size={14} /> Preview Mode
+                    </button>
+                  </>
+                ) : (
+                  <>
+                    {isPortfolioLive && (
+                      <div className="relative" ref={publishMenuRef}>
+                        <button
+                          type="button"
+                          onClick={togglePublishMenu}
+                          aria-expanded={showPublishMenu}
+                          aria-haspopup="true"
+                          className={`inline-flex items-center gap-2 rounded-full border px-5 py-2 text-xs font-semibold transition-all ${
+                            showPublishMenu
+                              ? "border-green-500/50 bg-green-100 text-green-900 dark:border-green-500/40 dark:bg-green-950/60 dark:text-green-200"
+                              : "border-green-500/30 bg-green-50 text-green-800 dark:border-green-500/25 dark:bg-green-950/40 dark:text-green-300"
+                          }`}
+                          title="View portfolio URL"
+                        >
+                          <PortfolioLiveDot />
+                          Published
+                        </button>
+                        {publishMenuDropdown}
+                      </div>
+                    )}
+                    <button
+                      type="button"
+                      onClick={() => setIsEditMode(true)}
+                      className="flex items-center gap-2 rounded-full bg-brand-600 px-6 py-2 text-xs font-semibold text-white shadow-lg shadow-brand-500/30 transition-all hover:scale-105 active:scale-95"
+                    >
+                      <Edit3 size={14} /> Edit portfolio
+                    </button>
+                  </>
+                )}
               </div>
             </div>
           )}
@@ -875,9 +1396,19 @@ const Portfolio: React.FC<PortfolioProps> = ({ initialData, onBack }) => {
           ) : (
             profile.showCover !== false && (
               <div className="max-w-5xl mx-auto px-4 mt-6">
-                <div className="h-40 md:h-48 w-full relative group bg-slate-100 dark:bg-slate-900 border border-slate-200 dark:border-white/5 rounded-t-2xl overflow-hidden">
+                <div
+                  className={`h-40 md:h-48 w-full relative group bg-slate-100 dark:bg-slate-900 border border-slate-200 dark:border-white/5 overflow-hidden ${
+                    showProfileSection ? "rounded-t-2xl" : "rounded-2xl"
+                  }`}
+                >
                   {profile.coverUrl ? (
-                    <img src={profile.coverUrl} className="w-full h-full object-cover" />
+                    <PortfolioImage
+                      src={profile.coverUrl}
+                      alt={profile.name ? `${profile.name} cover` : "Portfolio cover"}
+                      fill
+                      sizes="(max-width: 768px) 100vw, 1280px"
+                      className="object-cover"
+                    />
                   ) : (
                     <div className="w-full h-full flex items-center justify-center text-slate-400 text-sm font-medium">No Cover Image</div>
                   )}
@@ -912,211 +1443,290 @@ const Portfolio: React.FC<PortfolioProps> = ({ initialData, onBack }) => {
           )}
 
           <div className="max-w-5xl mx-auto px-4 pb-40">
-            {/* Profile Info Section */}
-            <div
-              className={`relative mb-16 flex flex-col bg-white dark:bg-[#080808] border border-slate-200 dark:border-white/5 border-t-0 rounded-b-2xl px-6 md:px-10 pb-12 ${
-                profile.showCover !== false ? "pt-0" : "pt-10"
-              } ${
-                profile.profileAlignment === "center"
-                  ? "items-center text-center"
-                  : profile.profileAlignment === "right"
-                    ? "items-end text-right"
-                    : "items-start text-left"
-              }`}
-            >
-              {isEditMode && profile.showAvatar === false ? (
+            {!showProfileSection && isEditMode && (
+              <div className="mb-6 flex justify-end">
                 <button
-                  onClick={() => setProfile({ ...profile, showAvatar: true })}
-                  className={`w-32 h-32 md:w-36 md:h-36 rounded-full border-4 border-dashed border-slate-200 dark:border-white/10 flex flex-col items-center justify-center gap-2 text-slate-400 hover:text-brand-600 hover:border-brand-500 transition-colors ${profile.showCover !== false ? "-mt-16 md:-mt-20" : "mt-0"} z-10 bg-white dark:bg-white/5`}
+                  type="button"
+                  onClick={() => setProfile({ ...profile, showProfileSection: true })}
+                  className="inline-flex items-center gap-2 rounded-full border border-slate-200 bg-white px-4 py-2 text-xs font-medium text-slate-700 shadow-sm transition-colors hover:border-brand-500/40 dark:border-white/10 dark:bg-[#111] dark:text-slate-200"
                 >
-                  <ImageIcon size={20} />
-                  <span className="text-[10px] font-medium uppercase tracking-widest">Show</span>
+                  <Eye size={14} aria-hidden /> Show profile section
                 </button>
-              ) : (
-                profile.showAvatar !== false && (
-                  <div className={`relative group ${profile.showCover !== false ? "-mt-16 md:-mt-20" : "mt-0"} z-10 flex-shrink-0`}>
-                    <img
-                      src={profile.avatarUrl}
-                      className="w-32 h-32 md:w-36 md:h-36 rounded-full border-4 border-white dark:border-[#080808] shadow-lg object-cover bg-white dark:bg-[#080808]"
-                    />
-                    {/* Profile Alignment Controls: show on dp hover (not on the area below it) */}
-                    {isEditMode && (
+              </div>
+            )}
+
+            {showProfileSection && itemsAboveProfile > 0 && (
+              <div
+                className="relative mb-6 grid min-h-[80px] grid-flow-row-dense auto-rows-[12px] grid-cols-1 gap-6 md:grid-cols-12"
+                onDragOver={isEditMode ? handleGridDragOver : undefined}
+              >
+                {items.slice(0, itemsAboveProfile).map((item, sliceIndex) => renderPortfolioGridItem(item, sliceIndex))}
+              </div>
+            )}
+
+            {showProfileSection && isEditMode && (
+              <div
+                role="presentation"
+                onDragOver={e => {
+                  e.preventDefault();
+                  e.dataTransfer.dropEffect = "move";
+                }}
+                onDrop={e => {
+                  e.preventDefault();
+                  const from = resolveDropSourceIndex();
+                  if (from >= 0) moveItemFromBelowToAboveProfile(from);
+                }}
+                className="mb-2 flex min-h-[36px] cursor-default items-center justify-center rounded-xl border border-dashed border-slate-200 text-[10px] font-medium uppercase tracking-wider text-slate-400 transition-colors hover:border-brand-400/60 hover:text-brand-600 dark:border-white/10 dark:text-slate-500 dark:hover:border-brand-400/50 dark:hover:text-brand-400"
+              >
+                Drop block here to move above profile
+              </div>
+            )}
+
+            {/* Profile Info Section */}
+            {showProfileSection && (
+              <PortfolioAdkBlockHighlight kind={adkPortfolioHighlights.hero} className="w-full">
+                <div
+                  className={`relative mb-16 flex flex-col bg-white dark:bg-[#080808] border border-slate-200 dark:border-white/5 border-t-0 rounded-b-2xl px-6 md:px-10 pb-12 ${
+                    profile.showCover !== false ? "pt-0" : "pt-10"
+                  } ${
+                    profile.profileAlignment === "center"
+                      ? "items-center text-center"
+                      : profile.profileAlignment === "right"
+                        ? "items-end text-right"
+                        : "items-start text-left"
+                  }`}
+                >
+                  {isEditMode && (
+                    <div className="absolute right-4 top-4 z-30">
+                      <button
+                        type="button"
+                        onClick={() => setProfile({ ...profile, showProfileSection: false })}
+                        className="inline-flex items-center gap-1.5 rounded-full border border-slate-200 bg-white/95 px-3 py-1.5 text-[11px] font-medium text-slate-600 shadow-sm backdrop-blur hover:border-slate-300 dark:border-white/10 dark:bg-[#111]/95 dark:text-slate-300"
+                      >
+                        <EyeOff size={14} aria-hidden /> Hide profile
+                      </button>
+                    </div>
+                  )}
+                  {isEditMode && profile.showAvatar === false ? (
+                    <button
+                      onClick={() => setProfile({ ...profile, showAvatar: true })}
+                      className={`w-32 h-32 md:w-36 md:h-36 rounded-full border-4 border-dashed border-slate-200 dark:border-white/10 flex flex-col items-center justify-center gap-2 text-slate-400 hover:text-brand-600 hover:border-brand-500 transition-colors ${profile.showCover !== false ? "-mt-16 md:-mt-20" : "mt-0"} z-10 bg-white dark:bg-white/5`}
+                    >
+                      <ImageIcon size={20} />
+                      <span className="text-[10px] font-medium uppercase tracking-widest">Show</span>
+                    </button>
+                  ) : (
+                    profile.showAvatar !== false && (
+                      <div className={`relative group ${profile.showCover !== false ? "-mt-16 md:-mt-20" : "mt-0"} z-10 flex-shrink-0`}>
+                        <PortfolioImage
+                          src={profile.avatarUrl}
+                          alt={profile.name ? `${profile.name} avatar` : "Profile avatar"}
+                          width={144}
+                          height={144}
+                          className="w-32 h-32 md:w-36 md:h-36 rounded-full border-4 border-white dark:border-[#080808] shadow-lg object-cover bg-white dark:bg-[#080808]"
+                        />
+                        {/* Profile Alignment Controls: show on dp hover (not on the area below it) */}
+                        {isEditMode && (
+                          <>
+                            <div className="absolute top-0 left-1/2 -translate-x-1/2 -translate-y-full opacity-0 group-hover:opacity-100 transition-opacity bg-white dark:bg-slate-800 shadow-xl border border-slate-100 dark:border-white/5 rounded-lg flex items-center p-1 z-20 pointer-events-none group-hover:pointer-events-auto">
+                              <button
+                                onClick={() => setProfile({ ...profile, profileAlignment: "left" })}
+                                className={`p-1.5 rounded-md ${profile.profileAlignment === "left" ? "bg-slate-100 dark:bg-white/10 text-brand-600" : "text-slate-400 hover:text-slate-600 dark:hover:text-white"}`}
+                                title="Align Left"
+                              >
+                                <AlignLeft size={14} />
+                              </button>
+                              <button
+                                onClick={() => setProfile({ ...profile, profileAlignment: "center" })}
+                                className={`p-1.5 rounded-md ${profile.profileAlignment === "center" ? "bg-slate-100 dark:bg-white/10 text-brand-600" : "text-slate-400 hover:text-slate-600 dark:hover:text-white"}`}
+                                title="Align Center"
+                              >
+                                <AlignCenter size={14} />
+                              </button>
+                            </div>
+                            <div className="absolute inset-0 rounded-full bg-black/60 hidden group-hover:flex flex-col items-center justify-center gap-3 cursor-pointer backdrop-blur-sm overflow-hidden p-2 z-10">
+                              <div
+                                onClick={e => {
+                                  e.stopPropagation();
+                                  avatarInputRef.current?.click();
+                                }}
+                                className="flex items-center justify-center gap-2 text-white hover:text-brand-400 transition-colors"
+                              >
+                                <Edit3 size={18} /> <span className="text-xs font-medium">Edit</span>
+                              </div>
+                              <div className="h-px w-1/2 bg-white/20"></div>
+                              <div
+                                onClick={e => {
+                                  e.stopPropagation();
+                                  setProfile({ ...profile, showAvatar: false });
+                                }}
+                                className="flex items-center justify-center gap-2 text-red-400 hover:text-red-500 transition-colors"
+                              >
+                                <Trash2 size={16} /> <span className="text-xs font-medium">Hide</span>
+                              </div>
+                            </div>
+                          </>
+                        )}
+                      </div>
+                    )
+                  )}
+
+                  <div className="mt-8 w-full max-w-2xl relative">
+                    {isEditMode ? (
+                      <div className="space-y-1">
+                        <input
+                          value={profile.name}
+                          onChange={e => setProfile({ ...profile, name: e.target.value })}
+                          className={`text-[32px] md:text-[40px] font-semibold tracking-tight text-slate-900 dark:text-white bg-transparent outline-none w-full ${
+                            profile.profileAlignment === "center"
+                              ? "text-center"
+                              : profile.profileAlignment === "right"
+                                ? "text-right"
+                                : "text-left"
+                          }`}
+                          placeholder="Your name..."
+                        />
+                        <input
+                          value={profile.tagline}
+                          onChange={e => setProfile({ ...profile, tagline: e.target.value })}
+                          className={`text-[12px] md:text-[15px] font-medium text-slate-500 dark:text-slate-400 bg-transparent outline-none w-full ${
+                            profile.profileAlignment === "center"
+                              ? "text-center"
+                              : profile.profileAlignment === "right"
+                                ? "text-right"
+                                : "text-left"
+                          }`}
+                          placeholder="Your tagline..."
+                        />
+                      </div>
+                    ) : (
                       <>
-                        <div className="absolute top-0 left-1/2 -translate-x-1/2 -translate-y-full opacity-0 group-hover:opacity-100 transition-opacity bg-white dark:bg-slate-800 shadow-xl border border-slate-100 dark:border-white/5 rounded-lg flex items-center p-1 z-20 pointer-events-none group-hover:pointer-events-auto">
-                          <button
-                            onClick={() => setProfile({ ...profile, profileAlignment: "left" })}
-                            className={`p-1.5 rounded-md ${profile.profileAlignment === "left" ? "bg-slate-100 dark:bg-white/10 text-brand-600" : "text-slate-400 hover:text-slate-600 dark:hover:text-white"}`}
-                            title="Align Left"
-                          >
-                            <AlignLeft size={14} />
-                          </button>
-                          <button
-                            onClick={() => setProfile({ ...profile, profileAlignment: "center" })}
-                            className={`p-1.5 rounded-md ${profile.profileAlignment === "center" ? "bg-slate-100 dark:bg-white/10 text-brand-600" : "text-slate-400 hover:text-slate-600 dark:hover:text-white"}`}
-                            title="Align Center"
-                          >
-                            <AlignCenter size={14} />
-                          </button>
-                        </div>
-                        <div className="absolute inset-0 rounded-full bg-black/60 hidden group-hover:flex flex-col items-center justify-center gap-3 cursor-pointer backdrop-blur-sm overflow-hidden p-2 z-10">
-                          <div
-                            onClick={e => {
-                              e.stopPropagation();
-                              avatarInputRef.current?.click();
-                            }}
-                            className="flex items-center justify-center gap-2 text-white hover:text-brand-400 transition-colors"
-                          >
-                            <Edit3 size={18} /> <span className="text-xs font-medium">Edit</span>
-                          </div>
-                          <div className="h-px w-1/2 bg-white/20"></div>
-                          <div
-                            onClick={e => {
-                              e.stopPropagation();
-                              setProfile({ ...profile, showAvatar: false });
-                            }}
-                            className="flex items-center justify-center gap-2 text-red-400 hover:text-red-500 transition-colors"
-                          >
-                            <Trash2 size={16} /> <span className="text-xs font-medium">Hide</span>
-                          </div>
+                        <div className="flex flex-col gap-1.5">
+                          {profile.name && (
+                            <h1 className="text-[32px] md:text-[40px] font-semibold tracking-tight leading-none text-slate-900 dark:text-white">
+                              {profile.name}
+                            </h1>
+                          )}
+                          {profile.tagline && (
+                            <p className="text-[12px] md:text-[15px] leading-tight text-slate-500 dark:text-slate-400 font-medium">
+                              {profile.tagline}
+                            </p>
+                          )}
                         </div>
                       </>
                     )}
                   </div>
-                )
-              )}
 
-              <div className="mt-8 w-full max-w-2xl relative">
-                {isEditMode ? (
-                  <div className="space-y-1">
-                    <input
-                      value={profile.name}
-                      onChange={e => setProfile({ ...profile, name: e.target.value })}
-                      className={`text-[32px] md:text-[40px] font-semibold tracking-tight text-slate-900 dark:text-white bg-transparent outline-none w-full ${
+                  <div className="w-full max-w-2xl mt-10">
+                    <div
+                      className={`flex flex-wrap gap-4 ${
                         profile.profileAlignment === "center"
-                          ? "text-center"
+                          ? "justify-center"
                           : profile.profileAlignment === "right"
-                            ? "text-right"
-                            : "text-left"
+                            ? "justify-end"
+                            : "justify-start"
                       }`}
-                      placeholder="Your name..."
-                    />
-                    <input
-                      value={profile.tagline}
-                      onChange={e => setProfile({ ...profile, tagline: e.target.value })}
-                      className={`text-[12px] md:text-[15px] font-medium text-slate-500 dark:text-slate-400 bg-transparent outline-none w-full ${
-                        profile.profileAlignment === "center"
-                          ? "text-center"
-                          : profile.profileAlignment === "right"
-                            ? "text-right"
-                            : "text-left"
-                      }`}
-                      placeholder="Your tagline..."
-                    />
-                  </div>
-                ) : (
-                  <>
-                    <div className="flex flex-col gap-1.5">
-                      {profile.name && (
-                        <h1 className="text-[32px] md:text-[40px] font-semibold tracking-tight leading-none text-slate-900 dark:text-white">
-                          {profile.name}
-                        </h1>
-                      )}
-                      {profile.tagline && (
-                        <p className="text-[12px] md:text-[15px] leading-tight text-slate-500 dark:text-slate-400 font-medium">
-                          {profile.tagline}
-                        </p>
+                    >
+                      {visibleContactButtons.length > 0 ? (
+                        visibleContactButtons.map(button => (
+                          <a
+                            key={button.id}
+                            href={isEditMode ? undefined : getContactHref(button)}
+                            target={isEditMode ? undefined : "_blank"}
+                            rel={isEditMode ? undefined : "noopener noreferrer"}
+                            onClick={e => isEditMode && e.preventDefault()}
+                            className="inline-flex items-center gap-2 px-3 py-2 rounded-lg border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 text-sm font-medium text-slate-700 dark:text-slate-200 transition-all hover:shadow-sm hover:border-brand-300"
+                          >
+                            <ContactIcon icon={button.icon} size={18} />
+                            <span>{button.label}</span>
+                          </a>
+                        ))
+                      ) : (
+                        <p className="text-xs text-slate-400">No contact buttons visible.</p>
                       )}
                     </div>
-                  </>
-                )}
-              </div>
 
-              <div className="w-full max-w-2xl mt-10">
-                <div
-                  className={`flex flex-wrap gap-4 ${
-                    profile.profileAlignment === "center"
-                      ? "justify-center"
-                      : profile.profileAlignment === "right"
-                        ? "justify-end"
-                        : "justify-start"
-                  }`}
-                >
-                  {visibleContactButtons.length > 0 ? (
-                    visibleContactButtons.map(button => (
-                      <a
-                        key={button.id}
-                        href={isEditMode ? undefined : getContactHref(button)}
-                        target={isEditMode ? undefined : "_blank"}
-                        rel={isEditMode ? undefined : "noopener noreferrer"}
-                        onClick={e => isEditMode && e.preventDefault()}
-                        className="inline-flex items-center gap-2 px-3 py-2 rounded-lg border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 text-sm font-medium text-slate-700 dark:text-slate-200 transition-all hover:shadow-sm hover:border-brand-300"
-                      >
-                        <ContactIcon icon={button.icon} size={18} />
-                        <span>{button.label}</span>
-                      </a>
-                    ))
-                  ) : (
-                    <p className="text-xs text-slate-400">No contact buttons visible.</p>
-                  )}
-                </div>
-
-                {isEditMode && (
-                  <div className="mt-4 pt-4 border-t border-slate-100 dark:border-white/10 space-y-2">
-                    {(profile.contactButtons || []).map(button => (
-                      <div key={button.id} className="grid grid-cols-1 md:grid-cols-[120px_1fr_1fr_auto_auto] gap-2 items-center">
-                        <select
-                          value={button.icon}
-                          onChange={e => updateContactButton(button.id, { icon: e.target.value as ContactButton["icon"] })}
-                          className="h-9 px-3 rounded-lg border border-slate-200 dark:border-white/10 bg-white dark:bg-slate-900 text-xs font-semibold text-slate-700 dark:text-slate-100 outline-none"
-                        >
-                          {iconOptions.map(option => (
-                            <option key={option.value} value={option.value}>
-                              {option.label}
-                            </option>
-                          ))}
-                        </select>
-                        <input
-                          value={button.label}
-                          onChange={e => updateContactButton(button.id, { label: e.target.value })}
-                          className="h-9 px-3 rounded-lg border border-slate-200 dark:border-white/10 bg-white dark:bg-slate-900 text-sm text-slate-700 dark:text-slate-100 outline-none"
-                          placeholder="Button text"
-                        />
-                        <input
-                          value={button.url}
-                          onChange={e => updateContactButton(button.id, { url: e.target.value })}
-                          className="h-9 px-3 rounded-lg border border-slate-200 dark:border-white/10 bg-white dark:bg-slate-900 text-sm text-slate-700 dark:text-slate-100 outline-none"
-                          placeholder="Link / email / phone"
-                        />
+                    {isEditMode && (
+                      <div className="mt-4 pt-4 border-t border-slate-100 dark:border-white/10 space-y-2">
+                        {heroContactButtons.map(button => (
+                          <div key={button.id} className="grid grid-cols-1 md:grid-cols-[120px_1fr_1fr_auto_auto] gap-2 items-center">
+                            <select
+                              value={button.icon}
+                              onChange={e => updateContactButton(button.id, { icon: e.target.value as ContactButton["icon"] })}
+                              className="h-9 px-3 rounded-lg border border-slate-200 dark:border-white/10 bg-white dark:bg-slate-900 text-xs font-semibold text-slate-700 dark:text-slate-100 outline-none"
+                            >
+                              {iconOptions.map(option => (
+                                <option key={option.value} value={option.value}>
+                                  {option.label}
+                                </option>
+                              ))}
+                            </select>
+                            <input
+                              value={button.label}
+                              onChange={e => updateContactButton(button.id, { label: e.target.value })}
+                              className="h-9 px-3 rounded-lg border border-slate-200 dark:border-white/10 bg-white dark:bg-slate-900 text-sm text-slate-700 dark:text-slate-100 outline-none"
+                              placeholder="Button text"
+                            />
+                            <input
+                              value={button.url}
+                              onChange={e => updateContactButton(button.id, { url: e.target.value })}
+                              readOnly={button.icon === "location"}
+                              disabled={button.icon === "location"}
+                              aria-disabled={button.icon === "location"}
+                              title={button.icon === "location" ? "Map link is generated automatically when you edit the label" : undefined}
+                              className="h-9 px-3 rounded-lg border border-slate-200 dark:border-white/10 bg-white dark:bg-slate-900 text-sm text-slate-700 dark:text-slate-100 outline-none disabled:cursor-not-allowed disabled:opacity-60 disabled:bg-slate-50 dark:disabled:bg-slate-800/60"
+                              placeholder={button.icon === "location" ? "Maps link auto-generated" : "Link / email / phone"}
+                            />
+                            <button
+                              onClick={() => updateContactButton(button.id, { isVisible: !button.isVisible })}
+                              className={`h-9 px-3 rounded-lg text-xs font-medium uppercase tracking-wide border transition-colors ${
+                                button.isVisible
+                                  ? "border-brand-200 bg-brand-50 text-brand-600"
+                                  : "border-slate-200 dark:border-white/10 text-slate-400"
+                              }`}
+                              title={button.isVisible ? "Hide button" : "Show button"}
+                            >
+                              {button.isVisible ? <Eye size={14} /> : <EyeOff size={14} />}
+                            </button>
+                            <button
+                              onClick={() => removeContactButton(button.id)}
+                              className="h-9 w-9 rounded-lg border border-slate-200 dark:border-white/10 text-slate-400 hover:text-red-500 transition-colors flex items-center justify-center"
+                              title="Remove contact button"
+                            >
+                              <Trash2 size={14} />
+                            </button>
+                          </div>
+                        ))}
                         <button
-                          onClick={() => updateContactButton(button.id, { isVisible: !button.isVisible })}
-                          className={`h-9 px-3 rounded-lg text-xs font-medium uppercase tracking-wide border transition-colors ${
-                            button.isVisible
-                              ? "border-brand-200 bg-brand-50 text-brand-600"
-                              : "border-slate-200 dark:border-white/10 text-slate-400"
-                          }`}
-                          title={button.isVisible ? "Hide button" : "Show button"}
+                          onClick={addContactButton}
+                          className="mt-1 inline-flex items-center gap-2 text-xs font-medium uppercase tracking-wider text-brand-600 hover:text-brand-700 transition-colors"
                         >
-                          {button.isVisible ? <Eye size={14} /> : <EyeOff size={14} />}
-                        </button>
-                        <button
-                          onClick={() => removeContactButton(button.id)}
-                          className="h-9 w-9 rounded-lg border border-slate-200 dark:border-white/10 text-slate-400 hover:text-red-500 transition-colors flex items-center justify-center"
-                          title="Remove contact button"
-                        >
-                          <Trash2 size={14} />
+                          <Plus size={14} /> Add Contact Button
                         </button>
                       </div>
-                    ))}
-                    <button
-                      onClick={addContactButton}
-                      className="mt-1 inline-flex items-center gap-2 text-xs font-medium uppercase tracking-wider text-brand-600 hover:text-brand-700 transition-colors"
-                    >
-                      <Plus size={14} /> Add Contact Button
-                    </button>
+                    )}
                   </div>
-                )}
+                </div>
+              </PortfolioAdkBlockHighlight>
+            )}
+
+            {showProfileSection && isEditMode && itemsAboveProfile > 0 && (
+              <div
+                role="presentation"
+                onDragOver={e => {
+                  e.preventDefault();
+                  e.dataTransfer.dropEffect = "move";
+                }}
+                onDrop={e => {
+                  e.preventDefault();
+                  const from = resolveDropSourceIndex();
+                  if (from >= 0) moveItemFromAboveToBelowProfile(from);
+                }}
+                className="mb-4 flex min-h-[36px] cursor-default items-center justify-center rounded-xl border border-dashed border-slate-200 text-[10px] font-medium uppercase tracking-wider text-slate-400 transition-colors hover:border-brand-400/60 hover:text-brand-600 dark:border-white/10 dark:text-slate-500 dark:hover:border-brand-400/50 dark:hover:text-brand-400"
+              >
+                Drop block here to move below profile
               </div>
-            </div>
+            )}
 
             {/* Notion-style Grid Canvas */}
             <div
@@ -1125,94 +1735,10 @@ const Portfolio: React.FC<PortfolioProps> = ({ initialData, onBack }) => {
               onClick={closeContextMenu}
               onDragOver={handleGridDragOver}
             >
-              {items.map((item, index) => (
-                <motion.div
-                  key={item.id}
-                  ref={el => {
-                    itemRefs.current[item.id] = el;
-                  }}
-                  onDragOver={e => handleDragOver(e, index)}
-                  onDragEnd={handleDragEnd}
-                  onContextMenu={e => handleContextMenu(e, item.id)}
-                  onMouseDown={e => handleEdgeResizeStart(e, item)}
-                  onMouseMove={handleEdgeResizeHover}
-                  onMouseLeave={e => {
-                    e.currentTarget.style.cursor = "default";
-                  }}
-                  onMouseUpCapture={() => {
-                    dragHandleArmedItemIdRef.current = null;
-                  }}
-                  className={`
-                                        ${getSpanClass(item.span)} 
-                                        relative group transition-all duration-300
-                                        ${isEditMode ? "rounded-[2rem]" : ""}
-                                        ${draggedItemIndex === index ? "opacity-30 scale-[0.98]" : "opacity-100"}
-                                    `}
-                  style={{
-                    gridColumnStart: item.colStart,
-                    gridRowEnd: `span ${getRowSpanForItem(item)}`,
-                    height: "100%",
-                  }}
-                  layout
-                  transition={{ type: "spring", stiffness: 400, damping: 35 }}
-                >
-                  {/* Edit Controls Overlay */}
-                  {isEditMode && (
-                    <div className="absolute -left-6 top-1/2 -translate-y-1/2 opacity-0 pointer-events-none group-hover:opacity-100 group-hover:pointer-events-auto transition-opacity flex flex-col gap-2 z-30">
-                      <div
-                        className="p-1.5 cursor-move text-slate-400 hover:text-slate-600 bg-white dark:bg-slate-800 rounded-lg shadow-xl border border-slate-100 dark:border-white/5"
-                        draggable={!resizing}
-                        onMouseDown={e => {
-                          e.stopPropagation();
-                          dragHandleArmedItemIdRef.current = item.id;
-                        }}
-                        onDragStart={e => handleDragStart(e, index, item.id)}
-                        onDragEnd={handleDragEnd}
-                        onMouseUp={() => {
-                          dragHandleArmedItemIdRef.current = null;
-                        }}
-                      >
-                        <GripVertical size={14} />
-                      </div>
-
-                      <button
-                        type="button"
-                        onClick={e => {
-                          e.stopPropagation();
-                          removeItem(item.id);
-                        }}
-                        className="p-1.5 text-slate-400 hover:text-red-500 bg-white dark:bg-slate-800 rounded-lg shadow-xl border border-slate-100 dark:border-white/5 transition-colors"
-                        title="Delete block"
-                      >
-                        <Trash2 size={14} />
-                      </button>
-                    </div>
-                  )}
-
-                  <BlockRenderer
-                    item={item}
-                    isEditMode={isEditMode}
-                    onUpdate={updateItemContent}
-                    onSelectProject={project => setSelectedProjectId(project.id)}
-                    onMeasureCollapsedHeight={handleCollapsedHeightMeasure}
-                  />
-
-                  {isEditMode && (
-                    <>
-                      <div
-                        className="absolute inset-y-0 left-0 w-[18px] cursor-ew-resize z-20"
-                        onMouseDown={e => initResize(e, item, "x", "left")}
-                        title="Resize width"
-                      />
-                      <div
-                        className="absolute inset-y-0 right-0 w-[18px] cursor-ew-resize z-20"
-                        onMouseDown={e => initResize(e, item, "x", "right")}
-                        title="Resize width"
-                      />
-                    </>
-                  )}
-                </motion.div>
-              ))}
+              {(showProfileSection ? items.slice(itemsAboveProfile) : items).map((item, sliceIndex) => {
+                const index = showProfileSection ? itemsAboveProfile + sliceIndex : sliceIndex;
+                return renderPortfolioGridItem(item, index);
+              })}
 
               {/* Empty State / Add Section Placeholder */}
               {isEditMode && (
@@ -1308,82 +1834,6 @@ const Portfolio: React.FC<PortfolioProps> = ({ initialData, onBack }) => {
                   </button>
                 </div>
               )}
-            </div>
-          )}
-
-          {!isEditMode && (
-            <button
-              onClick={() => setIsEditMode(true)}
-              className="fixed bottom-10 right-10 bg-slate-900 dark:bg-white text-white dark:text-slate-900 p-5 rounded-full shadow-2xl hover:scale-110 active:scale-90 transition-all z-50 group"
-            >
-              <Edit3 size={24} />
-              <span className="absolute right-full mr-4 top-1/2 -translate-y-1/2 bg-slate-900 dark:bg-white text-white dark:text-slate-900 px-3 py-1.5 rounded-lg text-xs font-medium uppercase tracking-widest opacity-0 group-hover:opacity-100 transition-opacity whitespace-nowrap shadow-xl">
-                Edit Portfolio
-              </span>
-            </button>
-          )}
-
-          {/* Publish Modal */}
-          {showPublishModal && (
-            <div
-              className="fixed inset-0 z-[200] bg-black/50 backdrop-blur-sm flex items-center justify-center px-4"
-              onClick={() => setShowPublishModal(false)}
-            >
-              <div
-                className="w-full max-w-md bg-white dark:bg-[#0b0b0b] rounded-2xl shadow-2xl border border-slate-200 dark:border-white/10 p-5"
-                onClick={e => e.stopPropagation()}
-              >
-                <div className="flex items-start justify-between gap-4">
-                  <div>
-                    <div className="text-sm font-semibold text-slate-900 dark:text-white">Publish</div>
-                    <div className="text-xs text-slate-500 dark:text-slate-400 mt-1">Enter a URL for your portfolio.</div>
-                  </div>
-                  <button
-                    onClick={() => setShowPublishModal(false)}
-                    className="text-xs font-semibold text-slate-500 hover:text-slate-900 dark:text-slate-400 dark:hover:text-white transition-colors"
-                  >
-                    Close
-                  </button>
-                </div>
-
-                <div className="mt-4">
-                  <label className="block text-[11px] font-semibold uppercase tracking-widest text-slate-500 dark:text-slate-400 mb-2">
-                    URL
-                  </label>
-                  <input
-                    value={publishUrlInput}
-                    onChange={e => setPublishUrlInput(e.target.value)}
-                    placeholder="e.g. https://alexmorgan.design"
-                    className="w-full h-11 px-4 rounded-xl border border-slate-200 dark:border-white/10 bg-white dark:bg-[#0f0f0f] text-slate-800 dark:text-slate-100 outline-none focus:ring-2 focus:ring-brand-500/40 focus:border-brand-500/40 transition-all"
-                  />
-                  {publishedUrl && (
-                    <div className="mt-2 text-xs text-slate-500 dark:text-slate-400">
-                      Saved link: <span className="font-medium text-slate-700 dark:text-slate-200">{publishedUrl}</span>
-                    </div>
-                  )}
-                </div>
-
-                <div className="mt-5 flex items-center justify-end gap-2">
-                  <button
-                    onClick={handleCopyPublishedLink}
-                    disabled={!publishedUrl}
-                    className={`inline-flex items-center gap-2 px-4 py-2 rounded-full text-xs font-semibold border transition-all ${
-                      publishedUrl
-                        ? "border-slate-200 dark:border-white/10 bg-white dark:bg-white/5 text-slate-700 dark:text-slate-200 hover:border-brand-500/40 hover:text-brand-700 dark:hover:text-white"
-                        : "border-slate-100 dark:border-white/5 bg-slate-50 dark:bg-white/5 text-slate-300 dark:text-slate-600 cursor-not-allowed"
-                    }`}
-                    title={publishedUrl ? "Copy saved link" : "Publish first to enable copying"}
-                  >
-                    <Copy size={14} /> Copy link
-                  </button>
-                  <button
-                    onClick={handlePublish}
-                    className="inline-flex items-center gap-2 px-5 py-2 rounded-full text-xs font-semibold bg-brand-600 text-white hover:scale-105 active:scale-95 transition-all shadow-lg shadow-brand-500/25"
-                  >
-                    <ExternalLink size={14} /> Publish
-                  </button>
-                </div>
-              </div>
             </div>
           )}
 

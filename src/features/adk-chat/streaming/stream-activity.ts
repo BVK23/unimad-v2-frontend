@@ -57,6 +57,29 @@ export function isMutatingResumeTool(name: string): boolean {
   return MUTATING_RESUME_TOOL_NAMES.has(toSnakeToolKey(name));
 }
 
+/** Tool names that write into session portfolio_data via portfolio_mutating_tools. */
+export const MUTATING_PORTFOLIO_TOOL_NAMES = new Set<string>([
+  "update_profile_field",
+  "update_profile",
+  "update_contact_buttons",
+  "add_hero_contact_link",
+  "add_block",
+  "update_block",
+  "update_block_content",
+  "update_block_by_heading",
+  "remove_block",
+  "reorder_blocks",
+  "duplicate_block",
+]);
+
+export function isMutatingPortfolioTool(name: string): boolean {
+  return MUTATING_PORTFOLIO_TOOL_NAMES.has(toSnakeToolKey(name));
+}
+
+export function isMutatingAdkTool(name: string): boolean {
+  return isMutatingResumeTool(name) || isMutatingPortfolioTool(name);
+}
+
 /**
  * Best-effort read of target specialist from ADK handoff tool args (shape varies by version).
  */
@@ -92,6 +115,8 @@ function handoffLabelForTarget(targetRaw: string): string {
       return "Pulling your resume together…";
     case "linkedin_agent":
       return "Opening your LinkedIn profile context…";
+    case "portfolio_agent":
+      return "Reviewing your portfolio…";
     case "profile_pic_agent":
       return "Reviewing your profile photo…";
     case "cover_pic_agent":
@@ -183,6 +208,8 @@ export function labelForAgent(author: string): string {
       return "Coordinating your resume…";
     case "linkedin_agent":
       return "Coordinating your LinkedIn profile…";
+    case "portfolio_agent":
+      return "Analyzing your portfolio…";
     case "profile_pic_agent":
       return "Reviewing your profile photo…";
     case "cover_pic_agent":
@@ -226,8 +253,21 @@ export function labelForToolCall(name: string, args?: Record<string, unknown>): 
       return "Reviewing your summary…";
     case "get_resume":
       return "Reviewing your resume…";
-    case "get_section":
+    case "get_portfolio":
+      return "Reviewing your portfolio…";
+    case "get_profile":
+      return "Reviewing your portfolio profile…";
+    case "get_items":
+      return "Reviewing your portfolio blocks…";
+    case "get_item":
+      return "Reviewing a portfolio block…";
+    case "get_section": {
+      const sectionArg = readSectionNameArg(args).toLowerCase();
+      if (["profile", "hero", "items", "blocks", "grid", "editor_content"].some(k => sectionArg.includes(k))) {
+        return "Reviewing your portfolio…";
+      }
       return `Reviewing ${sectionLabel(readSectionNameArg(args))}…`;
+    }
     case "get_linkedin":
       return "Reviewing your LinkedIn profile…";
     case "get_linkedin_section":
@@ -268,6 +308,25 @@ export function labelForToolCall(name: string, args?: Record<string, unknown>): 
     case "update_project":
     case "remove_project":
       return "Refreshing your projects…";
+    case "update_profile_field":
+    case "update_profile":
+      return "Updating your hero section…";
+    case "update_contact_buttons":
+      return "Updating contact buttons…";
+    case "add_hero_contact_link":
+      return "Adding a contact link…";
+    case "add_block":
+      return "Adding a portfolio block…";
+    case "update_block":
+    case "update_block_content":
+    case "update_block_by_heading":
+      return "Updating a portfolio block…";
+    case "remove_block":
+      return "Removing a portfolio block…";
+    case "reorder_blocks":
+      return "Reordering your blocks…";
+    case "duplicate_block":
+      return "Duplicating a portfolio block…";
     default:
       return `Working on ${humanizeUnknownToolName(name)}…`;
   }
@@ -295,6 +354,25 @@ export function labelForMutatingToolResponse(name: string): string {
     case "update_project":
     case "remove_project":
       return "Projects updated — refreshing your view…";
+    case "update_profile_field":
+    case "update_profile":
+      return "Hero section updated — refreshing your view…";
+    case "update_contact_buttons":
+      return "Contact buttons updated — refreshing your view…";
+    case "add_hero_contact_link":
+      return "Contact link added — refreshing your view…";
+    case "add_block":
+      return "Block added — refreshing your view…";
+    case "update_block":
+    case "update_block_content":
+    case "update_block_by_heading":
+      return "Block updated — refreshing your view…";
+    case "remove_block":
+      return "Block removed — refreshing your view…";
+    case "reorder_blocks":
+      return "Blocks reordered — refreshing your view…";
+    case "duplicate_block":
+      return "Block duplicated — refreshing your view…";
     default:
       return "Changes saved — refreshing your view…";
   }

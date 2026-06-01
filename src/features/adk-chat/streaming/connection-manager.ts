@@ -207,6 +207,7 @@ export class StreamingConnectionManager {
             } catch (error) {
               console.error("❌ [SSE ERROR] Failed to process SSE event:", error);
               console.error("❌ [SSE ERROR] Problematic JSON:", jsonDataToParse.substring(0, 500));
+              throw error;
             }
             eventDataBuffer = ""; // Reset for next event
           }
@@ -236,6 +237,7 @@ export class StreamingConnectionManager {
           } catch (error) {
             console.error("❌ [SSE ERROR] Failed to process final SSE event:", error);
             console.error("❌ [SSE ERROR] Problematic JSON:", jsonDataToParse.substring(0, 500));
+            throw error;
           }
           eventDataBuffer = "";
         }

@@ -1,10 +1,14 @@
-import React, { useEffect, useRef, useState } from "react";
+import React, { useEffect, useLayoutEffect, useRef, useState } from "react";
 import { resolveLinkTitle } from "@/features/portfolio/server-actions/resolve-link-title";
 import { hostnameLooksLikeWebAddress, normalizeExternalUrl } from "@/features/portfolio/utils/external-url";
+import { measurePortfolioBlockRootHeight } from "@/features/portfolio/utils/measurePortfolioBlockHeight";
+import { resolvePortfolioBlockType } from "@/features/portfolio/utils/normalizePortfolioBlockType";
+import { normalizePortfolioHtmlForRender } from "@/features/portfolio/utils/portfolio-html";
 import { UploadError, uploadPortfolioFile } from "@/features/portfolio/utils/upload";
 import { ExternalLink, Link as LinkIcon, ChevronDown, ChevronRight, Copy, Loader2, UploadCloud, Trash2, Plus, Minus } from "lucide-react";
 import { PortfolioItem } from "../types";
 import RichTextEditor from "./RichTextEditor";
+import PortfolioImage from "./portfolio/PortfolioImage";
 
 // Restores visible rendering for HTML emitted by RichTextEditor's execCommand output.
 // Tailwind Preflight strips list-style on ul/ol and sizing on h1/h2, and the project does not install
@@ -27,11 +31,53 @@ interface BlockRendererProps {
   onUpdate: (id: string, updates: Partial<PortfolioItem>) => void;
   onSelectProject?: (item: PortfolioItem) => void;
   onMeasureCollapsedHeight?: (id: string, height: number) => void;
+  onMeasureContentHeight?: (id: string, height: number) => void;
+  isNestedDetailView?: boolean;
 }
+
+/** Fills the grid row when the user resized; otherwise grows with content for measurement. */
+const blockCellSizingClass = (heightUserSet?: boolean) => (heightUserSet ? "h-full overflow-hidden" : "h-auto w-full");
+
+const useBlockContentMeasure = (
+  itemId: string,
+  enabled: boolean,
+  onMeasure: BlockRendererProps["onMeasureContentHeight"],
+  deps: React.DependencyList
+) => {
+  const rootRef = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    if (!enabled || !onMeasure || !rootRef.current) return;
+
+    const node = rootRef.current;
+    const report = () => {
+      onMeasure(itemId, measurePortfolioBlockRootHeight(node));
+    };
+    report();
+
+    const observer = new ResizeObserver(() => report());
+    observer.observe(node);
+
+    const raf = requestAnimationFrame(report);
+    return () => {
+      cancelAnimationFrame(raf);
+      observer.disconnect();
+    };
+  }, [deps, enabled, itemId, onMeasure]);
+
+  useLayoutEffect(() => {
+    if (!enabled || !onMeasure || !rootRef.current) return;
+    const node = rootRef.current;
+    onMeasure(itemId, measurePortfolioBlockRootHeight(node));
+  }, [deps, enabled, itemId, onMeasure]);
+
+  return rootRef;
+};
 
 type LinkBoxBlockProps = {
   item: PortfolioItem;
   isEditMode: boolean;
+  shellClassName?: string;
   onUpdate: (id: string, updates: Partial<PortfolioItem>) => void;
   mediaInputRef: React.RefObject<HTMLInputElement | null>;
   openMediaPicker: (e: React.MouseEvent) => void;
@@ -39,15 +85,10 @@ type LinkBoxBlockProps = {
   handleMediaFileUpload: (file: File) => void;
 };
 
-const LinkBoxBlock: React.FC<LinkBoxBlockProps> = ({
-  item,
-  isEditMode,
-  onUpdate,
-  mediaInputRef,
-  openMediaPicker,
-  onMediaInputChange,
-  handleMediaFileUpload,
-}) => {
+const LinkBoxBlock = React.forwardRef<HTMLDivElement, LinkBoxBlockProps>(function LinkBoxBlock(
+  { item, isEditMode, shellClassName = "", onUpdate, mediaInputRef, openMediaPicker, onMediaInputChange, handleMediaFileUpload },
+  ref
+) {
   const [isMediaDragOver, setIsMediaDragOver] = useState(false);
   const [isResolvingTitle, setIsResolvingTitle] = useState(false);
   const [resolveError, setResolveError] = useState<string | null>(null);
@@ -60,10 +101,9 @@ const LinkBoxBlock: React.FC<LinkBoxBlockProps> = ({
   }, [item.id]);
 
   const hasPreviewImage = Boolean(item.content);
-  const heightPx = item.height ?? 96;
-  const compact = heightPx <= 110;
+  const compact = !isEditMode && (item.height ?? 96) <= 110;
 
-  const linkCardClassName = `h-full min-h-0 w-full flex items-center p-4 border rounded-2xl bg-white dark:bg-white/5 transition-all group/link ${isEditMode ? "border-slate-100 dark:border-white/10 hover:border-brand-500/30" : "border-slate-100 dark:border-white/10 hover:shadow-lg hover:-translate-y-1"} ${isMediaDragOver && isEditMode ? "border-brand-500 ring-2 ring-brand-200" : ""}`;
+  const linkCardClassName = `w-full flex items-center p-4 border rounded-2xl bg-white dark:bg-white/5 transition-all group/link ${isEditMode ? "border-slate-100 dark:border-white/10 hover:border-brand-500/30" : "border-slate-100 dark:border-white/10 hover:shadow-lg hover:-translate-y-1"} ${isMediaDragOver && isEditMode ? "border-brand-500 ring-2 ring-brand-200" : ""}`;
 
   const onDropLinkPreview = (e: React.DragEvent<HTMLDivElement>) => {
     if (!isEditMode) return;
@@ -145,9 +185,15 @@ const LinkBoxBlock: React.FC<LinkBoxBlockProps> = ({
 
       <div className="w-14 h-14 flex-shrink-0 bg-slate-50 dark:bg-white/10 rounded-2xl flex items-center justify-center overflow-hidden text-slate-400 group-hover/link:text-brand-500 group-hover/link:bg-brand-50 transition-colors">
         {hasPreviewImage ? (
-          <img src={item.content} className="w-full h-full object-cover" alt="Page box preview" />
+          <PortfolioImage src={item.content} width={56} height={56} className="w-full h-full object-cover" alt="Link preview" />
         ) : item.linkIcon ? (
-          <img src={item.linkIcon} className="w-7 h-7 grayscale group-hover/link:grayscale-0 transition-all" alt="" />
+          <PortfolioImage
+            src={item.linkIcon}
+            width={28}
+            height={28}
+            className="w-7 h-7 grayscale group-hover/link:grayscale-0 transition-all"
+            alt=""
+          />
         ) : (
           <LinkIcon size={24} />
         )}
@@ -198,37 +244,51 @@ const LinkBoxBlock: React.FC<LinkBoxBlockProps> = ({
 
   if (!isEditMode) {
     const viewHref = normalizeExternalUrl(item.linkUrl ?? "");
-    if (viewHref) {
-      return (
-        <a href={viewHref} target="_blank" rel="noopener noreferrer" className={linkCardClassName}>
-          {inner}
-        </a>
-      );
-    }
-    return <div className={`${linkCardClassName} cursor-default`}>{inner}</div>;
+    return (
+      <div ref={ref} data-portfolio-block-root className={shellClassName}>
+        {viewHref ? (
+          <a href={viewHref} target="_blank" rel="noopener noreferrer" className={linkCardClassName}>
+            {inner}
+          </a>
+        ) : (
+          <div className={`${linkCardClassName} cursor-default`}>{inner}</div>
+        )}
+      </div>
+    );
   }
 
   return (
-    <div
-      className={linkCardClassName}
-      onDragOver={e => {
-        e.preventDefault();
-        e.stopPropagation();
-        setIsMediaDragOver(true);
-      }}
-      onDragLeave={e => {
-        e.preventDefault();
-        e.stopPropagation();
-        setIsMediaDragOver(false);
-      }}
-      onDrop={onDropLinkPreview}
-    >
-      {inner}
+    <div ref={ref} data-portfolio-block-root className={shellClassName}>
+      <div
+        className={linkCardClassName}
+        onDragOver={e => {
+          e.preventDefault();
+          e.stopPropagation();
+          setIsMediaDragOver(true);
+        }}
+        onDragLeave={e => {
+          e.preventDefault();
+          e.stopPropagation();
+          setIsMediaDragOver(false);
+        }}
+        onDrop={onDropLinkPreview}
+      >
+        {inner}
+      </div>
     </div>
   );
-};
+});
 
-const BlockRenderer: React.FC<BlockRendererProps> = ({ item, isEditMode, onUpdate, onSelectProject, onMeasureCollapsedHeight }) => {
+const BlockRenderer: React.FC<BlockRendererProps> = ({
+  item: rawItem,
+  isEditMode,
+  onUpdate,
+  onSelectProject,
+  onMeasureCollapsedHeight,
+  onMeasureContentHeight,
+  isNestedDetailView = false,
+}) => {
+  const item: PortfolioItem = { ...rawItem, type: resolvePortfolioBlockType(rawItem) };
   const mediaInputRef = useRef<HTMLInputElement>(null);
   const collapsedTextRef = useRef<HTMLDivElement>(null);
   const [isMediaDragOver, setIsMediaDragOver] = useState(false);
@@ -305,16 +365,41 @@ const BlockRenderer: React.FC<BlockRendererProps> = ({ item, isEditMode, onUpdat
     e.target.value = "";
   };
 
+  const shouldMeasureContentHeight = Boolean(onMeasureContentHeight && !(item.type === "text" && item.isCollapsible && item.isCollapsed));
+
+  const contentMeasureRef = useBlockContentMeasure(item.id, shouldMeasureContentHeight, onMeasureContentHeight, [
+    item.type,
+    item.content,
+    item.title,
+    item.description,
+    item.isCollapsed,
+    item.isCollapsible,
+    item.heightUserSet,
+    item.showCoverImage,
+    item.mediaType,
+    isEditMode,
+    item.fontSize,
+    item.fontWeight,
+    item.linkUrl,
+  ]);
+
   // -- Text Block --
   if (item.type === "text") {
     const heightPx = item.height ?? 160;
     const compact = heightPx <= 96;
+    const fillsCell = item.heightUserSet === true;
     const toggleCollapsed = () => onUpdate(item.id, { isCollapsed: !item.isCollapsed });
 
     return (
       <div
-        ref={item.isCollapsible && item.isCollapsed ? collapsedTextRef : null}
-        className={`relative flex flex-col group/text bg-white dark:bg-white/5 rounded-2xl shadow-sm border border-slate-100 dark:border-white/10 transition-all ${isEditMode ? "hover:border-brand-500/30" : ""} p-6 overflow-hidden ${item.isCollapsed ? "" : "h-full"}`}
+        ref={node => {
+          if (item.isCollapsible && item.isCollapsed) {
+            collapsedTextRef.current = node;
+          } else {
+            contentMeasureRef.current = node;
+          }
+        }}
+        className={`relative flex flex-col group/text bg-white dark:bg-white/5 rounded-2xl shadow-sm border border-slate-100 dark:border-white/10 transition-all ${isEditMode ? "hover:border-brand-500/30" : ""} p-6 ${item.isCollapsed ? "overflow-hidden" : blockCellSizingClass(fillsCell)}`}
       >
         {(item.title || isEditMode || item.isCollapsible) && (
           <div className={`flex items-center gap-2 ${item.isCollapsed ? "" : "mb-3"}`}>
@@ -331,7 +416,7 @@ const BlockRenderer: React.FC<BlockRendererProps> = ({ item, isEditMode, onUpdat
             )}
             {isEditMode ? (
               <RichTextEditor
-                value={item.title || ""}
+                value={normalizePortfolioHtmlForRender(item.title || "")}
                 onChange={value => onUpdate(item.id, { title: value })}
                 onToggleCollapsible={() => onUpdate(item.id, { isCollapsible: !item.isCollapsible })}
                 isCollapsible={Boolean(item.isCollapsible)}
@@ -342,7 +427,7 @@ const BlockRenderer: React.FC<BlockRendererProps> = ({ item, isEditMode, onUpdat
               item.title && (
                 <h3
                   className={`font-semibold text-lg text-slate-900 dark:text-white ${RICH_TEXT_CONTENT_CLASSES}`}
-                  dangerouslySetInnerHTML={{ __html: item.title }}
+                  dangerouslySetInnerHTML={{ __html: normalizePortfolioHtmlForRender(item.title) }}
                 />
               )
             )}
@@ -350,12 +435,12 @@ const BlockRenderer: React.FC<BlockRendererProps> = ({ item, isEditMode, onUpdat
         )}
 
         {!item.isCollapsed && (
-          <div className="flex-1 min-h-0 overflow-hidden">
+          <div className={fillsCell ? "flex-1 min-h-0 overflow-y-auto" : "w-full"}>
             {isEditMode ? (
               <RichTextEditor
-                value={item.content || ""}
+                value={normalizePortfolioHtmlForRender(item.content || "")}
                 onChange={value => onUpdate(item.id, { content: value })}
-                className={`w-full outline-none bg-transparent h-full min-h-[4rem] text-slate-600 dark:text-slate-300
+                className={`w-full outline-none bg-transparent min-h-[4rem] text-slate-600 dark:text-slate-300 ${fillsCell ? "h-full" : ""}
                                     ${item.fontSize === "2xl" ? "text-2xl font-semibold" : item.fontSize === "xl" ? "text-xl font-semibold" : "text-base"}
                                     ${item.fontWeight === "bold" ? "font-semibold" : item.fontWeight === "medium" ? "font-medium" : "font-normal"}
                                     ${RICH_TEXT_CONTENT_CLASSES}
@@ -369,7 +454,7 @@ const BlockRenderer: React.FC<BlockRendererProps> = ({ item, isEditMode, onUpdat
                                     ${item.fontSize === "2xl" ? "text-2xl font-semibold" : item.fontSize === "xl" ? "text-xl font-semibold" : "text-base"}
                                     ${RICH_TEXT_CONTENT_CLASSES}
                                 `}
-                dangerouslySetInnerHTML={{ __html: item.content || "" }}
+                dangerouslySetInnerHTML={{ __html: normalizePortfolioHtmlForRender(item.content || "") }}
               />
             )}
           </div>
@@ -393,7 +478,8 @@ const BlockRenderer: React.FC<BlockRendererProps> = ({ item, isEditMode, onUpdat
 
     return (
       <div
-        className={`h-full rounded-2xl overflow-hidden bg-slate-50 dark:bg-white/5 border border-slate-100 dark:border-white/5 group/media relative shadow-sm transition-all ${isEditMode ? "hover:border-brand-500/30" : ""} ${isMediaDragOver ? "border-brand-500 ring-2 ring-brand-200" : ""}`}
+        ref={contentMeasureRef}
+        className={`rounded-2xl overflow-hidden bg-slate-50 dark:bg-white/5 border border-slate-100 dark:border-white/5 group/media relative shadow-sm transition-all ${isEditMode ? "hover:border-brand-500/30" : ""} ${isMediaDragOver ? "border-brand-500 ring-2 ring-brand-200" : ""} ${blockCellSizingClass(item.heightUserSet)}`}
         onDragOver={e => {
           if (!isEditMode) return;
           e.preventDefault();
@@ -426,11 +512,15 @@ const BlockRenderer: React.FC<BlockRendererProps> = ({ item, isEditMode, onUpdat
                 </a>
               </div>
             ) : (
-              <img
-                src={item.content}
-                alt={item.mediaName || "Media content"}
-                className="w-full h-full min-h-[220px] object-cover group-hover/media:scale-105 transition-transform duration-700"
-              />
+              <div className="relative w-full min-h-[220px] h-full">
+                <PortfolioImage
+                  src={item.content}
+                  alt={item.mediaName || "Media content"}
+                  fill
+                  sizes="(max-width: 768px) 100vw, 50vw"
+                  className="object-cover group-hover/media:scale-105 transition-transform duration-700"
+                />
+              </div>
             )}
 
             {isEditMode && (
@@ -472,6 +562,8 @@ const BlockRenderer: React.FC<BlockRendererProps> = ({ item, isEditMode, onUpdat
   if (item.type === "link-box") {
     return (
       <LinkBoxBlock
+        ref={contentMeasureRef}
+        shellClassName={blockCellSizingClass(item.heightUserSet)}
         item={item}
         isEditMode={isEditMode}
         onUpdate={onUpdate}
@@ -491,11 +583,8 @@ const BlockRenderer: React.FC<BlockRendererProps> = ({ item, isEditMode, onUpdat
     const hasDescription = Boolean(normalizedDescription);
     const hasAnyText = hasTitle || hasDescription;
     const coverEnabled = item.showCoverImage !== false;
-    const heightPx = item.height ?? 160;
-    const TITLE_ONLY_MIN_PX = 108;
-    const TITLE_AND_SUBTITLE_MIN_PX = 144;
-    const showTextArea = coverEnabled ? heightPx >= TITLE_ONLY_MIN_PX : true;
-    const showSubtitle = coverEnabled ? heightPx >= TITLE_AND_SUBTITLE_MIN_PX : true;
+    const showTextArea = isEditMode || hasAnyText;
+    const showSubtitle = isEditMode || hasDescription;
 
     const onDropCover = (e: React.DragEvent<HTMLDivElement>) => {
       e.preventDefault();
@@ -504,18 +593,22 @@ const BlockRenderer: React.FC<BlockRendererProps> = ({ item, isEditMode, onUpdat
       if (file && isEditMode) void handleMediaFileUpload(file);
     };
 
+    const shellOverflowClass = isNestedDetailView && !item.heightUserSet ? "overflow-visible" : "overflow-hidden";
+
     return (
       <div
+        ref={contentMeasureRef}
         onClick={() => (!isEditMode && onSelectProject ? onSelectProject(item) : undefined)}
-        className={`h-full rounded-2xl bg-white dark:bg-[#111] overflow-hidden group/card transition-all duration-500 flex flex-col border border-slate-100 dark:border-white/5 shadow-sm relative
+        className={`rounded-2xl bg-white dark:bg-[#111] ${shellOverflowClass} group/card transition-all duration-500 flex flex-col border border-slate-100 dark:border-white/5 shadow-sm relative
                     ${isEditMode ? "hover:border-brand-500/30" : "cursor-pointer hover:shadow-2xl hover:-translate-y-1 hover:border-slate-200"}
+                    ${blockCellSizingClass(item.heightUserSet)}
                 `}
       >
         <input ref={mediaInputRef} type="file" accept="image/*" className="hidden" onChange={onMediaInputChange} />
 
         {coverEnabled ? (
           <div
-            className="relative overflow-hidden w-full bg-slate-100 dark:bg-slate-800 transition-all duration-500 flex-1 min-h-0"
+            className="relative overflow-hidden rounded-t-2xl w-full shrink-0 min-h-[180px] max-h-[240px] h-[200px] bg-slate-100 dark:bg-slate-800 transition-all duration-500"
             onDragOver={e => {
               e.preventDefault();
               e.stopPropagation();
@@ -549,10 +642,12 @@ const BlockRenderer: React.FC<BlockRendererProps> = ({ item, isEditMode, onUpdat
               </div>
             )}
             {item.content ? (
-              <img
+              <PortfolioImage
                 src={item.content}
                 alt={item.title || "Project cover"}
-                className="w-full h-full object-cover group-hover/card:scale-105 transition-transform duration-700"
+                fill
+                sizes="(max-width: 768px) 50vw, 33vw"
+                className="object-cover group-hover/card:scale-105 transition-transform duration-700"
               />
             ) : (
               <div className="w-full h-full flex items-center justify-center">
@@ -576,26 +671,24 @@ const BlockRenderer: React.FC<BlockRendererProps> = ({ item, isEditMode, onUpdat
           )
         )}
 
-        {(isEditMode || hasAnyText) && showTextArea && (
+        {showTextArea && (
           <div
-            className={`px-4 md:px-4 flex flex-col justify-center w-full overflow-hidden ${showSubtitle ? "py-6 md:py-8" : "py-4 md:py-6"}`}
+            className={`px-4 md:px-4 flex flex-col justify-center w-full ${showSubtitle && hasDescription ? "py-6 md:py-8" : "py-4 md:py-6"}`}
           >
             {isEditMode ? (
               <div className={`space-y-3 ${showSubtitle ? "" : "space-y-2"}`}>
                 <RichTextEditor
-                  value={item.title || ""}
+                  value={normalizePortfolioHtmlForRender(item.title || "")}
                   onChange={value => onUpdate(item.id, { title: value })}
                   className={`w-full bg-transparent text-2xl font-semibold text-slate-900 dark:text-white min-h-[2rem] ${RICH_TEXT_CONTENT_CLASSES}`}
                   placeholder="Page Title"
                 />
                 {showSubtitle && (
-                  <textarea
-                    value={item.description || ""}
-                    onChange={e => onUpdate(item.id, { description: e.target.value })}
-                    onClick={e => e.stopPropagation()}
-                    className="text-base text-slate-500 dark:text-slate-400 bg-transparent outline-none w-full mt-0 resize-none min-h-[3rem]"
+                  <RichTextEditor
+                    value={normalizePortfolioHtmlForRender(item.description || "")}
+                    onChange={value => onUpdate(item.id, { description: value })}
+                    className={`w-full bg-transparent text-base text-slate-500 dark:text-slate-400 min-h-[3rem] ${RICH_TEXT_CONTENT_CLASSES}`}
                     placeholder="Subtitle (optional)"
-                    rows={2}
                   />
                 )}
               </div>
@@ -604,11 +697,14 @@ const BlockRenderer: React.FC<BlockRendererProps> = ({ item, isEditMode, onUpdat
                 {hasTitle && (
                   <h3
                     className={`font-semibold text-2xl text-slate-900 dark:text-white leading-tight ${RICH_TEXT_CONTENT_CLASSES}`}
-                    dangerouslySetInnerHTML={{ __html: normalizedTitle }}
+                    dangerouslySetInnerHTML={{ __html: normalizePortfolioHtmlForRender(normalizedTitle) }}
                   />
                 )}
                 {showSubtitle && hasDescription && (
-                  <p className="text-base text-slate-500 dark:text-slate-400 mt-3 line-clamp-3 text-pretty">{normalizedDescription}</p>
+                  <p
+                    className={`text-base text-slate-500 dark:text-slate-400 mt-3 text-pretty ${RICH_TEXT_CONTENT_CLASSES}`}
+                    dangerouslySetInnerHTML={{ __html: normalizePortfolioHtmlForRender(normalizedDescription) }}
+                  />
                 )}
               </div>
             )}
@@ -646,7 +742,8 @@ const BlockRenderer: React.FC<BlockRendererProps> = ({ item, isEditMode, onUpdat
 
     return (
       <div
-        className={`h-full rounded-2xl border border-slate-100 dark:border-white/10 bg-white dark:bg-white/5 p-4 flex flex-col gap-3 ${isEditMode ? "hover:border-brand-500/30" : ""}`}
+        ref={contentMeasureRef}
+        className={`rounded-2xl border border-slate-100 dark:border-white/10 bg-white dark:bg-white/5 p-4 flex flex-col gap-3 ${isEditMode ? "hover:border-brand-500/30" : ""} ${blockCellSizingClass(item.heightUserSet)}`}
       >
         {isEditMode && (
           <div className="flex items-center gap-2 flex-wrap">
@@ -726,7 +823,8 @@ const BlockRenderer: React.FC<BlockRendererProps> = ({ item, isEditMode, onUpdat
 
     return (
       <div
-        className={`h-full rounded-2xl border border-slate-100 dark:border-white/10 bg-white dark:bg-white/5 p-4 flex flex-col gap-3 ${isEditMode ? "hover:border-brand-500/30" : ""}`}
+        ref={contentMeasureRef}
+        className={`rounded-2xl border border-slate-100 dark:border-white/10 bg-white dark:bg-white/5 p-4 flex flex-col gap-3 ${isEditMode ? "hover:border-brand-500/30" : ""} ${blockCellSizingClass(item.heightUserSet)}`}
       >
         {isEditMode ? (
           <input
@@ -738,7 +836,9 @@ const BlockRenderer: React.FC<BlockRendererProps> = ({ item, isEditMode, onUpdat
           />
         ) : null}
 
-        <div className="relative flex-1 min-h-0 rounded-xl overflow-hidden border border-slate-200 dark:border-white/10 bg-slate-50 dark:bg-black/20">
+        <div
+          className={`relative w-full min-h-[220px] rounded-xl overflow-hidden border border-slate-200 dark:border-white/10 bg-slate-50 dark:bg-black/20 ${item.heightUserSet ? "flex-1 min-h-0" : ""}`}
+        >
           {hasEmbedValue ? (
             embedVariant === "figma" ? (
               figmaUrl ? (

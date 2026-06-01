@@ -13,7 +13,11 @@ import {
   topicIdForSubSession,
 } from "@/features/adk-chat/improve-topic-helpers";
 import { getSessionDisplayName, getSessionMeta, groupSessionsForSidebar } from "@/features/adk-chat/session-metadata";
+import { useAdkPortfolioReviewStore, type AdkPortfolioReviewCard } from "@/features/adk-chat/stores/useAdkPortfolioReviewStore";
 import { useAdkResumeReviewStore, type AdkReviewCard } from "@/features/adk-chat/stores/useAdkResumeReviewStore";
+import { buildAdkPortfolioDataMap, buildAdkPortfolioStateDelta } from "@/features/portfolio/api/mappers";
+import { portfolioQueryKey } from "@/features/portfolio/hooks/usePortfolio";
+import { usePortfolioStore } from "@/features/portfolio/store/usePortfolioStore";
 import { buildAdkResumeDataMap } from "@/features/resume/api/mappers";
 import { resumeByIdQueryKey } from "@/features/resume/hooks/useResume";
 import { useResumeStore } from "@/features/resume/store/useResumeStore";
@@ -24,9 +28,11 @@ import { useQueryClient } from "@tanstack/react-query";
 import { Send, Loader2, Minimize2, Maximize2, ChevronDown, ChevronUp, ArrowUp, History, Plus, Search, Trash2, X } from "lucide-react";
 import type { ChatMessage } from "../types";
 import Logo from "./Logo";
+import UnimadUMark from "./UnimadUMark";
 import { useAdkChatContext } from "./chat/AdkChatProvider";
 import { FormattedAgentMessage } from "./chat/FormattedAgentMessage";
 import { UnibotErrorBubble } from "./chat/UnibotErrorBubble";
+import { resetAssistantTurnForRetryInTree } from "./chat/set-chat-message-stream-error";
 import { type UnibotIncomingRequest, incomingRequestSignature, UNIBOT_SECTION_REVIEW_PROMPTS } from "./chat/unibot-incoming-request";
 
 interface ChatSidebarProps {
@@ -44,7 +50,12 @@ function newId(prefix: string): string {
   return `${prefix}-${Date.now()}-${Math.random().toString(36).slice(2, 9)}`;
 }
 
-function AdkResumeReviewCardBlock({
+type AdkReviewCardLike = {
+  id: string;
+  bannerTitle: string;
+};
+
+function AdkReviewCardBlock({
   card,
   isActive,
   adkReviewBusy,
@@ -52,7 +63,7 @@ function AdkResumeReviewCardBlock({
   onAccept,
   onDiscard,
 }: {
-  card: AdkReviewCard;
+  card: AdkReviewCardLike;
   isActive: boolean;
   adkReviewBusy: boolean;
   sessionReady: boolean;
@@ -118,6 +129,9 @@ const ChatSidebar: React.FC<ChatSidebarProps> = ({ incomingRequest, onRequestHan
     handleCreateNewSession,
     handleDeleteSession,
     refreshSessions,
+    streamError,
+    clearStreamError,
+    setStreamError,
   } = useAdkChatContext();
 
   const [input, setInput] = useState("");
@@ -135,11 +149,12 @@ const ChatSidebar: React.FC<ChatSidebarProps> = ({ incomingRequest, onRequestHan
   const [topicInputs, setTopicInputs] = useState<{ [key: string]: string }>({});
   const [improveReplyTopicId, setImproveReplyTopicId] = useState<string | null>(null);
   const lastIncomingSigRef = useRef<string | null>(null);
-  const pendingRetryRef = useRef<{ text: string; topicId?: string } | null>(null);
-  const [streamError, setStreamError] = useState<FormattedUnibotStreamError | null>(null);
+  const pendingRetryRef = useRef<{ text: string; topicId?: string; botMsgId?: string } | null>(null);
   const queryClient = useQueryClient();
   const adkReviewStack = useAdkResumeReviewStore(s => s.reviewStack);
   const adkActiveReviewId = useAdkResumeReviewStore(s => s.reviewStack.at(-1)?.id ?? null);
+  const adkPortfolioReviewStack = useAdkPortfolioReviewStore(s => s.reviewStack);
+  const adkPortfolioActiveReviewId = useAdkPortfolioReviewStore(s => s.reviewStack.at(-1)?.id ?? null);
   const [adkReviewBusy, setAdkReviewBusy] = useState(false);
 
   useEffect(() => {
@@ -207,12 +222,28 @@ const ChatSidebar: React.FC<ChatSidebarProps> = ({ incomingRequest, onRequestHan
   }, [sidebarWidth, isCollapsed]);
 
   const applyAssistantError = useCallback(
-    (formatted: FormattedUnibotStreamError, target: { scope: "main" } | { scope: "topic"; topicId: string; botMsgId: string }) => {
+    (
+      formatted: FormattedUnibotStreamError,
+      target: { scope: "main"; botMsgId?: string } | { scope: "topic"; topicId: string; botMsgId: string }
+    ) => {
       if (target.scope === "main") {
         setMessages(prev => {
+          if (target.botMsgId) {
+            const idx = prev.findIndex(m => m.id === target.botMsgId && m.role === "model" && !m.isTopic);
+            if (idx >= 0) {
+              const next = [...prev];
+              next[idx] = {
+                ...next[idx],
+                text: formatted.message,
+                isError: true,
+                errorKind: formatted.kind,
+              };
+              return next;
+            }
+          }
           for (let i = prev.length - 1; i >= 0; i--) {
             const m = prev[i];
-            if (m.role === "model" && !m.isTopic && (m.text === "" || m.isError)) {
+            if (m.role === "model" && !m.isTopic) {
               const next = [...prev];
               next[i] = {
                 ...m,
@@ -242,31 +273,21 @@ const ChatSidebar: React.FC<ChatSidebarProps> = ({ incomingRequest, onRequestHan
 
   const handleStreamFailure = useCallback(
     (err: unknown, ctx: { text: string; topicId?: string; botMsgId?: string }) => {
-      const formatted = formatUnibotStreamError(err);
-      pendingRetryRef.current = { text: ctx.text, topicId: ctx.topicId };
+      const formatted = formatUnibotStreamError(err, {
+        scope: ctx.topicId ? "topic" : "main",
+        topicId: ctx.topicId,
+        botMsgId: ctx.botMsgId,
+      });
+      pendingRetryRef.current = { text: ctx.text, topicId: ctx.topicId, botMsgId: ctx.botMsgId };
       if (ctx.topicId && ctx.botMsgId) {
         applyAssistantError(formatted, { scope: "topic", topicId: ctx.topicId, botMsgId: ctx.botMsgId });
       } else {
-        applyAssistantError(formatted, { scope: "main" });
+        applyAssistantError(formatted, { scope: "main", botMsgId: ctx.botMsgId });
       }
       setStreamError(formatted);
     },
     [applyAssistantError]
   );
-
-  const clearErrorMessages = useCallback(() => {
-    setMessages(prev =>
-      prev
-        .map(msg => {
-          if (msg.isTopic && msg.messages?.length) {
-            const inner = msg.messages.filter(m => !(m.role === "model" && m.isError));
-            return inner.length === msg.messages.length ? msg : { ...msg, messages: inner };
-          }
-          return msg;
-        })
-        .filter(m => !(m.role === "model" && !m.isTopic && m.isError))
-    );
-  }, [setMessages]);
 
   const groupedSessions = useMemo(() => (userId ? groupSessionsForSidebar(userId, sessions) : []), [userId, sessions]);
 
@@ -364,7 +385,7 @@ const ChatSidebar: React.FC<ChatSidebarProps> = ({ incomingRequest, onRequestHan
         };
         setMessages(prev => insertTopicInMainThread(prev, newTopic));
         setImproveReplyTopicId(topicId);
-        pendingRetryRef.current = { text: promptText, topicId };
+        pendingRetryRef.current = { text: promptText, topicId, botMsgId };
         try {
           await sendTopicMessage(promptText, botMsgId, { sessionIdOverride: subAdkSessionId });
           pendingRetryRef.current = null;
@@ -401,7 +422,7 @@ const ChatSidebar: React.FC<ChatSidebarProps> = ({ incomingRequest, onRequestHan
         )
       );
       setImproveReplyTopicId(topicId);
-      pendingRetryRef.current = { text: promptText, topicId };
+      pendingRetryRef.current = { text: promptText, topicId, botMsgId };
       try {
         await sendTopicMessage(promptText, botMsgId, { sessionIdOverride: subAdkSessionId });
         pendingRetryRef.current = null;
@@ -520,7 +541,7 @@ const ChatSidebar: React.FC<ChatSidebarProps> = ({ incomingRequest, onRequestHan
 
   useEffect(() => {
     scrollToLatest();
-  }, [messages, isCollapsed, adkReviewStack, adkActiveReviewId]);
+  }, [messages, isCollapsed, adkReviewStack, adkActiveReviewId, adkPortfolioReviewStack, adkPortfolioActiveReviewId]);
 
   useEffect(() => {
     if (!historyPanelOpen) return;
@@ -578,6 +599,45 @@ const ChatSidebar: React.FC<ChatSidebarProps> = ({ incomingRequest, onRequestHan
     }
   }, [queryClient, sessionId, userId]);
 
+  const handleAdkPortfolioAccept = useCallback(async () => {
+    setAdkReviewBusy(true);
+    try {
+      await useAdkPortfolioReviewStore.getState().acceptAndSave();
+    } catch (err) {
+      console.error("ADK portfolio accept failed:", err);
+    } finally {
+      setAdkReviewBusy(false);
+    }
+  }, []);
+
+  const handleAdkPortfolioDiscard = useCallback(async () => {
+    const baseline = useAdkPortfolioReviewStore.getState().getBaselinePortfolio();
+    if (!baseline || !userId || !sessionId) return;
+    setAdkReviewBusy(true);
+    try {
+      const merged = { ...usePortfolioStore.getState().portfolioData, [baseline.id]: baseline };
+      usePortfolioStore.setState({ portfolioData: merged });
+      queryClient.setQueryData(portfolioQueryKey, baseline);
+      const warmResume = buildAdkResumeDataMap(useResumeStore.getState().resumeData);
+      await syncSessionStateAction(userId, sessionId, {
+        ...buildAdkPortfolioStateDelta(baseline),
+        portfolio_data: buildAdkPortfolioDataMap(merged),
+        resume_data: warmResume,
+        current_resume: null,
+      });
+      useAdkPortfolioReviewStore.getState().popReviewAfterDiscard();
+      window.dispatchEvent(
+        new CustomEvent("portfolio-adk-discard", {
+          detail: { portfolioId: baseline.id, baselineJson: JSON.stringify(baseline) },
+        })
+      );
+    } catch (err) {
+      console.error("ADK portfolio discard failed:", err);
+    } finally {
+      setAdkReviewBusy(false);
+    }
+  }, [queryClient, sessionId, userId]);
+
   const sendUserMessageToTopic = async (topicId: string, text: string) => {
     const trimmed = text.trim();
     if (!trimmed || !canSend) return;
@@ -591,7 +651,7 @@ const ChatSidebar: React.FC<ChatSidebarProps> = ({ incomingRequest, onRequestHan
         msg.id === topicId && msg.isTopic ? { ...msg, messages: [...(msg.messages || []), userMsg, placeholderMsg], isExpanded: true } : msg
       )
     );
-    pendingRetryRef.current = { text: trimmed, topicId };
+    pendingRetryRef.current = { text: trimmed, topicId, botMsgId };
     try {
       await sendTopicMessage(trimmed, botMsgId, subAdkId ? { sessionIdOverride: subAdkId } : undefined);
       pendingRetryRef.current = null;
@@ -604,31 +664,81 @@ const ChatSidebar: React.FC<ChatSidebarProps> = ({ incomingRequest, onRequestHan
     const textToSend = (overrideText ?? input).trim();
     if (!textToSend || !canSendMessage) return;
     if (!options?.afterRetry && streamError) return;
-    setStreamError(null);
+    clearStreamError();
     if (improveReplyTopicId && improveContextTopic) {
       setInput("");
       await sendUserMessageToTopic(improveReplyTopicId, textToSend);
       return;
     }
     setInput("");
-    pendingRetryRef.current = { text: textToSend };
     const mainId = currentMainSessionId ?? sessionId;
+    let assistantMsgId: string | undefined;
     try {
-      await sendMainMessage(textToSend);
+      const { assistantId } = await sendMainMessage(textToSend);
+      assistantMsgId = assistantId || undefined;
+      pendingRetryRef.current = { text: textToSend, botMsgId: assistantMsgId };
       pendingRetryRef.current = null;
       void generateMainSessionTitleIfNeeded(mainId, textToSend, refreshSessions);
     } catch (err) {
-      handleStreamFailure(err, { text: textToSend });
+      const fromErr =
+        err && typeof err === "object" && "assistantMessageId" in err
+          ? String((err as { assistantMessageId?: string }).assistantMessageId)
+          : undefined;
+      handleStreamFailure(err, { text: textToSend, botMsgId: assistantMsgId ?? fromErr });
     }
   };
 
   const retryFailedStream = useCallback(() => {
     const pending = pendingRetryRef.current;
     if (!pending || !userId || !sessionReady || isAgentLoading || isLoadingHistory) return;
-    setStreamError(null);
-    clearErrorMessages();
-    void handleSend(pending.text, { afterRetry: true });
-  }, [userId, sessionReady, isAgentLoading, isLoadingHistory, clearErrorMessages, handleSend]);
+    clearStreamError();
+
+    const runRetry = async () => {
+      if (pending.botMsgId) {
+        setMessages(prev => resetAssistantTurnForRetryInTree(prev, pending.botMsgId!));
+
+        if (pending.topicId) {
+          const topic = messages.find(m => m.id === pending.topicId && m.isTopic);
+          const subAdkId = topic?.subSessionAdkId;
+          try {
+            await sendTopicMessage(pending.text, pending.botMsgId, subAdkId ? { sessionIdOverride: subAdkId } : undefined);
+            pendingRetryRef.current = null;
+          } catch (err) {
+            handleStreamFailure(err, { text: pending.text, topicId: pending.topicId, botMsgId: pending.botMsgId });
+          }
+          return;
+        }
+
+        try {
+          await sendMainMessage(pending.text, { retryAssistantId: pending.botMsgId });
+          pendingRetryRef.current = null;
+        } catch (err) {
+          const fromErr =
+            err && typeof err === "object" && "assistantMessageId" in err
+              ? String((err as { assistantMessageId?: string }).assistantMessageId)
+              : undefined;
+          handleStreamFailure(err, { text: pending.text, botMsgId: pending.botMsgId ?? fromErr });
+        }
+        return;
+      }
+
+      void handleSend(pending.text, { afterRetry: true });
+    };
+
+    void runRetry();
+  }, [
+    userId,
+    sessionReady,
+    isAgentLoading,
+    isLoadingHistory,
+    clearStreamError,
+    handleSend,
+    messages,
+    setMessages,
+    sendTopicMessage,
+    sendMainMessage,
+    handleStreamFailure,
+  ]);
 
   const onNewChat = async () => {
     if (!canUseHistory) return;
@@ -637,7 +747,7 @@ const ChatSidebar: React.FC<ChatSidebarProps> = ({ incomingRequest, onRequestHan
       await refreshSessions();
       setHistoryPanelOpen(false);
       setImproveReplyTopicId(null);
-      setStreamError(null);
+      clearStreamError();
       pendingRetryRef.current = null;
     } catch {
       /* sessionError surfaced by provider */
@@ -696,7 +806,7 @@ const ChatSidebar: React.FC<ChatSidebarProps> = ({ incomingRequest, onRequestHan
     const topic = messages.find(m => m.id === topicId && m.isTopic);
     const subAdkId = topic?.subSessionAdkId;
     const trimmed = topicInput.trim();
-    pendingRetryRef.current = { text: trimmed, topicId };
+    pendingRetryRef.current = { text: trimmed, topicId, botMsgId };
     try {
       await sendTopicMessage(trimmed, botMsgId, subAdkId ? { sessionIdOverride: subAdkId } : undefined);
       pendingRetryRef.current = null;
@@ -824,14 +934,20 @@ const ChatSidebar: React.FC<ChatSidebarProps> = ({ incomingRequest, onRequestHan
 
   if (isCollapsed) {
     return (
-      <div className="w-16 border-r border-slate-200 dark:border-white/5 bg-white dark:bg-[#0d0d0d] flex flex-col items-center py-4 h-full transition-all duration-300 z-20">
-        <div className="h-16 flex items-center justify-center mb-2">
-          <div className="w-2 h-2 rounded-full bg-red-500"></div>
-        </div>
+      <div className="relative flex h-full w-16 shrink-0 flex-col items-center border-r border-slate-200 bg-white py-4 transition-all duration-300 dark:border-white/5 dark:bg-[#0d0d0d] z-20">
+        <button
+          type="button"
+          onClick={() => setIsCollapsed(false)}
+          className="mb-2 flex h-16 w-full items-center justify-center rounded-lg text-brand-600 transition-colors hover:bg-slate-50 dark:text-brand-400 dark:hover:bg-slate-800"
+          aria-label="Expand Unibot sidebar"
+        >
+          <UnimadUMark size={26} />
+        </button>
         <button
           type="button"
           onClick={() => setIsCollapsed(false)}
           className="p-3 text-slate-400 hover:text-slate-600 dark:hover:text-slate-200 hover:bg-slate-50 dark:hover:bg-slate-800 rounded-xl"
+          aria-label="Expand sidebar"
         >
           <Maximize2 size={20} />
         </button>
@@ -868,7 +984,7 @@ const ChatSidebar: React.FC<ChatSidebarProps> = ({ incomingRequest, onRequestHan
 
       <div
         ref={messagesScrollRef}
-        className="flex min-h-0 flex-1 flex-col gap-6 overflow-y-auto bg-white p-4 dark:bg-[#0d0d0d] scrollbar-on-hover"
+        className="flex min-h-0 flex-1 flex-col gap-6 overflow-y-auto overflow-x-hidden bg-white p-4 dark:bg-[#0d0d0d] scrollbar-on-hover"
       >
         {!userId && <p className="text-[11px] text-slate-400 px-1">Sign in to chat with Unibot.</p>}
         {userId && !sessionReady && (
@@ -967,7 +1083,7 @@ const ChatSidebar: React.FC<ChatSidebarProps> = ({ incomingRequest, onRequestHan
           }
 
           return (
-            <div key={msg.id} className={`flex flex-col gap-1 ${msg.role === "user" ? "items-end" : "items-start"}`}>
+            <div key={msg.id} className={`flex min-w-0 flex-col gap-1 ${msg.role === "user" ? "items-end" : "items-start"}`}>
               {msg.isError ? (
                 <UnibotErrorBubble message={msg} onRetry={retryFailedStream} />
               ) : (
@@ -989,7 +1105,7 @@ const ChatSidebar: React.FC<ChatSidebarProps> = ({ incomingRequest, onRequestHan
                 adkReviewStack
                   .filter(c => c.assistantMessageId === msg.id)
                   .map(card => (
-                    <AdkResumeReviewCardBlock
+                    <AdkReviewCardBlock
                       key={card.id}
                       card={card}
                       isActive={card.id === adkActiveReviewId}
@@ -999,16 +1115,30 @@ const ChatSidebar: React.FC<ChatSidebarProps> = ({ incomingRequest, onRequestHan
                       onDiscard={handleAdkDiscard}
                     />
                   ))}
+              {msg.role === "model" &&
+                adkPortfolioReviewStack
+                  .filter(c => c.assistantMessageId === msg.id)
+                  .map((card: AdkPortfolioReviewCard) => (
+                    <AdkReviewCardBlock
+                      key={card.id}
+                      card={card}
+                      isActive={card.id === adkPortfolioActiveReviewId}
+                      adkReviewBusy={adkReviewBusy}
+                      sessionReady={sessionReady}
+                      onAccept={handleAdkPortfolioAccept}
+                      onDiscard={handleAdkPortfolioDiscard}
+                    />
+                  ))}
             </div>
           );
         })}
 
-        {adkReviewStack.some(c => !c.assistantMessageId) && (
+        {(adkReviewStack.some(c => !c.assistantMessageId) || adkPortfolioReviewStack.some(c => !c.assistantMessageId)) && (
           <div className="flex flex-col gap-2 items-start pl-1">
             {adkReviewStack
               .filter(c => !c.assistantMessageId)
               .map(card => (
-                <AdkResumeReviewCardBlock
+                <AdkReviewCardBlock
                   key={card.id}
                   card={card}
                   isActive={card.id === adkActiveReviewId}
@@ -1016,6 +1146,19 @@ const ChatSidebar: React.FC<ChatSidebarProps> = ({ incomingRequest, onRequestHan
                   sessionReady={sessionReady}
                   onAccept={handleAdkAccept}
                   onDiscard={handleAdkDiscard}
+                />
+              ))}
+            {adkPortfolioReviewStack
+              .filter(c => !c.assistantMessageId)
+              .map((card: AdkPortfolioReviewCard) => (
+                <AdkReviewCardBlock
+                  key={card.id}
+                  card={card}
+                  isActive={card.id === adkPortfolioActiveReviewId}
+                  adkReviewBusy={adkReviewBusy}
+                  sessionReady={sessionReady}
+                  onAccept={handleAdkPortfolioAccept}
+                  onDiscard={handleAdkPortfolioDiscard}
                 />
               ))}
           </div>

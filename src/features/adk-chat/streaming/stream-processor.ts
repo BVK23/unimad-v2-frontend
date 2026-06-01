@@ -14,7 +14,7 @@ import { flushSync } from "react-dom";
 import { createDebugLog } from "@/src/lib/adk/run-sse-common";
 import type { AgentMessage, ProcessedEvent } from "../types";
 import { extractDataFromSSE } from "./sse-parser";
-import { isMutatingResumeTool, labelForAgent, labelForMutatingToolResponse, labelForToolCall } from "./stream-activity";
+import { isMutatingAdkTool, isMutatingResumeTool, labelForAgent, labelForMutatingToolResponse, labelForToolCall } from "./stream-activity";
 import { StreamProcessingCallbacks } from "./types";
 
 function previewArgsForDevLog(args: Record<string, unknown> | undefined, max = 480): string {
@@ -168,9 +168,10 @@ function processFunctionResponse(
     responsePreview: previewJsonForDevLog(functionResponse.response, 400),
   });
 
-  if (isMutatingResumeTool(functionResponse.name)) {
+  if (isMutatingAdkTool(functionResponse.name)) {
     createDebugLog("ADK SESSION SYNC", "Mutating tool completed; scheduling session refresh", {
       tool: functionResponse.name,
+      mutatingResume: isMutatingResumeTool(functionResponse.name),
     });
     callbacks.onMutatingToolResponse?.(functionResponse.name, aiMessageId);
     callbacks.onStreamActivityHint?.({ label: labelForMutatingToolResponse(functionResponse.name) });

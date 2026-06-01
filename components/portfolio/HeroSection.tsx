@@ -1,6 +1,7 @@
 "use client";
 import React from "react";
 import { ArrowRight } from "lucide-react";
+import PortfolioImage from "./PortfolioImage";
 
 interface HeroSectionProps {
   variant?: string;
@@ -48,8 +49,14 @@ const HeroSection: React.FC<HeroSectionProps> = ({ variant = "centered", data })
           </div>
         </div>
         <div className="relative">
-          <div className="aspect-[4/5] rounded-3xl overflow-hidden shadow-2xl bg-slate-100 dark:bg-slate-800">
-            <img src={image || "https://picsum.photos/800/1000"} alt="Hero image" className="w-full h-full object-cover" />
+          <div className="aspect-[4/5] rounded-3xl overflow-hidden shadow-2xl bg-slate-100 dark:bg-slate-800 relative">
+            <PortfolioImage
+              src={image || "https://picsum.photos/800/1000"}
+              alt="Hero image"
+              fill
+              sizes="(max-width: 768px) 100vw, 500px"
+              className="object-cover"
+            />
           </div>
           {/* Decorative element */}
           <div className="absolute -bottom-6 -left-6 w-32 h-32 bg-brand-500/10 rounded-full blur-3xl -z-10 animate-pulse"></div>
@@ -61,10 +68,13 @@ const HeroSection: React.FC<HeroSectionProps> = ({ variant = "centered", data })
   if (variant === "full-bg") {
     return (
       <section className="relative h-[80vh] min-h-[600px] flex items-center justify-center overflow-hidden">
-        <img
+        <PortfolioImage
           src={image || "https://picsum.photos/1920/1080"}
           alt="Hero background"
-          className="absolute inset-0 w-full h-full object-cover"
+          fill
+          sizes="100vw"
+          className="object-cover"
+          priority
         />
         <div className="absolute inset-0 bg-black/50 backdrop-blur-[2px]"></div>
         <div className="relative z-10 text-center px-6 max-w-4xl">
@@ -113,8 +123,8 @@ const HeroSection: React.FC<HeroSectionProps> = ({ variant = "centered", data })
       </div>
       {image && (
         <div className="pt-16 max-w-4xl mx-auto">
-          <div className="aspect-video rounded-3xl overflow-hidden shadow-2xl ring-1 ring-slate-200 dark:ring-white/10">
-            <img src={image} alt="Hero" className="w-full h-full object-cover" />
+          <div className="aspect-video rounded-3xl overflow-hidden shadow-2xl ring-1 ring-slate-200 dark:ring-white/10 relative">
+            <PortfolioImage src={image} alt="Hero" fill sizes="(max-width: 768px) 100vw, 896px" className="object-cover" />
           </div>
         </div>
       )}

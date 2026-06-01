@@ -1,3 +1,6 @@
+import { normalizeTemplateSpans } from "@/features/portfolio/constants/portfolioLayout";
+import { resolvePortfolioBlockType } from "@/features/portfolio/utils/normalizePortfolioBlockType";
+import { reconcileHeroProfileContacts } from "@/features/portfolio/utils/reconcileHeroProfileContacts";
 import type { ContactButton, PortfolioData, PortfolioItem, UserProfile } from "@/types";
 
 function safeObject<T extends Record<string, unknown>>(value: unknown, fallback: T): T {
@@ -25,6 +28,12 @@ function readMediaUrl(value: unknown): string {
   return "";
 }
 
+const V2_UNSUPPORTED_ITEM_TYPES = new Set(["divider"]);
+
+function filterV2PortfolioItems(items: PortfolioItem[]): PortfolioItem[] {
+  return items.filter(item => item?.type && !V2_UNSUPPORTED_ITEM_TYPES.has(item.type));
+}
+
 function toDate(value: unknown): Date {
   if (typeof value === "string" || value instanceof Date || typeof value === "number") {
     const parsed = new Date(value);
@@ -36,6 +45,15 @@ function toDate(value: unknown): Date {
   return new Date();
 }
 
+const CONTACT_BUTTON_ICONS = new Set<ContactButton["icon"]>(["phone", "mail", "link", "location"]);
+
+const CONTACT_ICON_TO_BACKEND_TYPE: Record<ContactButton["icon"], string> = {
+  phone: "phone",
+  mail: "email",
+  link: "link",
+  location: "location",
+};
+
 function mapContactButtonIcon(type: unknown, label: unknown): ContactButton["icon"] {
   const normalized = String(type ?? label ?? "").toLowerCase();
 
@@ -45,10 +63,54 @@ function mapContactButtonIcon(type: unknown, label: unknown): ContactButton["ico
   return "link";
 }
 
+/** Prefer stored `icon`; fall back to `type` / label inference (API often omits `type`). */
+function resolveContactButtonIcon(button: Record<string, unknown>): ContactButton["icon"] {
+  const rawIcon = button.icon;
+  if (typeof rawIcon === "string" && CONTACT_BUTTON_ICONS.has(rawIcon as ContactButton["icon"])) {
+    return rawIcon as ContactButton["icon"];
+  }
+
+  return mapContactButtonIcon(button.type, button.label);
+}
+
+function mapContactButtonFromDto(button: Record<string, unknown>, index: number): ContactButton {
+  return {
+    id: String(button.id ?? `${button.type ?? "contact"}-${index}`),
+    label: String(button.label ?? ""),
+    url: String(button.url ?? button.value ?? ""),
+    icon: resolveContactButtonIcon(button),
+    isVisible: button.isVisible !== false,
+  };
+}
+
+function mapContactButtonToBackend(button: ContactButton): Record<string, unknown> {
+  return {
+    id: button.id,
+    label: button.label,
+    url: button.url,
+    icon: button.icon,
+    type: CONTACT_ICON_TO_BACKEND_TYPE[button.icon] ?? "link",
+    isVisible: button.isVisible,
+  };
+}
+
+function readItemsAboveProfileCount(dto: Record<string, unknown>): number {
+  const raw = dto.itemsAboveProfileCount;
+  if (typeof raw !== "number" || !Number.isFinite(raw)) return 0;
+  return Math.max(0, Math.floor(raw));
+}
+
+function readProfileLayoutFields(dto: Record<string, unknown>): Pick<UserProfile, "showProfileSection" | "itemsAboveProfileCount"> {
+  return {
+    showProfileSection: dto.showProfileSection !== false,
+    itemsAboveProfileCount: readItemsAboveProfileCount(dto),
+  };
+}
+
 function mapProfile(dto: Record<string, unknown>): UserProfile {
   const contactButtonsRaw = safeArray<Record<string, unknown>>(dto.contactButtons);
 
-  return {
+  return reconcileHeroProfileContacts({
     name: String(dto.name ?? ""),
     tagline: String(dto.tagline ?? ""),
     bio: String(dto.bio ?? ""),
@@ -56,6 +118,7 @@ function mapProfile(dto: Record<string, unknown>): UserProfile {
     email: String(dto.email ?? ""),
     phone: String(dto.phone ?? ""),
     website: String(dto.website ?? ""),
+    websiteLabel: String(dto.websiteLabel ?? ""),
     avatarUrl: readMediaUrl(dto.avatarUrl),
     coverUrl: readMediaUrl(dto.coverUrl),
     experience: safeArray(dto.experience),
@@ -69,20 +132,15 @@ function mapProfile(dto: Record<string, unknown>): UserProfile {
       dto.infoAlignment === "left" || dto.infoAlignment === "right" || dto.infoAlignment === "center" ? dto.infoAlignment : "left",
     showAvatar: dto.showAvatar !== false,
     showCover: dto.showCover !== false,
-    contactButtons: contactButtonsRaw.map((button, index) => ({
-      id: String(button.id ?? `${button.type ?? "contact"}-${index}`),
-      label: String(button.label ?? ""),
-      url: String(button.url ?? ""),
-      icon: mapContactButtonIcon(button.type, button.label),
-      isVisible: button.isVisible !== false,
-    })),
-  };
+    ...readProfileLayoutFields(dto),
+    contactButtons: contactButtonsRaw.map(mapContactButtonFromDto),
+  });
 }
 
 function mapLegacyProfile(dto: Record<string, unknown>): UserProfile {
   const contactButtonsRaw = safeArray<Record<string, unknown>>(dto.contactButtons);
 
-  return {
+  return reconcileHeroProfileContacts({
     name: String(dto.name ?? ""),
     tagline: String(dto.tagline ?? ""),
     bio: String(dto.bio ?? ""),
@@ -90,6 +148,7 @@ function mapLegacyProfile(dto: Record<string, unknown>): UserProfile {
     email: String(dto.email ?? ""),
     phone: String(dto.phone ?? ""),
     website: String(dto.website ?? ""),
+    websiteLabel: String(dto.websiteLabel ?? ""),
     avatarUrl: readMediaUrl(dto.profile_pic),
     coverUrl: readMediaUrl(dto.cover_pic),
     experience: safeArray(dto.experience),
@@ -103,14 +162,9 @@ function mapLegacyProfile(dto: Record<string, unknown>): UserProfile {
       dto.infoAlignment === "left" || dto.infoAlignment === "right" || dto.infoAlignment === "center" ? dto.infoAlignment : "left",
     showAvatar: dto.showAvatar !== false,
     showCover: dto.showCover !== false,
-    contactButtons: contactButtonsRaw.map((button, index) => ({
-      id: String(button.id ?? `${button.type ?? "contact"}-${index}`),
-      label: String(button.label ?? ""),
-      url: String(button.url ?? ""),
-      icon: mapContactButtonIcon(button.type, button.label),
-      isVisible: button.isVisible !== false,
-    })),
-  };
+    ...readProfileLayoutFields(dto),
+    contactButtons: contactButtonsRaw.map(mapContactButtonFromDto),
+  });
 }
 
 export function mapBackendPortfolioToFrontend(dto: Record<string, unknown>): PortfolioData {
@@ -118,9 +172,17 @@ export function mapBackendPortfolioToFrontend(dto: Record<string, unknown>): Por
   const documentProfile = safeObject<Record<string, unknown>>(document.profile, {});
   const fallbackProfile = safeObject<Record<string, unknown>>(dto.profile, {});
 
-  const items = safeArray<PortfolioItem>(document.items).length
+  const rawItems = safeArray<PortfolioItem>(document.items).length
     ? safeArray<PortfolioItem>(document.items)
     : safeArray<PortfolioItem>(dto.items);
+  const items = normalizeTemplateSpans(
+    filterV2PortfolioItems(
+      rawItems.map(item => ({
+        ...item,
+        type: resolvePortfolioBlockType(item),
+      }))
+    )
+  );
 
   return {
     id: String(dto.portfolio_id ?? dto.id ?? ""),
@@ -135,30 +197,91 @@ export function mapBackendPortfolioToFrontend(dto: Record<string, unknown>): Por
 }
 
 export function mapFrontendPortfolioToBackend(portfolio: PortfolioData): Record<string, unknown> {
+  const syncedProfile = reconcileHeroProfileContacts(portfolio.profile);
+
   return {
     portfolio_id: portfolio.id,
+    id: portfolio.id,
     name: portfolio.title,
     is_base: Boolean(portfolio.isBase),
     profile: {
-      name: portfolio.profile.name,
-      tagline: portfolio.profile.tagline,
-      bio: portfolio.profile.bio,
-      location: portfolio.profile.location,
-      email: portfolio.profile.email,
-      phone: portfolio.profile.phone,
-      website: portfolio.profile.website,
-      profile_pic: portfolio.profile.avatarUrl,
-      cover_pic: portfolio.profile.coverUrl,
-      experience: portfolio.profile.experience,
-      education: portfolio.profile.education,
-      layout: portfolio.profile.layout,
-      profileAlignment: portfolio.profile.profileAlignment ?? "center",
-      infoAlignment: portfolio.profile.infoAlignment ?? "left",
-      showAvatar: portfolio.profile.showAvatar ?? true,
-      showCover: portfolio.profile.showCover ?? true,
-      contactButtons: portfolio.profile.contactButtons ?? [],
+      name: syncedProfile.name,
+      tagline: syncedProfile.tagline,
+      bio: syncedProfile.bio,
+      location: syncedProfile.location,
+      email: syncedProfile.email,
+      phone: syncedProfile.phone,
+      website: syncedProfile.website,
+      websiteLabel: syncedProfile.websiteLabel ?? "",
+      profile_pic: syncedProfile.avatarUrl,
+      cover_pic: syncedProfile.coverUrl,
+      experience: syncedProfile.experience,
+      education: syncedProfile.education,
+      layout: syncedProfile.layout,
+      profileAlignment: syncedProfile.profileAlignment ?? "center",
+      infoAlignment: syncedProfile.infoAlignment ?? "left",
+      showAvatar: syncedProfile.showAvatar ?? true,
+      showCover: syncedProfile.showCover ?? true,
+      showProfileSection: syncedProfile.showProfileSection !== false,
+      itemsAboveProfileCount: Math.max(0, syncedProfile.itemsAboveProfileCount ?? 0),
+      contactButtons: syncedProfile.contactButtons?.map(mapContactButtonToBackend) ?? [],
     },
     schemaVersion: 2,
-    items: portfolio.items,
+    items: filterV2PortfolioItems(portfolio.items),
   };
+}
+
+// ---------------------------------------------------------------------------
+// ADK session state (frontend ↔ session PATCH)
+// ---------------------------------------------------------------------------
+
+export type PortfolioAdkStateDeltaPayload = {
+  active_context: "portfolio";
+  current_portfolio: string;
+  portfolio_data: Record<string, Record<string, unknown>>;
+};
+
+/** Full ADK session state for portfolio context. */
+export function buildAdkPortfolioStateDelta(portfolio: PortfolioData): PortfolioAdkStateDeltaPayload {
+  const backendPortfolio = mapFrontendPortfolioToBackend(portfolio);
+  return {
+    active_context: "portfolio",
+    current_portfolio: portfolio.id,
+    portfolio_data: {
+      [portfolio.id]: backendPortfolio,
+    },
+  };
+}
+
+export function buildAdkPortfolioDataMap(portfolios: Record<string, PortfolioData>): Record<string, Record<string, unknown>> {
+  const out: Record<string, Record<string, unknown>> = {};
+  for (const [id, portfolio] of Object.entries(portfolios)) {
+    if (!id || !portfolio) continue;
+    out[id] = mapFrontendPortfolioToBackend(portfolio);
+  }
+  return out;
+}
+
+/** Convert ADK session state portfolio_data back to frontend PortfolioData map. */
+export function mapAdkPortfolioDataMapToFrontend(rawPortfolioData: unknown): Record<string, PortfolioData> {
+  if (!rawPortfolioData || typeof rawPortfolioData !== "object") {
+    return {};
+  }
+
+  const result: Record<string, PortfolioData> = {};
+  for (const [portfolioId, rawPortfolio] of Object.entries(rawPortfolioData as Record<string, unknown>)) {
+    if (!portfolioId || !rawPortfolio || typeof rawPortfolio !== "object") {
+      continue;
+    }
+
+    const normalized = {
+      ...(rawPortfolio as Record<string, unknown>),
+      portfolio_id: String((rawPortfolio as Record<string, unknown>).portfolio_id ?? portfolioId),
+      id: String((rawPortfolio as Record<string, unknown>).id ?? portfolioId),
+    };
+
+    result[portfolioId] = mapBackendPortfolioToFrontend(normalized);
+  }
+
+  return result;
 }

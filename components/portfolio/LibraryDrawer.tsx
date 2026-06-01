@@ -242,7 +242,7 @@ const LibraryDrawer: React.FC<LibraryDrawerProps> = ({ isOpen, onClose, onAddBlo
             {filteredBlocks.length === 0 && (
               <div className="py-20 text-center text-slate-400 space-y-4">
                 <Search size={40} className="mx-auto text-slate-200" />
-                <p>No sections found for "{search}"</p>
+                <p>No sections found for &ldquo;{search}&rdquo;</p>
               </div>
             )}
           </div>

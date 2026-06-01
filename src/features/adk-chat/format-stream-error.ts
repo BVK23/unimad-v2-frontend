@@ -6,10 +6,13 @@ export type FormattedUnibotStreamError = {
   retryable: boolean;
 };
 
-const RATE_LIMIT_USER_MESSAGE = "The AI model is temporarily at capacity (too many requests). Please wait a moment and try again.";
+export const RATE_LIMIT_RETRY_COOLDOWN_SEC = 30;
 
-const GENERIC_USER_MESSAGE =
-  "Unibot could not complete this reply. Please try again. If it keeps happening, refresh the page or contact us at grow@unimad.ai.";
+/** Shown in the sidebar — keep short and non-technical. */
+export const RATE_LIMIT_USER_MESSAGE = "Unibot's servers are way too busy right now. Give it a minute, then try again.";
+
+/** Shown for tool/agent/stream failures — no stack traces or tool names. */
+export const GENERIC_USER_MESSAGE = "Something broke while Unibot was working with his team. Please try again.";
 
 function errorText(err: unknown): string {
   if (err instanceof Error) return `${err.message}${err.cause ? ` ${String(err.cause)}` : ""}`;
@@ -26,18 +29,63 @@ export function isNonRetryableStreamError(err: unknown): boolean {
   return isRateLimitStreamError(err);
 }
 
-export function formatUnibotStreamError(err: unknown): FormattedUnibotStreamError {
+/**
+ * Full error detail for developers (local console, Vercel logs).
+ * Never show this string in the chat UI.
+ */
+export function logUnibotStreamError(err: unknown, context?: Record<string, unknown>): void {
+  const detail = errorText(err);
+  console.error("[Unibot stream error]", {
+    ...context,
+    detail,
+    err,
+  });
+}
+
+/**
+ * ADK /run_sse may emit `{"error":"..."}` or structured error fields instead of a normal event.
+ * Returns an Error to throw from the SSE pipeline, or null when the payload is not an error event.
+ */
+export function extractStreamErrorFromSsePayload(raw: string): Error | null {
+  const trimmed = raw.trim();
+  if (!trimmed) {
+    return null;
+  }
+
+  if (isRateLimitStreamError(trimmed)) {
+    return new Error(trimmed);
+  }
+
+  try {
+    const parsed = JSON.parse(trimmed) as Record<string, unknown>;
+    if (typeof parsed.error === "string" && parsed.error.trim()) {
+      return new Error(parsed.error);
+    }
+    const errorMessage = parsed.errorMessage ?? parsed.error_message;
+    if (typeof errorMessage === "string" && errorMessage.trim()) {
+      return new Error(errorMessage);
+    }
+    const errorCode = parsed.errorCode ?? parsed.error_code;
+    if (typeof errorCode === "string" && errorCode.trim()) {
+      return new Error(errorCode);
+    }
+  } catch {
+    /* not JSON — rate-limit patterns already checked on raw string */
+  }
+
+  return null;
+}
+
+/** Maps any stream failure to a safe user-facing message; logs the real error separately. */
+export function formatUnibotStreamError(err: unknown, logContext?: Record<string, unknown>): FormattedUnibotStreamError {
+  logUnibotStreamError(err, logContext);
+
   if (isRateLimitStreamError(err)) {
     return {
       kind: "rate_limit",
       message: RATE_LIMIT_USER_MESSAGE,
       retryable: true,
     };
-  }
-
-  const raw = errorText(err).trim();
-  if (raw && raw.length < 200 && !raw.startsWith("API error:")) {
-    return { kind: "generic", message: raw, retryable: true };
   }
 
   return {

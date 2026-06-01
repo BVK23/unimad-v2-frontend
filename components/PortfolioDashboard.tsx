@@ -19,6 +19,7 @@ interface PortfolioDashboardProps {
   portfolios?: PortfolioData[];
   onEditPortfolio: (portfolio: PortfolioData) => void;
   onCreatePortfolio: (type: "scratch" | "template") => void;
+  isCreating?: boolean;
 }
 
 // Mock Data Initial State
@@ -53,10 +54,11 @@ const INITIAL_PORTFOLIOS: PortfolioData[] = [
   },
 ];
 
-const PortfolioDashboard: React.FC<PortfolioDashboardProps> = ({ portfolios, onEditPortfolio, onCreatePortfolio }) => {
+const PortfolioDashboard: React.FC<PortfolioDashboardProps> = ({ portfolios, onEditPortfolio, onCreatePortfolio, isCreating = false }) => {
   const [localPortfolios, setLocalPortfolios] = useState<PortfolioData[]>(INITIAL_PORTFOLIOS);
   const [createModalState, setCreateModalState] = useState<"closed" | "menu">("closed");
   const [activeMenuId, setActiveMenuId] = useState<string | null>(null);
+  const isApiBacked = Boolean(portfolios && portfolios.length > 0);
   const visiblePortfolios = useMemo(
     () => (portfolios && portfolios.length > 0 ? portfolios : localPortfolios),
     [localPortfolios, portfolios]
@@ -97,8 +99,13 @@ const PortfolioDashboard: React.FC<PortfolioDashboardProps> = ({ portfolios, onE
 
   const handleCopyLink = (e: React.MouseEvent, portfolio: PortfolioData) => {
     e.stopPropagation();
-    const identifier = portfolio.customDomain || portfolio.slug || portfolio.id;
-    navigator.clipboard.writeText(`https://unimad.ai/${identifier}`);
+    const slug = portfolio.slug?.trim();
+    const url =
+      slug && typeof window !== "undefined"
+        ? `${window.location.origin}/portfolio/${slug}`
+        : portfolio.customDomain || (slug ? `/portfolio/${slug}` : "");
+    if (!url) return;
+    void navigator.clipboard.writeText(url);
     alert("Link copied to clipboard!");
     setActiveMenuId(null);
   };
@@ -114,11 +121,14 @@ const PortfolioDashboard: React.FC<PortfolioDashboardProps> = ({ portfolios, onE
         <div className="grid grid-cols-1 md:grid-cols-3 lg:grid-cols-4 gap-6">
           {/* Create New Card (Visual Shortcut) */}
           <button
+            type="button"
+            disabled={isCreating}
             onClick={e => {
               e.stopPropagation();
+              if (isCreating) return;
               setCreateModalState("menu");
             }}
-            className="group flex flex-col items-center justify-center h-64 border-2 border-dashed border-slate-300 rounded-xl hover:border-brand-400 hover:bg-brand-50/50 transition-all cursor-pointer bg-white"
+            className="group flex flex-col items-center justify-center h-64 border-2 border-dashed border-slate-300 rounded-xl hover:border-brand-400 hover:bg-brand-50/50 transition-all cursor-pointer bg-white disabled:cursor-not-allowed disabled:opacity-50"
           >
             <div className="w-12 h-12 bg-slate-100 rounded-full flex items-center justify-center text-slate-400 group-hover:bg-brand-100 group-hover:text-brand-600 mb-3 transition-colors">
               <Plus size={24} />
@@ -202,19 +212,21 @@ const PortfolioDashboard: React.FC<PortfolioDashboardProps> = ({ portfolios, onE
                         >
                           <Monitor size={14} /> Open Editor
                         </button>
-                        <button
-                          onClick={e => handleDuplicate(e, portfolio)}
-                          className="w-full text-left px-4 py-2 text-sm text-slate-700 hover:bg-slate-50 hover:text-brand-600 flex items-center gap-2.5 transition-colors"
-                        >
-                          <Copy size={14} /> Duplicate
-                        </button>
+                        {!isApiBacked && (
+                          <button
+                            onClick={e => handleDuplicate(e, portfolio)}
+                            className="w-full text-left px-4 py-2 text-sm text-slate-700 hover:bg-slate-50 hover:text-brand-600 flex items-center gap-2.5 transition-colors"
+                          >
+                            <Copy size={14} /> Duplicate
+                          </button>
+                        )}
                         <button
                           onClick={e => handleCopyLink(e, portfolio)}
                           className="w-full text-left px-4 py-2 text-sm text-slate-700 hover:bg-slate-50 hover:text-brand-600 flex items-center gap-2.5 transition-colors"
                         >
                           <Link size={14} /> Copy Link
                         </button>
-                        {!portfolio.isBase && (
+                        {!isApiBacked && !portfolio.isBase && (
                           <button
                             onClick={e => handleSetBase(e, portfolio.id)}
                             className="w-full text-left px-4 py-2 text-sm text-slate-700 hover:bg-slate-50 hover:text-brand-600 flex items-center gap-2.5 transition-colors"
@@ -222,13 +234,17 @@ const PortfolioDashboard: React.FC<PortfolioDashboardProps> = ({ portfolios, onE
                             <Star size={14} /> Set as Base
                           </button>
                         )}
-                        <div className="h-px bg-slate-100 my-1 mx-2"></div>
-                        <button
-                          onClick={e => handleDelete(e, portfolio.id)}
-                          className="w-full text-left px-4 py-2 text-sm text-red-600 hover:bg-red-50 hover:text-red-700 flex items-center gap-2.5 transition-colors"
-                        >
-                          <Trash2 size={14} /> Delete
-                        </button>
+                        {!isApiBacked && (
+                          <>
+                            <div className="h-px bg-slate-100 my-1 mx-2"></div>
+                            <button
+                              onClick={e => handleDelete(e, portfolio.id)}
+                              className="w-full text-left px-4 py-2 text-sm text-red-600 hover:bg-red-50 hover:text-red-700 flex items-center gap-2.5 transition-colors"
+                            >
+                              <Trash2 size={14} /> Delete
+                            </button>
+                          </>
+                        )}
                       </div>
                     )}
                   </div>
@@ -252,8 +268,10 @@ const PortfolioDashboard: React.FC<PortfolioDashboardProps> = ({ portfolios, onE
                 <h2 className="text-xl font-normal text-slate-900">Create New Portfolio</h2>
               </div>
               <button
+                type="button"
+                disabled={isCreating}
                 onClick={() => setCreateModalState("closed")}
-                className="text-slate-400 hover:text-slate-600 p-1 hover:bg-slate-100 rounded-full transition-colors"
+                className="text-slate-400 hover:text-slate-600 p-1 hover:bg-slate-100 rounded-full transition-colors disabled:opacity-50"
               >
                 <Plus className="rotate-45" size={20} />
               </button>
@@ -263,11 +281,14 @@ const PortfolioDashboard: React.FC<PortfolioDashboardProps> = ({ portfolios, onE
             <div className="p-8">
               <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
                 <button
+                  type="button"
+                  disabled={isCreating}
                   onClick={() => {
+                    if (isCreating) return;
                     setCreateModalState("closed");
                     onCreatePortfolio("scratch");
                   }}
-                  className="flex flex-col items-center text-center p-8 rounded-xl border border-slate-200 hover:border-brand-500 hover:bg-brand-50/50 transition-all group"
+                  className="flex flex-col items-center text-center p-8 rounded-xl border border-slate-200 hover:border-brand-500 hover:bg-brand-50/50 transition-all group disabled:cursor-not-allowed disabled:opacity-50"
                 >
                   <div className="w-16 h-16 bg-brand-100 text-brand-600 rounded-full flex items-center justify-center mb-4 group-hover:scale-110 transition-transform">
                     <FilePlus size={28} />
@@ -277,11 +298,14 @@ const PortfolioDashboard: React.FC<PortfolioDashboardProps> = ({ portfolios, onE
                 </button>
 
                 <button
+                  type="button"
+                  disabled={isCreating}
                   onClick={() => {
+                    if (isCreating) return;
                     setCreateModalState("closed");
                     onCreatePortfolio("template");
                   }}
-                  className="flex flex-col items-center text-center p-8 rounded-xl border border-slate-200 hover:border-brand-500 hover:bg-brand-50/50 transition-all group"
+                  className="flex flex-col items-center text-center p-8 rounded-xl border border-slate-200 hover:border-brand-500 hover:bg-brand-50/50 transition-all group disabled:cursor-not-allowed disabled:opacity-50"
                 >
                   <div className="w-16 h-16 bg-teal-100 text-teal-600 rounded-full flex items-center justify-center mb-4 group-hover:scale-110 transition-transform">
                     <LayoutTemplate size={28} />

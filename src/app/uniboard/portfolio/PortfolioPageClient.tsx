@@ -1,161 +1,190 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import Portfolio from "@/components/Portfolio";
 import PortfolioDashboard from "@/components/PortfolioDashboard";
-import { mapBackendPortfolioToFrontend } from "@/features/portfolio/api/mappers";
+import PortfolioCreatingOverlay from "@/components/portfolio/PortfolioCreatingOverlay";
+import type { PortfolioCreationVariant } from "@/features/portfolio/constants/portfolioCreationCopy";
+import {
+  buildCreateInputFromDashboardType,
+  defaultBootstrapCreateInput,
+  getCreatePortfolioVariant,
+  useCreatePortfolio,
+} from "@/features/portfolio/hooks/useCreatePortfolio";
 import { usePortfolio } from "@/features/portfolio/hooks/usePortfolio";
-import { useUpdatePortfolio } from "@/features/portfolio/hooks/useUpdatePortfolio";
-import { createInitialPortfolio } from "@/features/portfolio/server-actions/portfolio-actions";
+import { usePortfolioStore } from "@/features/portfolio/store/usePortfolioStore";
 import type { PortfolioData } from "@/types";
 
-const NEW_PORTFOLIO_TEMPLATE: PortfolioData = {
-  id: "",
-  title: "Untitled Portfolio",
-  lastModified: new Date(),
-  themeMode: "light",
-  profile: {
-    name: "Alex Morgan",
-    email: "alex@unimad.dev",
-    phone: "",
-    location: "San Francisco, CA",
-    bio: "",
-    tagline: "Product Designer & Creative Technologist",
-    website: "",
-    avatarUrl:
-      "https://images.unsplash.com/photo-1472099645785-5658abf4ff4e?ixlib=rb-1.2.1&auto=format&fit=facearea&facepad=2&w=256&h=256&q=80",
-    coverUrl: "https://images.unsplash.com/photo-1541701494587-cb58502866ab?ixlib=rb-1.2.1&auto=format&fit=crop&w=2000&q=80",
-    experience: [],
-    education: [],
-    layout: "standard",
-    profileAlignment: "center",
-    infoAlignment: "left",
-    showAvatar: true,
-    showCover: true,
-  },
-  items: [],
+type PortfolioCreationPhase = "idle" | "fetching" | "creating" | "ready" | "error";
+
+const getFriendlyCreateError = (err: unknown) => {
+  const message = err instanceof Error ? err.message : "Failed to create portfolio";
+  if (message.toLowerCase().includes("failed to generate")) {
+    return "We couldn't generate your portfolio right now. Please try again.";
+  }
+  return message;
 };
 
 export default function PortfolioPageClient() {
   const [view, setView] = useState<"list" | "editor">("editor");
-  const [currentPortfolio, setCurrentPortfolio] = useState<PortfolioData | null>(null);
-  const [isBootstrapping, setIsBootstrapping] = useState(false);
-  const [bootstrapError, setBootstrapError] = useState<string | null>(null);
+  const [manualOverlayVariant, setManualOverlayVariant] = useState<PortfolioCreationVariant | null>(null);
+  const bootstrapAttemptedRef = useRef(false);
   const portfolioQuery = usePortfolio();
-  const updatePortfolioMutation = useUpdatePortfolio();
+  const createPortfolioMutation = useCreatePortfolio();
+
+  const portfolioFromStore = usePortfolioStore(s => {
+    const id = portfolioQuery.data?.id ?? createPortfolioMutation.data?.id;
+    return id ? s.getPortfolioData(id) : undefined;
+  });
+
+  const displayPortfolio = useMemo(
+    () => portfolioFromStore ?? portfolioQuery.data ?? createPortfolioMutation.data ?? null,
+    [createPortfolioMutation.data, portfolioFromStore, portfolioQuery.data]
+  );
+
+  const { mutate: mutateCreatePortfolio, isPending: isCreatePending, isError: isCreateError } = createPortfolioMutation;
 
   useEffect(() => {
-    if (!portfolioQuery.data) {
+    if (portfolioQuery.isLoading || portfolioQuery.isFetching) {
+      return;
+    }
+    if (portfolioQuery.data) {
+      return;
+    }
+    if (bootstrapAttemptedRef.current || isCreatePending) {
       return;
     }
 
-    setCurrentPortfolio(portfolioQuery.data);
-  }, [portfolioQuery.data]);
+    bootstrapAttemptedRef.current = true;
+    mutateCreatePortfolio(defaultBootstrapCreateInput);
+  }, [isCreatePending, mutateCreatePortfolio, portfolioQuery.data, portfolioQuery.isFetching, portfolioQuery.isLoading]);
 
-  useEffect(() => {
-    if (portfolioQuery.isLoading || portfolioQuery.data || isBootstrapping) {
-      return;
+  const awaitingBootstrap = useMemo(
+    () => portfolioQuery.isFetched && !portfolioQuery.data && !displayPortfolio?.id && !isCreateError,
+    [displayPortfolio?.id, isCreateError, portfolioQuery.data, portfolioQuery.isFetched]
+  );
+
+  const phase: PortfolioCreationPhase = useMemo(() => {
+    if (isCreateError && !displayPortfolio?.id) {
+      return "error";
     }
+    if (portfolioQuery.isLoading && !portfolioQuery.data) {
+      return "fetching";
+    }
+    if (isCreatePending || awaitingBootstrap) {
+      return "creating";
+    }
+    if (displayPortfolio?.id) {
+      return "ready";
+    }
+    return "idle";
+  }, [awaitingBootstrap, displayPortfolio?.id, isCreateError, isCreatePending, portfolioQuery.data, portfolioQuery.isLoading]);
 
-    let cancelled = false;
+  const activeOverlayVariant: PortfolioCreationVariant = useMemo(() => {
+    if (phase === "fetching") {
+      return "fetch";
+    }
+    if (manualOverlayVariant) {
+      return manualOverlayVariant;
+    }
+    if (phase === "creating") {
+      return "ai_initial";
+    }
+    return "fetch";
+  }, [manualOverlayVariant, phase]);
 
-    const bootstrapPortfolio = async () => {
-      setIsBootstrapping(true);
-      setBootstrapError(null);
-
-      try {
-        const response = await createInitialPortfolio();
-        if (cancelled) {
-          return;
-        }
-
-        const portfolio = mapBackendPortfolioToFrontend(response.assetData);
-        setCurrentPortfolio(portfolio);
-      } catch (error) {
-        if (!cancelled) {
-          setBootstrapError(error instanceof Error ? error.message : "Failed to create portfolio");
-        }
-      } finally {
-        if (!cancelled) {
-          setIsBootstrapping(false);
-        }
-      }
-    };
-
-    void bootstrapPortfolio();
-
-    return () => {
-      cancelled = true;
-    };
-  }, [isBootstrapping, portfolioQuery.data, portfolioQuery.isLoading]);
-
-  const portfolios = useMemo(() => (currentPortfolio ? [currentPortfolio] : []), [currentPortfolio]);
+  const portfolios = useMemo(() => (displayPortfolio ? [displayPortfolio] : []), [displayPortfolio]);
 
   const handleEditPortfolio = (portfolio: PortfolioData) => {
-    setCurrentPortfolio(portfolio);
+    if (portfolio.id) {
+      usePortfolioStore.getState().setPortfolioData(portfolio.id, portfolio);
+    }
     setView("editor");
   };
 
-  const handleSavePortfolio = async (portfolio: PortfolioData) => {
-    const savedPortfolio = await updatePortfolioMutation.mutateAsync(portfolio);
-    setCurrentPortfolio(savedPortfolio);
+  const handleCreatePortfolio = (type: "scratch" | "template") => {
+    const input = buildCreateInputFromDashboardType(type, Boolean(portfolioQuery.data?.id));
+    setManualOverlayVariant(getCreatePortfolioVariant(input));
+    mutateCreatePortfolio(input, {
+      onSuccess: () => {
+        setView("editor");
+      },
+    });
   };
 
-  const handleCreatePortfolio = async (type: "scratch" | "template") => {
-    setIsBootstrapping(true);
-    setBootstrapError(null);
-
-    try {
-      const response = await createInitialPortfolio({
-        with_ai_template: type === "template",
-        name: type === "template" ? "New From Template" : "Blank Canvas",
-      });
-      const portfolio = mapBackendPortfolioToFrontend(response.assetData);
-      setCurrentPortfolio(portfolio);
-      setView("editor");
-    } catch (error) {
-      setBootstrapError(error instanceof Error ? error.message : "Failed to create portfolio");
-    } finally {
-      setIsBootstrapping(false);
-    }
+  const handleRetryCreate = () => {
+    createPortfolioMutation.reset();
+    setManualOverlayVariant(null);
+    bootstrapAttemptedRef.current = true;
+    mutateCreatePortfolio(defaultBootstrapCreateInput);
   };
 
-  if (portfolioQuery.isLoading || isBootstrapping) {
-    return <div className="flex h-full items-center justify-center text-sm text-slate-500">Loading portfolio...</div>;
-  }
+  const showOverlay = phase === "fetching" || phase === "creating";
+  const createErrorMessage = isCreateError ? getFriendlyCreateError(createPortfolioMutation.error) : null;
 
-  if (bootstrapError) {
-    return <div className="flex h-full items-center justify-center text-sm text-red-600">{bootstrapError}</div>;
-  }
-
-  if (view === "list") {
-    return <PortfolioDashboard portfolios={portfolios} onEditPortfolio={handleEditPortfolio} onCreatePortfolio={handleCreatePortfolio} />;
-  }
-
-  if (currentPortfolio) {
-    const editorKey = `${currentPortfolio.id}-${currentPortfolio.lastModified instanceof Date ? currentPortfolio.lastModified.getTime() : 0}`;
-
+  if (phase === "error" && !displayPortfolio) {
     return (
-      <Portfolio
-        key={editorKey}
-        initialData={currentPortfolio}
-        onBack={() => setView("list")}
-        onSave={handleSavePortfolio}
-        isSaving={updatePortfolioMutation.isPending}
-        saveError={updatePortfolioMutation.error instanceof Error ? updatePortfolioMutation.error.message : null}
-      />
+      <div className="relative flex h-full flex-col items-center justify-center p-4">
+        <div
+          className="w-full max-w-md rounded-2xl border border-slate-200 bg-white p-6 shadow-2xl dark:border-slate-800 dark:bg-[#1a1a1a]"
+          role="alert"
+        >
+          <h2 className="mb-2 text-lg font-semibold text-slate-900 dark:text-white">Unable to create portfolio</h2>
+          <p className="mb-6 text-sm text-slate-600 dark:text-slate-400">{createErrorMessage}</p>
+          <button
+            type="button"
+            onClick={handleRetryCreate}
+            className="rounded-full bg-brand-600 px-6 py-2 text-sm font-semibold text-white transition-colors hover:bg-brand-700"
+          >
+            Try again
+          </button>
+        </div>
+      </div>
     );
   }
 
-  return (
-    <Portfolio
-      key="new-portfolio-template"
-      initialData={{
-        ...NEW_PORTFOLIO_TEMPLATE,
-        id: `starter-${Date.now()}`,
-        title: "Visual Draft",
-      }}
-      onBack={() => setView("list")}
-    />
-  );
+  if (showOverlay && !displayPortfolio) {
+    return (
+      <div className="relative h-full">
+        <PortfolioCreatingOverlay variant={activeOverlayVariant} />
+      </div>
+    );
+  }
+
+  if (view === "list") {
+    return (
+      <div className="relative h-full">
+        {isCreatePending && <PortfolioCreatingOverlay variant={activeOverlayVariant} />}
+        <PortfolioDashboard
+          portfolios={portfolios}
+          onEditPortfolio={handleEditPortfolio}
+          onCreatePortfolio={handleCreatePortfolio}
+          isCreating={isCreatePending}
+        />
+      </div>
+    );
+  }
+
+  if (displayPortfolio?.id) {
+    return (
+      <div className="relative h-full transition-opacity duration-200">
+        <Portfolio
+          key={displayPortfolio.id}
+          portfolioId={displayPortfolio.id}
+          initialData={displayPortfolio}
+          onBack={() => setView("list")}
+        />
+      </div>
+    );
+  }
+
+  if (portfolioQuery.isLoading || isCreatePending) {
+    return (
+      <div className="relative h-full">
+        <PortfolioCreatingOverlay variant={activeOverlayVariant} />
+      </div>
+    );
+  }
+
+  return <div className="relative flex h-full items-center justify-center text-sm text-slate-500">No portfolio available.</div>;
 }

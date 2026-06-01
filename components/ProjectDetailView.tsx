@@ -1,4 +1,9 @@
-import React, { useState, useRef } from "react";
+import React, { useState, useRef, type SetStateAction } from "react";
+import type { PortfolioHighlightMap } from "@/features/adk-chat/adkPortfolioHighlightDiff";
+import { getDefaultItemHeightPx, getMinGridRowsForItem, gridRowSpanForHeightPx } from "@/features/portfolio/constants/portfolioLayout";
+import { useAutoItemHeights } from "@/features/portfolio/hooks/useAutoItemHeights";
+import { usePortfolioGridRemeasure } from "@/features/portfolio/hooks/usePortfolioGridRemeasure";
+import { normalizePortfolioHtmlForRender } from "@/features/portfolio/utils/portfolio-html";
 import { UploadError, uploadPortfolioFile } from "@/features/portfolio/utils/upload";
 import {
   ArrowLeft,
@@ -20,6 +25,8 @@ import {
 import { useGridResize } from "../hooks/useGridResize";
 import { PortfolioItem, ContentType } from "../types";
 import BlockRenderer from "./BlockRenderer";
+import { PortfolioAdkBlockHighlight } from "./portfolio/PortfolioAdkBlockHighlight";
+import PortfolioImage from "./portfolio/PortfolioImage";
 
 interface ProjectDetailViewProps {
   project: PortfolioItem;
@@ -28,6 +35,10 @@ interface ProjectDetailViewProps {
   allowedBlockTypes?: ContentType[];
   maxWidthClassName?: string;
   gridColumns?: 3 | 12;
+  adkHighlights?: PortfolioHighlightMap;
+  enableDenseLayoutParity?: boolean;
+  backLabel?: string;
+  hideToolbar?: boolean;
 }
 
 const ProjectDetailView: React.FC<ProjectDetailViewProps> = ({
@@ -37,14 +48,21 @@ const ProjectDetailView: React.FC<ProjectDetailViewProps> = ({
   allowedBlockTypes,
   maxWidthClassName,
   gridColumns = 3,
+  adkHighlights,
+  enableDenseLayoutParity = true,
+  backLabel = "Back to Portfolio",
+  hideToolbar = false,
 }) => {
   const [isEditMode, setIsEditMode] = useState(true);
   const [draggedBlockIndex, setDraggedBlockIndex] = useState<number | null>(null);
   const [contextMenu, setContextMenu] = useState<{ x: number; y: number; targetId?: string } | null>(null);
   const [coverUploadError, setCoverUploadError] = useState<string | null>(null);
   const [isCoverUploading, setIsCoverUploading] = useState(false);
+  const [collapsedHeights, setCollapsedHeights] = useState<Record<string, number>>({});
+  const [gridMetrics, setGridMetrics] = useState({ rowHeight: 12, rowGap: 24 });
   const fileInputRef = useRef<HTMLInputElement>(null);
   const dragHandleArmedBlockIdRef = useRef<string | null>(null);
+  const itemRefs = useRef<Record<string, HTMLDivElement | null>>({});
 
   const blocks: PortfolioItem[] = (project.detailedBlocks || []).map(b => {
     const rawSpan = Number(b.span ?? 1);
@@ -70,25 +88,67 @@ const ProjectDetailView: React.FC<ProjectDetailViewProps> = ({
   });
   const allowedTypes: ContentType[] = allowedBlockTypes || ["text", "media", "page-card", "link-box", "table", "embed"];
   const editorMaxWidth = maxWidthClassName || "max-w-4xl";
+  const GRID_ROW_PX = 12;
 
   const handleUpdateBlock = (id: string, updates: Partial<PortfolioItem>) => {
     const newBlocks = blocks.map(b => (b.id === id ? { ...b, ...updates } : b));
     onUpdateProject({ ...project, detailedBlocks: newBlocks });
   };
 
-  const handleUpdateBlocks = (newBlocks: PortfolioItem[]) => {
+  const handleUpdateBlocks = (value: SetStateAction<PortfolioItem[]>) => {
+    const newBlocks = typeof value === "function" ? value(blocks) : value;
     onUpdateProject({ ...project, detailedBlocks: newBlocks });
   };
 
   const { gridRef, resizing, initResize } = useGridResize(blocks, handleUpdateBlocks);
+  const updateItemHeight = (id: string, height: number) => {
+    handleUpdateBlock(id, { height });
+  };
+  const { handleMeasureContentHeight } = useAutoItemHeights({
+    items: blocks,
+    onUpdateHeight: updateItemHeight,
+    resizingId: resizing?.id ?? null,
+  });
+  const handleMeasureForLayout = (id: string, measuredHeight: number) => {
+    handleMeasureContentHeight(id, measuredHeight);
+  };
+
+  usePortfolioGridRemeasure({
+    portfolioId: project.id,
+    items: blocks,
+    itemRefs,
+    gridRef,
+    onMeasureContentHeight: handleMeasureForLayout,
+  });
+
+  const handleCollapsedHeightMeasure = (id: string, measuredHeight: number) => {
+    setCollapsedHeights(prev => {
+      const nextHeight = Math.max(80, measuredHeight);
+      if (prev[id] && Math.abs(prev[id] - nextHeight) < 1) return prev;
+      return { ...prev, [id]: nextHeight };
+    });
+  };
+
+  const getLayoutHeightPx = (block: PortfolioItem) => {
+    if (block.type === "text" && block.isCollapsible && block.isCollapsed) {
+      return collapsedHeights[block.id] ?? 80;
+    }
+    return block.height ?? getDefaultItemHeightPx(block.type);
+  };
+
+  const getRowSpanForBlock = (block: PortfolioItem) => {
+    const heightPx = getLayoutHeightPx(block);
+    return gridRowSpanForHeightPx(heightPx, getMinGridRowsForItem(block.type), gridMetrics.rowHeight, gridMetrics.rowGap);
+  };
 
   const handleAddBlock = (type: ContentType, preset?: Partial<PortfolioItem>) => {
     const getDefaultSpanForType = (contentType: ContentType): PortfolioItem["span"] => {
       if (gridColumns === 12) {
         if (contentType === "link-box") return 3;
-        if (contentType === "text") return 6;
+        if (contentType === "text") return 12;
         if (contentType === "table") return 12;
         if (contentType === "embed") return 12;
+        if (contentType === "media") return 12;
         return 6;
       }
       if (contentType === "link-box") return 1;
@@ -277,6 +337,21 @@ const ProjectDetailView: React.FC<ProjectDetailViewProps> = ({
     else e.currentTarget.style.cursor = "default";
   };
 
+  React.useEffect(() => {
+    if (!enableDenseLayoutParity || !gridRef.current) return;
+    const node = gridRef.current;
+    const updateGridMetrics = () => {
+      const styles = window.getComputedStyle(node);
+      const parsedRowGap = Number.parseFloat(styles.rowGap || "24");
+      const rowGap = Number.isFinite(parsedRowGap) ? parsedRowGap : 24;
+      setGridMetrics(prev => (prev.rowHeight === GRID_ROW_PX && prev.rowGap === rowGap ? prev : { rowHeight: GRID_ROW_PX, rowGap }));
+    };
+    updateGridMetrics();
+    const observer = new ResizeObserver(updateGridMetrics);
+    observer.observe(node);
+    return () => observer.disconnect();
+  }, [enableDenseLayoutParity, GRID_ROW_PX, gridRef]);
+
   return (
     <div className="flex-1 bg-slate-50 dark:bg-[#080808] h-full overflow-y-auto no-scrollbar relative animate-in slide-in-from-right duration-300">
       <input
@@ -291,31 +366,32 @@ const ProjectDetailView: React.FC<ProjectDetailViewProps> = ({
         }}
       />
 
-      {/* Header Toolbar */}
-      <div className="sticky top-0 z-40 bg-white/80 dark:bg-[#080808]/80 backdrop-blur-md border-b border-slate-100 dark:border-white/5 py-4 px-6 flex items-center justify-between shadow-sm">
-        <button
-          onClick={onBack}
-          className="flex items-center gap-2 text-slate-600 hover:text-slate-900 dark:text-slate-400 dark:hover:text-white transition-colors text-sm font-bold bg-slate-100 dark:bg-white/5 px-4 py-2 rounded-full"
-        >
-          <ArrowLeft size={16} /> Back to Portfolio
-        </button>
-        <div className="flex items-center gap-3">
+      {!hideToolbar && (
+        <div className="sticky top-0 z-40 bg-white/80 dark:bg-[#080808]/80 backdrop-blur-md border-b border-slate-100 dark:border-white/5 py-4 px-6 flex items-center justify-between shadow-sm">
           <button
-            onClick={() => setIsEditMode(!isEditMode)}
-            className={`flex items-center gap-2 px-6 py-2 rounded-full text-xs font-black uppercase tracking-widest transition-all ${isEditMode ? "bg-brand-50 text-brand-600 shadow-sm" : "bg-slate-900 text-white shadow-xl hover:scale-105 active:scale-95"}`}
+            onClick={onBack}
+            className="flex items-center gap-2 text-slate-600 hover:text-slate-900 dark:text-slate-400 dark:hover:text-white transition-colors text-sm font-bold bg-slate-100 dark:bg-white/5 px-4 py-2 rounded-full"
           >
-            {isEditMode ? (
-              <>
-                <Eye size={14} /> Preview Mode
-              </>
-            ) : (
-              <>
-                <Edit3 size={14} /> Edit Page
-              </>
-            )}
+            <ArrowLeft size={16} /> {backLabel}
           </button>
+          <div className="flex items-center gap-3">
+            <button
+              onClick={() => setIsEditMode(!isEditMode)}
+              className={`flex items-center gap-2 px-6 py-2 rounded-full text-xs font-black uppercase tracking-widest transition-all ${isEditMode ? "bg-brand-50 text-brand-600 shadow-sm" : "bg-slate-900 text-white shadow-xl hover:scale-105 active:scale-95"}`}
+            >
+              {isEditMode ? (
+                <>
+                  <Eye size={14} /> Preview Mode
+                </>
+              ) : (
+                <>
+                  <Edit3 size={14} /> Edit Page
+                </>
+              )}
+            </button>
+          </div>
         </div>
-      </div>
+      )}
 
       {/* Nested Hero / Cover */}
       <div
@@ -339,7 +415,7 @@ const ProjectDetailView: React.FC<ProjectDetailViewProps> = ({
         )}
 
         {project.content ? (
-          <img src={project.content} alt={project.title} className="w-full h-full object-cover" />
+          <PortfolioImage src={project.content} alt={project.title || "Project cover"} fill sizes="100vw" className="object-cover" />
         ) : (
           <div className="w-full h-full flex items-center justify-center border-b border-slate-200 dark:border-white/10 border-dashed">
             <span className="text-slate-300 font-bold uppercase tracking-widest text-sm flex items-center gap-2">
@@ -377,92 +453,122 @@ const ProjectDetailView: React.FC<ProjectDetailViewProps> = ({
                 rows={2}
               />
             ) : (
-              <p className="text-xl text-white/80 max-w-2xl leading-relaxed text-balance drop-shadow-md">{project.description}</p>
+              project.description && (
+                <p
+                  className="text-xl text-white/80 max-w-2xl leading-relaxed text-balance drop-shadow-md [&_em]:italic [&_strong]:font-bold"
+                  dangerouslySetInnerHTML={{ __html: normalizePortfolioHtmlForRender(project.description) }}
+                />
+              )
             )}
           </div>
         </div>
       </div>
 
       {/* Grid Container */}
-      <div className={`${editorMaxWidth} mx-auto px-6 py-16 min-h-[500px]`} onClick={() => setContextMenu(null)}>
+      <div className={`${editorMaxWidth} mx-auto px-4 pt-16 pb-40 min-h-[500px]`} onClick={() => setContextMenu(null)}>
         <div
           ref={gridRef as React.RefObject<HTMLDivElement>}
-          className={`grid grid-cols-1 ${gridColumns === 12 ? "md:grid-cols-12" : "md:grid-cols-3"} gap-6 relative`}
+          className={`grid grid-cols-1 ${gridColumns === 12 ? "md:grid-cols-12" : "md:grid-cols-3"} gap-6 relative ${enableDenseLayoutParity ? "grid-flow-row-dense auto-rows-[12px]" : ""}`}
         >
           {blocks.map((block, index) => (
             <div
               key={block.id}
-              className={`
-                                ${getSpanClass(block.span)} 
-                                relative group transition-all duration-300
-                                ${isEditMode ? "rounded-[2rem]" : ""}
-                                ${draggedBlockIndex === index ? "opacity-30 scale-[0.98]" : "opacity-100"}
-                                ${block.type === "link-box" ? "self-start" : ""}
-                            `}
               style={{
-                ...(block.height ? { height: `${block.height}px` } : {}),
                 gridColumnStart: block.colStart,
+                ...(enableDenseLayoutParity
+                  ? {
+                      gridRowEnd: `span ${getRowSpanForBlock(block)}`,
+                      height: block.heightUserSet ? "100%" : `${getLayoutHeightPx(block)}px`,
+                      alignSelf: "start",
+                    }
+                  : {
+                      ...(block.height ? { height: `${block.height}px` } : {}),
+                      alignSelf: "start",
+                    }),
               }}
-              onDragOver={e => handleDragOver(e, index)}
-              onDragEnd={resetDragState}
-              onContextMenu={e => handleContextMenu(e, block.id)}
-              onMouseDown={e => handleEdgeResizeStart(e, block)}
-              onMouseMove={handleEdgeResizeHover}
-              onMouseLeave={e => {
-                e.currentTarget.style.cursor = "default";
-              }}
-              onMouseUpCapture={() => {
-                dragHandleArmedBlockIdRef.current = null;
-              }}
+              className={`
+                ${getSpanClass(block.span)} 
+                relative group transition-all duration-300
+                ${isEditMode ? "rounded-[2rem]" : ""}
+                ${draggedBlockIndex === index ? "opacity-30 scale-[0.98]" : "opacity-100"}
+                ${block.type === "link-box" || block.type === "page-card" || block.type === "project" ? "self-start" : ""}
+              `}
             >
-              {/* Block Controls */}
-              {isEditMode && (
-                <div className="absolute -left-6 top-1/2 -translate-y-1/2 opacity-0 pointer-events-none group-hover:opacity-100 group-hover:pointer-events-auto transition-opacity flex flex-col gap-2 z-30">
-                  <div
-                    className="p-1.5 cursor-move text-slate-400 hover:text-slate-600 bg-white dark:bg-slate-800 rounded-lg shadow-xl border border-slate-100 dark:border-white/5"
-                    draggable={!resizing}
-                    onMouseDown={e => {
-                      e.stopPropagation();
-                      dragHandleArmedBlockIdRef.current = block.id;
-                    }}
-                    onDragStart={e => handleDragStart(e, index, block.id)}
-                    onDragEnd={resetDragState}
-                    onMouseUp={() => {
-                      dragHandleArmedBlockIdRef.current = null;
-                    }}
-                  >
-                    <GripVertical size={14} />
-                  </div>
-                  <button
-                    type="button"
-                    onClick={e => {
-                      e.stopPropagation();
-                      handleRemoveBlock(block.id);
-                    }}
-                    className="p-1.5 text-slate-400 hover:text-red-500 bg-white dark:bg-slate-800 rounded-lg shadow-xl border border-slate-100 dark:border-white/5 transition-colors"
-                    title="Delete block"
-                  >
-                    <Trash2 size={14} />
-                  </button>
+              <PortfolioAdkBlockHighlight kind={adkHighlights?.[`page:${project.id}:block:${block.id}`]} className="h-full w-full">
+                <div
+                  ref={node => {
+                    itemRefs.current[block.id] = node;
+                  }}
+                  onDragOver={e => handleDragOver(e, index)}
+                  onDragEnd={resetDragState}
+                  onContextMenu={e => handleContextMenu(e, block.id)}
+                  onMouseDown={e => handleEdgeResizeStart(e, block)}
+                  onMouseMove={handleEdgeResizeHover}
+                  onMouseLeave={e => {
+                    e.currentTarget.style.cursor = "default";
+                  }}
+                  onMouseUpCapture={() => {
+                    dragHandleArmedBlockIdRef.current = null;
+                  }}
+                  className={`w-full relative ${block.heightUserSet || enableDenseLayoutParity ? "h-full" : "h-auto"}`}
+                >
+                  {/* Block Controls */}
+                  {isEditMode && (
+                    <div className="absolute -left-6 top-1/2 -translate-y-1/2 opacity-0 pointer-events-none group-hover:opacity-100 group-hover:pointer-events-auto transition-opacity flex flex-col gap-2 z-30">
+                      <div
+                        className="p-1.5 cursor-move text-slate-400 hover:text-slate-600 bg-white dark:bg-slate-800 rounded-lg shadow-xl border border-slate-100 dark:border-white/5"
+                        draggable={!resizing}
+                        onMouseDown={e => {
+                          e.stopPropagation();
+                          dragHandleArmedBlockIdRef.current = block.id;
+                        }}
+                        onDragStart={e => handleDragStart(e, index, block.id)}
+                        onDragEnd={resetDragState}
+                        onMouseUp={() => {
+                          dragHandleArmedBlockIdRef.current = null;
+                        }}
+                      >
+                        <GripVertical size={14} />
+                      </div>
+                      <button
+                        type="button"
+                        onClick={e => {
+                          e.stopPropagation();
+                          handleRemoveBlock(block.id);
+                        }}
+                        className="p-1.5 text-slate-400 hover:text-red-500 bg-white dark:bg-slate-800 rounded-lg shadow-xl border border-slate-100 dark:border-white/5 transition-colors"
+                        title="Delete block"
+                      >
+                        <Trash2 size={14} />
+                      </button>
+                    </div>
+                  )}
+
+                  <BlockRenderer
+                    item={block}
+                    isEditMode={isEditMode}
+                    onUpdate={handleUpdateBlock}
+                    onMeasureCollapsedHeight={handleCollapsedHeightMeasure}
+                    onMeasureContentHeight={handleMeasureForLayout}
+                    isNestedDetailView
+                  />
+
+                  {isEditMode && (
+                    <>
+                      <div
+                        className="absolute inset-y-0 left-0 w-[18px] cursor-ew-resize z-20"
+                        onMouseDown={e => initResize(e, block, "x", "left")}
+                        title="Resize width"
+                      />
+                      <div
+                        className="absolute inset-y-0 right-0 w-[18px] cursor-ew-resize z-20"
+                        onMouseDown={e => initResize(e, block, "x", "right")}
+                        title="Resize width"
+                      />
+                    </>
+                  )}
                 </div>
-              )}
-
-              <BlockRenderer item={block} isEditMode={isEditMode} onUpdate={handleUpdateBlock} />
-
-              {isEditMode && (
-                <>
-                  <div
-                    className="absolute inset-y-0 left-0 w-[18px] cursor-ew-resize z-20"
-                    onMouseDown={e => initResize(e, block, "x", "left")}
-                    title="Resize width"
-                  />
-                  <div
-                    className="absolute inset-y-0 right-0 w-[18px] cursor-ew-resize z-20"
-                    onMouseDown={e => initResize(e, block, "x", "right")}
-                    title="Resize width"
-                  />
-                </>
-              )}
+              </PortfolioAdkBlockHighlight>
             </div>
           ))}
 

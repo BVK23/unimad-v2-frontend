@@ -1,6 +1,7 @@
 "use client";
 import React from "react";
 import { ExternalLink, ArrowRight } from "lucide-react";
+import PortfolioImage from "./PortfolioImage";
 
 interface Project {
   id: string;
@@ -40,10 +41,12 @@ const ProjectGallery: React.FC<ProjectGalleryProps> = ({ variant = "grid", data 
               className="group bg-white dark:bg-slate-900 rounded-3xl overflow-hidden border border-slate-200 dark:border-slate-800 hover:border-brand-500/50 transition-all duration-300 hover:shadow-2xl hover:shadow-brand-500/10 hover:-translate-y-2"
             >
               <div className="aspect-[4/3] overflow-hidden relative">
-                <img
+                <PortfolioImage
                   src={project.image || "https://picsum.photos/400/300"}
-                  alt={project.title}
-                  className="w-full h-full object-cover group-hover:scale-110 transition-transform duration-500"
+                  alt={project.title || "Project"}
+                  fill
+                  sizes="(max-width: 768px) 100vw, 400px"
+                  className="object-cover group-hover:scale-110 transition-transform duration-500"
                 />
                 <div className="absolute inset-0 bg-gradient-to-t from-black/60 to-transparent opacity-0 group-hover:opacity-100 transition-opacity flex items-end p-6">
                   <a

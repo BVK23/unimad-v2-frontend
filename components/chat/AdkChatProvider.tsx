@@ -1,15 +1,18 @@
 "use client";
 
 import React, { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState } from "react";
+import { formatUnibotStreamError, type FormattedUnibotStreamError } from "@/features/adk-chat/format-stream-error";
 import type { ActiveSession } from "@/src/features/adk-chat/actions";
 import { loadSessionHistoryAction } from "@/src/features/adk-chat/actions";
 import { useAdkSession } from "@/src/features/adk-chat/hooks/useAdkSession";
 import { useAdkStreamingManager } from "@/src/features/adk-chat/hooks/useAdkStreamingManager";
 import { mergeSubSessionsIntoMainMessages } from "@/src/features/adk-chat/improve-topic-helpers";
 import { getRegistryRow } from "@/src/features/adk-chat/session-registry";
+import { useAdkPortfolioReviewStore } from "@/src/features/adk-chat/stores/useAdkPortfolioReviewStore";
 import { useAdkResumeReviewStore } from "@/src/features/adk-chat/stores/useAdkResumeReviewStore";
 import type { AgentMessage, ProcessedEvent } from "@/src/features/adk-chat/types";
 import type { ChatMessage } from "@/types";
+import { markEmptyAssistantStreamErrorInTree, resetAssistantTurnForRetryInTree } from "./set-chat-message-stream-error";
 import { updateChatMessageInTree } from "./update-chat-message";
 
 const WELCOME_MESSAGE: ChatMessage = {
@@ -38,6 +41,8 @@ export interface SendMainMessageOptions {
   targetSessionId?: string;
   /** Improve / section-review handoffs — do not use this message for auto chat title. */
   excludeFromTitleGeneration?: boolean;
+  /** Retry the same turn: do not append another user bubble; reuse this assistant placeholder. */
+  retryAssistantId?: string;
 }
 
 export interface AdkChatContextValue {
@@ -52,19 +57,25 @@ export interface AdkChatContextValue {
   streamActivityLabel: string | null;
   messages: ChatMessage[];
   setMessages: React.Dispatch<React.SetStateAction<ChatMessage[]>>;
-  sendMainMessage: (text: string, options?: SendMainMessageOptions) => Promise<void>;
+  sendMainMessage: (text: string, options?: SendMainMessageOptions) => Promise<{ assistantId: string }>;
   sendTopicMessage: (prompt: string, assistantMessageId: string, options?: { sessionIdOverride?: string }) => Promise<void>;
   refreshSessions: () => Promise<void>;
   handleSessionSwitch: (newSessionId: string) => void;
   handleCreateNewSession: (options?: { kind?: "main" | "sub"; parentSessionId?: string }) => Promise<void>;
   handleDeleteSession: (sessionIdToDelete: string) => Promise<void>;
+  /** Set when the latest assistant turn failed (rate limit, stream error). */
+  streamError: FormattedUnibotStreamError | null;
+  clearStreamError: () => void;
+  setStreamError: (error: FormattedUnibotStreamError | null) => void;
 }
 
 const AdkChatContext = createContext<AdkChatContextValue | null>(null);
 
 export function AdkChatProvider({ userId, children }: { userId: string; children: React.ReactNode }): React.JSX.Element {
   const [messages, setMessages] = useState<ChatMessage[]>([WELCOME_MESSAGE]);
+  const [streamError, setStreamError] = useState<FormattedUnibotStreamError | null>(null);
   const [isLoadingHistory, setIsLoadingHistory] = useState(false);
+  const clearStreamError = useCallback(() => setStreamError(null), []);
   const pendingSendRef = useRef<{
     targetSessionId: string;
     text: string;
@@ -94,6 +105,26 @@ export function AdkChatProvider({ userId, children }: { userId: string; children
     /* research counter deferred */
   }, []);
 
+  const markIncompleteAssistantTurn = useCallback((assistantId: string, err?: unknown) => {
+    const hasResumeReview = useAdkResumeReviewStore.getState().reviewStack.some(card => card.assistantMessageId === assistantId);
+    const hasPortfolioReview = useAdkPortfolioReviewStore.getState().reviewStack.some(card => card.assistantMessageId === assistantId);
+    if (hasResumeReview || hasPortfolioReview) {
+      return;
+    }
+
+    const formatted = formatUnibotStreamError(err ?? new Error("429 RESOURCE_EXHAUSTED"), {
+      source: "markIncompleteAssistantTurn",
+      assistantId,
+    });
+    setMessages(prev => {
+      const { list, marked } = markEmptyAssistantStreamErrorInTree(prev, assistantId, formatted);
+      if (marked) {
+        queueMicrotask(() => setStreamError(formatted));
+      }
+      return list;
+    });
+  }, []);
+
   const {
     isLoading: isAgentLoading,
     streamActivityLabel,
@@ -108,6 +139,7 @@ export function AdkChatProvider({ userId, children }: { userId: string; children
 
   useEffect(() => {
     useAdkResumeReviewStore.getState().clearAllReviews();
+    useAdkPortfolioReviewStore.getState().clearAllReviews();
   }, [sessionId, userId]);
 
   useEffect(() => {
@@ -115,6 +147,7 @@ export function AdkChatProvider({ userId, children }: { userId: string; children
 
     let cancelled = false;
     setMessages([WELCOME_MESSAGE]);
+    setStreamError(null);
     setIsLoadingHistory(true);
 
     void (async () => {
@@ -152,37 +185,50 @@ export function AdkChatProvider({ userId, children }: { userId: string; children
   }, [userId, sessionId]);
 
   const sendMainMessageNow = useCallback(
-    async (text: string, activeSessionId: string, options?: SendMainMessageOptions): Promise<void> => {
+    async (text: string, activeSessionId: string, options?: SendMainMessageOptions): Promise<{ assistantId: string }> => {
       if (!userId || !activeSessionId) {
         throw new Error("Session not ready");
       }
 
-      const userMsgId = `user-${Date.now()}-${Math.random().toString(36).slice(2, 9)}`;
-      const assistantId = typeof crypto !== "undefined" && crypto.randomUUID ? crypto.randomUUID() : `ai-${Date.now()}`;
+      const retryAssistantId = options?.retryAssistantId?.trim();
+      const assistantId =
+        retryAssistantId || (typeof crypto !== "undefined" && crypto.randomUUID ? crypto.randomUUID() : `ai-${Date.now()}`);
 
-      const userChat: ChatMessage = {
-        id: userMsgId,
-        role: "user",
-        text,
-        timestamp: new Date(),
-        excludeFromTitleGeneration: options?.excludeFromTitleGeneration,
-      };
-      const assistantChat: ChatMessage = {
-        id: assistantId,
-        role: "model",
-        text: "",
-        timestamp: new Date(),
-      };
+      if (retryAssistantId) {
+        setMessages(prev => resetAssistantTurnForRetryInTree(prev, assistantId));
+      } else {
+        const userMsgId = `user-${Date.now()}-${Math.random().toString(36).slice(2, 9)}`;
+        const userChat: ChatMessage = {
+          id: userMsgId,
+          role: "user",
+          text,
+          timestamp: new Date(),
+          excludeFromTitleGeneration: options?.excludeFromTitleGeneration,
+        };
+        const assistantChat: ChatMessage = {
+          id: assistantId,
+          role: "model",
+          text: "",
+          timestamp: new Date(),
+        };
+        setMessages(prev => [...prev, userChat, assistantChat]);
+      }
 
-      setMessages(prev => [...prev, userChat, assistantChat]);
-
-      await submitMessage(text, { aiMessageId: assistantId });
+      try {
+        await submitMessage(text, { aiMessageId: assistantId });
+        markIncompleteAssistantTurn(assistantId);
+        return { assistantId };
+      } catch (error) {
+        const wrapped = error instanceof Error ? error : new Error(String(error));
+        Object.defineProperty(wrapped, "assistantMessageId", { value: assistantId, enumerable: true });
+        throw wrapped;
+      }
     },
-    [userId, submitMessage]
+    [userId, submitMessage, markIncompleteAssistantTurn]
   );
 
   const sendMainMessage = useCallback(
-    async (text: string, options?: SendMainMessageOptions): Promise<void> => {
+    async (text: string, options?: SendMainMessageOptions): Promise<{ assistantId: string }> => {
       const targetId = options?.targetSessionId?.trim() || sessionId;
       if (!userId || !targetId) {
         throw new Error("Session not ready");
@@ -195,10 +241,10 @@ export function AdkChatProvider({ userId, children }: { userId: string; children
           excludeFromTitleGeneration: options?.excludeFromTitleGeneration,
         };
         handleSessionSwitch(targetId);
-        return;
+        return { assistantId: "" };
       }
 
-      await sendMainMessageNow(text, targetId, options);
+      return sendMainMessageNow(text, targetId, options);
     },
     [userId, sessionId, handleSessionSwitch, sendMainMessageNow]
   );
@@ -220,12 +266,19 @@ export function AdkChatProvider({ userId, children }: { userId: string; children
       if (!userId || !sessionId) {
         throw new Error("Session not ready");
       }
-      await submitMessage(prompt, {
-        aiMessageId: assistantMessageId,
-        sessionIdOverride: options?.sessionIdOverride,
-      });
+      try {
+        await submitMessage(prompt, {
+          aiMessageId: assistantMessageId,
+          sessionIdOverride: options?.sessionIdOverride,
+        });
+        markIncompleteAssistantTurn(assistantMessageId);
+      } catch (error) {
+        const wrapped = error instanceof Error ? error : new Error(String(error));
+        Object.defineProperty(wrapped, "assistantMessageId", { value: assistantMessageId, enumerable: true });
+        throw wrapped;
+      }
     },
-    [userId, sessionId, submitMessage]
+    [userId, sessionId, submitMessage, markIncompleteAssistantTurn]
   );
 
   const sessionReady = Boolean(userId && sessionId && !isBootstrappingSession);
@@ -249,6 +302,9 @@ export function AdkChatProvider({ userId, children }: { userId: string; children
       handleSessionSwitch,
       handleCreateNewSession,
       handleDeleteSession,
+      streamError,
+      clearStreamError,
+      setStreamError,
     }),
     [
       userId,
@@ -267,6 +323,8 @@ export function AdkChatProvider({ userId, children }: { userId: string; children
       handleSessionSwitch,
       handleCreateNewSession,
       handleDeleteSession,
+      streamError,
+      clearStreamError,
     ]
   );
 
