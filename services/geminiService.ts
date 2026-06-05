@@ -1,8 +1,3 @@
-/**
- * Legacy direct Gemini client. Production Uniboard chat uses the ADK lane
- * (see components/chat/AdkChatProvider.tsx and POST /api/run_sse).
- * Retain for local experiments; avoid new product flows on this path unless intentional.
- */
 import { GoogleGenAI, Chat, GenerateContentResponse } from "@google/genai";
 
 // Next.js: NEXT_PUBLIC_ is available client + server; GEMINI_API_KEY is server-only (optional)
@@ -23,10 +18,9 @@ function getApiKey(): string {
 export const createChatSession = (): Chat => {
   const ai = new GoogleGenAI({ apiKey: getApiKey() });
   return ai.chats.create({
-    model: "gemini-3-flash-preview",
+    model: 'gemini-3-flash-preview',
     config: {
-      systemInstruction:
-        "You are Unimad AI, a personal branding expert. You help users build their portfolios, write resumes, and improve their professional presence. Keep answers concise, helpful, and encouraging. Use markdown for formatting.",
+      systemInstruction: 'You are Unimad AI, a personal branding expert. You help users build their portfolios, write resumes, and improve their professional presence. Keep answers concise, helpful, and encouraging. Use markdown for formatting.',
     },
   });
 };

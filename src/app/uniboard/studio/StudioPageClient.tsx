@@ -1,12 +1,11 @@
 "use client";
 
+import { useSearchParams } from "next/navigation";
 import StudioMainV2 from "@/components/studio/StudioMainV2";
 import type { GeneratorContext, ContentGeneratorType } from "@/types/jobs";
-import { useSearchParams } from "next/navigation";
 
 export default function StudioPageClient() {
   const searchParams = useSearchParams();
-  const initialAssetId = searchParams.get("id");
 
   const initialContext: GeneratorContext | null =
     searchParams.get("type") || searchParams.get("jobId")
@@ -20,5 +19,5 @@ export default function StudioPageClient() {
         }
       : null;
 
-  return <StudioMainV2 initialContext={initialContext} initialAssetId={initialAssetId} />;
+  return <StudioMainV2 initialContext={initialContext} />;
 }

@@ -6,8 +6,6 @@
 
 This contains everything you need to run your app locally.
 
-**Project structure:** See [STRUCTURE.md](STRUCTURE.md) for folder conventions and where to put new code. AI agents: see [AGENTS.md](AGENTS.md).
-
 View your app in AI Studio: https://ai.studio/apps/drive/1Hz3qg9cRlZcAJc6neBEIwP0gLhag6jZ5
 
 ## Run Locally

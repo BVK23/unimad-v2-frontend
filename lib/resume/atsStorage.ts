@@ -1,4 +1,4 @@
-import { RECALC_STORAGE_PREFIX } from "./atsConstants";
+import { RECALC_STORAGE_PREFIX } from './atsConstants';
 
 export interface ResumeAtsSession {
   recalcAttemptsUsed: number;
@@ -11,7 +11,7 @@ const defaultSession = (): ResumeAtsSession => ({
 });
 
 export function loadResumeAtsSession(resumeId: string): ResumeAtsSession {
-  if (typeof window === "undefined" || !resumeId) return defaultSession();
+  if (typeof window === 'undefined' || !resumeId) return defaultSession();
   try {
     const raw = localStorage.getItem(`${RECALC_STORAGE_PREFIX}${resumeId}`);
     if (!raw) return defaultSession();
@@ -26,7 +26,7 @@ export function loadResumeAtsSession(resumeId: string): ResumeAtsSession {
 }
 
 export function saveResumeAtsSession(resumeId: string, session: ResumeAtsSession): void {
-  if (typeof window === "undefined" || !resumeId) return;
+  if (typeof window === 'undefined' || !resumeId) return;
   try {
     localStorage.setItem(`${RECALC_STORAGE_PREFIX}${resumeId}`, JSON.stringify(session));
   } catch {

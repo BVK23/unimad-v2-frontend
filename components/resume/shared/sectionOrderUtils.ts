@@ -6,7 +6,7 @@ import type { SectionOrderItem } from "@/types";
  */
 export function deduplicateSectionOrder(order: SectionOrderItem[]): SectionOrderItem[] {
   const seen = new Set<string>();
-  return order.filter(s => {
+  return order.filter((s) => {
     if (seen.has(s.id)) return false;
     seen.add(s.id);
     return true;

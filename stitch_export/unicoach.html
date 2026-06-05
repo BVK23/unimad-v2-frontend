@@ -1,248 +1,249 @@
-<!doctype html>
+<!DOCTYPE html>
 <html lang="en">
-  <head>
-    <meta charset="UTF-8" />
-    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Unicoach Landing | Unimad Stitch Export</title>
     <script src="https://cdn.tailwindcss.com"></script>
     <script src="https://unpkg.com/lucide@latest"></script>
     <script>
-      tailwind.config = {
-        darkMode: "class",
-        theme: {
-          extend: {
-            colors: {
-              brand: {
-                50: "#f0f6fe",
-                100: "#dde9fc",
-                200: "#c2d9fa",
-                300: "#9bc0f6",
-                400: "#6ea0f0",
-                500: "#346de0",
-                600: "#2553d0",
-                700: "#1e42a8",
-                800: "#1b3888",
-                900: "#1b316b",
-              },
+        tailwind.config = {
+            darkMode: 'class',
+            theme: {
+                extend: {
+                    colors: {
+                        brand: {
+                            50: '#f0f6fe',
+                            100: '#dde9fc',
+                            200: '#c2d9fa',
+                            300: '#9bc0f6',
+                            400: '#6ea0f0',
+                            500: '#346de0',
+                            600: '#2553d0',
+                            700: '#1e42a8',
+                            800: '#1b3888',
+                            900: '#1b316b',
+                        }
+                    },
+                    fontFamily: {
+                        sans: ['Onest', 'sans-serif'],
+                    },
+                    animation: {
+                        'shimmer': 'shimmer 2s linear infinite',
+                    },
+                    keyframes: {
+                        shimmer: {
+                            '0%': { transform: 'translateX(-100%)' },
+                            '100%': { transform: 'translateX(100%)' },
+                        }
+                    }
+                },
             },
-            fontFamily: {
-              sans: ["Onest", "sans-serif"],
-            },
-            animation: {
-              "shimmer": "shimmer 2s linear infinite",
-            },
-            keyframes: {
-              shimmer: {
-                "0%": { transform: "translateX(-100%)" },
-                "100%": { transform: "translateX(100%)" },
-              },
-            },
-          },
-        },
-      };
+        }
     </script>
-    <link href="https://fonts.googleapis.com/css2?family=Onest:wght@100..900&display=swap" rel="stylesheet" />
+    <link href="https://fonts.googleapis.com/css2?family=Onest:wght@100..900&display=swap" rel="stylesheet">
     <style>
-      body {
-        font-family: "Onest", sans-serif;
-      }
+        body {
+            font-family: 'Onest', sans-serif;
+        }
     </style>
-  </head>
+</head>
 
-  <body class="bg-slate-900 min-h-screen text-white">
+<body class="bg-slate-900 min-h-screen text-white">
+
     <div class="flex-1 h-full bg-slate-900 overflow-y-auto relative scroll-smooth min-h-screen">
-      <!-- Close / Back Button -->
-      <button
-        class="absolute top-6 right-6 z-50 p-2 bg-white/10 hover:bg-white/20 text-white rounded-full transition-colors backdrop-blur-md"
-      >
-        <i data-lucide="x" class="w-6 h-6"></i>
-      </button>
+        <!-- Close / Back Button -->
+        <button
+            class="absolute top-6 right-6 z-50 p-2 bg-white/10 hover:bg-white/20 text-white rounded-full transition-colors backdrop-blur-md">
+            <i data-lucide="x" class="w-6 h-6"></i>
+        </button>
 
-      <!-- Hero Section -->
-      <section class="relative pt-32 pb-24 px-6 overflow-hidden">
-        <div class="absolute inset-0 bg-gradient-to-b from-brand-900/60 via-slate-900/90 to-slate-900 pointer-events-none"></div>
-        <div
-          class="absolute top-0 left-1/2 -translate-x-1/2 w-full max-w-7xl h-[500px] bg-brand-500/20 blur-[120px] rounded-full pointer-events-none"
-        ></div>
-
-        <div class="max-w-5xl mx-auto text-center relative z-10">
-          <div
-            class="inline-flex items-center gap-2.5 px-4 py-1.5 rounded-full bg-slate-800/80 text-brand-300 border border-brand-500/30 text-xs font-medium uppercase tracking-wider mb-8 shadow-lg backdrop-blur-md"
-          >
-            <span class="relative flex h-2.5 w-2.5">
-              <span class="animate-ping absolute inline-flex h-full w-full rounded-full bg-red-400 opacity-75"></span>
-              <span class="relative inline-flex rounded-full h-2.5 w-2.5 bg-red-500"></span>
-            </span>
-            Live Masterclass • Next Session Available
-          </div>
-
-          <h1 class="text-5xl md:text-7xl font-semibold text-white mb-8 leading-tight tracking-tight drop-shadow-2xl">
-            Land interviews in <br />
-            <span class="text-transparent bg-clip-text bg-gradient-to-r from-brand-300 via-brand-200 to-blue-300 drop-shadow-sm"
-              >&lt; 30 days.</span
-            >
-          </h1>
-
-          <p class="text-xl md:text-2xl text-slate-300 mb-12 max-w-3xl mx-auto leading-relaxed font-light">
-            The AI system for International Students to <span class="text-white font-medium">bypass rejection filters</span> and unlock your
-            dream job offer.
-          </p>
-
-          <div class="flex flex-col sm:flex-row items-center justify-center gap-5">
-            <button
-              class="px-10 py-5 bg-white text-slate-900 rounded-full font-medium text-xl shadow-[0_0_40px_rgba(255,255,255,0.2)] hover:shadow-[0_0_60px_rgba(255,255,255,0.4)] hover:scale-105 active:scale-95 transition-all w-full sm:w-auto relative overflow-hidden group"
-            >
-              <div
-                class="absolute inset-0 bg-gradient-to-r from-transparent via-white/50 to-transparent -translate-x-full group-hover:animate-shimmer"
-              ></div>
-              Reserve my FREE spot
-            </button>
+        <!-- Hero Section -->
+        <section class="relative pt-32 pb-24 px-6 overflow-hidden">
             <div
-              class="flex items-center gap-2 text-slate-400 text-sm font-medium bg-slate-800/50 px-5 py-3 rounded-full border border-white/5 backdrop-blur-md"
-            >
-              <i data-lucide="users" class="w-4 h-4 text-brand-400"></i>
-              <span>Join 4000+ students</span>
+                class="absolute inset-0 bg-gradient-to-b from-brand-900/60 via-slate-900/90 to-slate-900 pointer-events-none">
             </div>
-          </div>
-        </div>
-      </section>
-
-      <!-- Social Proof -->
-      <section class="py-12 border-y border-white/5 bg-slate-900/50">
-        <div class="max-w-6xl mx-auto px-6">
-          <h3 class="text-slate-400 text-center text-sm font-medium uppercase tracking-widest mb-10">Don't take our word for it</h3>
-          <div class="grid grid-cols-2 md:grid-cols-4 gap-8 text-center">
-            <div>
-              <div class="text-3xl md:text-4xl font-medium text-white mb-1">$2M+</div>
-              <div class="text-sm text-slate-400">In Job Offers</div>
-            </div>
-            <div>
-              <div class="text-3xl md:text-4xl font-medium text-white mb-1">4k+</div>
-              <div class="text-sm text-slate-400">Happy Students</div>
-            </div>
-            <div>
-              <div class="text-3xl md:text-4xl font-medium text-white mb-1">500+</div>
-              <div class="text-sm text-slate-400">Interviews Booked</div>
-            </div>
-            <div>
-              <div class="text-3xl md:text-4xl font-medium text-white mb-1">100+</div>
-              <div class="text-sm text-slate-400">Companies Hired</div>
-            </div>
-          </div>
-        </div>
-      </section>
-
-      <!-- Framework Section -->
-      <section class="py-20 px-6 bg-slate-900">
-        <div class="max-w-6xl mx-auto">
-          <div class="text-center mb-16">
-            <h2 class="text-3xl font-semibold text-white mb-4">
-              Unlock the <span class="text-brand-400 underline decoration-brand-400/30 underline-offset-4">Unimad</span> system
-            </h2>
-            <p class="text-slate-400 max-w-2xl mx-auto">
-              A proven 3-step framework developed from years of hiring data to land you a job in record time.
-            </p>
-          </div>
-
-          <div class="grid md:grid-cols-3 gap-6">
-            <!-- Step 1 -->
-            <div class="bg-white/5 border border-white/10 rounded-2xl p-8 hover:bg-white/10 transition-colors group">
-              <div
-                class="w-10 h-10 bg-brand-500/20 text-brand-300 rounded-lg flex items-center justify-center font-medium text-xl mb-6 group-hover:bg-brand-500 group-hover:text-white transition-colors"
-              >
-                1
-              </div>
-              <h3 class="text-xl font-medium text-white mb-4">Build your Foundation</h3>
-              <p class="text-slate-400 text-sm mb-6 leading-relaxed">You'll find your niche and build your digital footprint.</p>
-              <ul class="space-y-3">
-                <li class="flex items-start gap-3 text-slate-300 text-sm">
-                  <i data-lucide="check-circle-2" class="w-4 h-4 text-brand-400 mt-0.5 flex-shrink-0"></i>
-                  <span>A base resume tailored to your niche.</span>
-                </li>
-                <li class="flex items-start gap-3 text-slate-300 text-sm">
-                  <i data-lucide="check-circle-2" class="w-4 h-4 text-brand-400 mt-0.5 flex-shrink-0"></i>
-                  <span>Your LinkedIn optimized for visibility.</span>
-                </li>
-                <li class="flex items-start gap-3 text-slate-300 text-sm">
-                  <i data-lucide="check-circle-2" class="w-4 h-4 text-brand-400 mt-0.5 flex-shrink-0"></i>
-                  <span>A portfolio explaining your story.</span>
-                </li>
-              </ul>
+            <div
+                class="absolute top-0 left-1/2 -translate-x-1/2 w-full max-w-7xl h-[500px] bg-brand-500/20 blur-[120px] rounded-full pointer-events-none">
             </div>
 
-            <!-- Step 2 -->
-            <div class="bg-white/5 border border-white/10 rounded-2xl p-8 hover:bg-white/10 transition-colors group">
-              <div
-                class="w-10 h-10 bg-brand-500/20 text-brand-300 rounded-lg flex items-center justify-center font-medium text-xl mb-6 group-hover:bg-brand-500 group-hover:text-white transition-colors"
-              >
-                2
-              </div>
-              <h3 class="text-xl font-medium text-white mb-4">Start your Game</h3>
-              <p class="text-slate-400 text-sm mb-6 leading-relaxed">You'll build a routine and start with high-quality applications.</p>
-              <ul class="space-y-3">
-                <li class="flex items-start gap-3 text-slate-300 text-sm">
-                  <i data-lucide="check-circle-2" class="w-4 h-4 text-brand-400 mt-0.5 flex-shrink-0"></i>
-                  <span>Quality & Quantity Applications strategy.</span>
-                </li>
-                <li class="flex items-start gap-3 text-slate-300 text-sm">
-                  <i data-lucide="check-circle-2" class="w-4 h-4 text-brand-400 mt-0.5 flex-shrink-0"></i>
-                  <span>Personal branding to stay visible online.</span>
-                </li>
-                <li class="flex items-start gap-3 text-slate-300 text-sm">
-                  <i data-lucide="check-circle-2" class="w-4 h-4 text-brand-400 mt-0.5 flex-shrink-0"></i>
-                  <span>Developing a repeatable process.</span>
-                </li>
-              </ul>
+            <div class="max-w-5xl mx-auto text-center relative z-10">
+                <div
+                    class="inline-flex items-center gap-2.5 px-4 py-1.5 rounded-full bg-slate-800/80 text-brand-300 border border-brand-500/30 text-xs font-medium uppercase tracking-wider mb-8 shadow-lg backdrop-blur-md">
+                    <span class="relative flex h-2.5 w-2.5">
+                        <span
+                            class="animate-ping absolute inline-flex h-full w-full rounded-full bg-red-400 opacity-75"></span>
+                        <span class="relative inline-flex rounded-full h-2.5 w-2.5 bg-red-500"></span>
+                    </span>
+                    Live Masterclass • Next Session Available
+                </div>
+
+                <h1
+                    class="text-5xl md:text-7xl font-semibold text-white mb-8 leading-tight tracking-tight drop-shadow-2xl">
+                    Land interviews in <br />
+                    <span
+                        class="text-transparent bg-clip-text bg-gradient-to-r from-brand-300 via-brand-200 to-blue-300 drop-shadow-sm">&lt;
+                        30 days.</span>
+                </h1>
+
+                <p class="text-xl md:text-2xl text-slate-300 mb-12 max-w-3xl mx-auto leading-relaxed font-light">
+                    The AI system for International Students to <span class="text-white font-medium">bypass rejection
+                        filters</span> and unlock your dream job offer.
+                </p>
+
+                <div class="flex flex-col sm:flex-row items-center justify-center gap-5">
+                    <button
+                        class="px-10 py-5 bg-white text-slate-900 rounded-full font-medium text-xl shadow-[0_0_40px_rgba(255,255,255,0.2)] hover:shadow-[0_0_60px_rgba(255,255,255,0.4)] hover:scale-105 active:scale-95 transition-all w-full sm:w-auto relative overflow-hidden group">
+                        <div
+                            class="absolute inset-0 bg-gradient-to-r from-transparent via-white/50 to-transparent -translate-x-full group-hover:animate-shimmer">
+                        </div>
+                        Reserve my FREE spot
+                    </button>
+                    <div
+                        class="flex items-center gap-2 text-slate-400 text-sm font-medium bg-slate-800/50 px-5 py-3 rounded-full border border-white/5 backdrop-blur-md">
+                        <i data-lucide="users" class="w-4 h-4 text-brand-400"></i>
+                        <span>Join 4000+ students</span>
+                    </div>
+                </div>
             </div>
+        </section>
 
-            <!-- Step 3 -->
-            <div class="bg-white/5 border border-white/10 rounded-2xl p-8 hover:bg-white/10 transition-colors group">
-              <div
-                class="w-10 h-10 bg-brand-500/20 text-brand-300 rounded-lg flex items-center justify-center font-medium text-xl mb-6 group-hover:bg-brand-500 group-hover:text-white transition-colors"
-              >
-                3
-              </div>
-              <h3 class="text-xl font-medium text-white mb-4">Converting Interviews</h3>
-              <p class="text-slate-400 text-sm mb-6 leading-relaxed">You'll learn how to dominate interviews with AI assistance.</p>
-              <ul class="space-y-3">
-                <li class="flex items-start gap-3 text-slate-300 text-sm">
-                  <i data-lucide="check-circle-2" class="w-4 h-4 text-brand-400 mt-0.5 flex-shrink-0"></i>
-                  <span>Technical & Behavioural prep.</span>
-                </li>
-                <li class="flex items-start gap-3 text-slate-300 text-sm">
-                  <i data-lucide="check-circle-2" class="w-4 h-4 text-brand-400 mt-0.5 flex-shrink-0"></i>
-                  <span>Mock interviews with AI feedback.</span>
-                </li>
-                <li class="flex items-start gap-3 text-slate-300 text-sm">
-                  <i data-lucide="check-circle-2" class="w-4 h-4 text-brand-400 mt-0.5 flex-shrink-0"></i>
-                  <span>Value Proposition Documents.</span>
-                </li>
-              </ul>
+        <!-- Social Proof -->
+        <section class="py-12 border-y border-white/5 bg-slate-900/50">
+            <div class="max-w-6xl mx-auto px-6">
+                <h3 class="text-slate-400 text-center text-sm font-medium uppercase tracking-widest mb-10">Don't take
+                    our word for it</h3>
+                <div class="grid grid-cols-2 md:grid-cols-4 gap-8 text-center">
+                    <div>
+                        <div class="text-3xl md:text-4xl font-medium text-white mb-1">$2M+</div>
+                        <div class="text-sm text-slate-400">In Job Offers</div>
+                    </div>
+                    <div>
+                        <div class="text-3xl md:text-4xl font-medium text-white mb-1">4k+</div>
+                        <div class="text-sm text-slate-400">Happy Students</div>
+                    </div>
+                    <div>
+                        <div class="text-3xl md:text-4xl font-medium text-white mb-1">500+</div>
+                        <div class="text-sm text-slate-400">Interviews Booked</div>
+                    </div>
+                    <div>
+                        <div class="text-3xl md:text-4xl font-medium text-white mb-1">100+</div>
+                        <div class="text-sm text-slate-400">Companies Hired</div>
+                    </div>
+                </div>
             </div>
-          </div>
-        </div>
-      </section>
+        </section>
 
-      <!-- Final CTA -->
-      <section class="py-24 px-6 bg-slate-900 border-t border-white/10">
-        <div class="max-w-4xl mx-auto text-center">
-          <h2 class="text-4xl font-medium text-white mb-6">
-            Don't Stay Stuck. <br />
-            Build Your Mad Story.
-          </h2>
-          <p class="text-xl text-slate-400 mb-10">Join the live session and unlock the system to land better offers with AI.</p>
+        <!-- Framework Section -->
+        <section class="py-20 px-6 bg-slate-900">
+            <div class="max-w-6xl mx-auto">
+                <div class="text-center mb-16">
+                    <h2 class="text-3xl font-semibold text-white mb-4">Unlock the <span
+                            class="text-brand-400 underline decoration-brand-400/30 underline-offset-4">Unimad</span>
+                        system</h2>
+                    <p class="text-slate-400 max-w-2xl mx-auto">A proven 3-step framework developed from years of hiring
+                        data to land you a job in record time.</p>
+                </div>
 
-          <button
-            class="px-10 py-5 bg-brand-600 hover:bg-brand-500 text-white rounded-xl font-medium text-xl shadow-2xl hover:scale-105 transition-all mb-4"
-          >
-            Secure your free seat now
-          </button>
-          <p class="text-sm text-slate-500">No credit card required • 60 Minutes • Live Training</p>
-        </div>
-      </section>
+                <div class="grid md:grid-cols-3 gap-6">
+                    <!-- Step 1 -->
+                    <div
+                        class="bg-white/5 border border-white/10 rounded-2xl p-8 hover:bg-white/10 transition-colors group">
+                        <div
+                            class="w-10 h-10 bg-brand-500/20 text-brand-300 rounded-lg flex items-center justify-center font-medium text-xl mb-6 group-hover:bg-brand-500 group-hover:text-white transition-colors">
+                            1</div>
+                        <h3 class="text-xl font-medium text-white mb-4">Build your Foundation</h3>
+                        <p class="text-slate-400 text-sm mb-6 leading-relaxed">
+                            You'll find your niche and build your digital footprint.
+                        </p>
+                        <ul class="space-y-3">
+                            <li class="flex items-start gap-3 text-slate-300 text-sm">
+                                <i data-lucide="check-circle-2" class="w-4 h-4 text-brand-400 mt-0.5 flex-shrink-0"></i>
+                                <span>A base resume tailored to your niche.</span>
+                            </li>
+                            <li class="flex items-start gap-3 text-slate-300 text-sm">
+                                <i data-lucide="check-circle-2" class="w-4 h-4 text-brand-400 mt-0.5 flex-shrink-0"></i>
+                                <span>Your LinkedIn optimized for visibility.</span>
+                            </li>
+                            <li class="flex items-start gap-3 text-slate-300 text-sm">
+                                <i data-lucide="check-circle-2" class="w-4 h-4 text-brand-400 mt-0.5 flex-shrink-0"></i>
+                                <span>A portfolio explaining your story.</span>
+                            </li>
+                        </ul>
+                    </div>
+
+                    <!-- Step 2 -->
+                    <div
+                        class="bg-white/5 border border-white/10 rounded-2xl p-8 hover:bg-white/10 transition-colors group">
+                        <div
+                            class="w-10 h-10 bg-brand-500/20 text-brand-300 rounded-lg flex items-center justify-center font-medium text-xl mb-6 group-hover:bg-brand-500 group-hover:text-white transition-colors">
+                            2</div>
+                        <h3 class="text-xl font-medium text-white mb-4">Start your Game</h3>
+                        <p class="text-slate-400 text-sm mb-6 leading-relaxed">
+                            You'll build a routine and start with high-quality applications.
+                        </p>
+                        <ul class="space-y-3">
+                            <li class="flex items-start gap-3 text-slate-300 text-sm">
+                                <i data-lucide="check-circle-2" class="w-4 h-4 text-brand-400 mt-0.5 flex-shrink-0"></i>
+                                <span>Quality & Quantity Applications strategy.</span>
+                            </li>
+                            <li class="flex items-start gap-3 text-slate-300 text-sm">
+                                <i data-lucide="check-circle-2" class="w-4 h-4 text-brand-400 mt-0.5 flex-shrink-0"></i>
+                                <span>Personal branding to stay visible online.</span>
+                            </li>
+                            <li class="flex items-start gap-3 text-slate-300 text-sm">
+                                <i data-lucide="check-circle-2" class="w-4 h-4 text-brand-400 mt-0.5 flex-shrink-0"></i>
+                                <span>Developing a repeatable process.</span>
+                            </li>
+                        </ul>
+                    </div>
+
+                    <!-- Step 3 -->
+                    <div
+                        class="bg-white/5 border border-white/10 rounded-2xl p-8 hover:bg-white/10 transition-colors group">
+                        <div
+                            class="w-10 h-10 bg-brand-500/20 text-brand-300 rounded-lg flex items-center justify-center font-medium text-xl mb-6 group-hover:bg-brand-500 group-hover:text-white transition-colors">
+                            3</div>
+                        <h3 class="text-xl font-medium text-white mb-4">Converting Interviews</h3>
+                        <p class="text-slate-400 text-sm mb-6 leading-relaxed">
+                            You'll learn how to dominate interviews with AI assistance.
+                        </p>
+                        <ul class="space-y-3">
+                            <li class="flex items-start gap-3 text-slate-300 text-sm">
+                                <i data-lucide="check-circle-2" class="w-4 h-4 text-brand-400 mt-0.5 flex-shrink-0"></i>
+                                <span>Technical & Behavioural prep.</span>
+                            </li>
+                            <li class="flex items-start gap-3 text-slate-300 text-sm">
+                                <i data-lucide="check-circle-2" class="w-4 h-4 text-brand-400 mt-0.5 flex-shrink-0"></i>
+                                <span>Mock interviews with AI feedback.</span>
+                            </li>
+                            <li class="flex items-start gap-3 text-slate-300 text-sm">
+                                <i data-lucide="check-circle-2" class="w-4 h-4 text-brand-400 mt-0.5 flex-shrink-0"></i>
+                                <span>Value Proposition Documents.</span>
+                            </li>
+                        </ul>
+                    </div>
+                </div>
+            </div>
+        </section>
+
+        <!-- Final CTA -->
+        <section class="py-24 px-6 bg-slate-900 border-t border-white/10">
+            <div class="max-w-4xl mx-auto text-center">
+                <h2 class="text-4xl font-medium text-white mb-6">Don't Stay Stuck. <br /> Build Your Mad Story.</h2>
+                <p class="text-xl text-slate-400 mb-10">Join the live session and unlock the system to land better
+                    offers with AI.</p>
+
+                <button
+                    class="px-10 py-5 bg-brand-600 hover:bg-brand-500 text-white rounded-xl font-medium text-xl shadow-2xl hover:scale-105 transition-all mb-4">
+                    Secure your free seat now
+                </button>
+                <p class="text-sm text-slate-500">No credit card required • 60 Minutes • Live Training</p>
+            </div>
+        </section>
     </div>
-    <script>
-      lucide.createIcons();
-    </script>
-  </body>
+    <script>lucide.createIcons();</script>
+</body>
+
 </html>

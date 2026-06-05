@@ -1,347 +1,333 @@
-<!doctype html>
+<!DOCTYPE html>
 <html lang="en">
-  <head>
-    <meta charset="UTF-8" />
-    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Job Tracker | Unimad Stitch Export</title>
     <script src="https://cdn.tailwindcss.com"></script>
     <script src="https://unpkg.com/lucide@latest"></script>
     <!-- Canvas Confetti -->
     <script src="https://cdn.jsdelivr.net/npm/canvas-confetti@1.9.2/dist/confetti.browser.min.js"></script>
     <script>
-      tailwind.config = {
-        darkMode: "class",
-        theme: {
-          extend: {
-            colors: {
-              brand: { 50: "#f0f6fe", 100: "#dde9fc", 500: "#346de0", 600: "#2553d0" },
+        tailwind.config = {
+            darkMode: 'class',
+            theme: {
+                extend: {
+                    colors: {
+                        brand: { 50: '#f0f6fe', 100: '#dde9fc', 500: '#346de0', 600: '#2553d0' }
+                    },
+                    fontFamily: { sans: ['Onest', 'sans-serif'] }
+                },
             },
-            fontFamily: { sans: ["Onest", "sans-serif"] },
-          },
-        },
-      };
+        }
     </script>
-    <link href="https://fonts.googleapis.com/css2?family=Onest:wght@100..900&display=swap" rel="stylesheet" />
+    <link href="https://fonts.googleapis.com/css2?family=Onest:wght@100..900&display=swap" rel="stylesheet">
     <style>
-      body {
-        font-family: "Onest", sans-serif;
-      }
+        body {
+            font-family: 'Onest', sans-serif;
+        }
     </style>
-  </head>
+</head>
 
-  <body class="bg-white min-h-screen text-slate-900">
+<body class="bg-white min-h-screen text-slate-900">
+
     <div class="px-8 py-6 h-screen flex flex-col">
-      <div class="mb-6">
-        <h1 class="text-2xl font-semibold text-slate-900">Application Tracker</h1>
-        <p class="text-slate-500">Manage your job search pipeline.</p>
-      </div>
+        <div class="mb-6">
+            <h1 class="text-2xl font-semibold text-slate-900">Application Tracker</h1>
+            <p class="text-slate-500">Manage your job search pipeline.</p>
+        </div>
 
-      <!-- Kanban Board -->
-      <div class="flex-1 grid grid-cols-3 gap-6 h-full pb-4">
-        <!-- APPLIED COLUMN -->
-        <div
-          class="bg-slate-50 rounded-3xl p-4 border border-slate-200 flex flex-col h-full"
-          ondrop="handleDrop(event, 'applied')"
-          ondragover="allowDrop(event)"
-        >
-          <div class="flex items-center justify-between mb-4 px-2">
-            <div class="flex items-center gap-2">
-              <div class="w-2.5 h-2.5 rounded-full bg-slate-400"></div>
-              <h3 class="font-medium text-slate-900">Applied</h3>
-              <span class="bg-slate-200 text-slate-600 text-[10px] font-medium px-2 py-0.5 rounded-full" id="count-applied">1</span>
-            </div>
-            <div class="flex items-center gap-1">
-              <button onclick="openAddModal()" class="text-slate-400 hover:text-blue-600 p-1 hover:bg-blue-50 rounded-lg transition-colors">
-                <i data-lucide="plus" class="w-4 h-4"></i>
-              </button>
-              <button class="text-slate-400 hover:text-slate-600 p-1 hover:bg-slate-200 rounded-lg transition-colors">
-                <i data-lucide="more-horizontal" class="w-4 h-4"></i>
-              </button>
-            </div>
-          </div>
+        <!-- Kanban Board -->
+        <div class="flex-1 grid grid-cols-3 gap-6 h-full pb-4">
 
-          <div class="space-y-3 overflow-y-auto flex-1 pr-1" id="col-applied">
-            <!-- Job Card -->
+            <!-- APPLIED COLUMN -->
+            <div class="bg-slate-50 rounded-3xl p-4 border border-slate-200 flex flex-col h-full"
+                ondrop="handleDrop(event, 'applied')" ondragover="allowDrop(event)">
+                <div class="flex items-center justify-between mb-4 px-2">
+                    <div class="flex items-center gap-2">
+                        <div class="w-2.5 h-2.5 rounded-full bg-slate-400"></div>
+                        <h3 class="font-medium text-slate-900">Applied</h3>
+                        <span class="bg-slate-200 text-slate-600 text-[10px] font-medium px-2 py-0.5 rounded-full"
+                            id="count-applied">1</span>
+                    </div>
+                    <div class="flex items-center gap-1">
+                        <button onclick="openAddModal()"
+                            class="text-slate-400 hover:text-blue-600 p-1 hover:bg-blue-50 rounded-lg transition-colors">
+                            <i data-lucide="plus" class="w-4 h-4"></i>
+                        </button>
+                        <button
+                            class="text-slate-400 hover:text-slate-600 p-1 hover:bg-slate-200 rounded-lg transition-colors">
+                            <i data-lucide="more-horizontal" class="w-4 h-4"></i>
+                        </button>
+                    </div>
+                </div>
+
+                <div class="space-y-3 overflow-y-auto flex-1 pr-1" id="col-applied">
+                    <!-- Job Card -->
+                    <div class="bg-white border border-slate-200 rounded-2xl p-4 shadow-sm hover:shadow-md transition-all cursor-move"
+                        draggable="true" ondragstart="drag(event)" id="job-1">
+                        <div class="flex gap-4">
+                            <div
+                                class="w-10 h-10 rounded-lg bg-slate-50 border border-slate-100 flex items-center justify-center">
+                                <span class="font-bold text-slate-400">N</span>
+                            </div>
+                            <div>
+                                <h4 class="font-medium text-slate-900 leading-tight">Product Designer</h4>
+                                <p class="text-xs text-slate-500">Notion • New York</p>
+                                <div class="mt-2 flex gap-1">
+                                    <span
+                                        class="px-1.5 py-0.5 bg-gradient-to-b from-amber-200 to-yellow-400 text-yellow-900 rounded-md text-[9px] font-semibold border border-yellow-300 shadow-[0_1px_2px_rgba(251,191,36,0.2)]">Visa</span>
+                                    <span
+                                        class="px-1.5 py-0.5 bg-slate-100 text-slate-500 rounded-md text-[9px] font-medium border border-slate-200">2
+                                        days ago</span>
+                                </div>
+                            </div>
+                            <div class="ml-auto">
+                                <div
+                                    class="w-8 h-8 rounded-full border-2 border-slate-100 flex items-center justify-center text-[10px] font-bold text-green-600">
+                                    85</div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- INTERVIEWING COLUMN -->
+            <div class="bg-slate-50 rounded-3xl p-4 border border-slate-200 flex flex-col h-full"
+                ondrop="handleDrop(event, 'interviewing')" ondragover="allowDrop(event)">
+                <div class="flex items-center justify-between mb-4 px-2">
+                    <div class="flex items-center gap-2">
+                        <div class="w-2.5 h-2.5 rounded-full bg-blue-500"></div>
+                        <h3 class="font-medium text-slate-900">Interviewing</h3>
+                        <span class="bg-slate-200 text-slate-600 text-[10px] font-medium px-2 py-0.5 rounded-full"
+                            id="count-interviewing">0</span>
+                    </div>
+                    <button
+                        class="text-slate-400 hover:text-slate-600 p-1 hover:bg-slate-200 rounded-lg transition-colors">
+                        <i data-lucide="more-horizontal" class="w-4 h-4"></i>
+                    </button>
+                </div>
+                <div class="space-y-3 overflow-y-auto flex-1 pr-1 min-h-[100px]" id="col-interviewing">
+                    <!-- Empty State -->
+                    <div class="h-24 border-2 border-dashed border-slate-200 rounded-xl flex items-center justify-center text-slate-400 text-xs text-center"
+                        id="empty-interviewing">
+                        Drop items here
+                    </div>
+                </div>
+            </div>
+
+            <!-- OFFERS COLUMN -->
+            <div class="bg-slate-50 rounded-3xl p-4 border border-slate-200 flex flex-col h-full"
+                ondrop="handleDrop(event, 'offer')" ondragover="allowDrop(event)">
+                <div class="flex items-center justify-between mb-4 px-2">
+                    <div class="flex items-center gap-2">
+                        <div class="w-2.5 h-2.5 rounded-full bg-green-500"></div>
+                        <h3 class="font-medium text-slate-900">Offers</h3>
+                        <span class="bg-slate-200 text-slate-600 text-[10px] font-medium px-2 py-0.5 rounded-full"
+                            id="count-offer">0</span>
+                    </div>
+                    <button
+                        class="text-slate-400 hover:text-slate-600 p-1 hover:bg-slate-200 rounded-lg transition-colors">
+                        <i data-lucide="more-horizontal" class="w-4 h-4"></i>
+                    </button>
+                </div>
+                <div class="space-y-3 overflow-y-auto flex-1 pr-1 min-h-[100px]" id="col-offer">
+                    <div class="h-24 border-2 border-dashed border-slate-200 rounded-xl flex items-center justify-center text-slate-400 text-xs text-center"
+                        id="empty-offer">
+                        Drop items here
+                    </div>
+                </div>
+            </div>
+
+        </div>
+
+        <!-- Simulate Prepare Modal Button (For Demo) -->
+        <div class="fixed bottom-6 right-6">
+            <button onclick="document.getElementById('prepare-modal').classList.remove('hidden')"
+                class="bg-slate-900 text-white px-4 py-2 rounded-xl shadow-lg hover:bg-slate-800 transition-colors text-sm font-medium">
+                Open Prepare Menu
+            </button>
+        </div>
+
+        <!-- Prepare Application Modal -->
+        <div id="prepare-modal"
+            class="hidden fixed inset-0 bg-black/50 backdrop-blur-sm z-50 flex items-center justify-center p-4">
             <div
-              class="bg-white border border-slate-200 rounded-2xl p-4 shadow-sm hover:shadow-md transition-all cursor-move"
-              draggable="true"
-              ondragstart="drag(event)"
-              id="job-1"
-            >
-              <div class="flex gap-4">
-                <div class="w-10 h-10 rounded-lg bg-slate-50 border border-slate-100 flex items-center justify-center">
-                  <span class="font-bold text-slate-400">N</span>
+                class="bg-white w-full max-w-4xl h-[600px] rounded-3xl shadow-2xl flex overflow-hidden border border-slate-200">
+                <!-- Sidebar -->
+                <div class="w-64 bg-slate-50 border-r border-slate-200 p-6 flex flex-col">
+                    <div class="mb-6">
+                        <h2 class="text-xs font-medium text-slate-400 uppercase tracking-widest mb-3">Prepare
+                            Application</h2>
+                        <h3 class="font-medium text-lg text-slate-900 line-clamp-1 mb-1">Product Designer</h3>
+                        <p class="text-sm text-slate-500">Notion</p>
+                    </div>
+
+                    <div class="space-y-1">
+                        <!-- Updated: No Icons -->
+                        <button
+                            class="w-full text-left px-3 py-2.5 rounded-xl text-sm font-medium transition-all flex items-center gap-3 bg-white text-blue-600 shadow-sm ring-1 ring-slate-200">
+                            Cover Letter
+                        </button>
+                        <button
+                            class="w-full text-left px-3 py-2.5 rounded-xl text-sm font-medium transition-all flex items-center gap-3 text-slate-600 hover:bg-slate-100">
+                            Cold Email
+                        </button>
+                        <button
+                            class="w-full text-left px-3 py-2.5 rounded-xl text-sm font-medium transition-all flex items-center gap-3 text-slate-600 hover:bg-slate-100">
+                            Referral Request
+                        </button>
+                        <button
+                            class="w-full text-left px-3 py-2.5 rounded-xl text-sm font-medium transition-all flex items-center gap-3 text-slate-600 hover:bg-slate-100">
+                            Value Prop Doc
+                        </button>
+                        <button
+                            class="w-full text-left px-3 py-2.5 rounded-xl text-sm font-medium transition-all flex items-center gap-3 text-slate-600 hover:bg-slate-100">
+                            Resume
+                        </button>
+                    </div>
+
+                    <div class="mt-auto pt-6 border-t border-slate-200">
+                        <button onclick="document.getElementById('prepare-modal').classList.add('hidden')"
+                            class="w-full py-2 text-xs font-medium text-slate-500 hover:text-slate-700 transition-colors">
+                            Cancel & Close
+                        </button>
+                    </div>
                 </div>
-                <div>
-                  <h4 class="font-medium text-slate-900 leading-tight">Product Designer</h4>
-                  <p class="text-xs text-slate-500">Notion • New York</p>
-                  <div class="mt-2 flex gap-1">
-                    <span
-                      class="px-1.5 py-0.5 bg-gradient-to-b from-amber-200 to-yellow-400 text-yellow-900 rounded-md text-[9px] font-semibold border border-yellow-300 shadow-[0_1px_2px_rgba(251,191,36,0.2)]"
-                      >Visa</span
-                    >
-                    <span class="px-1.5 py-0.5 bg-slate-100 text-slate-500 rounded-md text-[9px] font-medium border border-slate-200"
-                      >2 days ago</span
-                    >
-                  </div>
+                <!-- Content Area (Placeholder) -->
+                <div class="flex-1 bg-white p-8 flex items-center justify-center text-slate-400">
+                    Select an option to generate content...
                 </div>
-                <div class="ml-auto">
-                  <div
-                    class="w-8 h-8 rounded-full border-2 border-slate-100 flex items-center justify-center text-[10px] font-bold text-green-600"
-                  >
-                    85
-                  </div>
+            </div>
+        </div>
+
+        <!-- Add Application Modal -->
+        <div id="add-job-modal"
+            class="hidden fixed inset-0 bg-black/50 backdrop-blur-sm z-50 flex items-center justify-center p-4">
+            <div class="bg-white w-full max-w-lg rounded-3xl shadow-2xl p-6 border border-slate-200">
+                <div class="flex items-center justify-between mb-6">
+                    <h2 class="text-xl font-semibold text-slate-900">Add Application</h2>
+                    <button onclick="closeAddModal()" class="p-2 hover:bg-slate-100 rounded-full text-slate-500">
+                        <i data-lucide="x" class="w-5 h-5"></i>
+                    </button>
                 </div>
-              </div>
-            </div>
-          </div>
-        </div>
 
-        <!-- INTERVIEWING COLUMN -->
-        <div
-          class="bg-slate-50 rounded-3xl p-4 border border-slate-200 flex flex-col h-full"
-          ondrop="handleDrop(event, 'interviewing')"
-          ondragover="allowDrop(event)"
-        >
-          <div class="flex items-center justify-between mb-4 px-2">
-            <div class="flex items-center gap-2">
-              <div class="w-2.5 h-2.5 rounded-full bg-blue-500"></div>
-              <h3 class="font-medium text-slate-900">Interviewing</h3>
-              <span class="bg-slate-200 text-slate-600 text-[10px] font-medium px-2 py-0.5 rounded-full" id="count-interviewing">0</span>
-            </div>
-            <button class="text-slate-400 hover:text-slate-600 p-1 hover:bg-slate-200 rounded-lg transition-colors">
-              <i data-lucide="more-horizontal" class="w-4 h-4"></i>
-            </button>
-          </div>
-          <div class="space-y-3 overflow-y-auto flex-1 pr-1 min-h-[100px]" id="col-interviewing">
-            <!-- Empty State -->
-            <div
-              class="h-24 border-2 border-dashed border-slate-200 rounded-xl flex items-center justify-center text-slate-400 text-xs text-center"
-              id="empty-interviewing"
-            >
-              Drop items here
-            </div>
-          </div>
-        </div>
-
-        <!-- OFFERS COLUMN -->
-        <div
-          class="bg-slate-50 rounded-3xl p-4 border border-slate-200 flex flex-col h-full"
-          ondrop="handleDrop(event, 'offer')"
-          ondragover="allowDrop(event)"
-        >
-          <div class="flex items-center justify-between mb-4 px-2">
-            <div class="flex items-center gap-2">
-              <div class="w-2.5 h-2.5 rounded-full bg-green-500"></div>
-              <h3 class="font-medium text-slate-900">Offers</h3>
-              <span class="bg-slate-200 text-slate-600 text-[10px] font-medium px-2 py-0.5 rounded-full" id="count-offer">0</span>
-            </div>
-            <button class="text-slate-400 hover:text-slate-600 p-1 hover:bg-slate-200 rounded-lg transition-colors">
-              <i data-lucide="more-horizontal" class="w-4 h-4"></i>
-            </button>
-          </div>
-          <div class="space-y-3 overflow-y-auto flex-1 pr-1 min-h-[100px]" id="col-offer">
-            <div
-              class="h-24 border-2 border-dashed border-slate-200 rounded-xl flex items-center justify-center text-slate-400 text-xs text-center"
-              id="empty-offer"
-            >
-              Drop items here
-            </div>
-          </div>
-        </div>
-      </div>
-
-      <!-- Simulate Prepare Modal Button (For Demo) -->
-      <div class="fixed bottom-6 right-6">
-        <button
-          onclick="document.getElementById('prepare-modal').classList.remove('hidden')"
-          class="bg-slate-900 text-white px-4 py-2 rounded-xl shadow-lg hover:bg-slate-800 transition-colors text-sm font-medium"
-        >
-          Open Prepare Menu
-        </button>
-      </div>
-
-      <!-- Prepare Application Modal -->
-      <div id="prepare-modal" class="hidden fixed inset-0 bg-black/50 backdrop-blur-sm z-50 flex items-center justify-center p-4">
-        <div class="bg-white w-full max-w-4xl h-[600px] rounded-3xl shadow-2xl flex overflow-hidden border border-slate-200">
-          <!-- Sidebar -->
-          <div class="w-64 bg-slate-50 border-r border-slate-200 p-6 flex flex-col">
-            <div class="mb-6">
-              <h2 class="text-xs font-medium text-slate-400 uppercase tracking-widest mb-3">Prepare Application</h2>
-              <h3 class="font-medium text-lg text-slate-900 line-clamp-1 mb-1">Product Designer</h3>
-              <p class="text-sm text-slate-500">Notion</p>
-            </div>
-
-            <div class="space-y-1">
-              <!-- Updated: No Icons -->
-              <button
-                class="w-full text-left px-3 py-2.5 rounded-xl text-sm font-medium transition-all flex items-center gap-3 bg-white text-blue-600 shadow-sm ring-1 ring-slate-200"
-              >
-                Cover Letter
-              </button>
-              <button
-                class="w-full text-left px-3 py-2.5 rounded-xl text-sm font-medium transition-all flex items-center gap-3 text-slate-600 hover:bg-slate-100"
-              >
-                Cold Email
-              </button>
-              <button
-                class="w-full text-left px-3 py-2.5 rounded-xl text-sm font-medium transition-all flex items-center gap-3 text-slate-600 hover:bg-slate-100"
-              >
-                Referral Request
-              </button>
-              <button
-                class="w-full text-left px-3 py-2.5 rounded-xl text-sm font-medium transition-all flex items-center gap-3 text-slate-600 hover:bg-slate-100"
-              >
-                Value Prop Doc
-              </button>
-              <button
-                class="w-full text-left px-3 py-2.5 rounded-xl text-sm font-medium transition-all flex items-center gap-3 text-slate-600 hover:bg-slate-100"
-              >
-                Resume
-              </button>
-            </div>
-
-            <div class="mt-auto pt-6 border-t border-slate-200">
-              <button
-                onclick="document.getElementById('prepare-modal').classList.add('hidden')"
-                class="w-full py-2 text-xs font-medium text-slate-500 hover:text-slate-700 transition-colors"
-              >
-                Cancel & Close
-              </button>
-            </div>
-          </div>
-          <!-- Content Area (Placeholder) -->
-          <div class="flex-1 bg-white p-8 flex items-center justify-center text-slate-400">Select an option to generate content...</div>
-        </div>
-      </div>
-
-      <!-- Add Application Modal -->
-      <div id="add-job-modal" class="hidden fixed inset-0 bg-black/50 backdrop-blur-sm z-50 flex items-center justify-center p-4">
-        <div class="bg-white w-full max-w-lg rounded-3xl shadow-2xl p-6 border border-slate-200">
-          <div class="flex items-center justify-between mb-6">
-            <h2 class="text-xl font-semibold text-slate-900">Add Application</h2>
-            <button onclick="closeAddModal()" class="p-2 hover:bg-slate-100 rounded-full text-slate-500">
-              <i data-lucide="x" class="w-5 h-5"></i>
-            </button>
-          </div>
-
-          <!-- Stage 1: Input -->
-          <div id="add-stage-input" class="space-y-6">
-            <div>
-              <label class="block text-sm font-medium text-slate-700 mb-2">Job Posting URL</label>
-              <div class="relative">
-                <i data-lucide="link" class="absolute left-4 top-1/2 -translate-y-1/2 text-slate-400 w-4 h-4"></i>
-                <input
-                  type="text"
-                  id="job-url-input"
-                  placeholder="https://linkedin.com/jobs/..."
-                  class="w-full pl-11 pr-4 py-3 bg-slate-50 border border-slate-200 rounded-xl outline-none focus:ring-2 focus:ring-blue-500/20 text-slate-900"
-                />
-              </div>
-              <p class="text-xs text-slate-500 mt-2">Paste the link from LinkedIn, Indeed, or a company career page.</p>
-            </div>
-            <button
-              onclick="analyzeJob()"
-              class="w-full py-3 bg-blue-600 hover:bg-blue-700 text-white font-medium rounded-xl shadow-lg transition-all flex items-center justify-center gap-2"
-            >
-              <i data-lucide="sparkles" class="w-4 h-4"></i> Analyze & Add Job
-            </button>
-          </div>
-
-          <!-- Stage 2: Analyzing -->
-          <div id="add-stage-analyzing" class="hidden py-12 flex flex-col items-center justify-center text-center space-y-4">
-            <div class="relative">
-              <div class="w-16 h-16 rounded-full border-4 border-blue-100 border-t-blue-500 animate-spin"></div>
-              <div class="absolute inset-0 flex items-center justify-center">
-                <i data-lucide="sparkles" class="w-6 h-6 text-blue-500 animate-pulse"></i>
-              </div>
-            </div>
-            <div>
-              <h3 class="text-lg font-medium text-slate-900">Analyzing Job Details...</h3>
-              <p class="text-slate-500 text-sm">Extracting role, company, and requirements.</p>
-            </div>
-          </div>
-
-          <!-- Stage 3: Confirm -->
-          <div id="add-stage-confirm" class="hidden space-y-6">
-            <div class="p-4 bg-slate-50 rounded-2xl border border-slate-200 flex items-start gap-4">
-              <div class="w-12 h-12 rounded-xl bg-white flex items-center justify-center shadow-sm border border-slate-100">
-                <img src="https://ui-avatars.com/api/?name=Airbnb&background=FF5A5F&color=fff" class="w-8 h-8 object-contain" />
-              </div>
-              <div>
-                <h3 class="font-semibold text-slate-900">Senior Product Designer</h3>
-                <p class="text-sm text-slate-500">Airbnb</p>
-                <div class="flex items-center gap-2 mt-2">
-                  <span class="text-xs bg-white border border-slate-200 px-2 py-0.5 rounded-md text-slate-600">Remote</span>
-                  <span class="text-xs bg-amber-100 text-amber-800 border border-amber-200 px-2 py-0.5 rounded-md font-medium">Visa</span>
+                <!-- Stage 1: Input -->
+                <div id="add-stage-input" class="space-y-6">
+                    <div>
+                        <label class="block text-sm font-medium text-slate-700 mb-2">Job Posting URL</label>
+                        <div class="relative">
+                            <i data-lucide="link"
+                                class="absolute left-4 top-1/2 -translate-y-1/2 text-slate-400 w-4 h-4"></i>
+                            <input type="text" id="job-url-input" placeholder="https://linkedin.com/jobs/..."
+                                class="w-full pl-11 pr-4 py-3 bg-slate-50 border border-slate-200 rounded-xl outline-none focus:ring-2 focus:ring-blue-500/20 text-slate-900">
+                        </div>
+                        <p class="text-xs text-slate-500 mt-2">Paste the link from LinkedIn, Indeed, or a company career
+                            page.</p>
+                    </div>
+                    <button onclick="analyzeJob()"
+                        class="w-full py-3 bg-blue-600 hover:bg-blue-700 text-white font-medium rounded-xl shadow-lg transition-all flex items-center justify-center gap-2">
+                        <i data-lucide="sparkles" class="w-4 h-4"></i> Analyze & Add Job
+                    </button>
                 </div>
-              </div>
+
+                <!-- Stage 2: Analyzing -->
+                <div id="add-stage-analyzing"
+                    class="hidden py-12 flex flex-col items-center justify-center text-center space-y-4">
+                    <div class="relative">
+                        <div class="w-16 h-16 rounded-full border-4 border-blue-100 border-t-blue-500 animate-spin">
+                        </div>
+                        <div class="absolute inset-0 flex items-center justify-center">
+                            <i data-lucide="sparkles" class="w-6 h-6 text-blue-500 animate-pulse"></i>
+                        </div>
+                    </div>
+                    <div>
+                        <h3 class="text-lg font-medium text-slate-900">Analyzing Job Details...</h3>
+                        <p class="text-slate-500 text-sm">Extracting role, company, and requirements.</p>
+                    </div>
+                </div>
+
+                <!-- Stage 3: Confirm -->
+                <div id="add-stage-confirm" class="hidden space-y-6">
+                    <div class="p-4 bg-slate-50 rounded-2xl border border-slate-200 flex items-start gap-4">
+                        <div
+                            class="w-12 h-12 rounded-xl bg-white flex items-center justify-center shadow-sm border border-slate-100">
+                            <img src="https://ui-avatars.com/api/?name=Airbnb&background=FF5A5F&color=fff"
+                                class="w-8 h-8 object-contain">
+                        </div>
+                        <div>
+                            <h3 class="font-semibold text-slate-900">Senior Product Designer</h3>
+                            <p class="text-sm text-slate-500">Airbnb</p>
+                            <div class="flex items-center gap-2 mt-2">
+                                <span
+                                    class="text-xs bg-white border border-slate-200 px-2 py-0.5 rounded-md text-slate-600">Remote</span>
+                                <span
+                                    class="text-xs bg-amber-100 text-amber-800 border border-amber-200 px-2 py-0.5 rounded-md font-medium">Visa</span>
+                            </div>
+                        </div>
+                    </div>
+                    <div class="space-y-3">
+                        <button onclick="confirmAddJob()"
+                            class="w-full py-3 bg-green-600 hover:bg-green-700 text-white font-medium rounded-xl shadow-lg transition-all">
+                            Confirm & Add to Tracker
+                        </button>
+                        <button onclick="resetAddModal()"
+                            class="w-full py-3 bg-transparent hover:bg-slate-50 text-slate-600 font-medium rounded-xl transition-colors">
+                            Back to Input
+                        </button>
+                    </div>
+                </div>
             </div>
-            <div class="space-y-3">
-              <button
-                onclick="confirmAddJob()"
-                class="w-full py-3 bg-green-600 hover:bg-green-700 text-white font-medium rounded-xl shadow-lg transition-all"
-              >
-                Confirm & Add to Tracker
-              </button>
-              <button
-                onclick="resetAddModal()"
-                class="w-full py-3 bg-transparent hover:bg-slate-50 text-slate-600 font-medium rounded-xl transition-colors"
-              >
-                Back to Input
-              </button>
-            </div>
-          </div>
         </div>
-      </div>
+
     </div>
 
     <script>
-      lucide.createIcons();
+        lucide.createIcons();
 
-      // Modal Logic
-      function openAddModal() {
-        document.getElementById("add-job-modal").classList.remove("hidden");
-      }
+        // Modal Logic
+        function openAddModal() {
+            document.getElementById('add-job-modal').classList.remove('hidden');
+        }
 
-      function closeAddModal() {
-        document.getElementById("add-job-modal").classList.add("hidden");
-        resetAddModal();
-      }
+        function closeAddModal() {
+            document.getElementById('add-job-modal').classList.add('hidden');
+            resetAddModal();
+        }
 
-      function resetAddModal() {
-        document.getElementById("add-stage-input").classList.remove("hidden");
-        document.getElementById("add-stage-analyzing").classList.add("hidden");
-        document.getElementById("add-stage-confirm").classList.add("hidden");
-        document.getElementById("job-url-input").value = "";
-      }
+        function resetAddModal() {
+            document.getElementById('add-stage-input').classList.remove('hidden');
+            document.getElementById('add-stage-analyzing').classList.add('hidden');
+            document.getElementById('add-stage-confirm').classList.add('hidden');
+            document.getElementById('job-url-input').value = '';
+        }
 
-      function analyzeJob() {
-        const url = document.getElementById("job-url-input").value;
-        if (!url) return;
+        function analyzeJob() {
+            const url = document.getElementById('job-url-input').value;
+            if (!url) return;
 
-        document.getElementById("add-stage-input").classList.add("hidden");
-        document.getElementById("add-stage-analyzing").classList.remove("hidden");
+            document.getElementById('add-stage-input').classList.add('hidden');
+            document.getElementById('add-stage-analyzing').classList.remove('hidden');
 
-        // Simulate API
-        setTimeout(() => {
-          document.getElementById("add-stage-analyzing").classList.add("hidden");
-          document.getElementById("add-stage-confirm").classList.remove("hidden");
-        }, 2000);
-      }
+            // Simulate API
+            setTimeout(() => {
+                document.getElementById('add-stage-analyzing').classList.add('hidden');
+                document.getElementById('add-stage-confirm').classList.remove('hidden');
+            }, 2000);
+        }
 
-      function confirmAddJob() {
-        // Create New Card
-        const col = document.getElementById("col-applied");
-        const count = document.getElementById("count-applied");
+        function confirmAddJob() {
+            // Create New Card
+            const col = document.getElementById('col-applied');
+            const count = document.getElementById('count-applied');
 
-        const newCard = document.createElement("div");
-        newCard.className =
-          "bg-white border border-slate-200 rounded-2xl p-4 shadow-sm hover:shadow-md transition-all cursor-move animate-in fade-in zoom-in-95 duration-300";
-        newCard.draggable = true;
-        newCard.id = "job-" + Date.now();
-        newCard.ondragstart = drag;
-        newCard.innerHTML = `
+            const newCard = document.createElement('div');
+            newCard.className = "bg-white border border-slate-200 rounded-2xl p-4 shadow-sm hover:shadow-md transition-all cursor-move animate-in fade-in zoom-in-95 duration-300";
+            newCard.draggable = true;
+            newCard.id = "job-" + Date.now();
+            newCard.ondragstart = drag;
+            newCard.innerHTML = `
                 <div class="flex gap-4">
                     <div class="w-10 h-10 rounded-lg bg-slate-50 border border-slate-100 flex items-center justify-center overflow-hidden">
                         <img src="https://ui-avatars.com/api/?name=Airbnb&background=FF5A5F&color=fff" class="w-full h-full object-cover">
@@ -360,46 +346,47 @@
                 </div>
             `;
 
-        // Prepend functionality
-        col.insertBefore(newCard, col.firstChild);
+            // Prepend functionality
+            col.insertBefore(newCard, col.firstChild);
 
-        // Update Count
-        count.innerText = parseInt(count.innerText) + 1;
+            // Update Count
+            count.innerText = parseInt(count.innerText) + 1;
 
-        closeAddModal();
-      }
-
-      function allowDrop(ev) {
-        ev.preventDefault();
-      }
-
-      function drag(ev) {
-        ev.dataTransfer.setData("text", ev.target.id);
-      }
-
-      function handleDrop(ev, status) {
-        ev.preventDefault();
-        var data = ev.dataTransfer.getData("text");
-        var jobCard = document.getElementById(data);
-
-        // Find the correct column container
-        var targetCol = document.getElementById("col-" + status);
-        var emptyState = document.getElementById("empty-" + status);
-
-        if (targetCol) {
-          if (emptyState) emptyState.style.display = "none";
-          targetCol.appendChild(jobCard);
+            closeAddModal();
         }
 
-        // Confetti Trigger
-        if (status === "offer") {
-          confetti({
-            particleCount: 100,
-            spread: 70,
-            origin: { y: 0.6 },
-          });
+        function allowDrop(ev) {
+            ev.preventDefault();
         }
-      }
+
+        function drag(ev) {
+            ev.dataTransfer.setData("text", ev.target.id);
+        }
+
+        function handleDrop(ev, status) {
+            ev.preventDefault();
+            var data = ev.dataTransfer.getData("text");
+            var jobCard = document.getElementById(data);
+
+            // Find the correct column container
+            var targetCol = document.getElementById('col-' + status);
+            var emptyState = document.getElementById('empty-' + status);
+
+            if (targetCol) {
+                if (emptyState) emptyState.style.display = 'none';
+                targetCol.appendChild(jobCard);
+            }
+
+            // Confetti Trigger
+            if (status === 'offer') {
+                confetti({
+                    particleCount: 100,
+                    spread: 70,
+                    origin: { y: 0.6 }
+                });
+            }
+        }
     </script>
-  </body>
+</body>
+
 </html>

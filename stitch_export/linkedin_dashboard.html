@@ -1,296 +1,283 @@
-<!doctype html>
+<!DOCTYPE html>
 <html lang="en">
-  <head>
-    <meta charset="UTF-8" />
-    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>LinkedIn Dashboard | Unimad Stitch Export</title>
     <!-- Tailwind CSS -->
     <script src="https://cdn.tailwindcss.com"></script>
     <!-- Lucide Icons -->
     <script src="https://unpkg.com/lucide@latest"></script>
     <script>
-      tailwind.config = {
-        darkMode: "class",
-        theme: {
-          extend: {
-            colors: {
-              brand: {
-                50: "#f0f6fe",
-                100: "#dde9fc",
-                200: "#c2d9fa",
-                300: "#9bc0f6",
-                400: "#6ea0f0",
-                500: "#346de0", // Primary
-                600: "#2553d0",
-                700: "#1e42a8",
-                800: "#1b3888",
-                900: "#1b316b",
-              },
+        tailwind.config = {
+            darkMode: 'class',
+            theme: {
+                extend: {
+                    colors: {
+                        brand: {
+                            50: '#f0f6fe',
+                            100: '#dde9fc',
+                            200: '#c2d9fa',
+                            300: '#9bc0f6',
+                            400: '#6ea0f0',
+                            500: '#346de0', // Primary
+                            600: '#2553d0',
+                            700: '#1e42a8',
+                            800: '#1b3888',
+                            900: '#1b316b',
+                        }
+                    },
+                    fontFamily: {
+                        sans: ['Onest', 'sans-serif'],
+                    }
+                },
             },
-            fontFamily: {
-              sans: ["Onest", "sans-serif"],
-            },
-          },
-        },
-      };
+        }
     </script>
     <!-- Font -->
-    <link href="https://fonts.googleapis.com/css2?family=Onest:wght@100..900&display=swap" rel="stylesheet" />
+    <link href="https://fonts.googleapis.com/css2?family=Onest:wght@100..900&display=swap" rel="stylesheet">
     <style>
-      body {
-        font-family: "Onest", sans-serif;
-      }
-
-      .animate-gradient-x {
-        background-size: 200% 200%;
-        animation: gradient-x 3s ease infinite;
-      }
-
-      @keyframes gradient-x {
-        0% {
-          background-position: 0% 50%;
+        body {
+            font-family: 'Onest', sans-serif;
         }
 
-        50% {
-          background-position: 100% 50%;
+        .animate-gradient-x {
+            background-size: 200% 200%;
+            animation: gradient-x 3s ease infinite;
         }
 
-        100% {
-          background-position: 0% 50%;
+        @keyframes gradient-x {
+            0% {
+                background-position: 0% 50%;
+            }
+
+            50% {
+                background-position: 100% 50%;
+            }
+
+            100% {
+                background-position: 0% 50%;
+            }
         }
-      }
     </style>
-  </head>
+</head>
 
-  <body class="bg-slate-50 min-h-screen">
+<body class="bg-slate-50 min-h-screen">
+
     <div class="flex-1 bg-slate-50 h-full overflow-y-auto relative min-h-screen">
-      <!-- Sticky Extension CTA -->
-      <div class="sticky top-0 z-30 bg-slate-900 text-white px-6 py-3 flex justify-between items-center shadow-md">
-        <div class="flex items-center gap-3">
-          <div class="bg-white/10 p-1.5 rounded-lg">
-            <i data-lucide="download" class="w-4 h-4 text-blue-400"></i>
-          </div>
-          <span class="text-sm font-medium" style="font-family: &quot;Onest&quot;, sans-serif">
-            Get the
-            <span
-              class="font-semibold bg-clip-text text-transparent bg-gradient-to-r from-blue-400 via-blue-300 to-blue-400 animate-gradient-x"
-              >Unimad LinkedIn Optimiser</span
-            >
-            for Chrome/Brave
-          </span>
+
+        <!-- Sticky Extension CTA -->
+        <div class="sticky top-0 z-30 bg-slate-900 text-white px-6 py-3 flex justify-between items-center shadow-md">
+            <div class="flex items-center gap-3">
+                <div class="bg-white/10 p-1.5 rounded-lg">
+                    <i data-lucide="download" class="w-4 h-4 text-blue-400"></i>
+                </div>
+                <span class="text-sm font-medium" style="font-family: 'Onest', sans-serif;">
+                    Get the <span
+                        class="font-semibold bg-clip-text text-transparent bg-gradient-to-r from-blue-400 via-blue-300 to-blue-400 animate-gradient-x">Unimad
+                        LinkedIn Optimiser</span> for Chrome/Brave
+                </span>
+            </div>
+            <button
+                class="text-xs bg-blue-600 hover:bg-blue-500 text-white px-3 py-1.5 rounded-md font-medium transition-colors">
+                Add to Chrome
+            </button>
         </div>
-        <button class="text-xs bg-blue-600 hover:bg-blue-500 text-white px-3 py-1.5 rounded-md font-medium transition-colors">
-          Add to Chrome
-        </button>
-      </div>
 
-      <div class="max-w-6xl mx-auto p-8 space-y-8">
-        <div class="grid grid-cols-1 lg:grid-cols-3 gap-8 items-start">
-          <!-- LEFT COLUMN: Profile Breakdown (66%) -->
-          <div class="lg:col-span-2 space-y-6">
-            <div class="bg-white rounded-2xl shadow-sm border border-slate-200 overflow-hidden">
-              <div class="p-6 border-b border-slate-100">
-                <h3 class="font-normal text-xl text-slate-900">Profile Breakdown</h3>
-                <p class="text-sm text-slate-500 mt-1">Detailed analysis of your profile sections with actionable tips.</p>
-              </div>
-              <div class="divide-y divide-slate-100">
-                <!-- Section: Picture -->
-                <div class="p-6 hover:bg-slate-50 transition-colors flex items-start gap-5">
-                  <div class="relative w-14 h-14 flex-shrink-0 flex items-center justify-center">
-                    <svg class="w-full h-full -rotate-90" viewBox="0 0 36 36">
-                      <path
-                        class="text-slate-100"
-                        d="M18 2.0845 a 15.9155 15.9155 0 0 1 0 31.831 a 15.9155 15.9155 0 0 1 0 -31.831"
-                        fill="none"
-                        stroke="currentColor"
-                        stroke-width="3"
-                      />
-                      <path
-                        class="text-green-500 transition-all duration-1000 ease-out"
-                        stroke-dasharray="90, 100"
-                        d="M18 2.0845 a 15.9155 15.9155 0 0 1 0 31.831 a 15.9155 15.9155 0 0 1 0 -31.831"
-                        fill="none"
-                        stroke="currentColor"
-                        stroke-width="3"
-                      />
-                    </svg>
-                    <span class="absolute text-[11px] font-medium text-slate-700">90%</span>
-                  </div>
-                  <div class="flex-1 min-w-0">
-                    <div class="flex justify-between items-center mb-2">
-                      <h4 class="font-medium text-base text-slate-900">Profile Picture</h4>
-                      <div class="relative group">
-                        <button
-                          class="px-3 py-1.5 bg-blue-50 hover:bg-blue-100 text-blue-600 rounded-lg text-xs font-medium transition-colors flex items-center gap-1.5"
-                        >
-                          <i data-lucide="sparkles" class="w-3 h-3"></i> Improve
-                        </button>
-                      </div>
+        <div class="max-w-6xl mx-auto p-8 space-y-8">
+
+            <div class="grid grid-cols-1 lg:grid-cols-3 gap-8 items-start">
+
+                <!-- LEFT COLUMN: Profile Breakdown (66%) -->
+                <div class="lg:col-span-2 space-y-6">
+                    <div class="bg-white rounded-2xl shadow-sm border border-slate-200 overflow-hidden">
+                        <div class="p-6 border-b border-slate-100">
+                            <h3 class="font-normal text-xl text-slate-900">Profile Breakdown</h3>
+                            <p class="text-sm text-slate-500 mt-1">Detailed analysis of your profile sections with
+                                actionable tips.</p>
+                        </div>
+                        <div class="divide-y divide-slate-100">
+                            <!-- Section: Picture -->
+                            <div class="p-6 hover:bg-slate-50 transition-colors flex items-start gap-5">
+                                <div class="relative w-14 h-14 flex-shrink-0 flex items-center justify-center">
+                                    <svg class="w-full h-full -rotate-90" viewBox="0 0 36 36">
+                                        <path class="text-slate-100"
+                                            d="M18 2.0845 a 15.9155 15.9155 0 0 1 0 31.831 a 15.9155 15.9155 0 0 1 0 -31.831"
+                                            fill="none" stroke="currentColor" stroke-width="3" />
+                                        <path class="text-green-500 transition-all duration-1000 ease-out"
+                                            stroke-dasharray="90, 100"
+                                            d="M18 2.0845 a 15.9155 15.9155 0 0 1 0 31.831 a 15.9155 15.9155 0 0 1 0 -31.831"
+                                            fill="none" stroke="currentColor" stroke-width="3" />
+                                    </svg>
+                                    <span class="absolute text-[11px] font-medium text-slate-700">90%</span>
+                                </div>
+                                <div class="flex-1 min-w-0">
+                                    <div class="flex justify-between items-center mb-2">
+                                        <h4 class="font-medium text-base text-slate-900">Profile Picture</h4>
+                                        <div class="relative group">
+                                            <button
+                                                class="px-3 py-1.5 bg-blue-50 hover:bg-blue-100 text-blue-600 rounded-lg text-xs font-medium transition-colors flex items-center gap-1.5">
+                                                <i data-lucide="sparkles" class="w-3 h-3"></i> Improve
+                                            </button>
+                                        </div>
+                                    </div>
+                                    <p class="text-sm text-slate-600 leading-relaxed mb-2">Professional and clear.</p>
+                                    <p class="text-xs text-slate-400 italic">Tip: Maintain this quality by updating
+                                        regularly.</p>
+                                </div>
+                            </div>
+
+                            <!-- Section: Cover -->
+                            <div class="p-6 hover:bg-slate-50 transition-colors flex items-start gap-5">
+                                <div class="relative w-14 h-14 flex-shrink-0 flex items-center justify-center">
+                                    <svg class="w-full h-full -rotate-90" viewBox="0 0 36 36">
+                                        <path class="text-slate-100"
+                                            d="M18 2.0845 a 15.9155 15.9155 0 0 1 0 31.831 a 15.9155 15.9155 0 0 1 0 -31.831"
+                                            fill="none" stroke="currentColor" stroke-width="3" />
+                                        <path class="text-yellow-500 transition-all duration-1000 ease-out"
+                                            stroke-dasharray="60, 100"
+                                            d="M18 2.0845 a 15.9155 15.9155 0 0 1 0 31.831 a 15.9155 15.9155 0 0 1 0 -31.831"
+                                            fill="none" stroke="currentColor" stroke-width="3" />
+                                    </svg>
+                                    <span class="absolute text-[11px] font-medium text-slate-700">60%</span>
+                                </div>
+                                <div class="flex-1 min-w-0">
+                                    <div class="flex justify-between items-center mb-2">
+                                        <h4 class="font-medium text-base text-slate-900">Cover Picture</h4>
+                                        <div class="relative group">
+                                            <button
+                                                class="px-3 py-1.5 bg-blue-50 hover:bg-blue-100 text-blue-600 rounded-lg text-xs font-medium transition-colors flex items-center gap-1.5">
+                                                <i data-lucide="sparkles" class="w-3 h-3"></i> Improve
+                                            </button>
+                                        </div>
+                                    </div>
+                                    <p class="text-sm text-slate-600 leading-relaxed mb-2">Generic image. Add branding.
+                                    </p>
+                                    <p class="text-xs text-slate-400 italic">Tip: Add more industry-specific keywords to
+                                        boost visibility.</p>
+                                </div>
+                            </div>
+
+                            <!-- Section: Headline -->
+                            <div class="p-6 hover:bg-slate-50 transition-colors flex items-start gap-5">
+                                <div class="relative w-14 h-14 flex-shrink-0 flex items-center justify-center">
+                                    <svg class="w-full h-full -rotate-90" viewBox="0 0 36 36">
+                                        <path class="text-slate-100"
+                                            d="M18 2.0845 a 15.9155 15.9155 0 0 1 0 31.831 a 15.9155 15.9155 0 0 1 0 -31.831"
+                                            fill="none" stroke="currentColor" stroke-width="3" />
+                                        <path class="text-green-500 transition-all duration-1000 ease-out"
+                                            stroke-dasharray="85, 100"
+                                            d="M18 2.0845 a 15.9155 15.9155 0 0 1 0 31.831 a 15.9155 15.9155 0 0 1 0 -31.831"
+                                            fill="none" stroke="currentColor" stroke-width="3" />
+                                    </svg>
+                                    <span class="absolute text-[11px] font-medium text-slate-700">85%</span>
+                                </div>
+                                <div class="flex-1 min-w-0">
+                                    <div class="flex justify-between items-center mb-2">
+                                        <h4 class="font-medium text-base text-slate-900">Headline</h4>
+                                        <div class="relative group">
+                                            <button
+                                                class="px-3 py-1.5 bg-blue-50 hover:bg-blue-100 text-blue-600 rounded-lg text-xs font-medium transition-colors flex items-center gap-1.5">
+                                                <i data-lucide="sparkles" class="w-3 h-3"></i> Improve
+                                            </button>
+                                        </div>
+                                    </div>
+                                    <p class="text-sm text-slate-600 leading-relaxed mb-2">Strong keywords used.</p>
+                                    <p class="text-xs text-slate-400 italic">Tip: Maintain this quality by updating
+                                        regularly.</p>
+                                </div>
+                            </div>
+                        </div>
                     </div>
-                    <p class="text-sm text-slate-600 leading-relaxed mb-2">Professional and clear.</p>
-                    <p class="text-xs text-slate-400 italic">Tip: Maintain this quality by updating regularly.</p>
-                  </div>
                 </div>
 
-                <!-- Section: Cover -->
-                <div class="p-6 hover:bg-slate-50 transition-colors flex items-start gap-5">
-                  <div class="relative w-14 h-14 flex-shrink-0 flex items-center justify-center">
-                    <svg class="w-full h-full -rotate-90" viewBox="0 0 36 36">
-                      <path
-                        class="text-slate-100"
-                        d="M18 2.0845 a 15.9155 15.9155 0 0 1 0 31.831 a 15.9155 15.9155 0 0 1 0 -31.831"
-                        fill="none"
-                        stroke="currentColor"
-                        stroke-width="3"
-                      />
-                      <path
-                        class="text-yellow-500 transition-all duration-1000 ease-out"
-                        stroke-dasharray="60, 100"
-                        d="M18 2.0845 a 15.9155 15.9155 0 0 1 0 31.831 a 15.9155 15.9155 0 0 1 0 -31.831"
-                        fill="none"
-                        stroke="currentColor"
-                        stroke-width="3"
-                      />
-                    </svg>
-                    <span class="absolute text-[11px] font-medium text-slate-700">60%</span>
-                  </div>
-                  <div class="flex-1 min-w-0">
-                    <div class="flex justify-between items-center mb-2">
-                      <h4 class="font-medium text-base text-slate-900">Cover Picture</h4>
-                      <div class="relative group">
+                <!-- RIGHT COLUMN: Stacked Widgets (33%) -->
+                <div class="space-y-6">
+
+                    <!-- 1. Score Widget (Condensed) -->
+                    <div class="bg-white rounded-2xl shadow-sm border border-slate-200 p-6 flex flex-col items-center">
+                        <div class="relative mb-4">
+                            <div
+                                class="w-20 h-20 rounded-full border-4 border-white shadow-lg overflow-hidden relative z-10">
+                                <div class="w-full h-full bg-slate-100 flex items-center justify-center">
+                                    <span class="font-medium text-2xl text-slate-400">me</span>
+                                </div>
+                            </div>
+                            <div class="absolute inset-0 rounded-full border border-slate-200 scale-110 -z-0"></div>
+                        </div>
+
+                        <h2 class="font-medium text-slate-900 mb-1">Profile Strength</h2>
+                        <span class="text-2xl font-medium text-[#346DE0] mb-3">65/100</span>
+
+                        <div class="w-full bg-slate-100 rounded-full h-2.5 mb-4 overflow-hidden">
+                            <div class="bg-[#346DE0] h-2.5 rounded-full transition-all duration-1000 ease-out"
+                                style="width: 65%"></div>
+                        </div>
+
                         <button
-                          class="px-3 py-1.5 bg-blue-50 hover:bg-blue-100 text-blue-600 rounded-lg text-xs font-medium transition-colors flex items-center gap-1.5"
-                        >
-                          <i data-lucide="sparkles" class="w-3 h-3"></i> Improve
+                            class="w-full inline-flex items-center justify-center gap-2 px-4 py-2 bg-[#346DE0] hover:bg-[#254DB3] text-white rounded-xl text-xs font-medium transition-all active:scale-95 shadow-md shadow-blue-500/20">
+                            <i data-lucide="refresh-cw" class="w-3 h-3"></i> Re-Analyze
                         </button>
-                      </div>
                     </div>
-                    <p class="text-sm text-slate-600 leading-relaxed mb-2">Generic image. Add branding.</p>
-                    <p class="text-xs text-slate-400 italic">Tip: Add more industry-specific keywords to boost visibility.</p>
-                  </div>
-                </div>
 
-                <!-- Section: Headline -->
-                <div class="p-6 hover:bg-slate-50 transition-colors flex items-start gap-5">
-                  <div class="relative w-14 h-14 flex-shrink-0 flex items-center justify-center">
-                    <svg class="w-full h-full -rotate-90" viewBox="0 0 36 36">
-                      <path
-                        class="text-slate-100"
-                        d="M18 2.0845 a 15.9155 15.9155 0 0 1 0 31.831 a 15.9155 15.9155 0 0 1 0 -31.831"
-                        fill="none"
-                        stroke="currentColor"
-                        stroke-width="3"
-                      />
-                      <path
-                        class="text-green-500 transition-all duration-1000 ease-out"
-                        stroke-dasharray="85, 100"
-                        d="M18 2.0845 a 15.9155 15.9155 0 0 1 0 31.831 a 15.9155 15.9155 0 0 1 0 -31.831"
-                        fill="none"
-                        stroke="currentColor"
-                        stroke-width="3"
-                      />
-                    </svg>
-                    <span class="absolute text-[11px] font-medium text-slate-700">85%</span>
-                  </div>
-                  <div class="flex-1 min-w-0">
-                    <div class="flex justify-between items-center mb-2">
-                      <h4 class="font-medium text-base text-slate-900">Headline</h4>
-                      <div class="relative group">
-                        <button
-                          class="px-3 py-1.5 bg-blue-50 hover:bg-blue-100 text-blue-600 rounded-lg text-xs font-medium transition-colors flex items-center gap-1.5"
-                        >
-                          <i data-lucide="sparkles" class="w-3 h-3"></i> Improve
-                        </button>
-                      </div>
+                    <!-- 2. Recent Activity Widget -->
+                    <!-- Simplified Visual for Export -->
+                    <div
+                        class="bg-[#080C15] rounded-3xl p-6 relative overflow-hidden flex flex-col justify-between min-h-[160px] border border-slate-800">
+                        <!-- Placeholder for SVG Background -->
+                        <div class="absolute inset-0 bg-gradient-to-br from-blue-900/40 to-slate-900"></div>
+
+                        <div class="relative z-10">
+                            <h3 class="font-semibold text-lg text-white mb-2">Recent Activity</h3>
+                            <p class="text-sm text-slate-300 mb-6 leading-relaxed max-w-[90%]">
+                                No posts in 12 days. Schedule a post to boost engagement by 20%.
+                            </p>
+                            <button
+                                class="w-full py-2.5 bg-white/10 hover:bg-white/20 backdrop-blur-md border border-white/20 text-white rounded-xl text-sm font-medium shadow-sm transition-all active:scale-95 flex justify-center items-center gap-2">
+                                <i data-lucide="send" class="w-4 h-4"></i> Go to Content Lab
+                            </button>
+                        </div>
                     </div>
-                    <p class="text-sm text-slate-600 leading-relaxed mb-2">Strong keywords used.</p>
-                    <p class="text-xs text-slate-400 italic">Tip: Maintain this quality by updating regularly.</p>
-                  </div>
+
+                    <!-- 3. Comment Generator -->
+                    <div class="bg-gradient-to-br from-blue-50 to-blue-100 rounded-2xl border border-blue-100 p-6">
+                        <h3 class="font-medium text-sm text-slate-900 mb-3 flex items-center gap-2">
+                            Comment Generator
+                        </h3>
+                        <div class="bg-white rounded-xl p-1 border border-blue-100 flex mb-3">
+                            <input class="flex-1 bg-transparent px-3 py-2 text-xs outline-none"
+                                placeholder="Paste Post URL...">
+                            <button
+                                class="bg-[#346DE0] hover:bg-[#254DB3] text-white rounded-lg px-2 flex items-center justify-center transition-colors shadow-sm">
+                                <i data-lucide="sparkles" class="w-3 h-3"></i>
+                            </button>
+                        </div>
+                    </div>
+
+                    <!-- 4. Connection Request Generator -->
+                    <div class="bg-gradient-to-br from-blue-50 to-blue-100 rounded-2xl border border-blue-100 p-6">
+                        <h3 class="font-medium text-sm text-slate-900 mb-3 flex items-center gap-2">
+                            Generate Connection Request
+                        </h3>
+                        <div class="bg-white rounded-xl p-1 border border-blue-100 flex mb-3">
+                            <input class="flex-1 bg-transparent px-3 py-2 text-xs outline-none"
+                                placeholder="Paste Profile URL...">
+                            <button
+                                class="bg-[#346DE0] hover:bg-[#254DB3] text-white rounded-lg px-2 flex items-center justify-center transition-colors shadow-sm">
+                                <i data-lucide="user-plus" class="w-3 h-3"></i>
+                            </button>
+                        </div>
+                    </div>
+
                 </div>
-              </div>
             </div>
-          </div>
-
-          <!-- RIGHT COLUMN: Stacked Widgets (33%) -->
-          <div class="space-y-6">
-            <!-- 1. Score Widget (Condensed) -->
-            <div class="bg-white rounded-2xl shadow-sm border border-slate-200 p-6 flex flex-col items-center">
-              <div class="relative mb-4">
-                <div class="w-20 h-20 rounded-full border-4 border-white shadow-lg overflow-hidden relative z-10">
-                  <div class="w-full h-full bg-slate-100 flex items-center justify-center">
-                    <span class="font-medium text-2xl text-slate-400">me</span>
-                  </div>
-                </div>
-                <div class="absolute inset-0 rounded-full border border-slate-200 scale-110 -z-0"></div>
-              </div>
-
-              <h2 class="font-medium text-slate-900 mb-1">Profile Strength</h2>
-              <span class="text-2xl font-medium text-[#346DE0] mb-3">65/100</span>
-
-              <div class="w-full bg-slate-100 rounded-full h-2.5 mb-4 overflow-hidden">
-                <div class="bg-[#346DE0] h-2.5 rounded-full transition-all duration-1000 ease-out" style="width: 65%"></div>
-              </div>
-
-              <button
-                class="w-full inline-flex items-center justify-center gap-2 px-4 py-2 bg-[#346DE0] hover:bg-[#254DB3] text-white rounded-xl text-xs font-medium transition-all active:scale-95 shadow-md shadow-blue-500/20"
-              >
-                <i data-lucide="refresh-cw" class="w-3 h-3"></i> Re-Analyze
-              </button>
-            </div>
-
-            <!-- 2. Recent Activity Widget -->
-            <!-- Simplified Visual for Export -->
-            <div
-              class="bg-[#080C15] rounded-3xl p-6 relative overflow-hidden flex flex-col justify-between min-h-[160px] border border-slate-800"
-            >
-              <!-- Placeholder for SVG Background -->
-              <div class="absolute inset-0 bg-gradient-to-br from-blue-900/40 to-slate-900"></div>
-
-              <div class="relative z-10">
-                <h3 class="font-semibold text-lg text-white mb-2">Recent Activity</h3>
-                <p class="text-sm text-slate-300 mb-6 leading-relaxed max-w-[90%]">
-                  No posts in 12 days. Schedule a post to boost engagement by 20%.
-                </p>
-                <button
-                  class="w-full py-2.5 bg-white/10 hover:bg-white/20 backdrop-blur-md border border-white/20 text-white rounded-xl text-sm font-medium shadow-sm transition-all active:scale-95 flex justify-center items-center gap-2"
-                >
-                  <i data-lucide="send" class="w-4 h-4"></i> Go to Content Lab
-                </button>
-              </div>
-            </div>
-
-            <!-- 3. Comment Generator -->
-            <div class="bg-gradient-to-br from-blue-50 to-blue-100 rounded-2xl border border-blue-100 p-6">
-              <h3 class="font-medium text-sm text-slate-900 mb-3 flex items-center gap-2">Comment Generator</h3>
-              <div class="bg-white rounded-xl p-1 border border-blue-100 flex mb-3">
-                <input class="flex-1 bg-transparent px-3 py-2 text-xs outline-none" placeholder="Paste Post URL..." />
-                <button
-                  class="bg-[#346DE0] hover:bg-[#254DB3] text-white rounded-lg px-2 flex items-center justify-center transition-colors shadow-sm"
-                >
-                  <i data-lucide="sparkles" class="w-3 h-3"></i>
-                </button>
-              </div>
-            </div>
-
-            <!-- 4. Connection Request Generator -->
-            <div class="bg-gradient-to-br from-blue-50 to-blue-100 rounded-2xl border border-blue-100 p-6">
-              <h3 class="font-medium text-sm text-slate-900 mb-3 flex items-center gap-2">Generate Connection Request</h3>
-              <div class="bg-white rounded-xl p-1 border border-blue-100 flex mb-3">
-                <input class="flex-1 bg-transparent px-3 py-2 text-xs outline-none" placeholder="Paste Profile URL..." />
-                <button
-                  class="bg-[#346DE0] hover:bg-[#254DB3] text-white rounded-lg px-2 flex items-center justify-center transition-colors shadow-sm"
-                >
-                  <i data-lucide="user-plus" class="w-3 h-3"></i>
-                </button>
-              </div>
-            </div>
-          </div>
         </div>
-      </div>
     </div>
 
     <script>
-      lucide.createIcons();
+        lucide.createIcons();
     </script>
-  </body>
+</body>
+
 </html>

@@ -114,6 +114,14 @@ export interface PortfolioData {
 }
 
 // Chat Types
+/** UI-UX prototype: lightweight improve-handoff payload (nextjs branch). */
+export interface UnibotImproveRequestDetail {
+  text: string;
+  /** `linkedin` = use `text` as full prompt; otherwise treat `text` as a resume snippet to wrap. */
+  type?: "resume" | "linkedin" | string;
+  topicTitle?: string;
+}
+
 export interface ChatMessage {
   id: string;
   role: "user" | "model";
@@ -153,8 +161,11 @@ export interface ResumeProfile {
   fullName: string;
   email: string;
   phone: string;
-  city: string;
-  country: string;
+  city?: string;
+  country?: string;
+  /** UI-UX prototype: single-line location used by nextjs editor mock data. */
+  location?: string;
+  website?: string;
   linkedin?: string;
   github?: string;
   portfolio?: string;
@@ -262,6 +273,8 @@ export interface ResumeData {
   certifications: ResumeCertification[];
   customSections: CustomSection[];
   sectionOrder: SectionOrderItem[];
+  /** UI-UX prototype: section visibility toggles in nextjs editor. */
+  hiddenSections?: string[];
   /** Nextgen-style education layout (legacy `educationLeftColumn`) */
   educationLeftColumn?: boolean;
 }

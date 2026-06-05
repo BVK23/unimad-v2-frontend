@@ -1,7 +1,6 @@
 "use client";
-import React from "react";
-import { ArrowRight } from "lucide-react";
-import PortfolioImage from "./PortfolioImage";
+import React from 'react';
+import { ArrowRight } from 'lucide-react';
 
 interface HeroSectionProps {
   variant?: string;
@@ -16,10 +15,10 @@ interface HeroSectionProps {
   };
 }
 
-const HeroSection: React.FC<HeroSectionProps> = ({ variant = "centered", data }) => {
+const HeroSection: React.FC<HeroSectionProps> = ({ variant = 'centered', data }) => {
   const { title, subtitle, image, ctaLabel, ctaLink, secondaryCtaLabel, secondaryCtaLink } = data;
 
-  if (variant === "split") {
+  if (variant === 'split') {
     return (
       <section className="grid grid-cols-1 md:grid-cols-2 gap-12 items-center py-20 px-6 max-w-7xl mx-auto">
         <div className="space-y-6">
@@ -31,31 +30,23 @@ const HeroSection: React.FC<HeroSectionProps> = ({ variant = "centered", data })
           </p>
           <div className="flex flex-wrap gap-4 pt-4">
             {ctaLabel && (
-              <a
-                href={ctaLink || "#"}
-                className="px-8 py-3 bg-brand-600 hover:bg-brand-700 text-white rounded-full font-medium transition-all shadow-lg shadow-brand-500/20 flex items-center gap-2"
-              >
+              <a href={ctaLink || "#"} className="px-8 py-3 bg-brand-600 hover:bg-brand-700 text-white rounded-full font-medium transition-all shadow-lg shadow-brand-500/20 flex items-center gap-2">
                 {ctaLabel} <ArrowRight size={18} />
               </a>
             )}
             {secondaryCtaLabel && (
-              <a
-                href={secondaryCtaLink || "#"}
-                className="px-8 py-3 bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 text-slate-900 dark:text-white rounded-full font-medium hover:bg-slate-50 transition-all"
-              >
+              <a href={secondaryCtaLink || "#"} className="px-8 py-3 bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 text-slate-900 dark:text-white rounded-full font-medium hover:bg-slate-50 transition-all">
                 {secondaryCtaLabel}
               </a>
             )}
           </div>
         </div>
         <div className="relative">
-          <div className="aspect-[4/5] rounded-3xl overflow-hidden shadow-2xl bg-slate-100 dark:bg-slate-800 relative">
-            <PortfolioImage
-              src={image || "https://picsum.photos/800/1000"}
-              alt="Hero image"
-              fill
-              sizes="(max-width: 768px) 100vw, 500px"
-              className="object-cover"
+          <div className="aspect-[4/5] rounded-3xl overflow-hidden shadow-2xl bg-slate-100 dark:bg-slate-800">
+            <img 
+              src={image || "https://picsum.photos/800/1000"} 
+              alt="Hero image" 
+              className="w-full h-full object-cover"
             />
           </div>
           {/* Decorative element */}
@@ -65,16 +56,13 @@ const HeroSection: React.FC<HeroSectionProps> = ({ variant = "centered", data })
     );
   }
 
-  if (variant === "full-bg") {
+  if (variant === 'full-bg') {
     return (
       <section className="relative h-[80vh] min-h-[600px] flex items-center justify-center overflow-hidden">
-        <PortfolioImage
-          src={image || "https://picsum.photos/1920/1080"}
-          alt="Hero background"
-          fill
-          sizes="100vw"
-          className="object-cover"
-          priority
+        <img 
+          src={image || "https://picsum.photos/1920/1080"} 
+          alt="Hero background" 
+          className="absolute inset-0 w-full h-full object-cover"
         />
         <div className="absolute inset-0 bg-black/50 backdrop-blur-[2px]"></div>
         <div className="relative z-10 text-center px-6 max-w-4xl">
@@ -86,10 +74,7 @@ const HeroSection: React.FC<HeroSectionProps> = ({ variant = "centered", data })
           </p>
           <div className="flex flex-wrap justify-center gap-4">
             {ctaLabel && (
-              <a
-                href={ctaLink || "#"}
-                className="px-10 py-4 bg-brand-600 hover:bg-brand-700 text-white rounded-full font-medium transition-all shadow-xl shadow-brand-500/30 flex items-center gap-2 text-lg"
-              >
+              <a href={ctaLink || "#"} className="px-10 py-4 bg-brand-600 hover:bg-brand-700 text-white rounded-full font-medium transition-all shadow-xl shadow-brand-500/30 flex items-center gap-2 text-lg">
                 {ctaLabel} <ArrowRight size={20} />
               </a>
             )}
@@ -113,18 +98,15 @@ const HeroSection: React.FC<HeroSectionProps> = ({ variant = "centered", data })
       </p>
       <div className="flex flex-wrap justify-center gap-4 pt-6">
         {ctaLabel && (
-          <a
-            href={ctaLink || "#"}
-            className="px-8 py-3.5 bg-slate-900 dark:bg-white text-white dark:text-slate-900 hover:scale-105 active:scale-95 rounded-full font-medium transition-all flex items-center gap-2 shadow-lg"
-          >
+          <a href={ctaLink || "#"} className="px-8 py-3.5 bg-slate-900 dark:bg-white text-white dark:text-slate-900 hover:scale-105 active:scale-95 rounded-full font-medium transition-all flex items-center gap-2 shadow-lg">
             {ctaLabel} <ArrowRight size={18} />
           </a>
         )}
       </div>
       {image && (
         <div className="pt-16 max-w-4xl mx-auto">
-          <div className="aspect-video rounded-3xl overflow-hidden shadow-2xl ring-1 ring-slate-200 dark:ring-white/10 relative">
-            <PortfolioImage src={image} alt="Hero" fill sizes="(max-width: 768px) 100vw, 896px" className="object-cover" />
+          <div className="aspect-video rounded-3xl overflow-hidden shadow-2xl ring-1 ring-slate-200 dark:ring-white/10">
+            <img src={image} alt="Hero" className="w-full h-full object-cover" />
           </div>
         </div>
       )}

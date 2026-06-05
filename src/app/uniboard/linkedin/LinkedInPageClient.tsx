@@ -1,15 +1,23 @@
 "use client";
 
 import LinkedInDashboard from "@/components/LinkedInDashboard";
-import type { UnibotIncomingRequest } from "@/components/chat/unibot-incoming-request";
+import type { UnibotImproveRequestDetail } from "@/types";
 import type { GeneratorContext } from "@/types/jobs";
 import { useRouter } from "next/navigation";
 
 export default function LinkedInPageClient() {
   const router = useRouter();
 
-  const handleImproveWithAI = (detail: Extract<UnibotIncomingRequest, { type: "improve" }>) => {
-    window.dispatchEvent(new CustomEvent("open-unibot", { detail }));
+  const handleImproveWithAI = (detail: UnibotImproveRequestDetail) => {
+    window.dispatchEvent(
+      new CustomEvent("open-unibot", {
+        detail: {
+          text: detail.text,
+          type: "linkedin" as const,
+          topicTitle: detail.topicTitle,
+        },
+      })
+    );
   };
 
   const handleNavigateToStudio = (context: GeneratorContext) => {

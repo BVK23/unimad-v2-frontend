@@ -1,6 +1,5 @@
 "use client";
-import React from "react";
-import PortfolioImage from "./PortfolioImage";
+import React from 'react';
 
 interface BioSectionProps {
   variant?: string;
@@ -9,11 +8,11 @@ interface BioSectionProps {
     description?: string;
     image?: string;
     bio: string;
-    stats?: { label: string; value: string }[];
+    stats?: { label: string, value: string }[];
   };
 }
 
-const BioSection: React.FC<BioSectionProps> = ({ variant = "standard", data }) => {
+const BioSection: React.FC<BioSectionProps> = ({ variant = 'standard', data }) => {
   const { title, description, image, bio, stats = [] } = data;
 
   return (
@@ -21,12 +20,18 @@ const BioSection: React.FC<BioSectionProps> = ({ variant = "standard", data }) =
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-16 items-start">
         <div className="space-y-8">
           <div className="space-y-4">
-            <h2 className="text-4xl font-bold text-slate-900 dark:text-white leading-tight">{title || "A bit about me and my journey"}</h2>
+            <h2 className="text-4xl font-bold text-slate-900 dark:text-white leading-tight">
+              {title || "A bit about me and my journey"}
+            </h2>
             {description && <p className="text-xl text-brand-600 dark:text-brand-400 font-medium">{description}</p>}
           </div>
 
           <div className="prose prose-lg dark:prose-invert text-slate-600 dark:text-slate-400 max-w-none">
-            {bio ? bio.split("\n\n").map((paragraph, i) => <p key={i}>{paragraph}</p>) : <p>Add your bio here to tell your story.</p>}
+            {bio ? bio.split('\n\n').map((paragraph, i) => (
+              <p key={i}>{paragraph}</p>
+            )) : (
+              <p>Add your bio here to tell your story.</p>
+            )}
           </div>
 
           {stats.length > 0 && (
@@ -42,13 +47,11 @@ const BioSection: React.FC<BioSectionProps> = ({ variant = "standard", data }) =
         </div>
 
         <div className="relative">
-          <div className="aspect-square rounded-3xl overflow-hidden shadow-2xl rotate-3 hover:rotate-0 transition-transform duration-500 ring-1 ring-slate-200 dark:ring-white/10 relative">
-            <PortfolioImage
-              src={image || "https://picsum.photos/800/800"}
-              alt="Bio profile"
-              fill
-              sizes="(max-width: 768px) 100vw, 400px"
-              className="object-cover"
+          <div className="aspect-square rounded-3xl overflow-hidden shadow-2xl rotate-3 hover:rotate-0 transition-transform duration-500 ring-1 ring-slate-200 dark:ring-white/10">
+            <img 
+              src={image || "https://picsum.photos/800/800"} 
+              alt="Bio profile" 
+              className="w-full h-full object-cover"
             />
           </div>
           {/* Accent decoration */}

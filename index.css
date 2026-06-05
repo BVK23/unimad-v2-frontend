@@ -2,23 +2,110 @@
 @tailwind components;
 @tailwind utilities;
 
+/* Platform scrollbars: light blue pill on seamless white track */
+@layer base {
+  * {
+    scrollbar-width: thin;
+    scrollbar-color: #b8d4f8 #ffffff;
+  }
+
+  *::-webkit-scrollbar {
+    width: 6px;
+    height: 6px;
+  }
+
+  *::-webkit-scrollbar-track {
+    background: #ffffff;
+    border-radius: 9999px;
+  }
+
+  *::-webkit-scrollbar-thumb {
+    background: #b8d4f8;
+    border-radius: 9999px;
+    border: 1.5px solid #ffffff;
+    min-height: 32px;
+    min-width: 32px;
+  }
+
+  *::-webkit-scrollbar-thumb:hover {
+    background: #9bc0f6;
+  }
+
+  *::-webkit-scrollbar-corner {
+    background: #ffffff;
+  }
+
+  .dark * {
+    scrollbar-color: #9bc0f6 #f8fafc;
+  }
+
+  .dark *::-webkit-scrollbar-track {
+    background: #f8fafc;
+  }
+
+  .dark *::-webkit-scrollbar-thumb {
+    background: #9bc0f6;
+    border-color: #f8fafc;
+  }
+
+  .dark *::-webkit-scrollbar-thumb:hover {
+    background: #6ea0f0;
+  }
+
+  .dark *::-webkit-scrollbar-corner {
+    background: #f8fafc;
+  }
+}
+
 @layer utilities {
-  .animate-gradient-x {
-    background-size: 200% 200%;
-    animation: gradient-x 3s ease infinite;
+  .no-scrollbar,
+  .hide-scrollbar {
+    -ms-overflow-style: none;
+    scrollbar-width: none;
   }
 
-  @keyframes gradient-x {
-    0% {
-      background-position: 0% 50%;
-    }
-
-    50% {
-      background-position: 100% 50%;
-    }
-
-    100% {
-      background-position: 0% 50%;
-    }
+  .no-scrollbar::-webkit-scrollbar,
+  .hide-scrollbar::-webkit-scrollbar {
+    display: none;
   }
+
+  .minimal-scrollbar,
+  .scrollbar-thin {
+    scrollbar-width: thin;
+    scrollbar-color: #b8d4f8 #ffffff;
+  }
+    .animate-gradient-x {
+        background-size: 200% 200%;
+        animation: gradient-x 3s ease infinite;
+    }
+
+    @keyframes gradient-x {
+        0% {
+            background-position: 0% 50%;
+        }
+
+        50% {
+            background-position: 100% 50%;
+        }
+
+        100% {
+            background-position: 0% 50%;
+        }
+    }
+
+    @keyframes linkedin-lab-bubble-rise {
+        0% {
+            transform: translate3d(0, 0, 0) scale(0.82);
+        }
+        30% {
+            transform: translate3d(10px, -150px, 0) scale(1);
+        }
+        70% {
+            transform: translate3d(-8px, -310px, 0) scale(1.06);
+        }
+        100% {
+            transform: translate3d(6px, -480px, 0) scale(1.15);
+            opacity: 0;
+        }
+    }
 }
