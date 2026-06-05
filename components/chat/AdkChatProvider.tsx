@@ -3,15 +3,20 @@
 import React, { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState } from "react";
 import { formatUnibotStreamError, type FormattedUnibotStreamError } from "@/features/adk-chat/format-stream-error";
 import type { ActiveSession } from "@/src/features/adk-chat/actions";
-import { loadSessionHistoryAction } from "@/src/features/adk-chat/actions";
+import { loadSessionHistoryAction, rewindSessionAction } from "@/src/features/adk-chat/actions";
+import { applyAdkSessionStateToStores } from "@/src/features/adk-chat/apply-adk-session-state-to-stores";
 import { useAdkSession } from "@/src/features/adk-chat/hooks/useAdkSession";
 import { useAdkStreamingManager } from "@/src/features/adk-chat/hooks/useAdkStreamingManager";
 import { mergeSubSessionsIntoMainMessages } from "@/src/features/adk-chat/improve-topic-helpers";
 import { getRegistryRow } from "@/src/features/adk-chat/session-registry";
+import { useAdkApplicationAssetReviewStore } from "@/src/features/adk-chat/stores/useAdkApplicationAssetReviewStore";
+import { useAdkContentGenReviewStore } from "@/src/features/adk-chat/stores/useAdkContentGenReviewStore";
 import { useAdkPortfolioReviewStore } from "@/src/features/adk-chat/stores/useAdkPortfolioReviewStore";
 import { useAdkResumeReviewStore } from "@/src/features/adk-chat/stores/useAdkResumeReviewStore";
 import type { AgentMessage, ProcessedEvent } from "@/src/features/adk-chat/types";
 import type { ChatMessage } from "@/types";
+import { useQueryClient } from "@tanstack/react-query";
+import { usePathname } from "next/navigation";
 import { markEmptyAssistantStreamErrorInTree, resetAssistantTurnForRetryInTree } from "./set-chat-message-stream-error";
 import { updateChatMessageInTree } from "./update-chat-message";
 
@@ -33,6 +38,7 @@ function agentMessageToChatMessage(m: AgentMessage): ChatMessage {
     role: m.type === "human" ? "user" : "model",
     text: m.content,
     timestamp: parseAgentTimestamp(m.timestamp as unknown as Date | string | number),
+    ...(m.invocationId ? { invocationId: m.invocationId } : {}),
   };
 }
 
@@ -67,6 +73,15 @@ export interface AdkChatContextValue {
   streamError: FormattedUnibotStreamError | null;
   clearStreamError: () => void;
   setStreamError: (error: FormattedUnibotStreamError | null) => void;
+  /** Undo a user turn and everything after it in the ADK session. */
+  rewindToMessage: (options: {
+    invocationId: string;
+    previewText: string;
+    revertEditorState: boolean;
+    targetSessionId?: string;
+    topicId?: string;
+  }) => Promise<void>;
+  isRewinding: boolean;
 }
 
 const AdkChatContext = createContext<AdkChatContextValue | null>(null);
@@ -75,6 +90,9 @@ export function AdkChatProvider({ userId, children }: { userId: string; children
   const [messages, setMessages] = useState<ChatMessage[]>([WELCOME_MESSAGE]);
   const [streamError, setStreamError] = useState<FormattedUnibotStreamError | null>(null);
   const [isLoadingHistory, setIsLoadingHistory] = useState(false);
+  const [isRewinding, setIsRewinding] = useState(false);
+  const pathname = usePathname();
+  const queryClient = useQueryClient();
   const clearStreamError = useCallback(() => setStreamError(null), []);
   const pendingSendRef = useRef<{
     targetSessionId: string;
@@ -112,11 +130,18 @@ export function AdkChatProvider({ userId, children }: { userId: string; children
       return;
     }
 
-    const formatted = formatUnibotStreamError(err ?? new Error("429 RESOURCE_EXHAUSTED"), {
-      source: "markIncompleteAssistantTurn",
-      assistantId,
-    });
     setMessages(prev => {
+      const assistantMsg =
+        prev.find(m => m.id === assistantId && m.role === "model") ??
+        prev.flatMap(m => m.messages ?? []).find(m => m.id === assistantId && m.role === "model");
+      if (!assistantMsg || assistantMsg.text.trim().length > 0 || assistantMsg.isError) {
+        return prev;
+      }
+
+      const formatted = formatUnibotStreamError(err ?? new Error("Stream ended without response"), {
+        source: "markIncompleteAssistantTurn",
+        assistantId,
+      });
       const { list, marked } = markEmptyAssistantStreamErrorInTree(prev, assistantId, formatted);
       if (marked) {
         queueMicrotask(() => setStreamError(formatted));
@@ -283,6 +308,74 @@ export function AdkChatProvider({ userId, children }: { userId: string; children
 
   const sessionReady = Boolean(userId && sessionId && !isBootstrappingSession);
 
+  const rewindToMessage = useCallback(
+    async (options: {
+      invocationId: string;
+      previewText: string;
+      revertEditorState: boolean;
+      targetSessionId?: string;
+      topicId?: string;
+    }): Promise<void> => {
+      const targetSessionId = options.targetSessionId?.trim() || sessionId;
+      if (!userId || !targetSessionId || !options.invocationId.trim()) {
+        throw new Error("Session not ready for rewind");
+      }
+
+      setIsRewinding(true);
+      try {
+        const rewindResult = await rewindSessionAction(userId, targetSessionId, options.invocationId);
+        if (!rewindResult.success) {
+          throw new Error(rewindResult.error ?? "Could not rewind this conversation.");
+        }
+
+        const history = await loadSessionHistoryAction(userId, targetSessionId);
+        if (!history.success) {
+          throw new Error(history.error ?? "Could not reload conversation after rewind.");
+        }
+
+        const mapped = history.messages.map(m =>
+          agentMessageToChatMessage({
+            ...m,
+            timestamp: parseAgentTimestamp(m.timestamp as unknown as Date | string | number),
+          })
+        );
+
+        if (options.topicId) {
+          setMessages(prev =>
+            prev.map(topic =>
+              topic.id === options.topicId
+                ? {
+                    ...topic,
+                    messages: mapped,
+                  }
+                : topic
+            )
+          );
+        } else {
+          let mainMessages = mapped.length > 0 ? mapped : [WELCOME_MESSAGE];
+          const meta = getRegistryRow(targetSessionId);
+          if (meta?.kind !== "sub") {
+            mainMessages = await mergeSubSessionsIntoMainMessages(userId, targetSessionId, mainMessages);
+          }
+          setMessages(mainMessages);
+        }
+
+        if (options.revertEditorState) {
+          useAdkResumeReviewStore.getState().clearAllReviews();
+          useAdkPortfolioReviewStore.getState().clearAllReviews();
+          useAdkContentGenReviewStore.getState().clearAllReviews();
+          useAdkApplicationAssetReviewStore.getState().clearAllReviews();
+          await applyAdkSessionStateToStores(userId, targetSessionId, pathname, queryClient);
+        }
+
+        clearStreamError();
+      } finally {
+        setIsRewinding(false);
+      }
+    },
+    [userId, sessionId, pathname, queryClient, clearStreamError]
+  );
+
   const value = useMemo(
     (): AdkChatContextValue => ({
       userId,
@@ -305,6 +398,8 @@ export function AdkChatProvider({ userId, children }: { userId: string; children
       streamError,
       clearStreamError,
       setStreamError,
+      rewindToMessage,
+      isRewinding,
     }),
     [
       userId,
@@ -325,6 +420,8 @@ export function AdkChatProvider({ userId, children }: { userId: string; children
       handleDeleteSession,
       streamError,
       clearStreamError,
+      rewindToMessage,
+      isRewinding,
     ]
   );
 

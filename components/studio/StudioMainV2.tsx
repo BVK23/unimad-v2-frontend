@@ -1,83 +1,131 @@
 import React, { useState, useEffect, useRef, useCallback, useMemo } from "react";
-import { fetchColdEmailById } from "@/features/cold-email/server-actions/cold-email-actions";
+import { useAdkApplicationAssetReviewStore } from "@/features/adk-chat/stores/useAdkApplicationAssetReviewStore";
+import {
+  APPLICATION_ASSET_EVENTS,
+  type ApplicationAssetDraftFailedDetail,
+  type ApplicationAssetDraftPreviewDetail,
+  type ApplicationAssetDraftReadyDetail,
+  type ApplyApplicationAssetDetail,
+  type RequestApplicationAssetDraftDetail,
+} from "@/features/application-assets/api/application-asset-events";
+import { runApplicationAssetDraftGeneration } from "@/features/application-assets/api/runApplicationAssetDraftGeneration";
+import { useApplicationAssetReviewActions } from "@/features/application-assets/hooks/useApplicationAssetReviewActions";
+import { useApplicationAssetStudioStore } from "@/features/application-assets/store/useApplicationAssetStudioStore";
+import { API_TYPE_TO_STUDIO_TOPIC, STUDIO_TOPIC_TO_API_TYPE, type ApplicationAssetStudioTopic } from "@/features/application-assets/types";
+import { useColdEmailHistory, useGenerateColdEmail, type GenerateColdEmailResult } from "@/features/cold-email/hooks";
+import { COLD_EMAIL_LIST_QUERY_KEY } from "@/features/cold-email/hooks/useColdEmailHistory";
+import { deleteColdEmail, fetchColdEmailById, updateColdEmail } from "@/features/cold-email/server-actions/cold-email-actions";
 import type { ColdEmailAsset } from "@/features/cold-email/types";
-import { getFirstContentGenDraftFromHistory } from "@/features/content-lab/api/getFirstContentGenDraftFromHistory";
+import { funnelDisplayLabel, type ContentGenFunnel } from "@/features/content-lab/api/adk-mappers";
+import {
+  CONTENT_GEN_EVENTS,
+  CONTENT_GEN_PUBLISH_BLOCKED_MESSAGE,
+  type ApplyContentGenTopicDetail,
+  type ContentGenDraftFailedDetail,
+  type ContentGenDraftPreviewDetail,
+  type ContentGenDraftReadyDetail,
+  type ContentGenPublishBlockedDetail,
+  type ContentGenPublishFailedDetail,
+  type RequestContentGenDraftDetail,
+  type RequestContentGenPublishDetail,
+} from "@/features/content-lab/api/content-gen-events";
 import { mapContentGenToModalPost, type ContentGenModalPost } from "@/features/content-lab/api/mapContentGenToModalPost";
-import { useTopicPool } from "@/features/content-lab/hooks/useTopicPool";
+import {
+  ADK_DRAFT_PENDING_ERROR,
+  runContentGenDraftGeneration,
+  type RunContentGenDraftResult,
+} from "@/features/content-lab/hooks/runContentGenDraftGeneration";
 import {
   deleteContentGenAsset,
   fetchContentGenAssets,
-  fetchUnibotChatHistory,
-  generateContentGenAsset,
   postContentGenToLinkedIn,
   uploadContentGenMedia,
   updateContentGenAsset,
 } from "@/features/content-lab/server-actions/content-lab-actions";
+import { useContentGenStudioStore } from "@/features/content-lab/store/useContentGenStudioStore";
 import type { ContentGenAssetItem } from "@/features/content-lab/types";
-import { fetchCoverLetterById } from "@/features/cover-letter/server-actions/cover-letter-actions";
+import { exportCoverLetterAsPDF } from "@/features/cover-letter/hooks/export-cover-letter-pdf";
+import { useCoverLetterHistory } from "@/features/cover-letter/hooks/useCoverLetterHistory";
+import { COVER_LETTER_LIST_QUERY_KEY } from "@/features/cover-letter/hooks/useCoverLetterHistory";
+import { useGenerateCoverLetter, type GenerateCoverLetterResult } from "@/features/cover-letter/hooks/useGenerateCoverLetter";
+import { deleteCoverLetter, fetchCoverLetterById, updateCoverLetter } from "@/features/cover-letter/server-actions/cover-letter-actions";
 import type { CoverLetterAsset } from "@/features/cover-letter/types";
+import { useLinkedInAnalysis } from "@/features/linkedin/hooks/useLinkedInAnalysis";
 import { useReferralHistory, useGenerateReferral, type GenerateReferralResult } from "@/features/referral/hooks";
-import { fetchReferralById } from "@/features/referral/server-actions/referral-actions";
+import { REFERRAL_LIST_QUERY_KEY } from "@/features/referral/hooks/useReferralHistory";
+import { deleteReferral, fetchReferralById, updateReferral } from "@/features/referral/server-actions/referral-actions";
 import type { ReferralAsset } from "@/features/referral/types";
-import {
-  ThumbsUp,
-  MessageSquare,
-  Repeat,
-  Send,
-  MoreHorizontal,
-  Globe,
-  Wand2,
-  Plus,
-  FileText,
-  ChevronLeft,
-  Calendar,
-  History,
-  Upload,
-  Copy,
-  Info,
-} from "lucide-react";
+import { useProfileData } from "@/features/user-profile/hooks/use-profile-data";
+import { resolveLinkedInPostAuthorDisplay } from "@/features/user-profile/utils/resolve-linkedin-post-author";
+import { normalizeContentToHtml } from "@/utils/normalize-content-to-html";
+import { exportContentAsPDF } from "@/utils/pdf-export";
+import { useQueryClient } from "@tanstack/react-query";
+import { ThumbsUp, MessageSquare, Repeat, Send, MoreHorizontal, Wand2, Plus, History, Upload, Info } from "lucide-react";
 import { usePathname, useRouter, useSearchParams } from "next/navigation";
 import { PortfolioItem } from "../../types";
 import { GeneratorContext } from "../../types/jobs";
+import AllDocumentsModal from "./AllDocumentsModal";
 import AllPostsModal from "./AllPostsModal";
 import AllVPDsModal from "./AllVPDsModal";
-import ContentLabColdEmailLeft from "./ContentLabColdEmailLeft";
-import ContentLabColdEmailPreview from "./ContentLabColdEmailPreview";
-import ContentLabCoverLetterLeft from "./ContentLabCoverLetterLeft";
-import ContentLabCoverLetterPreview from "./ContentLabCoverLetterPreview";
-import ContentLabReferralPreview from "./ContentLabReferralPreview";
+import DocumentListCard from "./DocumentListCard";
 import LinkedInOptimizeBanner from "./LinkedInOptimizeBanner";
+import LinkedInPostAuthorHeader from "./LinkedInPostAuthorHeader";
 import LinkedInPostListCard from "./LinkedInPostListCard";
 import PostSchedulerModal from "./PostSchedulerModal";
-import ReferralHistoryModal from "./ReferralHistoryModal";
+import StudioDocumentPreview, { type DocumentSaveStatus } from "./StudioDocumentPreview";
+import StudioMediaPreviewImage from "./StudioMediaPreviewImage";
 import StudioSectionDot from "./StudioSectionDot";
 import VpdEditorWindow from "./VpdEditorWindow";
-import VpdLibraryCard, { type VpdLibraryItem } from "./VpdLibraryCard";
+import VpdLibraryCard from "./VpdLibraryCard";
 import VpdPreview from "./VpdPreview";
+import { DocumentLibraryItem } from "./documentLibraryTypes";
+import { mapColdEmailToDocumentItem, mapCoverLetterToDocumentItem, mapReferralToDocumentItem } from "./studioDocumentMappers";
 import { getTopicDescription, getTopicMeta, TOPIC_GROUPS } from "./studioTopicConfig";
-import { STUDIO_VPD_LIBRARY_ITEMS } from "./studioVpdMocks";
+import { MOCK_VPDS, buildVpdProjectFromDraft, createDefaultVpdProject, type VpdListItem } from "./vpdStudioHelpers";
 
 interface StudioMainProps {
   initialContext?: GeneratorContext | null;
   initialAssetId?: string | null;
 }
 
-const TOPICS = [
-  { id: "linkedin-post", label: "LinkedIn Post" },
-  { id: "cover-letter", label: "Cover Letter" },
-  { id: "cold-email", label: "Cold Email" },
-  { id: "referral", label: "Referral Request" },
-  { id: "vpd", label: "Value Prop Doc" },
-];
-
 const MOODS = ["Professional", "Casual", "Enthusiastic", "Thought Leadership", "Storytelling"];
 const CONTENT_TYPES = ["Career Update", "Industry Insight", "Personal Story", "Project Showcase", "Advice"];
 
-// Mock Previous VPDs
-const MOCK_VPDS = [
-  { id: 1, title: "Product Designer @ Google", date: "2 days ago" },
-  { id: 2, title: "UX Researcher @ Spotify", date: "1 week ago" },
-];
+const DOCUMENT_TOPIC_LABELS: Record<"cover-letter" | "cold-email" | "referral", string> = {
+  "cover-letter": "Cover Letters",
+  "cold-email": "Cold Emails",
+  referral: "Referral Requests",
+};
+
+const isDocumentTopic = (topic: string): topic is ApplicationAssetStudioTopic =>
+  topic === "cover-letter" || topic === "cold-email" || topic === "referral";
+
+const documentTopicToApiType = (topic: ApplicationAssetStudioTopic) => STUDIO_TOPIC_TO_API_TYPE[topic];
+
+const jobDescriptionFromAsset = (asset: { job_description?: string; jd?: string }) => (asset.job_description ?? asset.jd ?? "").trim();
+
+const savedApplicationAssetIdForTopic = (
+  topicId: string,
+  drafts: {
+    cover: CoverLetterAsset | null;
+    cold: ColdEmailAsset | null;
+    referral: ReferralAsset | null;
+  }
+): string | undefined => {
+  if (topicId === "cover-letter" && drafts.cover?.id) {
+    const id = String(drafts.cover.id).trim();
+    return id || undefined;
+  }
+  if (topicId === "cold-email" && drafts.cold?.id) {
+    const id = String(drafts.cold.id).trim();
+    return id || undefined;
+  }
+  if (topicId === "referral" && drafts.referral?.id) {
+    const id = String(drafts.referral.id).trim();
+    return id || undefined;
+  }
+  return undefined;
+};
 
 // Mock Scheduled Posts
 const MOCK_SCHEDULED = [
@@ -156,13 +204,31 @@ const normalizeLinkedinPostError = (rawMessage: string): string => {
 };
 
 const StudioMainV2: React.FC<StudioMainProps> = ({ initialContext, initialAssetId }) => {
+  const queryClient = useQueryClient();
   const router = useRouter();
   const pathname = usePathname();
   const searchParams = useSearchParams();
+  const adkApplicationAssetReviewStack = useAdkApplicationAssetReviewStore(s => s.reviewStack);
+  const activeApplicationAssetReview = useAdkApplicationAssetReviewStore(s => s.reviewStack.at(-1) ?? null);
+  const selectionRefineLoading = useApplicationAssetStudioStore(s => s.selectionRefineLoading);
+  const {
+    adkReviewBusy: applicationAssetReviewBusy,
+    acceptApplicationAssetReview,
+    discardApplicationAssetReview,
+  } = useApplicationAssetReviewActions();
+  const clearApplicationAssetSelection = useApplicationAssetStudioStore(s => s.clearSelection);
   const isHydratingFromUrlRef = useRef(false);
   const hydratedAssetKeyRef = useRef<string | null>(null);
   /** Prevents URL→state sync from undoing an in-flight topic tab click before the router updates. */
   const pendingTopicRef = useRef<string | null>(null);
+  /** Preserves LinkedIn draft when switching Studio tabs (`generatedContent` is LinkedIn-only while on that tab). */
+  const preservedLinkedinTabRef = useRef<{
+    assetId: string | null;
+    content: string;
+    images: string[];
+    topicIdea: string;
+    funnel: ContentGenFunnel | null;
+  } | null>(null);
   /** After generate, asset `content` is still empty on server; URL hydration must not overwrite the in-memory draft. */
   const linkedinPreserveDraftForAssetIdRef = useRef<string | null>(null);
   const linkedinPersistDebounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -170,11 +236,23 @@ const StudioMainV2: React.FC<StudioMainProps> = ({ initialContext, initialAssetI
   const [selectedTopic, setSelectedTopic] = useState<string>(initialContext?.type ?? "linkedin-post");
   const [generatedContent, setGeneratedContent] = useState("");
   const [isGenerating, setIsGenerating] = useState(false);
+  const [applicationAssetDraftLoading, setApplicationAssetDraftLoading] = useState(false);
+
+  const hasApplicationAssetPendingRevision = adkApplicationAssetReviewStack.length > 0;
+  const documentAssetApiType = isDocumentTopic(selectedTopic) ? documentTopicToApiType(selectedTopic) : null;
+  const isDocumentAdkLoading = applicationAssetDraftLoading || selectionRefineLoading;
+
+  useEffect(() => {
+    if (!isDocumentTopic(selectedTopic)) {
+      clearApplicationAssetSelection();
+    }
+  }, [selectedTopic, clearApplicationAssetSelection]);
 
   // LinkedIn specific state
   const [mood, setMood] = useState("Professional");
   const [contentType, setContentType] = useState("Career Update");
   const [topicIdea, setTopicIdea] = useState("");
+  const [linkedinFunnel, setLinkedinFunnel] = useState<ContentGenFunnel | null>(null);
   const [linkedinPostAssetId, setLinkedinPostAssetId] = useState<string | null>(null);
   const [linkedinGenerateError, setLinkedinGenerateError] = useState<string | null>(null);
   const [linkedinPersistError, setLinkedinPersistError] = useState<string | null>(null);
@@ -185,6 +263,14 @@ const StudioMainV2: React.FC<StudioMainProps> = ({ initialContext, initialAssetI
   const linkedinFileInputRef = useRef<HTMLInputElement | null>(null);
   const linkedinPendingMediaRef = useRef<LinkedinPendingMediaItem[]>([]);
   const linkedinPostAssetIdRef = useRef<string | null>(null);
+  const updateStudioUrlRef = useRef<(args: { type?: string; id?: string }) => void>(() => {});
+
+  const { data: profileData } = useProfileData();
+  const { data: linkedInAnalysis } = useLinkedInAnalysis({ enabled: selectedTopic === "linkedin-post" });
+  const linkedInPostAuthor = useMemo(
+    () => resolveLinkedInPostAuthorDisplay(profileData, linkedInAnalysis),
+    [profileData, linkedInAnalysis]
+  );
 
   useEffect(() => {
     linkedinPendingMediaRef.current = linkedinPendingMedia;
@@ -202,14 +288,15 @@ const StudioMainV2: React.FC<StudioMainProps> = ({ initialContext, initialAssetI
     linkedinPendingMediaRef.current = [];
   }, []);
 
-  const handleApplyGeneratedTopic = useCallback((topic: string) => {
-    setTopicIdea(topic);
-  }, []);
+  const [publishModalSeed, setPublishModalSeed] = useState<{ isScheduled: boolean; date?: Date } | null>(null);
 
-  const { applyNextTopicFromPool, isLoadingTopics, topicPoolError, setTopicPoolError } = useTopicPool({
-    currentTopic: topicIdea,
-    onApplyTopic: handleApplyGeneratedTopic,
-  });
+  const handleOpenContentGenTopic = useCallback(() => {
+    window.dispatchEvent(
+      new CustomEvent("open-content-gen-topic", {
+        detail: { seedTopic: topicIdea.trim() || undefined, requestKey: Date.now() },
+      })
+    );
+  }, [topicIdea]);
 
   // Specific Form States
   const [role, setRole] = useState(initialContext?.role ?? "");
@@ -219,18 +306,13 @@ const StudioMainV2: React.FC<StudioMainProps> = ({ initialContext, initialAssetI
   const [connectionName, setConnectionName] = useState(initialContext?.recipientName ?? "");
 
   // VPD Specific State
-  const [vpdMode, setVpdMode] = useState<"list" | "create">("list");
-  const [vpdProject, setVpdProject] = useState<PortfolioItem>({
-    id: "vpd-project",
-    type: "project",
-    span: 3,
-    title: "New Page",
-    description: "",
-    content: "",
-    detailedBlocks: [],
-  });
+  const [vpdProject, setVpdProject] = useState<PortfolioItem>(createDefaultVpdProject());
+  const [savedVpds, setSavedVpds] = useState<VpdListItem[]>(MOCK_VPDS);
+  const [vpdLibraryTab, setVpdLibraryTab] = useState<"recents" | "templates">("recents");
 
-  // Scheduler State
+  // Document library state
+  const [selectedDocumentId, setSelectedDocumentId] = useState<string | number | null>(null);
+  const [showAllDocumentsModal, setShowAllDocumentsModal] = useState(false);
   const [showScheduler, setShowScheduler] = useState(false);
   const [scheduledPosts, setScheduledPosts] = useState(MOCK_SCHEDULED);
   const [postHistory, setPostHistory] = useState(MOCK_HISTORY);
@@ -243,34 +325,61 @@ const StudioMainV2: React.FC<StudioMainProps> = ({ initialContext, initialAssetI
   // "All VPDs" Modal State
   const [showAllVPDsModal, setShowAllVPDsModal] = useState(false);
   const [showVpdEditor, setShowVpdEditor] = useState(false);
-  const [savedVpds] = useState<VpdLibraryItem[]>(STUDIO_VPD_LIBRARY_ITEMS);
-  const [vpdLibraryTab, setVpdLibraryTab] = useState<"recents" | "templates">("recents");
   // Edit/View Post State
-  const [selectedPostData, setSelectedPostData] = useState<ComposerPost | null>(null); // For editing/viewing existing posts
+  const [selectedPostData, setSelectedPostData] = useState<ComposerPost | null>(null);
 
-  // Cover Letter (Content Lab) state
+  // Document draft state
   const [currentCoverLetterDraft, setCurrentCoverLetterDraft] = useState<CoverLetterAsset | null>(null);
-  const [copyToast, setCopyToast] = useState(false);
-  const [isCoverLetterEditorActive, setIsCoverLetterEditorActive] = useState(false);
-  const [isCoverLetterGenerating, setIsCoverLetterGenerating] = useState(false);
-
-  // Cold Email (Content Lab) state
   const [currentColdEmailDraft, setCurrentColdEmailDraft] = useState<ColdEmailAsset | null>(null);
+  const [currentReferralDraft, setCurrentReferralDraft] = useState<ReferralAsset | null>(null);
+  const [copyToast, setCopyToast] = useState(false);
   const [coldEmailCopyToast, setColdEmailCopyToast] = useState(false);
   const [referralCopyToast, setReferralCopyToast] = useState(false);
-  const [isColdEmailEditorActive, setIsColdEmailEditorActive] = useState(false);
-  const [isReferralEditorActive, setIsReferralEditorActive] = useState(false);
-  const [isColdEmailGenerating, setIsColdEmailGenerating] = useState(false);
-
-  // Referral (Content Lab) state
-  const [currentReferralDraft, setCurrentReferralDraft] = useState<ReferralAsset | null>(null);
-  const [showReferralModal, setShowReferralModal] = useState(false);
+  const [coverLetterFormError, setCoverLetterFormError] = useState<string | null>(null);
+  const [coldEmailFormError, setColdEmailFormError] = useState<string | null>(null);
   const [referralFormError, setReferralFormError] = useState<string | null>(null);
+  const [coverLetterDuplicateModal, setCoverLetterDuplicateModal] = useState<{
+    existingAssetId: string | number;
+    params: { role: string; company: string; job_description: string };
+  } | null>(null);
+  const [coldEmailDuplicateModal, setColdEmailDuplicateModal] = useState<{
+    existingAssetId: string | number;
+    params: { role: string; company: string; job_description: string; hirname: string };
+  } | null>(null);
+  const [coverLetterSubscriptionModal, setCoverLetterSubscriptionModal] = useState(false);
+  const [coldEmailSubscriptionModal, setColdEmailSubscriptionModal] = useState(false);
   const [referralDuplicateModal, setReferralDuplicateModal] = useState<{
     existingAssetId: string | number;
     params: { role: string; company: string; conname: string };
   } | null>(null);
   const [referralSubscriptionModal, setReferralSubscriptionModal] = useState(false);
+
+  const lastCoverLetterParamsRef = useRef<{ role: string; company: string; job_description: string } | null>(null);
+  const lastColdEmailParamsRef = useRef<{
+    role: string;
+    company: string;
+    job_description: string;
+    hirname: string;
+  } | null>(null);
+  const lastReferralParamsRef = useRef<{ role: string; company: string; conname: string } | null>(null);
+  const documentPersistDebounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const [documentSaveStatus, setDocumentSaveStatus] = useState<DocumentSaveStatus>("idle");
+
+  const clearDocumentPersistDebounce = useCallback(() => {
+    if (documentPersistDebounceRef.current) {
+      clearTimeout(documentPersistDebounceRef.current);
+      documentPersistDebounceRef.current = null;
+    }
+  }, []);
+
+  const resetDocumentSaveStatus = useCallback(() => {
+    clearDocumentPersistDebounce();
+    setDocumentSaveStatus("idle");
+  }, [clearDocumentPersistDebounce]);
+
+  const { data: coverLetterHistory = [] } = useCoverLetterHistory();
+  const { data: coldEmailHistory = [] } = useColdEmailHistory();
+  const { data: referralHistory = [] } = useReferralHistory();
 
   const refreshLinkedinAssets = useCallback(async () => {
     try {
@@ -311,35 +420,145 @@ const StudioMainV2: React.FC<StudioMainProps> = ({ initialContext, initialAssetI
     }
   }, [selectedTopic, refreshLinkedinAssets]);
 
-  const { data: referralHistory = [] } = useReferralHistory();
-  const lastReferralParamsRef = useRef<{
-    role: string;
-    company: string;
-    conname: string;
-  } | null>(null);
   const applyReferralDraftToForm = (asset: ReferralAsset | null) => {
     if (!asset) return;
-    if (selectedTopic !== "referral") return;
     setRole(asset.role ?? "");
     setCompany(asset.company ?? "");
     setConnectionName(asset.conname ?? "");
+    setGeneratedContent(asset.content ?? "");
+    setSelectedDocumentId(asset.id);
   };
+
+  const applyCoverLetterDraftToForm = (asset: CoverLetterAsset | null) => {
+    if (!asset) return;
+    setRole(asset.role ?? "");
+    setCompany(asset.company ?? "");
+    setJobDescription(jobDescriptionFromAsset(asset));
+    setGeneratedContent(asset.content ?? "");
+    setSelectedDocumentId(asset.id);
+  };
+
+  const applyColdEmailDraftToForm = (asset: ColdEmailAsset | null) => {
+    if (!asset) return;
+    setRole(asset.role ?? "");
+    setCompany(asset.company ?? "");
+    setJobDescription(jobDescriptionFromAsset(asset));
+    setManagerName(asset.hirname ?? "");
+    setGeneratedContent(asset.content ?? "");
+    setSelectedDocumentId(asset.id);
+  };
+
+  const documentItemsForTopic = useMemo((): DocumentLibraryItem[] => {
+    if (selectedTopic === "cover-letter") {
+      return coverLetterHistory.map(mapCoverLetterToDocumentItem);
+    }
+    if (selectedTopic === "cold-email") {
+      return coldEmailHistory.map(mapColdEmailToDocumentItem);
+    }
+    if (selectedTopic === "referral") {
+      return referralHistory.map(mapReferralToDocumentItem);
+    }
+    return [];
+  }, [selectedTopic, coverLetterHistory, coldEmailHistory, referralHistory]);
+
+  const handleApplicationAssetDraftStarted = useCallback(
+    (result: GenerateCoverLetterResult | GenerateColdEmailResult | GenerateReferralResult, topic: ApplicationAssetStudioTopic) => {
+      if ("error" in result && result.error) {
+        setApplicationAssetDraftLoading(false);
+        if (topic === "cover-letter") {
+          setCoverLetterFormError(result.error);
+        } else if (topic === "cold-email") {
+          setColdEmailFormError(result.error);
+        } else {
+          setReferralFormError(result.error);
+        }
+        return;
+      }
+      if ("success" in result && result.success) {
+        setApplicationAssetDraftLoading(false);
+        setGeneratedContent(result.content);
+        if (result.assetId) {
+          const assetId = String(result.assetId);
+          setSelectedDocumentId(assetId);
+          updateStudioUrlRef.current({ type: topic, id: assetId });
+          const accepted = { content: result.content, status: "accepted" as const };
+          if (topic === "cover-letter") {
+            setCurrentCoverLetterDraft(prev =>
+              prev && String(prev.id) === assetId
+                ? { ...prev, ...accepted, id: assetId }
+                : {
+                    id: assetId,
+                    role: result.role,
+                    company: result.company,
+                    job_description: result.job_description ?? "",
+                    ...accepted,
+                  }
+            );
+          } else if (topic === "cold-email") {
+            setCurrentColdEmailDraft(prev =>
+              prev && String(prev.id) === assetId
+                ? { ...prev, ...accepted, id: assetId }
+                : {
+                    id: assetId,
+                    role: result.role,
+                    company: result.company,
+                    job_description: result.job_description ?? "",
+                    hirname: result.contactName ?? "",
+                    ...accepted,
+                  }
+            );
+          } else {
+            setCurrentReferralDraft(prev =>
+              prev && String(prev.id) === assetId
+                ? { ...prev, ...accepted, id: assetId }
+                : {
+                    id: assetId,
+                    role: result.role,
+                    company: result.company,
+                    conname: result.contactName ?? "",
+                    ...accepted,
+                  }
+            );
+          }
+        }
+        return;
+      }
+      if ("duplicate" in result || "subscriptionRequired" in result) {
+        setApplicationAssetDraftLoading(false);
+      }
+    },
+    []
+  );
+
+  const clearApplicationAssetDraftLoading = useCallback(() => {
+    setApplicationAssetDraftLoading(false);
+  }, []);
+
+  const generateCoverLetterMutation = useGenerateCoverLetter({
+    onSuccess: (result: GenerateCoverLetterResult) => {
+      handleApplicationAssetDraftStarted(result, "cover-letter");
+      if ("subscriptionRequired" in result && result.subscriptionRequired) {
+        setCoverLetterSubscriptionModal(true);
+      }
+    },
+    onError: (msg: string) => setCoverLetterFormError(msg),
+    onSettled: clearApplicationAssetDraftLoading,
+  });
+
+  const generateColdEmailMutation = useGenerateColdEmail({
+    onSuccess: (result: GenerateColdEmailResult) => {
+      handleApplicationAssetDraftStarted(result, "cold-email");
+      if ("subscriptionRequired" in result && result.subscriptionRequired) {
+        setColdEmailSubscriptionModal(true);
+      }
+    },
+    onError: (msg: string) => setColdEmailFormError(msg),
+    onSettled: clearApplicationAssetDraftLoading,
+  });
 
   const generateReferralMutation = useGenerateReferral({
     onSuccess: (result: GenerateReferralResult) => {
-      if ("success" in result && result.success) {
-        const draft = {
-          id: result.id,
-          role: result.role,
-          company: result.company,
-          conname: result.conname,
-          content: result.content,
-        };
-        setCurrentReferralDraft(draft);
-        applyReferralDraftToForm(draft);
-        setIsReferralEditorActive(false);
-        setReferralFormError(null);
-      }
+      handleApplicationAssetDraftStarted(result, "referral");
       if ("duplicate" in result && result.duplicate && "existing_asset_id" in result && lastReferralParamsRef.current) {
         setReferralDuplicateModal({
           existingAssetId: result.existing_asset_id,
@@ -351,114 +570,777 @@ const StudioMainV2: React.FC<StudioMainProps> = ({ initialContext, initialAssetI
       }
     },
     onError: (msg: string) => setReferralFormError(msg),
+    onSettled: clearApplicationAssetDraftLoading,
   });
 
-  const handleCoverLetterDraftChange = (draft: CoverLetterAsset | null) => {
-    setCurrentCoverLetterDraft(draft);
-    setIsCoverLetterEditorActive(false);
-    setIsCoverLetterGenerating(false);
+  const updateStudioUrl = useCallback(
+    ({ type, id }: { type?: string; id?: string }) => {
+      const params = new URLSearchParams(searchParams.toString());
+      const nextType = type ?? selectedTopic;
+      const currentType = searchParams.get("type") ?? "";
+      const currentId = searchParams.get("id") ?? "";
+      const normalizedNextId = id ?? "";
+      if (currentType === nextType && currentId === normalizedNextId) {
+        return;
+      }
+      if (nextType) {
+        params.set("type", nextType);
+      }
+      if (id) {
+        params.set("id", id);
+      } else {
+        params.delete("id");
+      }
+      const query = params.toString();
+      router.replace(query ? `${pathname}?${query}` : pathname, { scroll: false });
+    },
+    [pathname, router, searchParams, selectedTopic]
+  );
+
+  updateStudioUrlRef.current = updateStudioUrl;
+
+  const handleSelectDocument = useCallback(
+    async (doc: DocumentLibraryItem) => {
+      resetDocumentSaveStatus();
+      setSelectedDocumentId(doc.id);
+      setGeneratedContent(doc.content);
+      if (doc.title.includes(" @ ")) {
+        const [r, c] = doc.title.split(" @ ");
+        setRole(r?.trim() || "");
+        setCompany(c?.trim() || "");
+      }
+      if (doc.topic === "cover-letter") {
+        const full = await fetchCoverLetterById(doc.id);
+        if (full) {
+          setCurrentCoverLetterDraft(full);
+          applyCoverLetterDraftToForm(full);
+          updateStudioUrl({ type: doc.topic, id: String(doc.id) });
+        }
+      } else if (doc.topic === "cold-email") {
+        const full = await fetchColdEmailById(doc.id);
+        if (full) {
+          setCurrentColdEmailDraft(full);
+          applyColdEmailDraftToForm(full);
+          updateStudioUrl({ type: doc.topic, id: String(doc.id) });
+        }
+      } else if (doc.topic === "referral") {
+        const full = await fetchReferralById(doc.id);
+        if (full) {
+          setCurrentReferralDraft(full);
+          applyReferralDraftToForm(full);
+          updateStudioUrl({ type: doc.topic, id: String(doc.id) });
+        }
+      }
+    },
+    [resetDocumentSaveStatus, updateStudioUrl]
+  );
+
+  const handleDeleteDocument = useCallback(
+    async (id: string | number) => {
+      const idStr = String(id);
+      if (selectedTopic === "cover-letter") {
+        await deleteCoverLetter(id);
+        void queryClient.invalidateQueries({ queryKey: COVER_LETTER_LIST_QUERY_KEY });
+        if (String(currentCoverLetterDraft?.id) === idStr || String(selectedDocumentId) === idStr) {
+          setCurrentCoverLetterDraft(null);
+          setGeneratedContent("");
+          setSelectedDocumentId(null);
+          resetDocumentSaveStatus();
+          updateStudioUrl({ type: selectedTopic });
+        }
+      } else if (selectedTopic === "cold-email") {
+        await deleteColdEmail(id);
+        void queryClient.invalidateQueries({ queryKey: COLD_EMAIL_LIST_QUERY_KEY });
+        if (String(currentColdEmailDraft?.id) === idStr || String(selectedDocumentId) === idStr) {
+          setCurrentColdEmailDraft(null);
+          setGeneratedContent("");
+          setSelectedDocumentId(null);
+          resetDocumentSaveStatus();
+          updateStudioUrl({ type: selectedTopic });
+        }
+      } else if (selectedTopic === "referral") {
+        await deleteReferral(id);
+        void queryClient.invalidateQueries({ queryKey: REFERRAL_LIST_QUERY_KEY });
+        if (String(currentReferralDraft?.id) === idStr || String(selectedDocumentId) === idStr) {
+          setCurrentReferralDraft(null);
+          setGeneratedContent("");
+          setSelectedDocumentId(null);
+          resetDocumentSaveStatus();
+          updateStudioUrl({ type: selectedTopic });
+        }
+      }
+    },
+    [
+      selectedTopic,
+      selectedDocumentId,
+      currentCoverLetterDraft?.id,
+      currentColdEmailDraft?.id,
+      currentReferralDraft?.id,
+      queryClient,
+      resetDocumentSaveStatus,
+      updateStudioUrl,
+    ]
+  );
+
+  const persistDocumentContent = useCallback(
+    async (content: string) => {
+      const canPersist =
+        (selectedTopic === "cover-letter" && currentCoverLetterDraft?.id) ||
+        (selectedTopic === "cold-email" && currentColdEmailDraft?.id) ||
+        (selectedTopic === "referral" && currentReferralDraft?.id);
+
+      if (!canPersist) return;
+
+      setDocumentSaveStatus("saving");
+      try {
+        if (selectedTopic === "cover-letter" && currentCoverLetterDraft?.id) {
+          await updateCoverLetter({ id: currentCoverLetterDraft.id, content });
+          setCurrentCoverLetterDraft(prev => (prev ? { ...prev, content, status: "accepted" } : prev));
+        } else if (selectedTopic === "cold-email" && currentColdEmailDraft?.id) {
+          await updateColdEmail({ id: currentColdEmailDraft.id, content });
+          setCurrentColdEmailDraft(prev => (prev ? { ...prev, content, status: "accepted" } : prev));
+        } else if (selectedTopic === "referral" && currentReferralDraft?.id) {
+          await updateReferral({ id: currentReferralDraft.id, content });
+          setCurrentReferralDraft(prev => (prev ? { ...prev, content, status: "accepted" } : prev));
+        }
+        setDocumentSaveStatus("saved");
+      } catch {
+        setDocumentSaveStatus("error");
+      }
+    },
+    [selectedTopic, currentCoverLetterDraft, currentColdEmailDraft, currentReferralDraft]
+  );
+
+  const handleDocumentContentChange = useCallback(
+    (content: string) => {
+      setDocumentSaveStatus("unsaved");
+      if (selectedTopic === "cover-letter") {
+        setCurrentCoverLetterDraft(prev => (prev ? { ...prev, content } : prev));
+      } else if (selectedTopic === "cold-email") {
+        setCurrentColdEmailDraft(prev => (prev ? { ...prev, content } : prev));
+      } else if (selectedTopic === "referral") {
+        setCurrentReferralDraft(prev => (prev ? { ...prev, content } : prev));
+      }
+      clearDocumentPersistDebounce();
+      documentPersistDebounceRef.current = setTimeout(() => {
+        documentPersistDebounceRef.current = null;
+        void persistDocumentContent(content);
+      }, 750);
+    },
+    [clearDocumentPersistDebounce, persistDocumentContent, selectedTopic]
+  );
+
+  useEffect(() => {
+    return () => {
+      clearDocumentPersistDebounce();
+    };
+  }, [clearDocumentPersistDebounce]);
+
+  const handleSelectVpd = (vpd: VpdListItem) => {
+    setVpdProject({ ...vpd.project, id: String(vpd.id), title: vpd.title });
+    setGeneratedContent(vpd.project.detailedBlocks?.[0]?.content?.toString() || "");
   };
 
-  const handleColdEmailDraftChange = (draft: ColdEmailAsset | null) => {
-    setCurrentColdEmailDraft(draft);
-    setGeneratedContent(draft?.content ?? "");
-    setIsColdEmailEditorActive(false);
-    setIsColdEmailGenerating(false);
+  const handleCreateNewVpd = () => {
+    const fresh = createDefaultVpdProject();
+    setVpdProject(fresh);
+    setGeneratedContent("");
+    setShowVpdEditor(true);
   };
 
-  const handleReferralViewAll = () => {
-    setShowReferralModal(true);
+  const handleViewAllDocuments = () => {
+    setShowAllDocumentsModal(true);
   };
 
-  const handleReferralSelect = (asset: ReferralAsset) => {
-    setCurrentReferralDraft(asset);
-    applyReferralDraftToForm(asset);
-    setIsReferralEditorActive(false);
-    setShowReferralModal(false);
-  };
+  const applyDraftGenerationResult = useCallback(
+    async (result: RunContentGenDraftResult) => {
+      setLinkedinPostAssetId(result.id);
+      setGeneratedContent(result.draft);
+      setLinkedinImages(result.mergedImageUrls);
+      linkedinPreserveDraftForAssetIdRef.current = result.id;
+      setLinkedinPendingMedia([]);
+      linkedinPendingMediaRef.current = [];
+      preservedLinkedinTabRef.current = {
+        assetId: result.id,
+        content: result.draft,
+        images: result.mergedImageUrls,
+        topicIdea,
+        funnel: linkedinFunnel,
+      };
+      updateStudioUrl({ type: "linkedin-post", id: result.id });
+      const assetsFresh = await fetchContentGenAssets();
+      setLinkedinContentGenAssets(assetsFresh);
+      void refreshLinkedinAssets();
+    },
+    [linkedinFunnel, refreshLinkedinAssets, topicIdea, updateStudioUrl]
+  );
 
-  const updateStudioUrl = ({ type, id }: { type?: string; id?: string }) => {
-    const params = new URLSearchParams(searchParams.toString());
-    const nextType = type ?? selectedTopic;
-    const currentType = searchParams.get("type") ?? "";
-    const currentId = searchParams.get("id") ?? "";
-    const normalizedNextId = id ?? "";
-    if (currentType === nextType && currentId === normalizedNextId) {
+  const runLinkedinDraftGeneration = useCallback(
+    async (topic: string, funnel: ContentGenFunnel | null) => {
+      const trimmedTopic = topic.trim();
+      if (!trimmedTopic) {
+        setLinkedinGenerateError("Add a topic or use the wand to suggest one.");
+        return;
+      }
+      setLinkedinGenerateError(null);
+      setIsGenerating(true);
+      let keepGenerating = false;
+      try {
+        const result = await runContentGenDraftGeneration({
+          topic: trimmedTopic,
+          funnel,
+          pendingMedia: linkedinPendingMediaRef.current,
+          existingImages: linkedinImages,
+          uploadContentGenMedia,
+        });
+        await applyDraftGenerationResult(result);
+      } catch (e) {
+        if (e instanceof Error && e.message === ADK_DRAFT_PENDING_ERROR) {
+          keepGenerating = true;
+          return;
+        }
+        const msg = e instanceof Error ? e.message : "Something went wrong. Please try again.";
+        setLinkedinGenerateError(msg);
+      } finally {
+        if (!keepGenerating) {
+          setIsGenerating(false);
+        }
+      }
+    },
+    [applyDraftGenerationResult, linkedinImages]
+  );
+
+  useEffect(() => {
+    if (selectedTopic !== "linkedin-post") {
       return;
     }
-    if (nextType) {
-      params.set("type", nextType);
-    }
-    if (id) {
-      params.set("id", id);
-    } else {
-      params.delete("id");
-    }
-    const query = params.toString();
-    router.replace(query ? `${pathname}?${query}` : pathname, { scroll: false });
-  };
+    useContentGenStudioStore.getState().syncFromStudio({
+      topic: topicIdea,
+      funnel: linkedinFunnel,
+      assetId: linkedinPostAssetId,
+      draftPreview: generatedContent,
+    });
+  }, [selectedTopic, topicIdea, linkedinFunnel, linkedinPostAssetId, generatedContent]);
 
-  const handleCopyReferralOrVpd = () => {
-    const text = selectedTopic === "referral" ? (currentReferralDraft?.content ?? "") : generatedContent;
-    if (text && typeof navigator !== "undefined" && navigator.clipboard) {
-      navigator.clipboard.writeText(text).catch(() => {});
-      setReferralCopyToast(true);
-      setTimeout(() => setReferralCopyToast(false), 2000);
+  useEffect(() => {
+    if (!isDocumentTopic(selectedTopic)) {
+      return;
     }
-  };
-  const handleCopyColdEmail = () => {
-    const content = generatedContent.trim();
-    if (!content) return;
-    if (typeof navigator !== "undefined" && navigator.clipboard) {
-      navigator.clipboard.writeText(content).catch(() => {});
+    const apiType = documentTopicToApiType(selectedTopic);
+    let assetId: string | null = null;
+    let acceptedContent = "";
+    if (selectedTopic === "cover-letter" && currentCoverLetterDraft) {
+      assetId = String(currentCoverLetterDraft.id);
+      acceptedContent = currentCoverLetterDraft.status === "accepted" ? (currentCoverLetterDraft.content ?? "") : "";
+    } else if (selectedTopic === "cold-email" && currentColdEmailDraft) {
+      assetId = String(currentColdEmailDraft.id);
+      acceptedContent = currentColdEmailDraft.status === "accepted" ? (currentColdEmailDraft.content ?? "") : "";
+    } else if (selectedTopic === "referral" && currentReferralDraft) {
+      assetId = String(currentReferralDraft.id);
+      acceptedContent = currentReferralDraft.status === "accepted" ? (currentReferralDraft.content ?? "") : "";
     }
-    setColdEmailCopyToast(true);
-    setTimeout(() => setColdEmailCopyToast(false), 2000);
-  };
+    useApplicationAssetStudioStore.getState().syncFromStudio({
+      assetType: apiType,
+      assetId,
+      role,
+      company,
+      jobDescription: jobDescription,
+      contactName: selectedTopic === "cold-email" ? managerName : selectedTopic === "referral" ? connectionName : "",
+      draftPreview: generatedContent,
+      acceptedContent,
+    });
+  }, [
+    selectedTopic,
+    role,
+    company,
+    jobDescription,
+    managerName,
+    connectionName,
+    generatedContent,
+    currentCoverLetterDraft,
+    currentColdEmailDraft,
+    currentReferralDraft,
+  ]);
+
+  useEffect(() => {
+    const onDraftPreview = (e: Event) => {
+      const d = (e as CustomEvent<ApplicationAssetDraftPreviewDetail>).detail;
+      if (!d?.draft) {
+        return;
+      }
+      setGeneratedContent(d.draft);
+      const draftRole = d.role !== undefined ? d.role.trim() : role;
+      const draftCompany = d.company !== undefined ? d.company.trim() : company;
+      const draftJd = d.jobDescription !== undefined ? d.jobDescription.trim() : jobDescription;
+      if (d.role !== undefined) {
+        setRole(draftRole);
+      }
+      if (d.company !== undefined) {
+        setCompany(draftCompany);
+      }
+      if (d.jobDescription !== undefined) {
+        setJobDescription(draftJd);
+      }
+      if (d.contactName !== undefined) {
+        if (d.assetType === "coldemail") {
+          setManagerName(d.contactName);
+        } else if (d.assetType === "referral") {
+          setConnectionName(d.contactName);
+        }
+      }
+      if (d.assetType && API_TYPE_TO_STUDIO_TOPIC[d.assetType] !== selectedTopic) {
+        updateStudioUrl({ type: API_TYPE_TO_STUDIO_TOPIC[d.assetType] });
+        setSelectedTopic(API_TYPE_TO_STUDIO_TOPIC[d.assetType]);
+      }
+      const pending = { content: d.draft, status: "draft" as const };
+      const pendingAssetId = d.assetId != null && String(d.assetId).trim() ? String(d.assetId).trim() : null;
+      const isNewPendingDraft = !pendingAssetId;
+      if (isNewPendingDraft) {
+        setSelectedDocumentId(null);
+        if (d.assetType) {
+          updateStudioUrl({ type: API_TYPE_TO_STUDIO_TOPIC[d.assetType] });
+        }
+      } else if (pendingAssetId) {
+        setSelectedDocumentId(pendingAssetId);
+      }
+      if (d.assetType === "coverletter") {
+        setCurrentCoverLetterDraft(
+          isNewPendingDraft
+            ? {
+                id: "",
+                role: draftRole,
+                company: draftCompany,
+                job_description: draftJd,
+                ...pending,
+              }
+            : prev =>
+                prev
+                  ? { ...prev, ...pending, id: pendingAssetId!, role: draftRole, company: draftCompany, job_description: draftJd }
+                  : {
+                      id: pendingAssetId!,
+                      role: draftRole,
+                      company: draftCompany,
+                      job_description: draftJd,
+                      ...pending,
+                    }
+        );
+      } else if (d.assetType === "coldemail") {
+        setCurrentColdEmailDraft(
+          isNewPendingDraft
+            ? {
+                id: "",
+                role: draftRole,
+                company: draftCompany,
+                job_description: draftJd,
+                hirname: d.contactName !== undefined ? d.contactName : managerName,
+                ...pending,
+              }
+            : prev =>
+                prev
+                  ? { ...prev, ...pending, id: pendingAssetId!, role: draftRole, company: draftCompany, job_description: draftJd }
+                  : {
+                      id: pendingAssetId!,
+                      role: draftRole,
+                      company: draftCompany,
+                      job_description: draftJd,
+                      hirname: managerName,
+                      ...pending,
+                    }
+        );
+      } else if (d.assetType === "referral") {
+        setCurrentReferralDraft(
+          isNewPendingDraft
+            ? {
+                id: "",
+                role: draftRole,
+                company: draftCompany,
+                conname: d.contactName !== undefined ? d.contactName : connectionName,
+                ...pending,
+              }
+            : prev =>
+                prev
+                  ? { ...prev, ...pending, id: pendingAssetId!, role: draftRole, company: draftCompany }
+                  : {
+                      id: pendingAssetId!,
+                      role: draftRole,
+                      company: draftCompany,
+                      conname: connectionName,
+                      ...pending,
+                    }
+        );
+      }
+      useApplicationAssetStudioStore.getState().syncFromStudio({ draftPreview: d.draft });
+    };
+    const onDraftReady = (e: Event) => {
+      const d = (e as CustomEvent<ApplicationAssetDraftReadyDetail>).detail;
+      if (!d?.assetId || !d?.draft) {
+        return;
+      }
+      setApplicationAssetDraftLoading(false);
+      setGeneratedContent(d.draft);
+      if (d.role?.trim()) {
+        setRole(d.role.trim());
+      }
+      if (d.company?.trim()) {
+        setCompany(d.company.trim());
+      }
+      if (d.jobDescription?.trim()) {
+        setJobDescription(d.jobDescription.trim());
+      }
+      if (d.assetType) {
+        const acceptedStudioTopic = API_TYPE_TO_STUDIO_TOPIC[d.assetType];
+        updateStudioUrl({ type: acceptedStudioTopic, id: d.assetId });
+        if (acceptedStudioTopic !== selectedTopic) {
+          setSelectedTopic(acceptedStudioTopic);
+        }
+      }
+      setSelectedDocumentId(d.assetId);
+      const accepted = { content: d.draft, status: "accepted" as const };
+      if (d.assetType === "coverletter") {
+        setCurrentCoverLetterDraft(prev =>
+          prev ? { ...prev, ...accepted, id: d.assetId } : { id: d.assetId, role, company, job_description: jobDescription, ...accepted }
+        );
+        void queryClient.invalidateQueries({ queryKey: COVER_LETTER_LIST_QUERY_KEY });
+      } else if (d.assetType === "coldemail") {
+        setCurrentColdEmailDraft(prev =>
+          prev
+            ? { ...prev, ...accepted, id: d.assetId }
+            : { id: d.assetId, role, company, job_description: jobDescription, hirname: managerName, ...accepted }
+        );
+        void queryClient.invalidateQueries({ queryKey: COLD_EMAIL_LIST_QUERY_KEY });
+      } else {
+        setCurrentReferralDraft(prev =>
+          prev ? { ...prev, ...accepted, id: d.assetId } : { id: d.assetId, role, company, conname: connectionName, ...accepted }
+        );
+        void queryClient.invalidateQueries({ queryKey: REFERRAL_LIST_QUERY_KEY });
+      }
+      useApplicationAssetStudioStore.getState().syncFromStudio({
+        draftPreview: d.draft,
+        acceptedContent: d.draft,
+      });
+    };
+    const onStreamComplete = () => setApplicationAssetDraftLoading(false);
+    const onApplyContext = (e: Event) => {
+      const d = (e as CustomEvent<ApplyApplicationAssetDetail>).detail;
+      if (!d) {
+        return;
+      }
+      const studioTopic = API_TYPE_TO_STUDIO_TOPIC[d.assetType];
+      const assetIdStr = d.assetId != null && String(d.assetId).trim() ? String(d.assetId).trim() : null;
+      if (studioTopic !== selectedTopic) {
+        setSelectedTopic(studioTopic);
+      }
+      updateStudioUrl({ type: studioTopic, id: assetIdStr ?? undefined });
+      setSelectedDocumentId(assetIdStr);
+      setRole(d.role);
+      setCompany(d.company);
+      setJobDescription(d.jobDescription);
+      if (d.assetType === "coldemail") {
+        setManagerName(d.contactName ?? "");
+      } else if (d.assetType === "referral") {
+        setConnectionName(d.contactName ?? "");
+      }
+    };
+    window.addEventListener(APPLICATION_ASSET_EVENTS.draftPreview, onDraftPreview);
+    window.addEventListener(APPLICATION_ASSET_EVENTS.draftReady, onDraftReady);
+    window.addEventListener(APPLICATION_ASSET_EVENTS.draftStreamComplete, onStreamComplete);
+    window.addEventListener(APPLICATION_ASSET_EVENTS.applyContext, onApplyContext);
+    return () => {
+      window.removeEventListener(APPLICATION_ASSET_EVENTS.draftPreview, onDraftPreview);
+      window.removeEventListener(APPLICATION_ASSET_EVENTS.draftReady, onDraftReady);
+      window.removeEventListener(APPLICATION_ASSET_EVENTS.draftStreamComplete, onStreamComplete);
+      window.removeEventListener(APPLICATION_ASSET_EVENTS.applyContext, onApplyContext);
+    };
+  }, [company, connectionName, jobDescription, managerName, queryClient, role, selectedTopic, updateStudioUrl]);
+
+  useEffect(() => {
+    const onRequestDraft = (e: Event) => {
+      const d = (e as CustomEvent<RequestApplicationAssetDraftDetail>).detail;
+      if (!d?.assetType || !d.role?.trim() || !d.company?.trim()) {
+        return;
+      }
+      setApplicationAssetDraftLoading(true);
+      setGeneratedContent("");
+      setSelectedDocumentId(null);
+      setRole(d.role.trim());
+      setCompany(d.company.trim());
+      setJobDescription(d.jobDescription ?? "");
+      if (d.contactName) {
+        if (d.assetType === "coldemail") {
+          setManagerName(d.contactName);
+        } else if (d.assetType === "referral") {
+          setConnectionName(d.contactName);
+        }
+      }
+      const studioTopic = d.assetType === "coverletter" ? "cover-letter" : d.assetType === "coldemail" ? "cold-email" : "referral";
+      if (studioTopic === "cover-letter") {
+        setCurrentCoverLetterDraft(null);
+        setCoverLetterFormError(null);
+      } else if (studioTopic === "cold-email") {
+        setCurrentColdEmailDraft(null);
+        setColdEmailFormError(null);
+      } else {
+        setCurrentReferralDraft(null);
+        setReferralFormError(null);
+      }
+      void (async () => {
+        try {
+          await runApplicationAssetDraftGeneration({
+            assetType: d.assetType,
+            role: d.role.trim(),
+            company: d.company.trim(),
+            jobDescription: d.jobDescription ?? "",
+            contactName: d.contactName,
+            applicationId: d.assetId,
+          });
+        } catch (err) {
+          const message = err instanceof Error ? err.message : "Draft generation failed. Please try again.";
+          if (studioTopic === "cover-letter") {
+            setCoverLetterFormError(message);
+          } else if (studioTopic === "cold-email") {
+            setColdEmailFormError(message);
+          } else {
+            setReferralFormError(message);
+          }
+          setApplicationAssetDraftLoading(false);
+        }
+      })();
+    };
+    window.addEventListener(APPLICATION_ASSET_EVENTS.requestDraft, onRequestDraft);
+    return () => window.removeEventListener(APPLICATION_ASSET_EVENTS.requestDraft, onRequestDraft);
+  }, []);
+
+  useEffect(() => {
+    const onApplicationAssetDraftFailed = (e: Event) => {
+      const d = (e as CustomEvent<ApplicationAssetDraftFailedDetail>).detail;
+      setApplicationAssetDraftLoading(false);
+      const message = d?.message ?? "Draft generation failed. Please try again.";
+      if (selectedTopic === "cover-letter") {
+        setCoverLetterFormError(message);
+      } else if (selectedTopic === "cold-email") {
+        setColdEmailFormError(message);
+      } else if (selectedTopic === "referral") {
+        setReferralFormError(message);
+      }
+    };
+    window.addEventListener(APPLICATION_ASSET_EVENTS.draftFailed, onApplicationAssetDraftFailed);
+    return () => window.removeEventListener(APPLICATION_ASSET_EVENTS.draftFailed, onApplicationAssetDraftFailed);
+  }, [selectedTopic]);
+
+  useEffect(() => {
+    const handleApplyTopic = (e: Event) => {
+      const d = (e as CustomEvent<ApplyContentGenTopicDetail>).detail;
+      if (!d?.topic?.trim()) return;
+      setTopicIdea(d.topic.trim());
+      setLinkedinFunnel(d.funnel ?? null);
+      if (d.assetId !== undefined) {
+        setLinkedinPostAssetId(d.assetId);
+      }
+      setLinkedinGenerateError(null);
+    };
+    window.addEventListener(CONTENT_GEN_EVENTS.applyTopic, handleApplyTopic);
+    return () => window.removeEventListener(CONTENT_GEN_EVENTS.applyTopic, handleApplyTopic);
+  }, []);
+
+  useEffect(() => {
+    const onRequestDraft = (e: Event) => {
+      const d = (e as CustomEvent<RequestContentGenDraftDetail>).detail;
+      if (d?.topic?.trim()) {
+        setTopicIdea(d.topic.trim());
+      }
+      if (d?.funnel) {
+        setLinkedinFunnel(d.funnel);
+      }
+      void runLinkedinDraftGeneration(d?.topic ?? topicIdea, d?.funnel ?? linkedinFunnel);
+    };
+    window.addEventListener(CONTENT_GEN_EVENTS.requestDraft, onRequestDraft);
+    return () => window.removeEventListener(CONTENT_GEN_EVENTS.requestDraft, onRequestDraft);
+  }, [linkedinFunnel, runLinkedinDraftGeneration, topicIdea]);
+
+  useEffect(() => {
+    const onDraftReady = (e: Event) => {
+      const d = (e as CustomEvent<ContentGenDraftReadyDetail>).detail;
+      if (!d?.assetId || !d?.draft) return;
+      setIsGenerating(false);
+      setLinkedinGenerateError(null);
+      void applyDraftGenerationResult({
+        id: d.assetId,
+        draft: d.draft,
+        mergedImageUrls: linkedinImages,
+      });
+    };
+    const onDraftPreview = (e: Event) => {
+      const d = (e as CustomEvent<ContentGenDraftPreviewDetail>).detail;
+      if (!d?.draft) {
+        return;
+      }
+      setGeneratedContent(d.draft);
+      if (d.topic?.trim()) {
+        setTopicIdea(d.topic.trim());
+      }
+      if (d.funnel !== undefined) {
+        setLinkedinFunnel(d.funnel);
+      }
+      if (d.assetId !== undefined) {
+        setLinkedinPostAssetId(d.assetId);
+      }
+      setLinkedinGenerateError(null);
+      setIsGenerating(false);
+    };
+    const onDraftStreamComplete = () => {
+      setIsGenerating(false);
+    };
+    const onDraftFailed = (e: Event) => {
+      const d = (e as CustomEvent<ContentGenDraftFailedDetail>).detail;
+      setIsGenerating(false);
+      setLinkedinGenerateError(d?.message ?? "Draft generation failed. Please try again.");
+    };
+    window.addEventListener(CONTENT_GEN_EVENTS.draftReady, onDraftReady);
+    window.addEventListener(CONTENT_GEN_EVENTS.draftPreview, onDraftPreview);
+    window.addEventListener(CONTENT_GEN_EVENTS.draftStreamComplete, onDraftStreamComplete);
+    window.addEventListener(CONTENT_GEN_EVENTS.draftFailed, onDraftFailed);
+    return () => {
+      window.removeEventListener(CONTENT_GEN_EVENTS.draftReady, onDraftReady);
+      window.removeEventListener(CONTENT_GEN_EVENTS.draftPreview, onDraftPreview);
+      window.removeEventListener(CONTENT_GEN_EVENTS.draftStreamComplete, onDraftStreamComplete);
+      window.removeEventListener(CONTENT_GEN_EVENTS.draftFailed, onDraftFailed);
+    };
+  }, [applyDraftGenerationResult, linkedinImages]);
+
+  useEffect(() => {
+    const onPublishComplete = () => {
+      void refreshLinkedinAssets();
+    };
+    window.addEventListener(CONTENT_GEN_EVENTS.publishComplete, onPublishComplete);
+    return () => window.removeEventListener(CONTENT_GEN_EVENTS.publishComplete, onPublishComplete);
+  }, [refreshLinkedinAssets]);
+
+  useEffect(() => {
+    const onPublishBlocked = (e: Event) => {
+      const d = (e as CustomEvent<ContentGenPublishBlockedDetail>).detail;
+      setLinkedinGenerateError(d?.message ?? CONTENT_GEN_PUBLISH_BLOCKED_MESSAGE);
+    };
+    const onPublishFailed = (e: Event) => {
+      const d = (e as CustomEvent<ContentGenPublishFailedDetail>).detail;
+      setLinkedinGenerateError(d?.message ?? "LinkedIn publish failed. Please try again.");
+    };
+    window.addEventListener(CONTENT_GEN_EVENTS.publishBlocked, onPublishBlocked);
+    window.addEventListener(CONTENT_GEN_EVENTS.publishFailed, onPublishFailed);
+    return () => {
+      window.removeEventListener(CONTENT_GEN_EVENTS.publishBlocked, onPublishBlocked);
+      window.removeEventListener(CONTENT_GEN_EVENTS.publishFailed, onPublishFailed);
+    };
+  }, []);
+
+  useEffect(() => {
+    const onRequestPublish = (e: Event) => {
+      const d = (e as CustomEvent<RequestContentGenPublishDetail>).detail;
+      if (d.background) {
+        return;
+      }
+      if (!linkedinPostAssetId) {
+        setLinkedinGenerateError(CONTENT_GEN_PUBLISH_BLOCKED_MESSAGE);
+        return;
+      }
+      if (!generatedContent.trim()) {
+        setLinkedinGenerateError("Your draft is empty. Generate or edit your post first.");
+        return;
+      }
+      if (isUploadingLinkedinMedia || linkedinPendingMedia.length > 0) {
+        setLinkedinGenerateError("Finish media uploads before posting or scheduling.");
+        return;
+      }
+      setLinkedinGenerateError(null);
+      if (d.mode === "schedule" && d.scheduledAt) {
+        const parsed = new Date(d.scheduledAt);
+        setPublishModalSeed(Number.isNaN(parsed.getTime()) ? { isScheduled: true } : { isScheduled: true, date: parsed });
+      } else if (d.mode === "schedule") {
+        setPublishModalSeed({ isScheduled: true });
+      } else {
+        setPublishModalSeed({ isScheduled: false });
+      }
+      setSelectedPostData(null);
+      setShowScheduler(true);
+    };
+    window.addEventListener(CONTENT_GEN_EVENTS.requestPublish, onRequestPublish);
+    return () => window.removeEventListener(CONTENT_GEN_EVENTS.requestPublish, onRequestPublish);
+  }, [generatedContent, isUploadingLinkedinMedia, linkedinPendingMedia.length, linkedinPostAssetId]);
 
   const handleTopicChange = (topicId: string) => {
+    resetDocumentSaveStatus();
+    if (selectedTopic === "linkedin-post" && topicId !== "linkedin-post") {
+      preservedLinkedinTabRef.current = {
+        assetId: linkedinPostAssetId,
+        content: generatedContent,
+        images: linkedinImages,
+        topicIdea,
+        funnel: linkedinFunnel,
+      };
+    }
+
     pendingTopicRef.current = topicId;
     setSelectedTopic(topicId);
-    updateStudioUrl({ type: topicId });
-    if (topicId !== "linkedin-post") {
-      setLinkedinPostAssetId(null);
+
+    if (topicId === "linkedin-post") {
+      const snap = preservedLinkedinTabRef.current;
+      if (snap) {
+        setLinkedinPostAssetId(snap.assetId);
+        setGeneratedContent(snap.content);
+        setLinkedinImages(snap.images);
+        setTopicIdea(snap.topicIdea);
+        setLinkedinFunnel(snap.funnel);
+        updateStudioUrl({ type: "linkedin-post", id: snap.assetId ?? undefined });
+      } else {
+        setGeneratedContent("");
+        updateStudioUrl({ type: "linkedin-post" });
+      }
       setLinkedinGenerateError(null);
       setLinkedinPersistError(null);
-      setLinkedinImages([]);
+      setLinkedinMediaError(null);
+    } else {
+      const documentAssetId = savedApplicationAssetIdForTopic(topicId, {
+        cover: currentCoverLetterDraft,
+        cold: currentColdEmailDraft,
+        referral: currentReferralDraft,
+      });
+      updateStudioUrl({ type: topicId, id: documentAssetId });
+      setIsGenerating(false);
+      setGeneratedContent("");
+      setLinkedinGenerateError(null);
+      setLinkedinPersistError(null);
       setLinkedinMediaError(null);
       clearLinkedinPendingMedia();
       linkedinPreserveDraftForAssetIdRef.current = null;
-    }
-    if (topicId === "vpd") setVpdMode("list");
-    if (topicId !== "cover-letter") {
-      setIsCoverLetterEditorActive(false);
-      setIsCoverLetterGenerating(false);
-    }
-    if (topicId !== "cold-email") {
-      setIsColdEmailEditorActive(false);
-      setIsColdEmailGenerating(false);
-    }
-    if (topicId !== "referral") {
-      setIsReferralEditorActive(false);
-    }
-    if (topicId === "referral" && currentReferralDraft) {
-      applyReferralDraftToForm(currentReferralDraft);
+
+      if (topicId === "cover-letter" && currentCoverLetterDraft) {
+        applyCoverLetterDraftToForm(currentCoverLetterDraft);
+      } else if (topicId === "cold-email" && currentColdEmailDraft) {
+        applyColdEmailDraftToForm(currentColdEmailDraft);
+      } else if (topicId === "referral" && currentReferralDraft) {
+        applyReferralDraftToForm(currentReferralDraft);
+      } else {
+        setSelectedDocumentId(null);
+      }
     }
   };
 
+  // Sync tab from URL only for back/forward and external links — not while a tab click is in flight.
   useEffect(() => {
     const urlType = searchParams.get("type");
     if (!urlType) return;
-    if (urlType === selectedTopic) {
-      pendingTopicRef.current = null;
+
+    if (pendingTopicRef.current) {
+      if (urlType === pendingTopicRef.current) {
+        pendingTopicRef.current = null;
+      }
       return;
     }
-    if (pendingTopicRef.current === urlType) {
-      pendingTopicRef.current = null;
-      return;
+
+    if (urlType !== selectedTopic) {
+      resetDocumentSaveStatus();
+      setSelectedTopic(urlType);
     }
-    setSelectedTopic(urlType);
-  }, [searchParams, selectedTopic]);
+  }, [resetDocumentSaveStatus, searchParams, selectedTopic]);
 
   useEffect(() => {
     if (!initialContext) {
@@ -499,29 +1381,24 @@ const StudioMainV2: React.FC<StudioMainProps> = ({ initialContext, initialAssetI
           if (!asset) throw new Error("Cover letter not found");
           setCurrentCoverLetterDraft(asset);
           setSelectedTopic("cover-letter");
-          setRole(asset.role ?? "");
-          setCompany(asset.company ?? "");
-          setJobDescription(asset.job_description ?? "");
+          applyCoverLetterDraftToForm(asset);
           return;
         }
         if (urlType === "cold-email") {
           const asset = await fetchColdEmailById(urlId);
           if (!asset) throw new Error("Cold email not found");
           setCurrentColdEmailDraft(asset);
-          setGeneratedContent(asset.content ?? "");
           setSelectedTopic("cold-email");
-          setRole(asset.role ?? "");
-          setCompany(asset.company ?? "");
-          setJobDescription(asset.job_description ?? "");
-          setManagerName(asset.hirname ?? "");
+          applyColdEmailDraftToForm(asset);
           return;
         }
         if (urlType === "referral") {
           const asset = await fetchReferralById(urlId);
           if (!asset) throw new Error("Referral not found");
           setCurrentReferralDraft(asset);
-          applyReferralDraftToForm(asset);
           setSelectedTopic("referral");
+          applyReferralDraftToForm(asset);
+          setSelectedDocumentId(asset.id);
           return;
         }
         if (urlType === "linkedin-post") {
@@ -549,6 +1426,7 @@ const StudioMainV2: React.FC<StudioMainProps> = ({ initialContext, initialAssetI
           return;
         }
       } catch {
+        hydratedAssetKeyRef.current = `failed:${hydrateKey}`;
         const params = new URLSearchParams(searchParams.toString());
         params.delete("id");
         const query = params.toString();
@@ -559,41 +1437,6 @@ const StudioMainV2: React.FC<StudioMainProps> = ({ initialContext, initialAssetI
     };
     hydrate();
   }, [clearLinkedinPendingMedia, initialAssetId, pathname, router, searchParams, selectedTopic]);
-
-  useEffect(() => {
-    if (isHydratingFromUrlRef.current) {
-      return;
-    }
-    if (selectedTopic === "cover-letter") {
-      updateStudioUrl({
-        type: selectedTopic,
-        id: currentCoverLetterDraft?.id ? String(currentCoverLetterDraft.id) : undefined,
-      });
-      return;
-    }
-    if (selectedTopic === "cold-email") {
-      updateStudioUrl({
-        type: selectedTopic,
-        id: currentColdEmailDraft?.id ? String(currentColdEmailDraft.id) : undefined,
-      });
-      return;
-    }
-    if (selectedTopic === "referral") {
-      updateStudioUrl({
-        type: selectedTopic,
-        id: currentReferralDraft?.id ? String(currentReferralDraft.id) : undefined,
-      });
-      return;
-    }
-    if (selectedTopic === "linkedin-post") {
-      updateStudioUrl({
-        type: selectedTopic,
-        id: linkedinPostAssetId ?? undefined,
-      });
-      return;
-    }
-    updateStudioUrl({ type: selectedTopic });
-  }, [currentColdEmailDraft?.id, currentCoverLetterDraft?.id, currentReferralDraft?.id, linkedinPostAssetId, selectedTopic]);
 
   const handlePost = async (finalContent: string, isScheduled: boolean, scheduleDate?: Date) => {
     if (selectedTopic === "linkedin-post") {
@@ -625,7 +1468,13 @@ const StudioMainV2: React.FC<StudioMainProps> = ({ initialContext, initialAssetI
         await refreshLinkedinAssets();
       } catch (e) {
         const errorMessage = e instanceof Error ? e.message : "Something went wrong";
-        throw new Error(normalizeLinkedinPostError(errorMessage));
+        const normalized = normalizeLinkedinPostError(errorMessage);
+        window.dispatchEvent(
+          new CustomEvent(CONTENT_GEN_EVENTS.publishFailed, {
+            detail: { message: normalized },
+          })
+        );
+        throw new Error(normalized);
       }
       return;
     }
@@ -710,8 +1559,8 @@ const StudioMainV2: React.FC<StudioMainProps> = ({ initialContext, initialAssetI
   );
 
   const handleViewAll = (tab: "scheduled" | "history") => {
-    if (selectedTopic === "referral") {
-      handleReferralViewAll();
+    if (isDocumentTopic(selectedTopic)) {
+      setShowAllDocumentsModal(true);
       return;
     }
     if (selectedTopic === "linkedin-post") {
@@ -725,7 +1574,70 @@ const StudioMainV2: React.FC<StudioMainProps> = ({ initialContext, initialAssetI
     setShowAllPostsModal(true);
   };
 
+  const beginDocumentDraftGeneration = (topic: ApplicationAssetStudioTopic) => {
+    setApplicationAssetDraftLoading(true);
+    setGeneratedContent("");
+    setSelectedDocumentId(null);
+    if (topic === "cover-letter") {
+      setCurrentCoverLetterDraft(null);
+    } else if (topic === "cold-email") {
+      setCurrentColdEmailDraft(null);
+    } else {
+      setCurrentReferralDraft(null);
+    }
+  };
+
   const handleGenerate = () => {
+    if (selectedTopic === "cover-letter") {
+      setCoverLetterFormError(null);
+      const trimmedRole = role.trim();
+      const trimmedCompany = company.trim();
+      const trimmedJd = jobDescription.trim();
+      if (!trimmedRole || !trimmedCompany || !trimmedJd) {
+        setCoverLetterFormError("Please fill Role, Company and Job Description.");
+        return;
+      }
+      const params = { role: trimmedRole, company: trimmedCompany, job_description: trimmedJd };
+      lastCoverLetterParamsRef.current = params;
+      beginDocumentDraftGeneration("cover-letter");
+      generateCoverLetterMutation.mutate(params, {
+        onSuccess: (result: GenerateCoverLetterResult) => {
+          if ("duplicate" in result && result.duplicate && "existing_asset_id" in result) {
+            setCoverLetterDuplicateModal({ existingAssetId: result.existing_asset_id, params });
+          }
+        },
+      });
+      return;
+    }
+
+    if (selectedTopic === "cold-email") {
+      setColdEmailFormError(null);
+      const trimmedRole = role.trim();
+      const trimmedCompany = company.trim();
+      const trimmedJd = jobDescription.trim();
+      const trimmedHirname = managerName.trim();
+      if (!trimmedRole || !trimmedCompany || !trimmedJd || !trimmedHirname) {
+        setColdEmailFormError("Please fill Role, Company, Job Description and Hiring Manager Name.");
+        return;
+      }
+      const params = {
+        role: trimmedRole,
+        company: trimmedCompany,
+        job_description: trimmedJd,
+        hirname: trimmedHirname,
+      };
+      lastColdEmailParamsRef.current = params;
+      beginDocumentDraftGeneration("cold-email");
+      generateColdEmailMutation.mutate(params, {
+        onSuccess: (result: GenerateColdEmailResult) => {
+          if ("duplicate" in result && result.duplicate && "existing_asset_id" in result) {
+            setColdEmailDuplicateModal({ existingAssetId: result.existing_asset_id, params });
+          }
+        },
+      });
+      return;
+    }
+
     if (selectedTopic === "referral") {
       setReferralFormError(null);
       const trimmedRole = role.trim();
@@ -741,88 +1653,47 @@ const StudioMainV2: React.FC<StudioMainProps> = ({ initialContext, initialAssetI
         conname: trimmedConname,
       };
       lastReferralParamsRef.current = params;
+      beginDocumentDraftGeneration("referral");
       generateReferralMutation.mutate(params);
       return;
     }
 
     if (selectedTopic === "linkedin-post") {
-      const trimmedTopic = topicIdea.trim();
-      if (!trimmedTopic) {
-        setLinkedinGenerateError("Add a topic or use the wand to suggest one.");
-        return;
-      }
-      setLinkedinGenerateError(null);
-      setIsGenerating(true);
-      void (async () => {
-        try {
-          const { id, existing } = await generateContentGenAsset(trimmedTopic);
-          setLinkedinPostAssetId(id);
-          const assetsFresh = await fetchContentGenAssets();
-          setLinkedinContentGenAssets(assetsFresh);
-          const existingAsset = assetsFresh.find(a => String(a.id) === String(id));
-          const baseImageUrls = Array.isArray(existingAsset?.images) ? [...existingAsset.images] : [];
-          setLinkedinImages(baseImageUrls);
-
-          const sectionName = `contentgen${id}`;
-          const pendingSlice = linkedinPendingMediaRef.current.slice();
-
-          const loadDraftOnce = async () => {
-            const chatHistory = await fetchUnibotChatHistory(sectionName);
-            return getFirstContentGenDraftFromHistory(chatHistory);
-          };
-
-          let draft = await loadDraftOnce();
-          if (!draft.trim() && !existing) {
-            await new Promise(r => setTimeout(r, 500));
-            draft = await loadDraftOnce();
-          }
-          if (!draft.trim()) {
-            throw new Error("Could not read the generated draft. Please try again.");
-          }
-
-          let mergedImageUrls = baseImageUrls;
-          if (pendingSlice.length > 0) {
-            setIsUploadingLinkedinMedia(true);
-            setLinkedinMediaError(null);
-            try {
-              const uploaded = await Promise.all(pendingSlice.map(entry => uploadContentGenMedia(entry.file, "linkedin-post")));
-              mergedImageUrls = Array.from(new Set([...baseImageUrls, ...uploaded.map(u => u.url)]));
-              pendingSlice.forEach(p => URL.revokeObjectURL(p.objectUrl));
-              setLinkedinPendingMedia([]);
-              linkedinPendingMediaRef.current = [];
-              setLinkedinImages(mergedImageUrls);
-            } catch (uploadErr) {
-              setLinkedinMediaError(uploadErr instanceof Error ? uploadErr.message : "Could not upload staged media");
-              setLinkedinImages(baseImageUrls);
-            } finally {
-              setIsUploadingLinkedinMedia(false);
-            }
-          }
-
-          setGeneratedContent(draft);
-          linkedinPreserveDraftForAssetIdRef.current = id;
-          await updateContentGenAsset({ id, content: draft, images: mergedImageUrls });
-          setLinkedinImages(mergedImageUrls);
-
-          updateStudioUrl({ type: "linkedin-post", id });
-          void refreshLinkedinAssets();
-        } catch (e) {
-          const msg = e instanceof Error ? e.message : "Something went wrong. Please try again.";
-          setLinkedinGenerateError(msg);
-        } finally {
-          setIsGenerating(false);
-        }
-      })();
+      void runLinkedinDraftGeneration(topicIdea, linkedinFunnel);
       return;
     }
 
-    setIsGenerating(true);
-    setTimeout(() => {
-      const content = generateMockContent();
-      setGeneratedContent(content);
-      setIsGenerating(false);
-    }, 1500);
+    if (selectedTopic === "vpd") {
+      setIsGenerating(true);
+      setTimeout(() => {
+        const content = generateMockContent();
+        setGeneratedContent(content);
+        const nextProject = buildVpdProjectFromDraft(role, company, content);
+        setVpdProject(nextProject);
+        setSavedVpds(prev => {
+          const exists = prev.some(v => v.title === nextProject.title);
+          if (exists) return prev;
+          return [
+            {
+              id: nextProject.id,
+              title: nextProject.title || "Value Proposition Document",
+              date: "Just now",
+              project: nextProject,
+            },
+            ...prev,
+          ];
+        });
+        setIsGenerating(false);
+      }, 1500);
+      return;
+    }
   };
+
+  const isDocumentGenerating =
+    generateCoverLetterMutation.isPending ||
+    generateColdEmailMutation.isPending ||
+    generateReferralMutation.isPending ||
+    applicationAssetDraftLoading;
 
   const generateMockContent = () => {
     if (selectedTopic === "linkedin-post") {
@@ -959,126 +1830,157 @@ const StudioMainV2: React.FC<StudioMainProps> = ({ initialContext, initialAssetI
     void persistLinkedinContentToServer();
   }, [persistLinkedinContentToServer]);
 
-  const renderInputs = () => {
-    // VPD Handling
-    if (selectedTopic === "vpd") {
-      if (vpdMode === "list") {
-        return (
-          <div className="space-y-4">
-            <button
-              onClick={() => setVpdMode("create")}
-              className="w-full py-4 border-2 border-dashed border-slate-300 dark:border-slate-700 rounded-xl flex flex-col items-center justify-center gap-2 text-slate-500 hover:border-blue-500 hover:text-blue-600 hover:bg-slate-50 dark:hover:bg-slate-900 transition-all font-medium"
-            >
-              <Plus size={24} />
-              <span>Create New VPD</span>
-            </button>
-
-            <div className="mt-2 border-t border-slate-100 pt-5 dark:border-slate-800">
-              <div className="mb-3 flex items-center justify-between gap-2">
-                <div className="inline-flex rounded-full bg-slate-100 p-0.5 dark:bg-slate-900">
-                  <button
-                    type="button"
-                    onClick={() => setVpdLibraryTab("recents")}
-                    className={`rounded-full px-3 py-1.5 text-xs font-medium transition-all ${
-                      vpdLibraryTab === "recents"
-                        ? "bg-white text-slate-900 shadow-sm dark:bg-slate-800 dark:text-white"
-                        : "text-slate-500 hover:text-slate-700 dark:text-slate-400"
-                    }`}
-                  >
-                    Recents
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => setVpdLibraryTab("templates")}
-                    className={`rounded-full px-3 py-1.5 text-xs font-medium transition-all ${
-                      vpdLibraryTab === "templates"
-                        ? "bg-white text-slate-900 shadow-sm dark:bg-slate-800 dark:text-white"
-                        : "text-slate-500 hover:text-slate-700 dark:text-slate-400"
-                    }`}
-                  >
-                    Templates
-                  </button>
-                </div>
-                <button
-                  type="button"
-                  onClick={() => setShowAllVPDsModal(true)}
-                  className="text-xs font-medium text-brand-600 hover:underline dark:text-brand-400"
-                >
-                  See all
-                </button>
-              </div>
-              {(() => {
-                const recents = savedVpds.filter(v => !v.isTemplate);
-                const templates = savedVpds.filter(v => v.isTemplate);
-                const activeList = vpdLibraryTab === "recents" ? recents : templates;
-                if (activeList.length === 0) {
-                  return (
-                    <p className="rounded-xl border border-dashed border-slate-200 px-4 py-6 text-center text-xs text-slate-400 dark:border-slate-700">
-                      {vpdLibraryTab === "recents" ? "No recent VPDs yet. Generate a draft to create one." : "No templates available yet."}
-                    </p>
-                  );
-                }
-                return (
-                  <div className="grid grid-cols-3 gap-2.5">
-                    {activeList.slice(0, 6).map(vpd => (
-                      <VpdLibraryCard
-                        key={vpd.id}
-                        vpd={vpd}
-                        onClick={() => {
-                          setVpdProject(vpd.project);
-                          setVpdMode("create");
-                        }}
-                      />
-                    ))}
-                  </div>
-                );
-              })()}
-            </div>
-          </div>
-        );
-      }
-      // VPD Create Mode (Falls through to shared Inputs below)
-    }
+  const renderVpdSavedCards = () => {
+    const recents = savedVpds.filter(v => !v.isTemplate);
+    const templates = savedVpds.filter(v => v.isTemplate);
+    const activeList = vpdLibraryTab === "recents" ? recents : templates;
 
     return (
-      <div className="space-y-5">
-        {selectedTopic === "vpd" && (
-          <button onClick={() => setVpdMode("list")} className="flex items-center gap-1 text-xs text-slate-500 hover:text-slate-800 mb-2">
-            <ChevronLeft size={14} /> Back to List
+      <div className="mt-5 border-t border-slate-100 pt-5 dark:border-slate-800">
+        <div className="mb-3 flex items-center justify-between gap-2">
+          <div className="inline-flex rounded-full bg-slate-100 p-0.5 dark:bg-slate-900">
+            <button
+              type="button"
+              onClick={() => setVpdLibraryTab("recents")}
+              className={`rounded-full px-3 py-1.5 text-xs font-medium transition-all ${
+                vpdLibraryTab === "recents"
+                  ? "bg-white text-slate-900 shadow-sm dark:bg-slate-800 dark:text-white"
+                  : "text-slate-500 hover:text-slate-700 dark:text-slate-400 dark:hover:text-slate-200"
+              }`}
+            >
+              Recents
+            </button>
+            <button
+              type="button"
+              onClick={() => setVpdLibraryTab("templates")}
+              className={`rounded-full px-3 py-1.5 text-xs font-medium transition-all ${
+                vpdLibraryTab === "templates"
+                  ? "bg-white text-slate-900 shadow-sm dark:bg-slate-800 dark:text-white"
+                  : "text-slate-500 hover:text-slate-700 dark:text-slate-400 dark:hover:text-slate-200"
+              }`}
+            >
+              Templates
+            </button>
+          </div>
+          <button
+            type="button"
+            onClick={() => setShowAllVPDsModal(true)}
+            className="text-xs font-medium text-brand-600 hover:underline dark:text-brand-400"
+          >
+            See all
           </button>
+        </div>
+
+        {activeList.length > 0 ? (
+          <div className="grid grid-cols-3 gap-2.5">
+            {activeList.slice(0, 6).map(vpd => (
+              <VpdLibraryCard key={vpd.id} vpd={vpd} onClick={() => handleSelectVpd(vpd)} />
+            ))}
+          </div>
+        ) : (
+          <p className="rounded-xl border border-dashed border-slate-200 px-4 py-6 text-center text-xs text-slate-400 dark:border-slate-700">
+            {vpdLibraryTab === "recents" ? "No recent VPDs yet. Generate a draft to create one." : "No templates available yet."}
+          </p>
         )}
 
+        <button
+          type="button"
+          onClick={handleCreateNewVpd}
+          className="mt-3 flex w-full items-center justify-center gap-2 rounded-xl border-2 border-dashed border-slate-300 py-3 text-sm font-medium text-slate-500 transition-all hover:border-brand-500 hover:text-brand-600 hover:bg-slate-50 dark:border-slate-700 dark:hover:bg-slate-900"
+        >
+          <Plus size={18} />
+          Create blank VPD
+        </button>
+      </div>
+    );
+  };
+
+  const renderDocumentSavedCards = () => {
+    if (!isDocumentTopic(selectedTopic)) return null;
+
+    const combinedList = documentItemsForTopic;
+
+    return (
+      <div className="mt-5 border-t border-slate-100 pt-5 dark:border-slate-800">
+        <div className="mb-3 flex min-w-0 flex-1 items-center gap-2">
+          <h3 className="truncate text-sm font-semibold text-slate-800 dark:text-slate-100">Recents</h3>
+          {combinedList.length > 0 && (
+            <span className="shrink-0 rounded-md bg-brand-50 px-1.5 py-0.5 text-[10px] font-medium text-brand-700 dark:bg-brand-900/40 dark:text-brand-300">
+              {combinedList.length}
+            </span>
+          )}
+        </div>
+
+        <div className="flex max-h-[min(42vh,360px)] flex-col gap-2 overflow-y-auto pr-1">
+          {combinedList.length === 0 ? (
+            <p className="rounded-xl border border-dashed border-slate-200 px-4 py-8 text-center text-xs text-slate-400 dark:border-slate-700">
+              No recent drafts yet. Generate one to get started.
+            </p>
+          ) : (
+            combinedList
+              .slice(0, 5)
+              .map(doc => (
+                <DocumentListCard
+                  key={doc.id}
+                  doc={doc}
+                  isSelected={selectedDocumentId === doc.id}
+                  onClick={() => void handleSelectDocument(doc)}
+                  onDelete={id => void handleDeleteDocument(id)}
+                />
+              ))
+          )}
+        </div>
+
+        {combinedList.length > 0 && (
+          <div className="flex shrink-0 justify-center pt-3">
+            <button
+              type="button"
+              onClick={handleViewAllDocuments}
+              className="text-[11px] font-medium text-brand-600 hover:underline dark:text-brand-400"
+            >
+              View all
+            </button>
+          </div>
+        )}
+      </div>
+    );
+  };
+
+  const renderInputs = () => {
+    return (
+      <div className="space-y-5">
         {/* LinkedIn Inputs */}
         {selectedTopic === "linkedin-post" && (
           <>
             <div>
-              <label className="block text-xs font-medium text-slate-500 mb-2">Topic Generator</label>
+              <div className="flex items-center gap-2 mb-2">
+                <label className="block text-xs font-medium text-slate-500">Topic Generator</label>
+                {linkedinFunnel ? (
+                  <span className="text-[10px] font-medium px-2 py-0.5 rounded-full bg-brand-50 text-brand-700">
+                    {funnelDisplayLabel(linkedinFunnel)}
+                  </span>
+                ) : null}
+              </div>
               <div className="flex gap-2">
                 <input
                   value={topicIdea}
                   onChange={e => {
-                    setTopicPoolError(null);
                     setLinkedinGenerateError(null);
                     setTopicIdea(e.target.value);
                   }}
-                  className="flex-1 bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-xl px-4 py-3 text-sm font-medium outline-none focus:ring-2 focus:ring-blue-500/20"
+                  className="flex-1 bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-xl px-4 py-3 text-sm font-medium outline-none focus:ring-2 focus:ring-brand-500/20"
                   placeholder="e.g. Learnings from my first design sprint..."
                 />
                 <button
                   type="button"
-                  aria-label="Generate topic suggestion"
-                  disabled={isLoadingTopics}
-                  onClick={() => void applyNextTopicFromPool()}
-                  className="px-4 bg-blue-50 text-blue-600 rounded-xl hover:bg-blue-100 transition-colors font-medium disabled:opacity-50 disabled:pointer-events-none"
+                  aria-label="Plan topic with Unibot"
+                  title="Plan topic with Unibot"
+                  onClick={() => handleOpenContentGenTopic()}
+                  className="px-4 bg-brand-50 text-brand-600 rounded-xl hover:bg-brand-100 transition-colors font-medium"
                 >
-                  <Wand2 size={18} className={isLoadingTopics ? "animate-pulse" : undefined} />
+                  <Wand2 size={18} />
                 </button>
               </div>
-              {topicPoolError ? (
-                <p className="text-xs text-red-600 dark:text-red-400 mt-1.5" role="alert">
-                  {topicPoolError}
-                </p>
-              ) : null}
             </div>
             <div className="grid grid-cols-2 gap-4">
               <div>
@@ -1152,9 +2054,9 @@ const StudioMainV2: React.FC<StudioMainProps> = ({ initialContext, initialAssetI
                 type="button"
                 disabled={isUploadingLinkedinMedia}
                 onClick={() => linkedinFileInputRef.current?.click()}
-                className="w-full py-8 border-2 border-dashed border-slate-300 dark:border-slate-700 rounded-xl flex flex-col items-center justify-center gap-2 text-slate-400 hover:border-blue-500 hover:text-blue-500 hover:bg-slate-50 dark:hover:bg-slate-900 transition-all group disabled:opacity-60 disabled:pointer-events-none"
+                className="w-full py-8 border-2 border-dashed border-slate-300 dark:border-slate-700 rounded-xl flex flex-col items-center justify-center gap-2 text-slate-400 hover:border-brand-500 hover:text-brand-500 hover:bg-slate-50 dark:hover:bg-slate-900 transition-all group disabled:opacity-60 disabled:pointer-events-none"
               >
-                <div className="p-3 bg-slate-100 dark:bg-slate-800 rounded-full group-hover:bg-blue-100 dark:group-hover:bg-blue-900/30 transition-colors">
+                <div className="p-3 bg-slate-100 dark:bg-slate-800 rounded-full group-hover:bg-brand-100 dark:group-hover:bg-brand-900/30 transition-colors">
                   <Upload size={20} />
                 </div>
                 <span className="text-xs font-medium">{isUploadingLinkedinMedia ? "Uploading..." : "Click to upload media"}</span>
@@ -1175,7 +2077,7 @@ const StudioMainV2: React.FC<StudioMainProps> = ({ initialContext, initialAssetI
                 <div className="grid grid-cols-3 gap-2 mt-3">
                   {linkedinPendingMedia.map(p => (
                     <div key={p.id} className="relative rounded-lg overflow-hidden border border-amber-200 dark:border-amber-900/40">
-                      <img src={p.objectUrl} alt="" className="w-full h-20 object-cover" />
+                      <StudioMediaPreviewImage src={p.objectUrl} alt="" className="w-full h-20 object-cover" />
                       <span className="absolute bottom-1 left-1 text-[10px] font-medium bg-amber-100/90 text-amber-900 dark:bg-amber-900/80 dark:text-amber-100 px-1 rounded">
                         Pending
                       </span>
@@ -1191,7 +2093,7 @@ const StudioMainV2: React.FC<StudioMainProps> = ({ initialContext, initialAssetI
                   ))}
                   {linkedinImages.map(url => (
                     <div key={url} className="relative rounded-lg overflow-hidden border border-slate-200 dark:border-slate-700">
-                      <img src={url} alt="Uploaded media" className="w-full h-20 object-cover" />
+                      <StudioMediaPreviewImage src={url} alt="Uploaded media" className="w-full h-20 object-cover" />
                       <button
                         type="button"
                         onClick={() => void handleRemoveLinkedinMedia(url)}
@@ -1208,49 +2110,6 @@ const StudioMainV2: React.FC<StudioMainProps> = ({ initialContext, initialAssetI
           </>
         )}
 
-        {/* Scheduled & History row (non-LinkedIn topics) */}
-        {selectedTopic !== "linkedin-post" && (
-          <div className="pt-6 border-t border-slate-100 dark:border-slate-800 space-y-6">
-            <div className="flex gap-3">
-              {selectedTopic !== "referral" && (
-                <button
-                  onClick={() => handleViewAll("scheduled")}
-                  className="flex-1 py-2.5 px-3 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-lg flex items-center justify-center gap-2 hover:border-blue-400 dark:hover:border-blue-700 hover:shadow-sm transition-all group"
-                >
-                  <div className="w-6 h-6 rounded-md bg-blue-50 dark:bg-blue-900/30 text-blue-600 flex items-center justify-center group-hover:bg-blue-100 dark:group-hover:bg-blue-900/50 transition-colors">
-                    <Calendar size={14} />
-                  </div>
-                  <div className="flex flex-col items-start leading-none">
-                    <span className="text-[13px] font-semibold text-slate-700 dark:text-slate-200">Scheduled</span>
-                  </div>
-                  <span className="ml-auto text-[10px] font-medium bg-slate-100 dark:bg-slate-800 px-1.5 py-0.5 rounded text-slate-500">
-                    {selectedTopic === "linkedin-post" ? scheduledPostsForModal.length : scheduledPosts.length}
-                  </span>
-                </button>
-              )}
-
-              <button
-                onClick={() => handleViewAll("history")}
-                className={`${selectedTopic === "referral" ? "w-full" : "flex-1"} py-2.5 px-3 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-lg flex items-center justify-center gap-2 hover:border-orange-400 dark:hover:border-orange-700 hover:shadow-sm transition-all group`}
-              >
-                <div className="w-6 h-6 rounded-md bg-orange-50 dark:bg-orange-900/30 text-orange-600 flex items-center justify-center group-hover:bg-orange-100 dark:group-hover:bg-orange-900/50 transition-colors">
-                  <History size={14} />
-                </div>
-                <div className="flex flex-col items-start leading-none">
-                  <span className="text-[13px] font-semibold text-slate-700 dark:text-slate-200">History</span>
-                </div>
-                <span className="ml-auto text-[10px] font-medium bg-slate-100 dark:bg-slate-800 px-1.5 py-0.5 rounded text-slate-500">
-                  {selectedTopic === "referral"
-                    ? referralHistory.length
-                    : selectedTopic === "linkedin-post"
-                      ? historyPostsForModal.length
-                      : postHistory.length}
-                </span>
-              </button>
-            </div>
-          </div>
-        )}
-
         {/* Shared Inputs (Role, Company) for Non-LinkedIn */}
         {selectedTopic !== "linkedin-post" && (
           <div className="grid grid-cols-2 gap-4">
@@ -1259,7 +2118,7 @@ const StudioMainV2: React.FC<StudioMainProps> = ({ initialContext, initialAssetI
               <input
                 value={role}
                 onChange={e => setRole(e.target.value)}
-                className="w-full bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-xl px-4 py-3 text-sm font-medium outline-none focus:ring-2 focus:ring-blue-500/20"
+                className="w-full bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-xl px-4 py-3 text-sm font-medium outline-none focus:ring-2 focus:ring-brand-500/20"
                 placeholder="e.g. Product Designer"
               />
             </div>
@@ -1268,21 +2127,20 @@ const StudioMainV2: React.FC<StudioMainProps> = ({ initialContext, initialAssetI
               <input
                 value={company}
                 onChange={e => setCompany(e.target.value)}
-                className="w-full bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-xl px-4 py-3 text-sm font-medium outline-none focus:ring-2 focus:ring-blue-500/20"
+                className="w-full bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-xl px-4 py-3 text-sm font-medium outline-none focus:ring-2 focus:ring-brand-500/20"
                 placeholder="e.g. Spotify"
               />
             </div>
           </div>
         )}
 
-        {/* Specific 3rd Inputs */}
         {(selectedTopic === "cover-letter" || selectedTopic === "vpd") && (
           <div>
             <label className="block text-xs font-medium text-slate-500 uppercase mb-2">Job Description</label>
             <textarea
               value={jobDescription}
               onChange={e => setJobDescription(e.target.value)}
-              className="w-full bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-xl px-4 py-3 text-sm font-medium h-32 resize-none outline-none focus:ring-2 focus:ring-blue-500/20"
+              className="w-full bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-xl px-4 py-3 text-sm font-medium h-32 resize-none outline-none focus:ring-2 focus:ring-brand-500/20"
               placeholder="Paste the JD here..."
             />
           </div>
@@ -1294,7 +2152,7 @@ const StudioMainV2: React.FC<StudioMainProps> = ({ initialContext, initialAssetI
             <input
               value={managerName}
               onChange={e => setManagerName(e.target.value)}
-              className="w-full bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-xl px-4 py-3 text-sm font-medium outline-none focus:ring-2 focus:ring-blue-500/20"
+              className="w-full bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-xl px-4 py-3 text-sm font-medium outline-none focus:ring-2 focus:ring-brand-500/20"
               placeholder="e.g. John Doe"
             />
           </div>
@@ -1306,13 +2164,27 @@ const StudioMainV2: React.FC<StudioMainProps> = ({ initialContext, initialAssetI
             <input
               value={connectionName}
               onChange={e => setConnectionName(e.target.value)}
-              className="w-full bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-xl px-4 py-3 text-sm font-medium outline-none focus:ring-2 focus:ring-blue-500/20"
+              className="w-full bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-xl px-4 py-3 text-sm font-medium outline-none focus:ring-2 focus:ring-brand-500/20"
               placeholder="e.g. Jane Smith"
             />
           </div>
         )}
 
-        {selectedTopic === "referral" && referralFormError && <p className="text-sm text-red-600 dark:text-red-400">{referralFormError}</p>}
+        {selectedTopic === "cover-letter" && coverLetterFormError && (
+          <p className="text-sm text-red-600 dark:text-red-400" role="alert">
+            {coverLetterFormError}
+          </p>
+        )}
+        {selectedTopic === "cold-email" && coldEmailFormError && (
+          <p className="text-sm text-red-600 dark:text-red-400" role="alert">
+            {coldEmailFormError}
+          </p>
+        )}
+        {selectedTopic === "referral" && referralFormError && (
+          <p className="text-sm text-red-600 dark:text-red-400" role="alert">
+            {referralFormError}
+          </p>
+        )}
 
         {selectedTopic === "linkedin-post" && linkedinGenerateError ? (
           <p className="text-sm text-red-600 dark:text-red-400" role="alert">
@@ -1320,27 +2192,40 @@ const StudioMainV2: React.FC<StudioMainProps> = ({ initialContext, initialAssetI
           </p>
         ) : null}
 
-        {/* Generate Button */}
-        <button
-          onClick={selectedTopic === "referral" && isReferralEditorActive ? undefined : handleGenerate}
-          disabled={selectedTopic === "referral" ? generateReferralMutation.isPending || isReferralEditorActive : isGenerating}
-          className="w-full py-4 bg-blue-600 hover:bg-blue-700 text-white font-medium rounded-xl flex items-center justify-center gap-2 shadow-lg shadow-blue-500/30 transition-all active:scale-95 disabled:opacity-70 disabled:cursor-not-allowed mt-4"
-        >
-          {selectedTopic === "referral" && generateReferralMutation.isPending ? (
-            <div className="w-4 h-4 border-2 border-white/50 border-t-white rounded-full animate-spin" />
-          ) : isGenerating ? (
-            <div className="w-4 h-4 border-2 border-white/50 border-t-white rounded-full animate-spin" />
-          ) : (
-            <Wand2 size={18} />
-          )}
-          {selectedTopic === "referral" && generateReferralMutation.isPending
-            ? " Crafting..."
-            : isGenerating
-              ? " Crafting..."
-              : selectedTopic === "referral" && isReferralEditorActive
-                ? "Enhance Draft"
-                : "Generate Draft"}
-        </button>
+        {selectedTopic === "linkedin-post" && (
+          <button
+            type="button"
+            onClick={handleGenerate}
+            disabled={isGenerating}
+            className="mt-2 flex w-full items-center justify-center gap-2 rounded-xl bg-brand-600 py-4 font-medium text-white shadow-lg shadow-brand-500/30 transition-all hover:bg-brand-700 active:scale-95 disabled:cursor-not-allowed disabled:opacity-70"
+          >
+            {isGenerating ? (
+              <div className="h-4 w-4 animate-spin rounded-full border-2 border-white/50 border-t-white" />
+            ) : (
+              <Wand2 size={18} />
+            )}
+            {isGenerating ? " Crafting..." : "Generate Draft"}
+          </button>
+        )}
+
+        {selectedTopic !== "linkedin-post" && (
+          <button
+            type="button"
+            onClick={handleGenerate}
+            disabled={isDocumentGenerating || (selectedTopic === "vpd" && isGenerating)}
+            className="mt-4 flex w-full items-center justify-center gap-2 rounded-xl bg-brand-600 py-4 font-medium text-white shadow-lg shadow-brand-500/30 transition-all hover:bg-brand-700 active:scale-95 disabled:cursor-not-allowed disabled:opacity-70"
+          >
+            {isDocumentGenerating || (selectedTopic === "vpd" && isGenerating) ? (
+              <div className="h-4 w-4 animate-spin rounded-full border-2 border-white/50 border-t-white" />
+            ) : (
+              <Wand2 size={18} />
+            )}
+            {isDocumentGenerating || (selectedTopic === "vpd" && isGenerating) ? " Crafting..." : "Generate Draft"}
+          </button>
+        )}
+
+        {selectedTopic === "vpd" && renderVpdSavedCards()}
+        {isDocumentTopic(selectedTopic) && renderDocumentSavedCards()}
 
         {selectedTopic === "linkedin-post" && (
           <div className="mt-5 flex min-h-[min(58vh,560px)] flex-1 flex-col border-t border-slate-100 pt-5 dark:border-slate-800">
@@ -1348,7 +2233,7 @@ const StudioMainV2: React.FC<StudioMainProps> = ({ initialContext, initialAssetI
               <div className="flex min-w-0 flex-1 items-center gap-2">
                 <StudioSectionDot />
                 <h3 className="truncate text-sm font-semibold text-slate-800 dark:text-slate-100">Scheduled posts</h3>
-                <span className="shrink-0 rounded-md bg-blue-50 px-1.5 py-0.5 text-[10px] font-medium text-blue-700 dark:bg-blue-900/40 dark:text-blue-300">
+                <span className="shrink-0 rounded-md bg-brand-50 px-1.5 py-0.5 text-[10px] font-medium text-brand-700 dark:bg-brand-900/40 dark:text-brand-300">
                   {scheduledPostsForModal.length}
                 </span>
               </div>
@@ -1384,7 +2269,7 @@ const StudioMainV2: React.FC<StudioMainProps> = ({ initialContext, initialAssetI
               <button
                 type="button"
                 onClick={() => handleViewAll("scheduled")}
-                className="text-[11px] font-medium text-blue-600 hover:underline dark:text-blue-400"
+                className="text-[11px] font-medium text-brand-600 hover:underline dark:text-brand-400"
               >
                 View all
               </button>
@@ -1395,47 +2280,114 @@ const StudioMainV2: React.FC<StudioMainProps> = ({ initialContext, initialAssetI
     );
   };
 
+  const isVpdTopic = selectedTopic === "vpd";
+  const showLinkedInOptimizeBanner = selectedTopic === "linkedin-post" || selectedTopic === "referral";
+
+  /** Preview body for document tabs — persisted draft content, or pending ADK draft before Accept. */
+  const getDocumentPreviewContent = () => {
+    if (selectedTopic === "cover-letter") {
+      return currentCoverLetterDraft?.content ?? generatedContent;
+    }
+    if (selectedTopic === "cold-email") {
+      return currentColdEmailDraft?.content ?? generatedContent;
+    }
+    if (selectedTopic === "referral") {
+      return currentReferralDraft?.content ?? generatedContent;
+    }
+    return "";
+  };
+
+  const documentPreviewContent = useMemo(() => {
+    if (
+      isDocumentTopic(selectedTopic) &&
+      documentAssetApiType &&
+      activeApplicationAssetReview?.proposedDraft.trim() &&
+      activeApplicationAssetReview.assetType === documentAssetApiType
+    ) {
+      return normalizeContentToHtml(activeApplicationAssetReview.proposedDraft);
+    }
+    if (selectedTopic === "cover-letter") {
+      return currentCoverLetterDraft?.content ?? generatedContent;
+    }
+    if (selectedTopic === "cold-email") {
+      return currentColdEmailDraft?.content ?? generatedContent;
+    }
+    if (selectedTopic === "referral") {
+      return currentReferralDraft?.content ?? generatedContent;
+    }
+    return "";
+  }, [
+    selectedTopic,
+    documentAssetApiType,
+    activeApplicationAssetReview,
+    generatedContent,
+    currentCoverLetterDraft?.content,
+    currentColdEmailDraft?.content,
+    currentReferralDraft?.content,
+  ]);
+
+  useEffect(() => {
+    const card = activeApplicationAssetReview;
+    if (!card?.proposedDraft.trim() || !isDocumentTopic(selectedTopic)) {
+      return;
+    }
+    const studioTopic = API_TYPE_TO_STUDIO_TOPIC[card.assetType];
+    if (studioTopic !== selectedTopic) {
+      return;
+    }
+    const draft = normalizeContentToHtml(card.proposedDraft);
+    setGeneratedContent(draft);
+    const pending = { content: draft, status: "draft" as const };
+    if (card.assetType === "coverletter") {
+      setCurrentCoverLetterDraft(prev =>
+        prev ? { ...prev, ...pending } : { id: card.baselineAssetId ?? "", role, company, job_description: jobDescription, ...pending }
+      );
+    } else if (card.assetType === "coldemail") {
+      setCurrentColdEmailDraft(prev =>
+        prev
+          ? { ...prev, ...pending }
+          : { id: card.baselineAssetId ?? "", role, company, job_description: jobDescription, hirname: managerName, ...pending }
+      );
+    } else if (card.assetType === "referral") {
+      setCurrentReferralDraft(prev =>
+        prev ? { ...prev, ...pending } : { id: card.baselineAssetId ?? "", role, company, conname: connectionName, ...pending }
+      );
+    }
+  }, [activeApplicationAssetReview, selectedTopic, role, company, jobDescription, managerName, connectionName]);
+
+  const getLinkedInPreviewContent = () => {
+    if (selectedTopic !== "linkedin-post") {
+      return "";
+    }
+    return generatedContent;
+  };
+
+  const getDocumentPlaceholder = () => {
+    if (selectedTopic === "cover-letter") return "Your cover letter draft will appear here...";
+    if (selectedTopic === "cold-email") return "Your cold email draft will appear here...";
+    if (selectedTopic === "referral") return "Your referral draft will appear here...";
+    return "Your draft will appear here...";
+  };
+
   return (
-    <div className="flex-1 bg-white dark:bg-[#0a0a0a] h-full overflow-hidden font-sans flex flex-col">
+    <div className="flex-1 bg-white dark:bg-slate-950 h-full overflow-hidden font-sans flex flex-col">
       <div className="flex-1 flex flex-col lg:flex-row overflow-hidden">
         {/* LEFT: Input / Generator */}
-        <div className="w-full lg:w-[45%] h-1/2 lg:h-full bg-white dark:bg-[#111] border-b lg:border-b-0 lg:border-r border-slate-100 dark:border-slate-800 p-8 overflow-y-auto">
+        <div className="w-full lg:w-[45%] h-1/2 lg:h-full bg-white dark:bg-slate-900 border-b lg:border-b-0 lg:border-r border-slate-100 dark:border-slate-800 p-8 overflow-y-auto">
           <div className="mb-8">
-            <h1 className="mb-2 font-['Onest'] text-2xl font-medium text-slate-900 dark:text-white">
-              {selectedTopic === "cover-letter" || selectedTopic === "cold-email" ? "Content Lab" : getTopicMeta(selectedTopic).label}
+            <h1 className="mb-2 font-['Onest'] text-2xl font-medium text-slate-900 transition-colors dark:text-white">
+              {getTopicMeta(selectedTopic).label}
             </h1>
-            <p className="text-[14px] text-slate-500 dark:text-slate-400">
-              {selectedTopic === "cover-letter" || selectedTopic === "cold-email"
-                ? "Generate high-quality application materials in seconds."
-                : getTopicDescription(selectedTopic)}
-            </p>
+            <p className="text-[14px] text-slate-500 transition-colors dark:text-slate-400">{getTopicDescription(selectedTopic)}</p>
           </div>
 
-          {selectedTopic === "cover-letter" ? (
-            <ContentLabCoverLetterLeft
-              onDraftChange={handleCoverLetterDraftChange}
-              activeDraft={currentCoverLetterDraft}
-              isEditorActive={isCoverLetterEditorActive}
-              onGeneratingChange={setIsCoverLetterGenerating}
-              initialDraftId={searchParams.get("type") === "cover-letter" ? searchParams.get("id") : null}
-            />
-          ) : selectedTopic === "cold-email" ? (
-            <ContentLabColdEmailLeft
-              onDraftChange={handleColdEmailDraftChange}
-              activeDraft={currentColdEmailDraft}
-              isEditorActive={isColdEmailEditorActive}
-              onGeneratingChange={setIsColdEmailGenerating}
-              initialDraftId={searchParams.get("type") === "cold-email" ? searchParams.get("id") : null}
-            />
-          ) : (
-            renderInputs()
-          )}
+          {renderInputs()}
         </div>
 
         {/* RIGHT: Preview + Tabs */}
-        <div className="flex-1 bg-slate-100 dark:bg-[#050505] flex flex-col relative">
+        <div className="flex-1 bg-slate-100 dark:bg-slate-950 flex flex-col relative">
           {/* Top Bar for Tabs - Sticky */}
-          <div className="w-full px-8 py-6 border-b border-slate-200/50 dark:border-slate-800/50 bg-slate-100/50 dark:bg-[#050505] backdrop-blur-sm sticky top-0 z-20">
+          <div className="w-full px-8 py-6 border-b border-slate-200/50 dark:border-slate-800/50 bg-slate-100/50 dark:bg-slate-950 backdrop-blur-sm sticky top-0 z-20">
             <div className="flex flex-wrap items-center gap-3">
               {TOPIC_GROUPS.map((group, gi) => (
                 <div
@@ -1463,202 +2415,189 @@ const StudioMainV2: React.FC<StudioMainProps> = ({ initialContext, initialAssetI
             </div>
           </div>
 
-          <div
-            className={`relative flex min-h-0 flex-1 flex-col ${
-              selectedTopic === "linkedin-post" || selectedTopic === "referral" ? "" : "overflow-y-auto"
-            }`}
-          >
+          <div className={`relative flex min-h-0 flex-1 flex-col ${showLinkedInOptimizeBanner ? "" : "overflow-y-auto"}`}>
             <div
-              className={`scrollbar-on-hover flex flex-1 items-stretch justify-center px-8 pb-8 pt-10 min-h-0 ${
-                selectedTopic === "linkedin-post" || selectedTopic === "referral" ? "overflow-y-auto pb-28" : ""
+              className={`flex flex-1 items-start justify-center p-8 ${
+                showLinkedInOptimizeBanner ? "min-h-0 overflow-y-auto pb-28" : "overflow-y-auto"
               }`}
             >
-              <div className="w-full max-w-2xl relative group/preview min-h-full flex flex-col gap-3">
-                {selectedTopic === "linkedin-post" ? (
-                  <div className="flex justify-end shrink-0 min-h-[2.75rem] items-center">
-                    <button
-                      type="button"
-                      onClick={() => {
-                        setGeneratedContent(generatedContent);
-                        setSelectedPostData(null);
-                        setShowScheduler(true);
-                      }}
-                      className="flex items-center gap-2 bg-white text-slate-900 border border-slate-200 px-4 py-2 rounded-full text-xs font-medium shadow-sm transition-all opacity-0 group-hover/preview:opacity-100 focus-visible:opacity-100"
-                    >
-                      <Send size={14} /> Schedule / Post
-                    </button>
-                  </div>
-                ) : null}
-                {selectedTopic === "vpd" ? (
-                  <div className="flex h-full min-h-[min(70vh,640px)] w-full max-w-3xl flex-col">
-                    <VpdPreview project={vpdProject} onOpenEditor={() => setShowVpdEditor(true)} variant="panel" />
-                  </div>
-                ) : selectedTopic === "linkedin-post" ? (
-                  /* LinkedIn Card Preview */
-                  <div className="bg-white border border-slate-200 rounded-2xl shadow-sm p-5 flex flex-col min-h-0 max-h-[min(640px,calc(100vh-10rem))]">
-                    <div className="flex justify-between items-start mb-3 shrink-0">
-                      <div className="flex gap-3">
-                        <div className="w-12 h-12 rounded-full bg-[#3b82f6] flex items-center justify-center text-white font-medium text-lg shrink-0">
-                          AB
-                        </div>
-                        <div>
-                          <h3 className="font-semibold text-slate-900 text-sm leading-tight hover:text-blue-600 hover:underline cursor-pointer">
-                            Abhi B.
-                          </h3>
-                          <p className="text-xs text-slate-500 leading-tight mt-0.5">Product Designer @ Unimad</p>
-                          <div className="flex items-center gap-1 text-xs text-slate-400 mt-1">
-                            <span>1h</span> • <Globe size={10} />
-                          </div>
-                        </div>
+              {isVpdTopic ? (
+                <div className="flex h-full min-h-[min(70vh,640px)] w-full max-w-3xl flex-col">
+                  <VpdPreview project={vpdProject} onOpenEditor={() => setShowVpdEditor(true)} variant="panel" />
+                </div>
+              ) : (
+                <div className="relative w-full max-w-2xl group/preview">
+                  {selectedTopic === "linkedin-post" ? (
+                    <div className="flex min-h-[min(68vh,580px)] w-full flex-col rounded-2xl border border-slate-200 bg-white p-5 shadow-sm dark:border-slate-800 dark:bg-slate-900">
+                      <div className="mb-3 flex shrink-0 items-start justify-between">
+                        <LinkedInPostAuthorHeader author={linkedInPostAuthor} />
+                        <button type="button" className="rounded-full p-1 text-slate-500 hover:bg-slate-100" aria-label="More options">
+                          <MoreHorizontal size={20} />
+                        </button>
                       </div>
-                      <button type="button" className="text-slate-500 hover:bg-slate-100 p-1 rounded-full">
-                        <MoreHorizontal size={20} />
-                      </button>
-                    </div>
-                    {linkedinPersistError ? (
-                      <p className="text-xs text-red-600 dark:text-red-400 mb-2 shrink-0" role="alert">
-                        {linkedinPersistError}
-                      </p>
-                    ) : null}
-                    <textarea
-                      value={generatedContent}
-                      onChange={e => {
-                        setLinkedinPersistError(null);
-                        setGeneratedContent(e.target.value);
-                      }}
-                      onBlur={handleLinkedinPreviewBlur}
-                      placeholder="Your content preview will appear here..."
-                      aria-label="LinkedIn post content"
-                      className="w-full min-h-[160px] max-h-[min(320px,45vh)] overflow-y-auto text-sm text-slate-800 whitespace-pre-wrap leading-relaxed bg-transparent border-none outline-none resize-none placeholder:text-slate-300 mb-2"
-                    />
-                    {linkedinPendingMedia.length > 0 || linkedinImages.length > 0 ? (
-                      <div className="grid grid-cols-2 gap-2 mb-3 shrink-0">
-                        {linkedinPendingMedia.map(p => (
-                          <div key={p.id} className="relative rounded-lg border border-amber-200 overflow-hidden">
-                            <img src={p.objectUrl} alt="" className="w-full h-32 object-cover" />
-                            <span className="absolute bottom-1 left-1 text-[10px] font-medium bg-amber-100/90 text-amber-900 px-1 rounded">
-                              Pending upload
-                            </span>
-                          </div>
-                        ))}
-                        {linkedinImages.map(url => (
-                          <img
-                            key={url}
-                            src={url}
-                            alt="LinkedIn media preview"
-                            className="w-full h-32 object-cover rounded-lg border border-slate-200"
-                          />
-                        ))}
-                      </div>
-                    ) : null}
-                    <div className="flex items-center justify-between text-xs text-slate-500 border-b border-slate-100 pb-3 mt-2 shrink-0">
-                      <div className="flex items-center gap-1.5 cursor-pointer hover:text-blue-600 hover:underline">
-                        <div className="flex -space-x-1">
-                          <div className="w-4 h-4 rounded-full bg-blue-500 flex items-center justify-center ring-2 ring-white">
-                            <ThumbsUp size={8} className="text-white fill-current" />
-                          </div>
-                          <div className="w-4 h-4 rounded-full bg-red-500 flex items-center justify-center ring-2 ring-white">
-                            <span className="text-[6px] text-white">❤️</span>
-                          </div>
-                        </div>
-                        <span>1,245</span>
-                      </div>
-                      <div className="hover:text-blue-600 hover:underline cursor-pointer">88 comments • 12 reposts</div>
-                    </div>
-                    <div className="flex items-center justify-between pt-1 px-2 shrink-0">
-                      <button className="py-3 px-2 rounded hover:bg-slate-100 flex items-center gap-2 text-slate-600 text-sm font-semibold transition-colors">
-                        <ThumbsUp size={18} /> <span className="hidden sm:inline">Like</span>
-                      </button>
-                      <button className="py-3 px-2 rounded hover:bg-slate-100 flex items-center gap-2 text-slate-600 text-sm font-semibold transition-colors">
-                        <MessageSquare size={18} /> <span className="hidden sm:inline">Comment</span>
-                      </button>
-                      <button className="py-3 px-2 rounded hover:bg-slate-100 flex items-center gap-2 text-slate-600 text-sm font-semibold transition-colors">
-                        <Repeat size={18} /> <span className="hidden sm:inline">Repost</span>
-                      </button>
-                      <button className="py-3 px-2 rounded hover:bg-slate-100 flex items-center gap-2 text-slate-600 text-sm font-semibold transition-colors">
-                        <Send size={18} /> <span className="hidden sm:inline">Send</span>
-                      </button>
-                    </div>
-                  </div>
-                ) : selectedTopic === "cover-letter" ? (
-                  <ContentLabCoverLetterPreview
-                    draft={currentCoverLetterDraft}
-                    onCopy={() => {
-                      setCopyToast(true);
-                      setTimeout(() => setCopyToast(false), 2000);
-                    }}
-                    copyFeedback={copyToast}
-                    onEditorActivate={() => setIsCoverLetterEditorActive(true)}
-                    onEditorDeactivate={() => setIsCoverLetterEditorActive(false)}
-                    isGenerating={isCoverLetterGenerating}
-                  />
-                ) : selectedTopic === "cold-email" ? (
-                  <ContentLabColdEmailPreview
-                    draft={currentColdEmailDraft}
-                    onCopy={() => {
-                      setColdEmailCopyToast(true);
-                      setTimeout(() => setColdEmailCopyToast(false), 2000);
-                    }}
-                    copyFeedback={coldEmailCopyToast}
-                    onEditorActivate={() => setIsColdEmailEditorActive(true)}
-                    onEditorDeactivate={() => setIsColdEmailEditorActive(false)}
-                    isGenerating={isColdEmailGenerating}
-                    onDraftContentChange={content => {
-                      if (!currentColdEmailDraft) return;
-                      setCurrentColdEmailDraft({
-                        ...currentColdEmailDraft,
-                        content,
-                      });
-                    }}
-                  />
-                ) : selectedTopic === "referral" ? (
-                  <ContentLabReferralPreview
-                    draft={currentReferralDraft}
-                    onCopy={() => {
-                      setReferralCopyToast(true);
-                      setTimeout(() => setReferralCopyToast(false), 2000);
-                    }}
-                    copyFeedback={referralCopyToast}
-                    onEditorActivate={() => setIsReferralEditorActive(true)}
-                    onEditorDeactivate={() => setIsReferralEditorActive(false)}
-                    isGenerating={generateReferralMutation.isPending}
-                    onDraftContentChange={content => {
-                      if (!currentReferralDraft) return;
-                      setCurrentReferralDraft({
-                        ...currentReferralDraft,
-                        content,
-                      });
-                    }}
-                  />
-                ) : (
-                  /* Plain Text / Document Preview for VPD (structure matches Cold Email preview) */
-                  <div className="bg-white dark:bg-[#111] border border-slate-200 dark:border-slate-800 rounded-xl shadow-lg w-full max-w-xl mx-auto flex flex-col min-h-[600px]">
-                    <div className="border-b border-slate-100 dark:border-slate-800 p-4 flex justify-end items-center gap-2">
-                      <button
-                        type="button"
-                        onClick={handleCopyReferralOrVpd}
-                        aria-label="Copy to clipboard"
-                        disabled={!generatedContent.trim()}
-                        className="flex items-center gap-2 bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-300 px-4 py-2 rounded-lg text-xs font-medium hover:bg-slate-200 dark:hover:bg-slate-700 transition-all disabled:opacity-50 disabled:cursor-not-allowed"
-                      >
-                        <Copy size={14} />
-                        {referralCopyToast ? "Copied!" : "Copy"}
-                      </button>
-                    </div>
-                    <div className="flex-1 p-12 overflow-y-auto">
+                      {linkedinPersistError ? (
+                        <p className="mb-2 shrink-0 text-xs text-red-600 dark:text-red-400" role="alert">
+                          {linkedinPersistError}
+                        </p>
+                      ) : null}
                       <textarea
-                        value={generatedContent}
-                        onChange={e => setGeneratedContent(e.target.value)}
-                        placeholder="Your value prop doc draft will appear here..."
-                        className="w-full min-h-[400px] text-base text-slate-900 dark:text-slate-100 whitespace-pre-wrap leading-relaxed bg-transparent border-none outline-none resize-none placeholder:text-slate-300 dark:placeholder:text-slate-700 font-serif"
+                        value={getLinkedInPreviewContent()}
+                        onChange={e => {
+                          setLinkedinPersistError(null);
+                          setGeneratedContent(e.target.value);
+                        }}
+                        onBlur={handleLinkedinPreviewBlur}
+                        placeholder="Your content preview will appear here..."
+                        aria-label="LinkedIn post content"
+                        className="scrollbar-on-hover mb-2 min-h-[min(42vh,360px)] w-full flex-1 resize-none overflow-y-auto border-none bg-transparent text-sm leading-relaxed text-slate-800 outline-none placeholder:text-slate-300 dark:text-slate-100 dark:placeholder:text-slate-600"
                       />
+                      {linkedinPendingMedia.length > 0 || linkedinImages.length > 0 ? (
+                        <div className="mb-3 grid shrink-0 grid-cols-2 gap-2">
+                          {linkedinPendingMedia.map(p => (
+                            <div key={p.id} className="relative overflow-hidden rounded-lg border border-amber-200">
+                              <StudioMediaPreviewImage src={p.objectUrl} alt="" className="h-32 w-full object-cover" />
+                              <span className="absolute bottom-1 left-1 rounded bg-amber-100/90 px-1 text-[10px] font-medium text-amber-900">
+                                Pending upload
+                              </span>
+                            </div>
+                          ))}
+                          {linkedinImages.map(url => (
+                            <StudioMediaPreviewImage
+                              key={url}
+                              src={url}
+                              alt="LinkedIn media preview"
+                              className="h-32 w-full rounded-lg border border-slate-200 object-cover"
+                            />
+                          ))}
+                        </div>
+                      ) : null}
+                      <div className="mt-2 flex shrink-0 items-center justify-between border-b border-slate-100 pb-3 text-xs text-slate-500 dark:border-slate-800">
+                        <div className="flex cursor-pointer items-center gap-1.5 hover:text-brand-600 hover:underline">
+                          <div className="flex -space-x-1">
+                            <div className="flex h-4 w-4 items-center justify-center rounded-full bg-brand-500 ring-2 ring-white">
+                              <ThumbsUp size={8} className="fill-current text-white" />
+                            </div>
+                            <div className="flex h-4 w-4 items-center justify-center rounded-full bg-red-500 ring-2 ring-white">
+                              <span className="text-[6px] text-white">❤️</span>
+                            </div>
+                          </div>
+                          <span>1,245</span>
+                        </div>
+                        <div className="cursor-pointer hover:text-brand-600 hover:underline">88 comments • 12 reposts</div>
+                      </div>
+                      <div className="flex shrink-0 items-center justify-between px-2 pt-1">
+                        <button
+                          type="button"
+                          className="flex items-center gap-2 rounded px-2 py-3 text-sm font-semibold text-slate-600 transition-colors hover:bg-slate-100"
+                        >
+                          <ThumbsUp size={18} /> <span className="hidden sm:inline">Like</span>
+                        </button>
+                        <button
+                          type="button"
+                          className="flex items-center gap-2 rounded px-2 py-3 text-sm font-semibold text-slate-600 transition-colors hover:bg-slate-100"
+                        >
+                          <MessageSquare size={18} /> <span className="hidden sm:inline">Comment</span>
+                        </button>
+                        <button
+                          type="button"
+                          className="flex items-center gap-2 rounded px-2 py-3 text-sm font-semibold text-slate-600 transition-colors hover:bg-slate-100"
+                        >
+                          <Repeat size={18} /> <span className="hidden sm:inline">Repost</span>
+                        </button>
+                        <button
+                          type="button"
+                          className="flex items-center gap-2 rounded px-2 py-3 text-sm font-semibold text-slate-600 transition-colors hover:bg-slate-100"
+                        >
+                          <Send size={18} /> <span className="hidden sm:inline">Send</span>
+                        </button>
+                      </div>
+                      <div className="mt-4 flex shrink-0 justify-end border-t border-slate-100 pt-4 dark:border-slate-800">
+                        <button
+                          type="button"
+                          disabled={
+                            !linkedinPostAssetId ||
+                            !getLinkedInPreviewContent().trim() ||
+                            isUploadingLinkedinMedia ||
+                            linkedinPendingMedia.length > 0
+                          }
+                          title={!linkedinPostAssetId ? CONTENT_GEN_PUBLISH_BLOCKED_MESSAGE : undefined}
+                          onClick={() => {
+                            window.dispatchEvent(
+                              new CustomEvent(CONTENT_GEN_EVENTS.requestPublish, {
+                                detail: { mode: "schedule" },
+                              })
+                            );
+                          }}
+                          className="inline-flex items-center rounded-full bg-brand-600 px-6 py-2.5 text-sm font-medium text-white shadow-md shadow-brand-500/25 transition-all hover:bg-brand-700 active:scale-[0.99] disabled:cursor-not-allowed disabled:opacity-40"
+                        >
+                          Schedule / Post
+                        </button>
+                      </div>
                     </div>
-                  </div>
-                )}
-              </div>
+                  ) : isDocumentTopic(selectedTopic) ? (
+                    <StudioDocumentPreview
+                      content={documentPreviewContent}
+                      placeholder={getDocumentPlaceholder()}
+                      saveStatus={documentSaveStatus}
+                      isGenerating={isDocumentGenerating}
+                      generatingLabel={
+                        selectedTopic === "cover-letter"
+                          ? "Generating cover letter..."
+                          : selectedTopic === "cold-email"
+                            ? "Generating cold email..."
+                            : "Generating referral request..."
+                      }
+                      copyFeedback={
+                        selectedTopic === "cover-letter"
+                          ? copyToast
+                          : selectedTopic === "cold-email"
+                            ? coldEmailCopyToast
+                            : referralCopyToast
+                      }
+                      assetType={documentAssetApiType}
+                      isAdkLoading={isDocumentAdkLoading}
+                      hasPendingRevision={hasApplicationAssetPendingRevision}
+                      adkReviewBusy={applicationAssetReviewBusy}
+                      onAcceptRevision={() => void acceptApplicationAssetReview()}
+                      onRevertRevision={discardApplicationAssetReview}
+                      baselineDraft={activeApplicationAssetReview?.baselineDraft ?? ""}
+                      anchorSelectedText={activeApplicationAssetReview?.anchorSelectedText}
+                      reviewSessionKey={activeApplicationAssetReview?.id}
+                      onApplyReconciled={(html: string) => void acceptApplicationAssetReview(html)}
+                      onCopy={() => {
+                        if (selectedTopic === "cover-letter") {
+                          setCopyToast(true);
+                          setTimeout(() => setCopyToast(false), 2000);
+                        } else if (selectedTopic === "cold-email") {
+                          setColdEmailCopyToast(true);
+                          setTimeout(() => setColdEmailCopyToast(false), 2000);
+                        } else {
+                          setReferralCopyToast(true);
+                          setTimeout(() => setReferralCopyToast(false), 2000);
+                        }
+                      }}
+                      onContentChange={handleDocumentContentChange}
+                      showPdfDownload={selectedTopic === "cover-letter" || selectedTopic === "cold-email"}
+                      onDownloadPdf={async () => {
+                        const content = getDocumentPreviewContent();
+                        if (selectedTopic === "cover-letter" && currentCoverLetterDraft) {
+                          await exportCoverLetterAsPDF({ ...currentCoverLetterDraft, content });
+                          return;
+                        }
+                        if (selectedTopic === "cold-email" && currentColdEmailDraft) {
+                          const roleSlug = (currentColdEmailDraft.role || "cold-email").toLowerCase().replace(/\s+/g, "-");
+                          const companySlug = (currentColdEmailDraft.company || "").toLowerCase().replace(/\s+/g, "-");
+                          const filename = `cold-email-${roleSlug}${companySlug ? `-${companySlug}` : ""}.pdf`;
+                          await exportContentAsPDF(content, filename);
+                        }
+                      }}
+                    />
+                  ) : null}
+                </div>
+              )}
             </div>
-            {(selectedTopic === "linkedin-post" || selectedTopic === "referral") && (
-              <div className="pointer-events-none absolute inset-x-0 bottom-0 z-10 bg-gradient-to-t from-slate-100 via-slate-100/95 to-transparent px-8 pb-6 pt-10 dark:from-[#050505] dark:via-[#050505]/95">
+            {showLinkedInOptimizeBanner && (
+              <div className="pointer-events-none absolute inset-x-0 bottom-0 z-10 bg-gradient-to-t from-slate-100 via-slate-100/95 to-transparent px-8 pb-6 pt-10 dark:from-slate-950 dark:via-slate-950/95">
                 <div className="pointer-events-auto">
                   <LinkedInOptimizeBanner />
                 </div>
@@ -1672,20 +2611,26 @@ const StudioMainV2: React.FC<StudioMainProps> = ({ initialContext, initialAssetI
       {showScheduler && (
         <PostSchedulerModal
           content={generatedContent}
+          authorName={linkedInPostAuthor.name}
+          authorHeadline={linkedInPostAuthor.headline}
+          authorPictureUrls={linkedInPostAuthor.pictureUrls}
+          authorInitials={linkedInPostAuthor.initials}
           linkedinPreviewPendingMedia={linkedinPendingMedia.map(p => ({ id: p.id, objectUrl: p.objectUrl }))}
           linkedinPreviewImages={linkedinImages}
           onClose={() => {
             setShowScheduler(false);
             setSelectedPostData(null);
+            setPublishModalSeed(null);
           }}
           onPost={handlePost}
           initialData={
-            selectedPostData
+            publishModalSeed ??
+            (selectedPostData
               ? {
                   isScheduled: Boolean(selectedPostData.isScheduled),
                   date: selectedPostData.dateScheduled ? new Date(selectedPostData.dateScheduled) : undefined,
                 }
-              : undefined
+              : undefined)
           }
         />
       )}
@@ -1711,9 +2656,22 @@ const StudioMainV2: React.FC<StudioMainProps> = ({ initialContext, initialAssetI
           onClose={() => setShowAllVPDsModal(false)}
           onVPClick={vpd => {
             setShowAllVPDsModal(false);
-            setVpdProject(vpd.project);
-            setVpdMode("create");
+            handleSelectVpd(vpd);
           }}
+        />
+      )}
+
+      {showAllDocumentsModal && isDocumentTopic(selectedTopic) && (
+        <AllDocumentsModal
+          topicLabel={DOCUMENT_TOPIC_LABELS[selectedTopic]}
+          documents={documentItemsForTopic}
+          selectedDocumentId={selectedDocumentId}
+          onClose={() => setShowAllDocumentsModal(false)}
+          onDocumentClick={doc => {
+            setShowAllDocumentsModal(false);
+            void handleSelectDocument(doc);
+          }}
+          onDeleteDocument={id => void handleDeleteDocument(id)}
         />
       )}
 
@@ -1721,8 +2679,128 @@ const StudioMainV2: React.FC<StudioMainProps> = ({ initialContext, initialAssetI
         <VpdEditorWindow project={vpdProject} onClose={() => setShowVpdEditor(false)} onUpdateProject={updated => setVpdProject(updated)} />
       )}
 
-      {showReferralModal && (
-        <ReferralHistoryModal onClose={() => setShowReferralModal(false)} historyList={referralHistory} onSelect={handleReferralSelect} />
+      {coverLetterDuplicateModal && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 p-4 backdrop-blur-sm" role="dialog">
+          <div className="w-full max-w-md rounded-2xl border border-slate-200 bg-white p-6 shadow-2xl dark:border-slate-800 dark:bg-slate-900">
+            <h2 className="mb-2 text-lg font-semibold text-slate-900 dark:text-white">Cover Letter Already Exists</h2>
+            <p className="mb-6 text-sm text-slate-600 dark:text-slate-400">
+              A cover letter for this role and company already exists. You can use it or create a new one to replace it.
+            </p>
+            <div className="flex justify-end gap-3">
+              <button
+                type="button"
+                onClick={async () => {
+                  const full = await fetchCoverLetterById(coverLetterDuplicateModal.existingAssetId);
+                  if (full) {
+                    setCurrentCoverLetterDraft(full);
+                    applyCoverLetterDraftToForm(full);
+                    updateStudioUrl({ type: "cover-letter", id: String(full.id) });
+                  }
+                  setCoverLetterDuplicateModal(null);
+                }}
+                className="rounded-lg bg-brand-600 px-4 py-2 text-sm font-medium text-white hover:bg-brand-700"
+              >
+                Use existing
+              </button>
+              <button
+                type="button"
+                onClick={async () => {
+                  if (!coverLetterDuplicateModal) return;
+                  const result = await generateCoverLetterMutation.replaceExistingAndGenerate(
+                    coverLetterDuplicateModal.existingAssetId,
+                    coverLetterDuplicateModal.params
+                  );
+                  setCoverLetterDuplicateModal(null);
+                  handleApplicationAssetDraftStarted(result, "cover-letter");
+                }}
+                disabled={generateCoverLetterMutation.isPending}
+                className="rounded-lg bg-slate-100 px-4 py-2 text-sm font-medium text-slate-700 hover:bg-slate-200 disabled:opacity-50 dark:bg-slate-800 dark:text-slate-200"
+              >
+                Create new anyway
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {coldEmailDuplicateModal && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 p-4 backdrop-blur-sm" role="dialog">
+          <div className="w-full max-w-md rounded-2xl border border-slate-200 bg-white p-6 shadow-2xl dark:border-slate-800 dark:bg-slate-900">
+            <h2 className="mb-2 text-lg font-semibold text-slate-900 dark:text-white">Cold Email Already Exists</h2>
+            <p className="mb-6 text-sm text-slate-600 dark:text-slate-400">
+              A cold email for this role and company already exists. You can use it or create a new one to replace it.
+            </p>
+            <div className="flex justify-end gap-3">
+              <button
+                type="button"
+                onClick={async () => {
+                  const full = await fetchColdEmailById(coldEmailDuplicateModal.existingAssetId);
+                  if (full) {
+                    setCurrentColdEmailDraft(full);
+                    applyColdEmailDraftToForm(full);
+                    updateStudioUrl({ type: "cold-email", id: String(full.id) });
+                  }
+                  setColdEmailDuplicateModal(null);
+                }}
+                className="rounded-lg bg-brand-600 px-4 py-2 text-sm font-medium text-white hover:bg-brand-700"
+              >
+                Use existing
+              </button>
+              <button
+                type="button"
+                onClick={async () => {
+                  if (!coldEmailDuplicateModal) return;
+                  const result = await generateColdEmailMutation.replaceExistingAndGenerate(
+                    coldEmailDuplicateModal.existingAssetId,
+                    coldEmailDuplicateModal.params
+                  );
+                  setColdEmailDuplicateModal(null);
+                  handleApplicationAssetDraftStarted(result, "cold-email");
+                }}
+                disabled={generateColdEmailMutation.isPending}
+                className="rounded-lg bg-slate-100 px-4 py-2 text-sm font-medium text-slate-700 hover:bg-slate-200 disabled:opacity-50 dark:bg-slate-800 dark:text-slate-200"
+              >
+                Create new anyway
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {coverLetterSubscriptionModal && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 p-4 backdrop-blur-sm" role="dialog">
+          <div className="w-full max-w-md rounded-2xl border border-slate-200 bg-white p-6 shadow-2xl dark:border-slate-800 dark:bg-slate-900">
+            <h2 className="mb-2 text-lg font-semibold text-slate-900 dark:text-white">Subscription required</h2>
+            <p className="mb-6 text-sm text-slate-600 dark:text-slate-400">
+              Cover letter generation is available for subscribers. Upgrade to continue.
+            </p>
+            <button
+              type="button"
+              onClick={() => setCoverLetterSubscriptionModal(false)}
+              className="w-full rounded-lg bg-slate-100 px-4 py-2 text-sm font-medium text-slate-700 dark:bg-slate-800 dark:text-slate-200"
+            >
+              Close
+            </button>
+          </div>
+        </div>
+      )}
+
+      {coldEmailSubscriptionModal && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 p-4 backdrop-blur-sm" role="dialog">
+          <div className="w-full max-w-md rounded-2xl border border-slate-200 bg-white p-6 shadow-2xl dark:border-slate-800 dark:bg-slate-900">
+            <h2 className="mb-2 text-lg font-semibold text-slate-900 dark:text-white">Subscription required</h2>
+            <p className="mb-6 text-sm text-slate-600 dark:text-slate-400">
+              Cold email generation is available for subscribers. Upgrade to continue.
+            </p>
+            <button
+              type="button"
+              onClick={() => setColdEmailSubscriptionModal(false)}
+              className="w-full rounded-lg bg-slate-100 px-4 py-2 text-sm font-medium text-slate-700 dark:bg-slate-800 dark:text-slate-200"
+            >
+              Close
+            </button>
+          </div>
+        </div>
       )}
 
       {referralDuplicateModal && (
@@ -1743,10 +2821,14 @@ const StudioMainV2: React.FC<StudioMainProps> = ({ initialContext, initialAssetI
                 type="button"
                 onClick={async () => {
                   const full = await fetchReferralById(referralDuplicateModal.existingAssetId);
-                  if (full) setCurrentReferralDraft(full);
+                  if (full) {
+                    setCurrentReferralDraft(full);
+                    applyReferralDraftToForm(full);
+                    updateStudioUrl({ type: "referral", id: String(full.id) });
+                  }
                   setReferralDuplicateModal(null);
                 }}
-                className="px-4 py-2 rounded-lg text-sm font-medium bg-blue-600 text-white hover:bg-blue-700 transition-colors"
+                className="px-4 py-2 rounded-lg text-sm font-medium bg-brand-600 text-white hover:bg-brand-700 transition-colors"
               >
                 Use existing
               </button>
@@ -1759,15 +2841,7 @@ const StudioMainV2: React.FC<StudioMainProps> = ({ initialContext, initialAssetI
                     referralDuplicateModal.params
                   );
                   setReferralDuplicateModal(null);
-                  if ("success" in result && result.success) {
-                    setCurrentReferralDraft({
-                      id: result.id,
-                      role: result.role,
-                      company: result.company,
-                      conname: result.conname,
-                      content: result.content,
-                    });
-                  }
+                  handleApplicationAssetDraftStarted(result, "referral");
                 }}
                 disabled={generateReferralMutation.isPending}
                 className="px-4 py-2 rounded-lg text-sm font-medium bg-slate-100 dark:bg-slate-800 text-slate-700 dark:text-slate-200 hover:bg-slate-200 dark:hover:bg-slate-700 transition-colors disabled:opacity-50"

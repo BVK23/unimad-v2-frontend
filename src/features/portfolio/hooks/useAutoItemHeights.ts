@@ -1,9 +1,8 @@
 import { useCallback, useEffect, useRef } from "react";
-import { getDefaultItemHeightPx } from "@/features/portfolio/constants/portfolioLayout";
+import { getDefaultItemHeightPx, MAX_PORTFOLIO_ITEM_HEIGHT_PX } from "@/features/portfolio/constants/portfolioLayout";
 import type { PortfolioItem } from "@/types";
 
 const HEIGHT_GROW_THRESHOLD_PX = 2;
-const MAX_AUTO_HEIGHT_PX = 1200;
 
 type UseAutoItemHeightsOptions = {
   items: PortfolioItem[];
@@ -30,7 +29,7 @@ export const useAutoItemHeights = ({ items, onUpdateHeight, resizingId }: UseAut
       const storedHeight = item.height ?? getDefaultItemHeightPx(item.type);
       const nextHeight = Math.max(
         item.type === "link-box" ? 36 : item.type === "text" ? 80 : 96,
-        Math.min(MAX_AUTO_HEIGHT_PX, Math.ceil(measuredHeight))
+        Math.min(MAX_PORTFOLIO_ITEM_HEIGHT_PX, Math.ceil(measuredHeight))
       );
 
       if (Math.abs(nextHeight - storedHeight) <= HEIGHT_GROW_THRESHOLD_PX) return;

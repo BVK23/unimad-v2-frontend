@@ -3,12 +3,15 @@
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 
-const TABS = [
+const BASE_TABS = [
   { href: "/uniboard/user/profile", label: "Profile settings" },
   { href: "/uniboard/user/subscription", label: "Subscription" },
 ] as const;
 
-export function UserSettingsLayout({ children }: { children: React.ReactNode }) {
+const TEAM_TAB = { href: "/uniboard/team", label: "Team dashboard" } as const;
+
+export function UserSettingsLayout({ children, isTeamMember = false }: { children: React.ReactNode; isTeamMember?: boolean }) {
+  const TABS = isTeamMember ? [...BASE_TABS, TEAM_TAB] : BASE_TABS;
   const pathname = usePathname();
 
   return (

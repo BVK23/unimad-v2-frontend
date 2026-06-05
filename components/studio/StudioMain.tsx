@@ -26,6 +26,7 @@ import {
 } from "lucide-react";
 import { GeneratorContext } from "../../types/jobs";
 import AllPostsModal from "./AllPostsModal";
+import { LinkedInListItem } from "./LinkedInPostListCard";
 import PostSchedulerModal from "./PostSchedulerModal";
 import VPDEditor from "./VPDEditor";
 
@@ -67,6 +68,8 @@ const MOCK_HISTORY = [
   { id: 102, content: "My top 3 takeaways from Config 2023. A thread 🧵", stats: "3.5k views • 120 likes", date: "1 week ago" },
 ];
 
+type SelectedPostData = LinkedInListItem & { isScheduled?: boolean; stats?: string };
+
 const StudioMain: React.FC<StudioMainProps> = ({ initialContext }) => {
   // Force refresh check
   const [selectedTopic, setSelectedTopic] = useState<string>("linkedin-post");
@@ -90,15 +93,15 @@ const StudioMain: React.FC<StudioMainProps> = ({ initialContext }) => {
 
   // Scheduler State
   const [showScheduler, setShowScheduler] = useState(false);
-  const [scheduledPosts, setScheduledPosts] = useState(MOCK_SCHEDULED);
-  const [postHistory, setPostHistory] = useState(MOCK_HISTORY);
+  const [scheduledPosts, setScheduledPosts] = useState<LinkedInListItem[]>(MOCK_SCHEDULED);
+  const [postHistory, setPostHistory] = useState<Array<LinkedInListItem & { stats?: string }>>(MOCK_HISTORY);
 
   // "All Posts" Modal State
   const [showAllPostsModal, setShowAllPostsModal] = useState(false);
   const [allPostsInitialTab, setAllPostsInitialTab] = useState<"scheduled" | "history">("scheduled");
 
   // Edit/View Post State
-  const [selectedPostData, setSelectedPostData] = useState<any>(null); // For editing/viewing existing posts
+  const [selectedPostData, setSelectedPostData] = useState<SelectedPostData | null>(null); // For editing/viewing existing posts
 
   // Initialize/Reset — sync generator context from jobs deep-link into local form state
   useEffect(() => {
@@ -145,7 +148,7 @@ const StudioMain: React.FC<StudioMainProps> = ({ initialContext }) => {
     setSelectedPostData(null); // Clear selected data
   };
 
-  const handlePostClick = (post: any, type: "scheduled" | "history") => {
+  const handlePostClick = (post: LinkedInListItem, type: "scheduled" | "history") => {
     // Open modal with data
     setGeneratedContent(post.content); // Pre-fill content
 
@@ -559,7 +562,7 @@ const StudioMain: React.FC<StudioMainProps> = ({ initialContext }) => {
           content={generatedContent}
           onClose={() => setShowScheduler(false)}
           onPost={handlePost}
-          initialData={selectedPostData ? { isScheduled: selectedPostData.isScheduled, date: new Date() } : undefined}
+          initialData={selectedPostData ? { isScheduled: selectedPostData.isScheduled ?? false, date: new Date() } : undefined}
         />
       )}
 

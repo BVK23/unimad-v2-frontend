@@ -85,6 +85,26 @@ Accept either:
 
 Persist `items` + `schemaVersion` inside `editor_content` as `{ "schemaVersion": 2, "items": [...] }`. Merge `profile` into `Portfolio.profile`.
 
+### V2 text block: template section titles (create-initial)
+
+| Field                  | Type                 | Description                                                                                                                                                                                                                                                                                          |
+| ---------------------- | -------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `templateSectionTitle` | `boolean` (optional) | Set at **create-initial** / **replace-template** when the BlockNote source heading has `props.templateSection: true`. Frontend defaults plain titles to semantic H1 + large typography. Cleared when the user sets H2/H3 in the title field. **Not** set on user-added blocks or ad-hoc LLM patches. |
+
+BlockNote source (Django `template_sections.py`): heading `props.templateSection` + optional `templateSectionId` slug.
+
+### Multi-entry sections (Previous Experiences / Previous Projects)
+
+At **create-initial**, each LLM list entry becomes its own BlockNote `contentBox` with:
+
+| BlockNote                     | v2 `text` item                                                                                                                              |
+| ----------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------- |
+| `contentBox.props.entryTitle` | `title` (company — role or project name; markdown `**` stripped at generation)                                                              |
+| `contentBox` body segments    | `content` (descriptions only)                                                                                                               |
+| (when `entryTitle` present)   | `portfolioEntryTitle: true` — frontend defaults plain titles to semantic **H2** + `text-xl` typography until the user changes heading level |
+
+The preceding template `heading` must **not** merge with the first entry `contentBox` when that box has `entryTitle`. Conversion emits a title-only section block (`templateSectionTitle: true`) plus one `text` item per entry. Quick Summary–style sections still merge heading + plain `contentBox` (no `entryTitle`).
+
 ## Template: `POST /api/portfolio/replace-template/` and `revert-template/`
 
 See backend `portfolio/views.py`.

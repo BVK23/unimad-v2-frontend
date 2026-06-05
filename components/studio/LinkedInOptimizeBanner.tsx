@@ -2,7 +2,7 @@ import React from "react";
 import { ArrowRight } from "lucide-react";
 
 const LinkedInOptimizeBanner: React.FC = () => (
-  <div className="linkedin-optimize-banner relative overflow-hidden rounded-xl border border-[#0a66c2]/25 bg-[#0a66c2]">
+  <div className="linkedin-optimize-banner relative overflow-hidden rounded-xl border border-brand-600/25 bg-brand-600">
     <span className="linkedin-optimize-shimmer pointer-events-none absolute inset-0" aria-hidden />
     <div className="relative z-10 flex items-center justify-between gap-3 px-4 py-3.5">
       <div className="min-w-0">
@@ -11,7 +11,7 @@ const LinkedInOptimizeBanner: React.FC = () => (
       </div>
       <button
         type="button"
-        className="inline-flex shrink-0 items-center gap-1 rounded-full bg-white px-3 py-2 text-xs font-semibold text-[#0a66c2] transition-opacity hover:opacity-90"
+        className="inline-flex shrink-0 items-center gap-1 rounded-full bg-white px-3 py-2 text-xs font-semibold text-brand-600 transition-opacity hover:opacity-90"
       >
         Get started
         <ArrowRight size={14} strokeWidth={2} className="fill-none" />

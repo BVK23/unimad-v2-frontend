@@ -32,7 +32,7 @@ const AllDocumentsModal: React.FC<AllDocumentsModalProps> = ({
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 p-4 backdrop-blur-sm animate-in fade-in duration-200">
-      <div className="flex h-[75vh] w-full max-w-2xl flex-col overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-2xl animate-in zoom-in-95 duration-200 dark:border-slate-800 dark:bg-[#1a1a1a]">
+      <div className="flex h-[75vh] w-full max-w-2xl flex-col overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-2xl animate-in zoom-in-95 duration-200 dark:border-slate-800 dark:bg-slate-900">
         <div className="flex items-center justify-between gap-4 border-b border-slate-100 p-6 dark:border-slate-800">
           <h2 className="truncate text-xl font-semibold tracking-tight text-slate-900 dark:text-white">{topicLabel} — Recents</h2>
           <button
@@ -51,12 +51,12 @@ const AllDocumentsModal: React.FC<AllDocumentsModalProps> = ({
               value={searchQuery}
               onChange={e => setSearchQuery(e.target.value)}
               placeholder="Search by title or content..."
-              className="w-full rounded-xl border border-slate-200 bg-slate-50 py-3 pl-11 pr-4 text-sm font-medium outline-none focus:ring-2 focus:ring-blue-500/20 dark:border-slate-700 dark:bg-slate-900"
+              className="w-full rounded-xl border border-slate-200 bg-slate-50 py-3 pl-11 pr-4 text-sm font-medium outline-none focus:ring-2 focus:ring-brand-500/20 dark:border-slate-700 dark:bg-slate-900"
             />
           </div>
         </div>
 
-        <div className="flex-1 space-y-3 overflow-y-auto bg-slate-50/30 p-4 dark:bg-[#111]">
+        <div className="flex-1 space-y-3 overflow-y-auto bg-slate-50/30 p-4 dark:bg-slate-900">
           {filtered.length > 0 ? (
             filtered.map(doc => (
               <DocumentListCard

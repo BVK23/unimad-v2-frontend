@@ -3,9 +3,26 @@ import { resolveLinkTitle } from "@/features/portfolio/server-actions/resolve-li
 import { hostnameLooksLikeWebAddress, normalizeExternalUrl } from "@/features/portfolio/utils/external-url";
 import { measurePortfolioBlockRootHeight } from "@/features/portfolio/utils/measurePortfolioBlockHeight";
 import { resolvePortfolioBlockType } from "@/features/portfolio/utils/normalizePortfolioBlockType";
-import { normalizePortfolioHtmlForRender } from "@/features/portfolio/utils/portfolio-html";
+import {
+  buildPortfolioTitleUpdate,
+  normalizePortfolioHtmlForRender,
+  portfolioSectionTitleClassName,
+  resolvePortfolioTextTitlePresentation,
+} from "@/features/portfolio/utils/portfolio-html";
 import { UploadError, uploadPortfolioFile } from "@/features/portfolio/utils/upload";
-import { ExternalLink, Link as LinkIcon, ChevronDown, ChevronRight, Copy, Loader2, UploadCloud, Trash2, Plus, Minus } from "lucide-react";
+import {
+  ExternalLink,
+  Link as LinkIcon,
+  ChevronDown,
+  ChevronRight,
+  Copy,
+  Loader2,
+  UploadCloud,
+  Trash2,
+  Plus,
+  Minus,
+  Edit3,
+} from "lucide-react";
 import { PortfolioItem } from "../types";
 import RichTextEditor from "./RichTextEditor";
 import PortfolioImage from "./portfolio/PortfolioImage";
@@ -92,18 +109,29 @@ const LinkBoxBlock = React.forwardRef<HTMLDivElement, LinkBoxBlockProps>(functio
   const [isMediaDragOver, setIsMediaDragOver] = useState(false);
   const [isResolvingTitle, setIsResolvingTitle] = useState(false);
   const [resolveError, setResolveError] = useState<string | null>(null);
+  const [isInlineEditing, setIsInlineEditing] = useState(false);
+  const [hasFaviconLoadError, setHasFaviconLoadError] = useState(false);
   const lastFetchedUrlRef = useRef<string | null>(null);
   const fetchGenRef = useRef(0);
 
   useEffect(() => {
     lastFetchedUrlRef.current = null;
     fetchGenRef.current = 0;
+    setIsInlineEditing(!item.title && !item.linkUrl);
   }, [item.id]);
+
+  useEffect(() => {
+    setHasFaviconLoadError(false);
+  }, [item.linkIcon]);
 
   const hasPreviewImage = Boolean(item.content);
   const compact = !isEditMode && (item.height ?? 96) <= 110;
+  const normalizedLinkTitle = (item.title ?? "").trim();
+  const isLegacyUntitledLink = normalizedLinkTitle === "New Link" && !(item.linkUrl ?? "").trim();
+  const editInputValue = isLegacyUntitledLink ? "" : item.title || "";
 
-  const linkCardClassName = `w-full flex items-center p-4 border rounded-2xl bg-white dark:bg-white/5 transition-all group/link ${isEditMode ? "border-slate-100 dark:border-white/10 hover:border-brand-500/30" : "border-slate-100 dark:border-white/10 hover:shadow-lg hover:-translate-y-1"} ${isMediaDragOver && isEditMode ? "border-brand-500 ring-2 ring-brand-200" : ""}`;
+  const fillsCardHeight = item.heightUserSet === true;
+  const linkCardClassName = `w-full flex items-center p-4 border rounded-2xl bg-white dark:bg-white/5 transition-all group/link ${fillsCardHeight ? "h-full" : ""} ${isEditMode ? "border-slate-100 dark:border-white/10 hover:border-brand-500/30" : "border-slate-100 dark:border-white/10 hover:shadow-lg hover:-translate-y-1"} ${isMediaDragOver && isEditMode ? "border-brand-500 ring-2 ring-brand-200" : ""}`;
 
   const onDropLinkPreview = (e: React.DragEvent<HTMLDivElement>) => {
     if (!isEditMode) return;
@@ -114,68 +142,73 @@ const LinkBoxBlock = React.forwardRef<HTMLDivElement, LinkBoxBlockProps>(functio
     if (file) handleMediaFileUpload(file);
   };
 
+  const resolveTitleInput = async (rawValue: string) => {
+    setResolveError(null);
+    const trimmed = rawValue.trim();
+    const gen = ++fetchGenRef.current;
+
+    if (!trimmed) {
+      onUpdate(item.id, { title: undefined, linkUrl: undefined, linkIcon: undefined });
+      lastFetchedUrlRef.current = null;
+      setIsResolvingTitle(false);
+      return;
+    }
+
+    const normalized = normalizeExternalUrl(trimmed);
+    if (!normalized) {
+      onUpdate(item.id, { title: trimmed, linkUrl: undefined, linkIcon: undefined });
+      lastFetchedUrlRef.current = null;
+      setIsResolvingTitle(false);
+      return;
+    }
+
+    let host: string;
+    try {
+      host = new URL(normalized).hostname;
+    } catch {
+      onUpdate(item.id, { title: trimmed, linkUrl: undefined, linkIcon: undefined });
+      lastFetchedUrlRef.current = null;
+      setIsResolvingTitle(false);
+      return;
+    }
+
+    if (!hostnameLooksLikeWebAddress(host)) {
+      onUpdate(item.id, { title: trimmed, linkUrl: undefined, linkIcon: undefined });
+      lastFetchedUrlRef.current = null;
+      setIsResolvingTitle(false);
+      return;
+    }
+
+    onUpdate(item.id, { linkUrl: normalized });
+
+    if (lastFetchedUrlRef.current === normalized) {
+      setIsResolvingTitle(false);
+      return;
+    }
+
+    setIsResolvingTitle(true);
+    try {
+      const result = await resolveLinkTitle(normalized);
+      if (gen !== fetchGenRef.current) return;
+
+      if (result.ok) {
+        lastFetchedUrlRef.current = normalized;
+        onUpdate(item.id, { title: result.title, linkUrl: normalized, linkIcon: result.iconUrl });
+      } else {
+        setResolveError(result.error);
+        onUpdate(item.id, { title: trimmed, linkUrl: normalized, linkIcon: undefined });
+      }
+    } finally {
+      if (gen === fetchGenRef.current) {
+        setIsResolvingTitle(false);
+      }
+    }
+  };
+
   const handleTitleBlur = (e: React.FocusEvent<HTMLInputElement>) => {
     void (async () => {
-      setResolveError(null);
-      const trimmed = e.currentTarget.value.trim();
-      const gen = ++fetchGenRef.current;
-
-      if (!trimmed) {
-        onUpdate(item.id, { title: undefined, linkUrl: undefined });
-        lastFetchedUrlRef.current = null;
-        setIsResolvingTitle(false);
-        return;
-      }
-
-      const normalized = normalizeExternalUrl(trimmed);
-      if (!normalized) {
-        onUpdate(item.id, { title: trimmed });
-        lastFetchedUrlRef.current = null;
-        setIsResolvingTitle(false);
-        return;
-      }
-
-      let host: string;
-      try {
-        host = new URL(normalized).hostname;
-      } catch {
-        onUpdate(item.id, { title: trimmed });
-        lastFetchedUrlRef.current = null;
-        setIsResolvingTitle(false);
-        return;
-      }
-
-      if (!hostnameLooksLikeWebAddress(host)) {
-        onUpdate(item.id, { title: trimmed });
-        lastFetchedUrlRef.current = null;
-        setIsResolvingTitle(false);
-        return;
-      }
-
-      onUpdate(item.id, { linkUrl: normalized });
-
-      if (lastFetchedUrlRef.current === normalized) {
-        setIsResolvingTitle(false);
-        return;
-      }
-
-      setIsResolvingTitle(true);
-      try {
-        const result = await resolveLinkTitle(normalized);
-        if (gen !== fetchGenRef.current) return;
-
-        if (result.ok) {
-          lastFetchedUrlRef.current = normalized;
-          onUpdate(item.id, { title: result.title, linkUrl: normalized });
-        } else {
-          setResolveError(result.error);
-          onUpdate(item.id, { title: trimmed, linkUrl: normalized });
-        }
-      } finally {
-        if (gen === fetchGenRef.current) {
-          setIsResolvingTitle(false);
-        }
-      }
+      await resolveTitleInput(e.currentTarget.value);
+      setIsInlineEditing(false);
     })();
   };
 
@@ -186,13 +219,14 @@ const LinkBoxBlock = React.forwardRef<HTMLDivElement, LinkBoxBlockProps>(functio
       <div className="w-14 h-14 flex-shrink-0 bg-slate-50 dark:bg-white/10 rounded-2xl flex items-center justify-center overflow-hidden text-slate-400 group-hover/link:text-brand-500 group-hover/link:bg-brand-50 transition-colors">
         {hasPreviewImage ? (
           <PortfolioImage src={item.content} width={56} height={56} className="w-full h-full object-cover" alt="Link preview" />
-        ) : item.linkIcon ? (
-          <PortfolioImage
+        ) : item.linkIcon && !hasFaviconLoadError ? (
+          <img
             src={item.linkIcon}
             width={28}
             height={28}
             className="w-7 h-7 grayscale group-hover/link:grayscale-0 transition-all"
             alt=""
+            onError={() => setHasFaviconLoadError(true)}
           />
         ) : (
           <LinkIcon size={24} />
@@ -200,16 +234,25 @@ const LinkBoxBlock = React.forwardRef<HTMLDivElement, LinkBoxBlockProps>(functio
       </div>
       <div className="ml-5 flex-1 min-w-0 overflow-hidden">
         <div className="flex items-center gap-2">
-          {isEditMode ? (
+          {isEditMode && isInlineEditing ? (
             <input
-              value={item.title || ""}
+              value={editInputValue}
               onChange={e => {
                 setResolveError(null);
                 onUpdate(item.id, { title: e.target.value });
               }}
               onBlur={handleTitleBlur}
               onClick={e => e.stopPropagation()}
-              onKeyDown={e => e.stopPropagation()}
+              onKeyDown={e => {
+                e.stopPropagation();
+                if (e.key !== "Enter") return;
+                e.preventDefault();
+                void (async () => {
+                  await resolveTitleInput(e.currentTarget.value);
+                  setIsInlineEditing(false);
+                  e.currentTarget.blur();
+                })();
+              }}
               className="font-semibold text-lg text-slate-900 dark:text-white bg-transparent outline-none w-full min-w-0 placeholder:text-slate-300"
               placeholder="Paste a link or title"
               aria-label="Link URL or title"
@@ -218,11 +261,25 @@ const LinkBoxBlock = React.forwardRef<HTMLDivElement, LinkBoxBlockProps>(functio
             <span className="font-semibold text-lg text-slate-900 dark:text-white truncate">{item.title || "External Link"}</span>
           )}
           {isEditMode && isResolvingTitle ? <Loader2 className="w-4 h-4 flex-shrink-0 animate-spin text-brand-500" aria-hidden /> : null}
+          {isEditMode && !isInlineEditing ? (
+            <button
+              type="button"
+              onClick={e => {
+                e.stopPropagation();
+                setIsInlineEditing(true);
+              }}
+              className="inline-flex h-7 w-7 items-center justify-center rounded-full border border-slate-200/90 text-slate-400 transition-colors hover:border-brand-400/50 hover:text-brand-600"
+              aria-label="Edit link"
+              title="Edit link"
+            >
+              <Edit3 size={13} />
+            </button>
+          ) : null}
           {!isEditMode && (
             <ExternalLink size={14} className="text-slate-300 flex-shrink-0 opacity-0 group-hover/link:opacity-100 transition-opacity" />
           )}
         </div>
-        {isEditMode ? (
+        {isEditMode && isInlineEditing ? (
           <>
             {resolveError ? <p className="mt-1 text-xs text-red-500 truncate">{resolveError}</p> : null}
             {!compact && (
@@ -389,6 +446,9 @@ const BlockRenderer: React.FC<BlockRendererProps> = ({
     const compact = heightPx <= 96;
     const fillsCell = item.heightUserSet === true;
     const toggleCollapsed = () => onUpdate(item.id, { isCollapsed: !item.isCollapsed });
+    const titlePresentation = resolvePortfolioTextTitlePresentation(item, { isNestedDetailView });
+    const TitleTag = titlePresentation.tag;
+    const sectionTitleClassName = `${portfolioSectionTitleClassName(titlePresentation)} ${RICH_TEXT_CONTENT_CLASSES}`;
 
     return (
       <div
@@ -417,19 +477,14 @@ const BlockRenderer: React.FC<BlockRendererProps> = ({
             {isEditMode ? (
               <RichTextEditor
                 value={normalizePortfolioHtmlForRender(item.title || "")}
-                onChange={value => onUpdate(item.id, { title: value })}
+                onChange={value => onUpdate(item.id, buildPortfolioTitleUpdate(item, value))}
                 onToggleCollapsible={() => onUpdate(item.id, { isCollapsible: !item.isCollapsible })}
                 isCollapsible={Boolean(item.isCollapsible)}
-                className={`w-full bg-transparent text-slate-900 dark:text-white ${compact ? "text-base font-semibold min-h-0" : "text-lg font-semibold min-h-[1.5rem]"} ${RICH_TEXT_CONTENT_CLASSES}`}
+                className={`w-full bg-transparent text-slate-900 dark:text-white ${compact ? "text-base font-semibold min-h-0" : portfolioSectionTitleClassName(titlePresentation)} min-h-[1.5rem] ${RICH_TEXT_CONTENT_CLASSES}`}
                 placeholder="Section Title (Optional)"
               />
             ) : (
-              item.title && (
-                <h3
-                  className={`font-semibold text-lg text-slate-900 dark:text-white ${RICH_TEXT_CONTENT_CLASSES}`}
-                  dangerouslySetInnerHTML={{ __html: normalizePortfolioHtmlForRender(item.title) }}
-                />
-              )
+              item.title && <TitleTag className={sectionTitleClassName} dangerouslySetInnerHTML={{ __html: titlePresentation.html }} />
             )}
           </div>
         )}
@@ -560,10 +615,11 @@ const BlockRenderer: React.FC<BlockRendererProps> = ({
 
   // -- Link Box Block --
   if (item.type === "link-box") {
+    const linkShellClassName = item.heightUserSet ? "h-full overflow-visible" : "h-auto w-full";
     return (
       <LinkBoxBlock
         ref={contentMeasureRef}
-        shellClassName={blockCellSizingClass(item.heightUserSet)}
+        shellClassName={linkShellClassName}
         item={item}
         isEditMode={isEditMode}
         onUpdate={onUpdate}

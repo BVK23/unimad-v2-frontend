@@ -56,6 +56,31 @@ async function authedFetchFormData(path: string, body: FormData, options: Reques
   });
 }
 
+export type ProfileRolesResult = {
+  roles: string[];
+};
+
+/**
+ * GET `/api/profile-data/` — desired roles for Content Gen ADK session state.
+ */
+export async function fetchProfileRoles(): Promise<ProfileRolesResult> {
+  const res = await authedFetch(`/api/profile-data/`, { method: "GET" });
+  const data = (await res.json().catch(() => ({}))) as { role?: string[] | string; error?: string };
+
+  if (!res.ok) {
+    throw new Error(data.error ?? "Failed to load profile");
+  }
+
+  const raw = data.role;
+  if (Array.isArray(raw)) {
+    return { roles: raw.map(r => String(r).trim()).filter(Boolean) };
+  }
+  if (typeof raw === "string" && raw.trim()) {
+    return { roles: [raw.trim()] };
+  }
+  return { roles: [] };
+}
+
 export type PlannerUnibotResult = {
   response: string;
 };
@@ -93,12 +118,58 @@ export type GenerateContentGenResult = {
 };
 
 /**
- * POST `/api/generate-asset/contentgen/` — creates asset (or returns existing id for same topic).
+ * POST `/api/generate-asset/contentgen/` with `skip_generation: true` — shell only, no Unibot.
  */
-export async function generateContentGenAsset(topic: string): Promise<GenerateContentGenResult> {
+export async function createContentGenShell(
+  topic: string,
+  options?: { funnel?: "top" | "middle" | "bottom" }
+): Promise<GenerateContentGenResult> {
+  const body: { topic: string; funnel?: string; skip_generation: boolean } = {
+    topic,
+    skip_generation: true,
+  };
+  if (options?.funnel) {
+    body.funnel = options.funnel;
+  }
   const res = await authedFetch(`/api/generate-asset/contentgen/`, {
     method: "POST",
-    body: JSON.stringify({ topic }),
+    body: JSON.stringify(body),
+  });
+
+  const data = (await res.json().catch(() => ({}))) as {
+    id?: string | number;
+    existing?: boolean;
+    error?: string;
+  };
+
+  if (!res.ok) {
+    throw new Error(data.error ?? "Failed to create post");
+  }
+
+  if (data.id == null) {
+    throw new Error("Invalid response from server");
+  }
+
+  return {
+    id: String(data.id),
+    existing: data.existing === true,
+  };
+}
+
+/**
+ * POST `/api/generate-asset/contentgen/` — creates asset and runs Django Unibot draft generation.
+ */
+export async function generateContentGenAsset(
+  topic: string,
+  options?: { funnel?: "top" | "middle" | "bottom" }
+): Promise<GenerateContentGenResult> {
+  const body: { topic: string; funnel?: string } = { topic };
+  if (options?.funnel) {
+    body.funnel = options.funnel;
+  }
+  const res = await authedFetch(`/api/generate-asset/contentgen/`, {
+    method: "POST",
+    body: JSON.stringify(body),
   });
 
   const data = (await res.json().catch(() => ({}))) as {

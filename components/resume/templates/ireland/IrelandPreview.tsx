@@ -158,8 +158,21 @@ const IrelandPreview: React.FC<IrelandPreviewProps> = ({ data, previewScale = 1,
           {visibleProjects.map((proj, idx) => (
             <div key={idx} className="flex flex-col mb-[6px]">
               {idx === 0 && renderSectionHeading("Projects", isFirstSection)}
-              <div className="text-[11px] font-bold text-[#000000] leading-none mb-[2px]">{proj.title}</div>
-              <HtmlDisplay content={proj.description} className="text-[10px] text-[#000000] leading-[1.4]" variant="pdfTight" />
+              {proj.url ? (
+                <a
+                  href={proj.url.startsWith("http") ? proj.url : `https://${proj.url}`}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="text-[11px] font-bold text-[#000000] leading-none mb-[2px] hover:underline"
+                >
+                  {proj.title}
+                </a>
+              ) : (
+                <div className="text-[11px] font-bold text-[#000000] leading-none mb-[2px]">{proj.title}</div>
+              )}
+              {proj.description && (
+                <HtmlDisplay content={proj.description} className="text-[10px] text-[#000000] leading-[1.4]" variant="pdfTight" />
+              )}
             </div>
           ))}
         </div>

@@ -8,6 +8,7 @@ export interface CoverLetterAsset {
   job_description?: string;
   jd?: string;
   content: string;
+  status?: "draft" | "accepted";
   created_at?: string;
   updated_at?: string;
 }

@@ -1,6 +1,7 @@
 "use client";
 
-import { Suspense, useEffect } from "react";
+import { Suspense, useEffect, useRef } from "react";
+import { claimUnicoachPurchase } from "@/features/unicoach/server-actions/unicoach-actions";
 import { useAuthStatus } from "@/hooks/useAuthStatus";
 import Link from "next/link";
 import { useRouter, useSearchParams } from "next/navigation";
@@ -14,23 +15,40 @@ function SigninForm() {
   const router = useRouter();
   const searchParams = useSearchParams();
   const redirect = searchParams.get("redirect") ?? DEFAULT_UNIBOARD_REDIRECT;
+  const unicoachClaim = searchParams.get("unicoach_claim");
   const from = searchParams.get("from") ?? "";
   const errorMessage = searchParams.get("message");
   const { isAuthenticated, isLoading } = useAuthStatus();
+  const claimAttempted = useRef(false);
 
   useEffect(() => {
-    if (!isLoading && isAuthenticated) {
-      const target = from && from.startsWith("/uniboard") ? from : `/uniboard/${redirect}`;
+    if (!isLoading && isAuthenticated && unicoachClaim && !claimAttempted.current) {
+      claimAttempted.current = true;
+      claimUnicoachPurchase(unicoachClaim)
+        .catch(() => {})
+        .finally(() => {
+          router.replace(redirect === "unicoach" ? "/uniboard/unicoach" : `/uniboard/${redirect}`);
+        });
+      return;
+    }
+
+    if (!isLoading && isAuthenticated && !unicoachClaim) {
+      const target = redirect === "unicoach" ? "/uniboard/unicoach" : from && from.startsWith("/uniboard") ? from : `/uniboard/${redirect}`;
       router.replace(target);
     }
-  }, [isAuthenticated, isLoading, redirect, from, router]);
+  }, [isAuthenticated, isLoading, redirect, from, router, unicoachClaim]);
 
   const handleOAuthLogin = (provider: "linkedin" | "google") => {
     const oauthRedirect = from && from.startsWith("/uniboard") ? from.replace("/uniboard/", "") : redirect;
+    const params = new URLSearchParams({ redirect: oauthRedirect });
+    if (unicoachClaim) {
+      params.set("unicoach_claim", unicoachClaim);
+    }
+    const query = params.toString();
     if (provider === "linkedin") {
-      window.location.href = `${backendUrl}/linkedin-login?redirect=${encodeURIComponent(oauthRedirect)}`;
+      window.location.href = `${backendUrl}/linkedin-login?${query}`;
     } else {
-      window.location.href = `${backendUrl}/google-login?redirect=${encodeURIComponent(oauthRedirect)}`;
+      window.location.href = `${backendUrl}/google-login?${query}`;
     }
   };
 
@@ -64,7 +82,11 @@ function SigninForm() {
               uni<span className="text-[#346DE0]">mad</span>
             </span>
           </h1>
-          <p className="text-[15px] font-light leading-relaxed text-[#4A5568]">Sign in or create an account — your toolkit is free.</p>
+          <p className="text-[15px] font-light leading-relaxed text-[#4A5568]">
+            {unicoachClaim
+              ? "Sign in or create an account to access your Unicoach programme"
+              : "Sign in or create an account — your toolkit is free."}
+          </p>
         </div>
 
         {decodedMessage ? (

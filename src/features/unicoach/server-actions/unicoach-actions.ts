@@ -395,6 +395,22 @@ export async function verifyUnicoachPayment(checkoutResponse: Record<string, str
   return data as { verified: boolean; message?: string };
 }
 
+export async function claimUnicoachPurchase(claimToken: string): Promise<{
+  fulfilled?: boolean;
+  already_fulfilled?: boolean;
+  error?: string;
+}> {
+  const res = await authedFetch("/api/claim-unicoach-purchase/", {
+    method: "POST",
+    body: JSON.stringify({ claim_token: claimToken }),
+  });
+  const data = await res.json().catch(() => ({}));
+  if (!res.ok) {
+    throw new Error((data as { error?: string })?.error ?? "Failed to claim purchase");
+  }
+  return data as { fulfilled?: boolean; already_fulfilled?: boolean };
+}
+
 export async function validateUnicoachDiscount(discountCode: string): Promise<{
   valid: boolean;
   discount_amount?: number;

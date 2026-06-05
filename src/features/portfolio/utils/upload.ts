@@ -1,5 +1,6 @@
 import { uploadFileDirect } from "@/features/gcp/core/client-upload";
 import { uploadMedia } from "@/features/portfolio/server-actions/asset";
+import { resolveMediaDisplayUrl } from "@/utils/resolve-media-url";
 
 export const BACKEND_SIZE_THRESHOLD_BYTES = 4.5 * 1024 * 1024;
 
@@ -47,6 +48,30 @@ const uploadViaBackend = async (file: File, category: string): Promise<string> =
     throw new UploadError(response.error || "Upload failed", "network");
   }
   return response.content.url;
+};
+
+export type HeroMediaCategory = "profile-picture" | "cover-picture";
+
+export const dataUrlToFile = (dataUrl: string, filename: string, fallbackMimeType = "image/jpeg"): File => {
+  const [header, base64] = dataUrl.split(",");
+  if (!base64) {
+    throw new UploadError("Invalid image data");
+  }
+  const mime = header?.match(/:(.*?);/)?.[1] ?? fallbackMimeType;
+  const binary = atob(base64);
+  const bytes = new Uint8Array(binary.length);
+  for (let i = 0; i < binary.length; i += 1) {
+    bytes[i] = binary.charCodeAt(i);
+  }
+  return new File([bytes], filename, { type: mime });
+};
+
+/** Upload a cropped hero image to MediaStore (`profile-picture` or `cover-picture`). */
+export const uploadHeroImageFromDataUrl = async (dataUrl: string, category: HeroMediaCategory): Promise<string> => {
+  const filename = `${category}-${Date.now()}.jpg`;
+  const file = dataUrlToFile(dataUrl, filename);
+  const uploaded = await uploadPortfolioFile(file, category);
+  return resolveMediaDisplayUrl(uploaded.url);
 };
 
 export const uploadPortfolioFile = async (file: File, category: string = "portfolio-assets"): Promise<UploadedFile> => {

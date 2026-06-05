@@ -256,6 +256,33 @@ export async function syncSessionStateAction(
   }
 }
 
+export interface SessionRewindResult {
+  success: boolean;
+  error?: string;
+}
+
+export async function rewindSessionAction(
+  userId: string,
+  sessionId: string,
+  rewindBeforeInvocationId: string
+): Promise<SessionRewindResult> {
+  try {
+    if (!userId || !sessionId || !rewindBeforeInvocationId.trim()) {
+      return {
+        success: false,
+        error: "userId, sessionId, and rewindBeforeInvocationId are required",
+      };
+    }
+
+    return await AdkSessionService.rewindSession(userId, sessionId, rewindBeforeInvocationId.trim());
+  } catch (error) {
+    return {
+      success: false,
+      error: error instanceof Error ? error.message : String(error),
+    };
+  }
+}
+
 export async function pullSessionStateAction(userId: string, sessionId: string): Promise<SessionStatePullResult> {
   try {
     if (!userId || !sessionId) {

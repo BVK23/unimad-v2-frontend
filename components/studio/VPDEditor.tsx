@@ -115,7 +115,7 @@ const VPDEditor: React.FC<VPDEditorProps> = ({ initialItems = INITIAL_VPD_ITEMS 
   };
 
   // -- Drag & Drop Logic --
-  const handleDragStart = (e: React.DragEvent, index: number) => {
+  const handleDragStart = (e: React.DragEvent<HTMLDivElement>, index: number) => {
     if (resizing) {
       e.preventDefault();
       return;
@@ -124,7 +124,7 @@ const VPDEditor: React.FC<VPDEditorProps> = ({ initialItems = INITIAL_VPD_ITEMS 
     e.dataTransfer.effectAllowed = "move";
   };
 
-  const handleDragOver = (e: React.DragEvent, index: number) => {
+  const handleDragOver = (e: React.DragEvent<HTMLDivElement>, index: number) => {
     e.preventDefault();
     if (draggedItemIndex === null || draggedItemIndex === index) return;
     const newItems = [...items];
@@ -211,8 +211,8 @@ const VPDEditor: React.FC<VPDEditorProps> = ({ initialItems = INITIAL_VPD_ITEMS 
                 transition={{ type: "spring", stiffness: 300, damping: 30 }}
                 key={item.id}
                 draggable={isEditMode && !resizing}
-                onDragStart={e => handleDragStart(e as any, index)}
-                onDragOver={e => handleDragOver(e as any, index)}
+                onDragStart={e => handleDragStart(e as unknown as React.DragEvent<HTMLDivElement>, index)}
+                onDragOver={e => handleDragOver(e as unknown as React.DragEvent<HTMLDivElement>, index)}
                 onDragEnd={handleDragEnd}
                 className={`
                                     ${getSpanClass(item.span)} 

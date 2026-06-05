@@ -6,6 +6,7 @@ import { mapAtsScoreToViewModel } from "@/features/resume/api/mapAtsScoreToViewM
 import { mapFrontendResumeToBackend } from "@/features/resume/api/mappers";
 import { useCalculateAtsScore } from "@/features/resume/hooks/useCalculateAtsScore";
 import { useDebouncedResumePreview } from "@/features/resume/hooks/useDebouncedResumePreview";
+import { useGeolocationTemplate } from "@/features/resume/hooks/useGeolocationTemplate";
 import { resumeAtsQueryKey, useResumeAtsScore } from "@/features/resume/hooks/useResumeAtsScore";
 import { useUpdateResume } from "@/features/resume/hooks/useUpdateResume";
 import { publishResumeAsset, recordResumeDownload } from "@/features/resume/server-actions/resume-actions";
@@ -59,7 +60,6 @@ import {
   Palette,
   Layout,
   Star,
-  Lock,
   TrendingUp,
   Loader2,
   CheckSquare,
@@ -95,7 +95,14 @@ const AUTOSAVE_DELAY_MS = 5000;
 
 const scoreTone = (score: number) => (score >= 80 ? "green" : score >= ATS_COMPLETE_THRESHOLD ? "yellow" : "red");
 
-const TEMPLATES = [
+const TEMPLATES: {
+  id: ResumeTemplateId;
+  name: string;
+  description: string;
+  color: string;
+  border: string;
+  available: boolean;
+}[] = [
   {
     id: "modern",
     name: "Modern",
@@ -103,7 +110,6 @@ const TEMPLATES = [
     color: "bg-blue-50",
     border: "border-blue-200",
     available: true,
-    recommended: true,
   },
   {
     id: "minimal",
@@ -112,7 +118,6 @@ const TEMPLATES = [
     color: "bg-slate-50",
     border: "border-slate-200",
     available: true,
-    recommended: false,
   },
   {
     id: "classic",
@@ -121,7 +126,6 @@ const TEMPLATES = [
     color: "bg-amber-50",
     border: "border-amber-200",
     available: true,
-    recommended: true,
   },
   {
     id: "us",
@@ -130,7 +134,6 @@ const TEMPLATES = [
     color: "bg-stone-50",
     border: "border-stone-200",
     available: true,
-    recommended: false,
   },
   {
     id: "canada",
@@ -139,7 +142,6 @@ const TEMPLATES = [
     color: "bg-red-50",
     border: "border-red-200",
     available: true,
-    recommended: false,
   },
   {
     id: "basic",
@@ -148,7 +150,6 @@ const TEMPLATES = [
     color: "bg-sky-50",
     border: "border-sky-200",
     available: true,
-    recommended: false,
   },
   {
     id: "ireland",
@@ -157,7 +158,6 @@ const TEMPLATES = [
     color: "bg-emerald-50",
     border: "border-emerald-200",
     available: true,
-    recommended: false,
   },
   {
     id: "aus",
@@ -166,7 +166,6 @@ const TEMPLATES = [
     color: "bg-indigo-50",
     border: "border-indigo-200",
     available: true,
-    recommended: false,
   },
   {
     id: "nextgen",
@@ -175,7 +174,6 @@ const TEMPLATES = [
     color: "bg-blue-50",
     border: "border-blue-300",
     available: true,
-    recommended: false,
   },
   {
     id: "professional",
@@ -184,7 +182,6 @@ const TEMPLATES = [
     color: "bg-neutral-50",
     border: "border-neutral-300",
     available: true,
-    recommended: false,
   },
   {
     id: "slatepro",
@@ -193,7 +190,6 @@ const TEMPLATES = [
     color: "bg-stone-50",
     border: "border-stone-300",
     available: true,
-    recommended: false,
   },
   {
     id: "primeslate",
@@ -202,161 +198,25 @@ const TEMPLATES = [
     color: "bg-blue-50",
     border: "border-blue-400",
     available: true,
-    recommended: false,
   },
-  {
-    id: "swiss",
-    name: "Swiss",
-    description: "Bold typography",
-    color: "bg-violet-50",
-    border: "border-violet-200",
-    available: false,
-    recommended: false,
-  },
-  {
-    id: "tech",
-    name: "Tech Lead",
-    description: "Dark mode inspired",
-    color: "bg-zinc-900",
-    border: "border-zinc-700",
-    available: false,
-    recommended: false,
-  },
-  {
-    id: "creative",
-    name: "Creative",
-    description: "Playful layout",
-    color: "bg-teal-50",
-    border: "border-teal-200",
-    available: false,
-    recommended: false,
-  },
-  {
-    id: "executive",
-    name: "Executive",
-    description: "High impact",
-    color: "bg-slate-200",
-    border: "border-slate-300",
-    available: false,
-    recommended: false,
-  },
-  {
-    id: "startup",
-    name: "Startup",
-    description: "Modern startup vibe",
-    color: "bg-sky-50",
-    border: "border-sky-200",
-    available: false,
-    recommended: true,
-  },
-  {
-    id: "academic",
-    name: "Academic",
-    description: "Research focused",
-    color: "bg-stone-50",
-    border: "border-stone-200",
-    available: false,
-    recommended: false,
-  },
-  {
-    id: "designer",
-    name: "Designer",
-    description: "Visual heavy",
-    color: "bg-rose-50",
-    border: "border-rose-200",
-    available: false,
-    recommended: false,
-  },
-  {
-    id: "engineer",
-    name: "Engineer",
-    description: "Structure first",
-    color: "bg-cyan-50",
-    border: "border-cyan-200",
-    available: false,
-    recommended: false,
-  },
-  {
-    id: "manager",
-    name: "Manager",
-    description: "Leadership focus",
-    color: "bg-emerald-50",
-    border: "border-emerald-200",
-    available: false,
-    recommended: false,
-  },
-  {
-    id: "student",
-    name: "Student",
-    description: "Entry level optimized",
-    color: "bg-green-50",
-    border: "border-green-200",
-    available: false,
-    recommended: true,
-  },
-  {
-    id: "compact",
-    name: "Compact",
-    description: "Single page master",
-    color: "bg-gray-50",
-    border: "border-gray-200",
-    available: false,
-    recommended: false,
-  },
-  {
-    id: "timeline",
-    name: "Timeline",
-    description: "Chronological view",
-    color: "bg-orange-50",
-    border: "border-orange-200",
-    available: false,
-    recommended: false,
-  },
-  {
-    id: "split",
-    name: "Split",
-    description: "Two column split",
-    color: "bg-teal-50",
-    border: "border-teal-200",
-    available: false,
-    recommended: false,
-  },
-  {
-    id: "grid",
-    name: "Grid",
-    description: "Modular grid system",
-    color: "bg-slate-100",
-    border: "border-slate-300",
-    available: false,
-    recommended: false,
-  },
-  {
-    id: "bold",
-    name: "Bold",
-    description: "High contrast",
-    color: "bg-rose-50",
-    border: "border-rose-200",
-    available: false,
-    recommended: false,
-  },
-  {
-    id: "air",
-    name: "Air",
-    description: "Maximum whitespace",
-    color: "bg-sky-50",
-    border: "border-sky-200",
-    available: false,
-    recommended: false,
-  },
-  {
-    id: "mono",
-    name: "Mono",
-    description: "Monospace code style",
-    color: "bg-neutral-100",
-    border: "border-neutral-200",
-    available: false,
-    recommended: false,
-  },
+  // PRO templates — re-enable when subscription/unlock flow ships
+  // { id: "swiss", name: "Swiss", description: "Bold typography", color: "bg-violet-50", border: "border-violet-200", available: false },
+  // { id: "tech", name: "Tech Lead", description: "Dark mode inspired", color: "bg-zinc-900", border: "border-zinc-700", available: false },
+  // { id: "creative", name: "Creative", description: "Playful layout", color: "bg-teal-50", border: "border-teal-200", available: false },
+  // { id: "executive", name: "Executive", description: "High impact", color: "bg-slate-200", border: "border-slate-300", available: false },
+  // { id: "startup", name: "Startup", description: "Modern startup vibe", color: "bg-sky-50", border: "border-sky-200", available: false },
+  // { id: "academic", name: "Academic", description: "Research focused", color: "bg-stone-50", border: "border-stone-200", available: false },
+  // { id: "designer", name: "Designer", description: "Visual heavy", color: "bg-rose-50", border: "border-rose-200", available: false },
+  // { id: "engineer", name: "Engineer", description: "Structure first", color: "bg-cyan-50", border: "border-cyan-200", available: false },
+  // { id: "manager", name: "Manager", description: "Leadership focus", color: "bg-emerald-50", border: "border-emerald-200", available: false },
+  // { id: "student", name: "Student", description: "Entry level optimized", color: "bg-green-50", border: "border-green-200", available: false },
+  // { id: "compact", name: "Compact", description: "Single page master", color: "bg-gray-50", border: "border-gray-200", available: false },
+  // { id: "timeline", name: "Timeline", description: "Chronological view", color: "bg-orange-50", border: "border-orange-200", available: false },
+  // { id: "split", name: "Split", description: "Two column split", color: "bg-teal-50", border: "border-teal-200", available: false },
+  // { id: "grid", name: "Grid", description: "Modular grid system", color: "bg-slate-100", border: "border-slate-300", available: false },
+  // { id: "bold", name: "Bold", description: "High contrast", color: "bg-rose-50", border: "border-rose-200", available: false },
+  // { id: "air", name: "Air", description: "Maximum whitespace", color: "bg-sky-50", border: "border-sky-200", available: false },
+  // { id: "mono", name: "Mono", description: "Monospace code style", color: "bg-neutral-100", border: "border-neutral-200", available: false },
 ];
 
 const TEMPLATE_THUMBNAILS: Record<string, string> = {
@@ -673,6 +533,16 @@ const ResumeEditor: React.FC<ResumeEditorProps> = ({
     reset: resetAtsMutation,
   } = useCalculateAtsScore();
   const queryClient = useQueryClient();
+  const { recommendedTemplate } = useGeolocationTemplate();
+  const availableTemplates = useMemo(() => TEMPLATES.filter(t => t.available), []);
+  const templatePickerItems = useMemo(() => {
+    if (!recommendedTemplate) return availableTemplates;
+    return [...availableTemplates].sort((a, b) => {
+      if (a.id === recommendedTemplate) return -1;
+      if (b.id === recommendedTemplate) return 1;
+      return 0;
+    });
+  }, [availableTemplates, recommendedTemplate]);
 
   const [activeSection, setActiveSection] = useState<string>("profile");
   const [draggedSectionId, setDraggedSectionId] = useState<string | null>(null);
@@ -2757,18 +2627,13 @@ const ResumeEditor: React.FC<ResumeEditorProps> = ({
 
             <div className="flex-1 overflow-y-auto p-8 bg-slate-50 dark:bg-slate-950">
               <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-8">
-                {TEMPLATES.map(t => (
+                {templatePickerItems.map(t => (
                   <div
                     key={t.id}
-                    onClick={() => {
-                      if (t.available) {
-                        handleTemplateSelect(t.id);
-                      }
-                    }}
+                    onClick={() => handleTemplateSelect(t.id)}
                     className={`
                                             group relative rounded-xl border-2 transition-all duration-300 overflow-hidden bg-white dark:bg-slate-900 shadow-sm cursor-pointer
                                             ${resume.templateId === t.id ? "border-brand-500 ring-2 ring-brand-200 dark:ring-brand-900" : "border-transparent hover:border-brand-300 hover:shadow-lg hover:-translate-y-1"}
-                                            ${!t.available ? "opacity-60 grayscale cursor-not-allowed" : ""}
                                         `}
                   >
                     {/* Preview Thumbnail */}
@@ -2794,14 +2659,7 @@ const ResumeEditor: React.FC<ResumeEditorProps> = ({
                           </div>
                         </div>
                       )}
-                      {!t.available && (
-                        <div className="absolute inset-0 bg-slate-900/10 backdrop-blur-[1px] flex items-center justify-center">
-                          <div className="bg-slate-900 text-white text-xs font-medium px-3 py-1 rounded-full flex items-center gap-1 shadow-lg">
-                            <Lock size={12} /> PRO
-                          </div>
-                        </div>
-                      )}
-                      {t.recommended && t.available && (
+                      {recommendedTemplate === t.id && (
                         <div className="absolute top-2 left-2 bg-amber-400 text-amber-900 text-[10px] font-semibold px-2 py-0.5 rounded-full shadow-sm flex items-center gap-1">
                           <Star size={10} fill="currentColor" /> RECOMMENDED
                         </div>
@@ -3084,6 +2942,13 @@ const ResumeEditor: React.FC<ResumeEditorProps> = ({
                   </div>
                   {atsVm && (
                     <>
+                      {atsVm.scoringMode === "jd_blended" && atsVm.generalScore != null && atsVm.jdMatchScore != null ? (
+                        <p className="mt-3 text-xs text-slate-500 dark:text-slate-400">
+                          Resume quality {atsVm.generalScore}/100 · Job match {atsVm.jdMatchScore}/100
+                        </p>
+                      ) : atsVm.scoringMode === "general_only" ? (
+                        <p className="mt-3 text-xs text-slate-500 dark:text-slate-400">General resume quality score</p>
+                      ) : null}
                       <p className="mt-4 flex gap-2 text-sm leading-relaxed text-slate-600 dark:text-slate-300">
                         <Quote size={16} className="mt-0.5 flex-shrink-0 opacity-50" />
                         <span className="italic">{atsScoreQuote}</span>
@@ -3138,7 +3003,7 @@ const ResumeEditor: React.FC<ResumeEditorProps> = ({
               {(atsScorePending || atsCacheLoading) && !atsVm && (
                 <div className="flex flex-col items-center justify-center gap-3 py-12 text-slate-500">
                   <Loader2 className="h-8 w-8 animate-spin text-brand-500" />
-                  <p className="text-sm">Analyzing your resume against the job description…</p>
+                  <p className="text-sm">Analyzing your resume…</p>
                 </div>
               )}
 
@@ -3150,8 +3015,8 @@ const ResumeEditor: React.FC<ResumeEditorProps> = ({
                       {atsScoreErr instanceof Error ? atsScoreErr.message : "Something went wrong."}
                     </p>
                     <p className="mt-2 text-xs text-red-600/80 dark:text-red-400/80">
-                      ATS scoring needs a resume linked to a job application with a job description. Create or open this resume from your
-                      applications flow if you have not yet.
+                      Check your connection and try again. Scores work for any resume; job-match blending runs when this resume is linked to
+                      an application with a job description.
                     </p>
                   </div>
                   <button

@@ -1,11 +1,14 @@
 import type { AtsScorePayload, AtsScoreViewModel, AtsSectionScore, AtsSectionUiStatus } from "./ats-types";
 
 const SECTION_ORDER: { key: keyof NonNullable<AtsScorePayload["section_scores"]>; label: string }[] = [
-  { key: "profile", label: "Profile" },
+  { key: "header", label: "Header" },
+  { key: "profile", label: "Summary" },
   { key: "experience", label: "Experience" },
   { key: "skills", label: "Skills" },
   { key: "education", label: "Education" },
   { key: "projects", label: "Projects" },
+  { key: "certifications", label: "Certifications" },
+  { key: "formatting", label: "Formatting" },
 ];
 
 const mapBackendStatusToUi = (status: string | undefined): AtsSectionUiStatus => {
@@ -22,10 +25,12 @@ const rowFromSection = (label: string, sec: AtsSectionScore | undefined): AtsSco
       feedback: "Not analyzed.",
     };
   }
+  const scoreSuffix = typeof sec.score === "number" && typeof sec.max_score === "number" ? ` (${sec.score}/${sec.max_score})` : "";
+  const baseFeedback = typeof sec.feedback === "string" && sec.feedback.trim() ? sec.feedback : "—";
   return {
     name: label,
     status: mapBackendStatusToUi(typeof sec.status === "string" ? sec.status : undefined),
-    feedback: typeof sec.feedback === "string" && sec.feedback.trim() ? sec.feedback : "—",
+    feedback: `${baseFeedback}${scoreSuffix}`,
   };
 };
 
@@ -39,10 +44,18 @@ export const mapAtsScoreToViewModel = (payload: AtsScorePayload | null | undefin
   const improvements = Array.isArray(payload?.improvements) ? payload.improvements.filter((s): s is string => typeof s === "string") : [];
 
   const section_scores = payload?.section_scores;
-  const sectionAnalysis = SECTION_ORDER.map(({ key, label }) => rowFromSection(label, section_scores?.[key]));
+  const sectionAnalysis = SECTION_ORDER.map(({ key, label }) => rowFromSection(label, section_scores?.[key])).filter(
+    row => row.feedback !== "Not analyzed."
+  );
+
+  const generalRaw = payload?.general_score;
+  const jdRaw = payload?.jd_match_score;
 
   return {
     score,
+    scoringMode: payload?.scoring_mode,
+    generalScore: typeof generalRaw === "number" && Number.isFinite(generalRaw) ? Math.round(generalRaw) : undefined,
+    jdMatchScore: typeof jdRaw === "number" && Number.isFinite(jdRaw) ? Math.round(jdRaw) : undefined,
     improvements,
     sectionAnalysis,
   };

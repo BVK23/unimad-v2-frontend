@@ -1,4 +1,5 @@
-import React, { useState, useEffect, useRef } from "react";
+import React, { useState, useEffect, useRef, useCallback } from "react";
+import type { PortfolioTitleHeadingLevel } from "@/features/portfolio/utils/portfolio-html";
 import {
   Bold,
   Italic,
@@ -14,6 +15,11 @@ import {
   ChevronsUpDown,
 } from "lucide-react";
 
+export type RichTextEditorSelectionInfo = {
+  text: string;
+  rect: DOMRect;
+};
+
 interface RichTextEditorProps {
   value: string;
   onChange: (value: string) => void;
@@ -21,6 +27,11 @@ interface RichTextEditorProps {
   className?: string;
   onToggleCollapsible?: () => void;
   isCollapsible?: boolean;
+  onSelectionChange?: (info: RichTextEditorSelectionInfo | null) => void;
+  /** When true, apply prop value even while the editor is focused (e.g. ADK pending revision). */
+  forceExternalSync?: boolean;
+  /** When true, content is not editable but text can still be selected (e.g. diff review). */
+  readOnly?: boolean;
 }
 
 type ActiveFormats = {
@@ -29,7 +40,7 @@ type ActiveFormats = {
   underline: boolean;
   bulletList: boolean;
   orderedList: boolean;
-  heading: "h1" | "h2" | "h3" | null;
+  heading: PortfolioTitleHeadingLevel | null;
   alignLeft: boolean;
   alignCenter: boolean;
   alignRight: boolean;
@@ -47,16 +58,49 @@ const EMPTY_ACTIVE_FORMATS: ActiveFormats = {
   alignRight: false,
 };
 
-const RichTextEditor: React.FC<RichTextEditorProps> = ({ value, onChange, placeholder, className, onToggleCollapsible, isCollapsible }) => {
+const RichTextEditor: React.FC<RichTextEditorProps> = ({
+  value,
+  onChange,
+  placeholder,
+  className,
+  onToggleCollapsible,
+  isCollapsible,
+  onSelectionChange,
+  forceExternalSync = false,
+  readOnly = false,
+}) => {
   const editorRef = useRef<HTMLDivElement>(null);
   const [showToolbar, setShowToolbar] = useState(false);
   const [toolbarPosition, setToolbarPosition] = useState({ top: 0, left: 0 });
   const [activeFormats, setActiveFormats] = useState<ActiveFormats>(EMPTY_ACTIVE_FORMATS);
 
-  const computeActiveFormats = (): ActiveFormats => {
+  const resolveHeadingFromSelection = useCallback((): PortfolioTitleHeadingLevel | null => {
+    const selection = window.getSelection();
+    if (!selection || selection.rangeCount === 0 || !editorRef.current) return null;
+
+    let node: Node | null = selection.anchorNode;
+    while (node && node !== editorRef.current) {
+      if (node instanceof HTMLElement) {
+        const tag = node.tagName.toLowerCase();
+        if (tag === "h1" || tag === "h2" || tag === "h3") {
+          return tag;
+        }
+      }
+      node = node.parentNode;
+    }
+    return null;
+  }, []);
+
+  const computeActiveFormats = useCallback((): ActiveFormats => {
     try {
-      const block = (document.queryCommandValue("formatBlock") || "").toLowerCase();
-      const heading = block === "h1" || block === "h2" || block === "h3" ? (block as "h1" | "h2" | "h3") : null;
+      const block = (document.queryCommandValue("formatBlock") || "").toLowerCase().replace(/[<>]/g, "");
+      let heading: PortfolioTitleHeadingLevel | null =
+        block === "h1" || block === "h2" || block === "h3" ? (block as PortfolioTitleHeadingLevel) : null;
+
+      if (!heading) {
+        heading = resolveHeadingFromSelection();
+      }
+
       return {
         bold: document.queryCommandState("bold"),
         italic: document.queryCommandState("italic"),
@@ -71,7 +115,7 @@ const RichTextEditor: React.FC<RichTextEditorProps> = ({ value, onChange, placeh
     } catch {
       return EMPTY_ACTIVE_FORMATS;
     }
-  };
+  }, [resolveHeadingFromSelection]);
 
   const normalizeEditorHtml = (html: string) => {
     const normalized = html
@@ -85,23 +129,23 @@ const RichTextEditor: React.FC<RichTextEditorProps> = ({ value, onChange, placeh
   };
 
   useEffect(() => {
-    if (editorRef.current && editorRef.current.innerHTML !== value) {
-      // Rough sync: overly simplistic, but okay for MVP non-concurrent editing
-      // Ideally we'd only update if the diff is significant or if focused elsewhere
-      // But here we rely on onChange updating the parent, so we only sync initially or if completely changed
-      if (document.activeElement !== editorRef.current) {
-        editorRef.current.innerHTML = value;
-      }
+    if (!editorRef.current || editorRef.current.innerHTML === value) {
+      return;
     }
-  }, [value]);
+    if (forceExternalSync || document.activeElement !== editorRef.current) {
+      editorRef.current.innerHTML = value;
+    }
+  }, [value, forceExternalSync]);
 
   const handleInput = () => {
+    if (readOnly) return;
     if (editorRef.current) {
       const normalizedHtml = normalizeEditorHtml(editorRef.current.innerHTML);
       if (normalizedHtml === "" && editorRef.current.innerHTML !== "") {
         editorRef.current.innerHTML = "";
       }
       onChange(normalizedHtml);
+      setActiveFormats(computeActiveFormats());
     }
   };
 
@@ -109,28 +153,34 @@ const RichTextEditor: React.FC<RichTextEditorProps> = ({ value, onChange, placeh
     const selection = window.getSelection();
     if (!selection || selection.rangeCount === 0 || selection.isCollapsed) {
       setShowToolbar(false);
+      onSelectionChange?.(null);
       return;
     }
 
     const range = selection.getRangeAt(0);
     const rect = range.getBoundingClientRect();
 
-    // Only show if selection is inside our editor
     if (editorRef.current && editorRef.current.contains(selection.anchorNode)) {
       setShowToolbar(true);
       setActiveFormats(computeActiveFormats());
-      // Position relative to viewport, but we might want relative to editor parent
-      // But fixed position is easier for floating toolbar
       setToolbarPosition({
-        top: rect.top - 50, // 50px above selection
-        left: rect.left + rect.width / 2 - 100, // Centered roughly
+        top: rect.top - 50,
+        left: rect.left + rect.width / 2 - 100,
       });
+      const text = selection.toString();
+      if (text.trim()) {
+        onSelectionChange?.({ text, rect });
+      } else {
+        onSelectionChange?.(null);
+      }
     } else {
       setShowToolbar(false);
+      onSelectionChange?.(null);
     }
   };
 
   const executeCommand = (command: string, value: string | undefined = undefined) => {
+    if (readOnly) return;
     document.execCommand(command, false, value);
     if (editorRef.current) {
       editorRef.current.focus();
@@ -148,14 +198,16 @@ const RichTextEditor: React.FC<RichTextEditorProps> = ({ value, onChange, placeh
   const buttonClass = (isActive: boolean) =>
     `p-1.5 rounded transition-colors ${isActive ? "bg-slate-700 text-white" : "hover:bg-slate-700"}`;
 
+  const editorSurfaceClass =
+    "outline-none min-h-[1em] cursor-text empty:before:content-[attr(data-placeholder)] empty:before:text-slate-400";
+
   return (
-    <div className="relative group">
-      {/* Floating Toolbar */}
+    <div className={`relative group ${className ?? ""}`}>
       {showToolbar && (
         <div
           className="fixed z-50 flex items-center gap-1 p-1 bg-slate-900 text-white rounded-lg shadow-xl animate-in fade-in zoom-in-95 duration-200"
           style={{ top: toolbarPosition.top, left: toolbarPosition.left }}
-          onMouseDown={e => e.preventDefault()} // Prevent loss of focus
+          onMouseDown={e => e.preventDefault()}
         >
           <button onClick={() => executeCommand("bold")} aria-pressed={activeFormats.bold} className={buttonClass(activeFormats.bold)}>
             <Bold size={16} />
@@ -252,11 +304,12 @@ const RichTextEditor: React.FC<RichTextEditorProps> = ({ value, onChange, placeh
 
       <div
         ref={editorRef}
-        contentEditable
+        contentEditable={!readOnly}
         onInput={handleInput}
         onSelect={handleSelect}
         onBlur={() => {
           setShowToolbar(false);
+          onSelectionChange?.(null);
           if (!editorRef.current) return;
           const isEffectivelyEmpty = (editorRef.current.textContent || "").trim() === "";
           if (!isEffectivelyEmpty) return;
@@ -267,7 +320,7 @@ const RichTextEditor: React.FC<RichTextEditorProps> = ({ value, onChange, placeh
             onChange("");
           }
         }}
-        className={`outline-none min-h-[1em] empty:before:content-[attr(data-placeholder)] empty:before:text-slate-400 cursor-text ${className}`}
+        className={editorSurfaceClass}
         data-placeholder={placeholder}
         suppressContentEditableWarning={true}
       />

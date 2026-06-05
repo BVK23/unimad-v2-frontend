@@ -7,6 +7,7 @@ type UserData = {
   profilePictureUrl?: string;
   email?: string;
   firstName?: string;
+  is_team_member?: boolean;
 };
 
 async function fetchUserData(): Promise<UserData | null> {

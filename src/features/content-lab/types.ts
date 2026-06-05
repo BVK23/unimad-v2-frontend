@@ -1,6 +1,7 @@
 export type ContentGenAssetItem = {
   id: string;
   topic: string;
+  funnel?: "top" | "middle" | "bottom";
   content: string;
   status: string;
   datePosted?: string;

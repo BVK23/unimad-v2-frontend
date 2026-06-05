@@ -48,6 +48,10 @@ export interface PortfolioItem {
   variant?: string;
   /** Template layout slot; used to preserve old BlockNote width semantics on the 12-col grid */
   layoutRole?: "section" | "halfCard" | "linkChip" | "inlineMedia" | "quote" | "mediaHero";
+  /** Set by initial portfolio generation for Quick Summary / Who am I? / USP; cleared after user edits title format */
+  templateSectionTitle?: boolean;
+  /** Set for Previous Experiences / Projects entry blocks; defaults title to semantic H2 until user changes heading */
+  portfolioEntryTitle?: boolean;
 }
 
 export interface EducationItem {
@@ -114,14 +118,25 @@ export interface PortfolioData {
 }
 
 // Chat Types
+export type AssetActionMeta = {
+  kind: "preset" | "freeform";
+  assetType: string;
+  presetLabel?: string;
+  selectedText: string;
+  prompt: string;
+};
+
 export interface ChatMessage {
   id: string;
   role: "user" | "model";
   text: string;
   timestamp: Date;
+  /** ADK invocation id for rewind (user messages only). */
+  invocationId?: string;
   // Topic / Context Support (improve sub-chats embedded in main transcript)
   isTopic?: boolean;
   topicTitle?: string;
+  topicKind?: "content_gen" | "application_asset" | "improve";
   isExpanded?: boolean;
   messages?: ChatMessage[]; // Nested messages for this topic
   /** ADK session id for this improve thread (backend sub-session). */
@@ -131,6 +146,8 @@ export interface ChatMessage {
   /** Assistant bubble failed (rate limit, stream error, etc.). */
   isError?: boolean;
   errorKind?: "rate_limit" | "generic";
+  /** Present on user messages created by selection quick-action or freeform refine. */
+  assetActionMeta?: AssetActionMeta;
 }
 
 // --- Resume Types ---

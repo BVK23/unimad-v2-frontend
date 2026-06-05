@@ -1,5 +1,6 @@
 "use client";
 
+import { resolveMediaDisplayUrl, shouldUseUnoptimizedMedia } from "@/utils/resolve-media-url";
 import Image from "next/image";
 
 type PortfolioImageProps = {
@@ -14,13 +15,20 @@ type PortfolioImageProps = {
 };
 
 const PortfolioImage = ({ src, alt, className, fill = false, width = 400, height = 300, sizes, priority = false }: PortfolioImageProps) => {
-  const unoptimized = src.startsWith("data:");
+  const displaySrc = resolveMediaDisplayUrl(src);
+  if (!displaySrc) return null;
+
+  const unoptimized = shouldUseUnoptimizedMedia(displaySrc);
 
   if (fill) {
-    return <Image src={src} alt={alt} fill className={className} sizes={sizes ?? "100vw"} unoptimized={unoptimized} priority={priority} />;
+    return (
+      <Image src={displaySrc} alt={alt} fill className={className} sizes={sizes ?? "100vw"} unoptimized={unoptimized} priority={priority} />
+    );
   }
 
-  return <Image src={src} alt={alt} width={width} height={height} className={className} unoptimized={unoptimized} priority={priority} />;
+  return (
+    <Image src={displaySrc} alt={alt} width={width} height={height} className={className} unoptimized={unoptimized} priority={priority} />
+  );
 };
 
 export default PortfolioImage;

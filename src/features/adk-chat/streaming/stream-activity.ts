@@ -58,6 +58,8 @@ export function isMutatingResumeTool(name: string): boolean {
 }
 
 /** Tool names that write into session portfolio_data via portfolio_mutating_tools. */
+export const MUTATING_CONTENT_GEN_TOOL_NAMES = new Set<string>(["update_post_draft"]);
+
 export const MUTATING_PORTFOLIO_TOOL_NAMES = new Set<string>([
   "update_profile_field",
   "update_profile",
@@ -76,8 +78,12 @@ export function isMutatingPortfolioTool(name: string): boolean {
   return MUTATING_PORTFOLIO_TOOL_NAMES.has(toSnakeToolKey(name));
 }
 
+export function isMutatingContentGenTool(name: string): boolean {
+  return MUTATING_CONTENT_GEN_TOOL_NAMES.has(toSnakeToolKey(name));
+}
+
 export function isMutatingAdkTool(name: string): boolean {
-  return isMutatingResumeTool(name) || isMutatingPortfolioTool(name);
+  return isMutatingResumeTool(name) || isMutatingPortfolioTool(name) || isMutatingContentGenTool(name);
 }
 
 /**
@@ -129,6 +135,12 @@ function handoffLabelForTarget(targetRaw: string): string {
       return "Reviewing your LinkedIn experience…";
     case "linkedin_skills_agent":
       return "Tuning your LinkedIn skills…";
+    case "content_gen_agent":
+      return "Opening Content Lab…";
+    case "topic_planner_agent":
+      return "Planning your LinkedIn topic…";
+    case "post_draft_agent":
+      return "Writing your LinkedIn post…";
     case "experience_agent":
       return "Going deeper on your work experience…";
     case "education_agent":
@@ -218,6 +230,22 @@ export function labelForAgent(author: string): string {
       return "Improving your LinkedIn headline…";
     case "about_agent":
       return "Improving your About section…";
+    case "content_gen_agent":
+      return "Coordinating your LinkedIn post…";
+    case "application_assets_agent":
+      return "Coordinating your application draft…";
+    case "application_asset_intake_agent":
+      return "Collecting role and company details…";
+    case "cover_letter_draft_agent":
+      return "Drafting your cover letter…";
+    case "cold_email_draft_agent":
+      return "Drafting your cold email…";
+    case "referral_draft_agent":
+      return "Drafting your referral message…";
+    case "topic_planner_agent":
+      return "Exploring topic ideas…";
+    case "post_draft_agent":
+      return "Drafting your LinkedIn post…";
     case "summary_agent":
       return "Shaping your professional summary…";
     case "linkedin_experience_agent":
@@ -253,6 +281,20 @@ export function labelForToolCall(name: string, args?: Record<string, unknown>): 
       return "Reviewing your summary…";
     case "get_resume":
       return "Reviewing your resume…";
+    case "get_content_gen_context":
+      return "Loading your profile for topic ideas…";
+    case "fetch_user_personal_details":
+      return "Loading your profile…";
+    case "get_post_draft":
+      return "Reading your post draft…";
+    case "update_post_draft":
+      return "Updating your post draft…";
+    case "get_application_asset_draft":
+      return "Reading your application draft…";
+    case "update_application_asset_draft":
+      return "Updating your cover letter draft…";
+    case "set_application_asset_context":
+      return "Saving role and company context…";
     case "get_portfolio":
       return "Reviewing your portfolio…";
     case "get_profile":

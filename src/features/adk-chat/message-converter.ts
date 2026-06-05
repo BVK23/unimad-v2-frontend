@@ -1,3 +1,4 @@
+import { filterActiveAdkEvents, getEventInvocationId } from "./filter-active-adk-events";
 import type { AdkContent, AdkEvent, ConversionResult, TimelineActivity, AgentMessage } from "./types";
 
 function isAdkContentObject(content: AdkEvent["content"]): content is AdkContent {
@@ -362,8 +363,11 @@ function reconstructTimelineFromEvents(events: AdkEvent[]): {
  * Filters out events without meaningful text content and handles timeline activities
  */
 export function convertAdkEventsToMessages(events: AdkEvent[]): ConversionResult {
+  const activeEvents = filterActiveAdkEvents(events);
+
   console.log("🔄 [CONVERTER] Converting ADK events to messages:", {
     totalEvents: events.length,
+    activeEvents: activeEvents.length,
     events: events.map(e => ({
       id: e.id,
       author: e.author,
@@ -371,9 +375,9 @@ export function convertAdkEventsToMessages(events: AdkEvent[]): ConversionResult
     })),
   });
 
-  const messages = events
+  const messages = activeEvents
     .map((event, index) => {
-      console.log(`🔍 [CONVERTER] Processing event ${index + 1}/${events.length}:`, {
+      console.log(`🔍 [CONVERTER] Processing event ${index + 1}/${activeEvents.length}:`, {
         id: event.id,
         author: event.author,
         timestamp: event.timestamp,
@@ -418,6 +422,8 @@ export function convertAdkEventsToMessages(events: AdkEvent[]): ConversionResult
       // Extract agent from author field
       const agent = event.author && typeof event.author === "string" ? event.author : undefined;
 
+      const invocationId = messageType === "human" ? getEventInvocationId(event) : undefined;
+
       const message: AgentMessage & {
         agent?: string;
         timelineActivities?: TimelineActivity[];
@@ -426,6 +432,7 @@ export function convertAdkEventsToMessages(events: AdkEvent[]): ConversionResult
         type: messageType,
         content: content.trim(),
         timestamp: new Date(event.timestamp),
+        ...(invocationId ? { invocationId } : {}),
         ...(agent && { agent }), // Only add agent field if it exists
       };
 
@@ -459,7 +466,7 @@ export function convertAdkEventsToMessages(events: AdkEvent[]): ConversionResult
   });
 
   // Reconstruct timeline activities from events
-  const timelineResult = reconstructTimelineFromEvents(events);
+  const timelineResult = reconstructTimelineFromEvents(activeEvents);
   console.log("✅ [CONVERTER] Final reconstructed timeline:", {
     totalActivities: timelineResult.activities.length,
     messageDistribution: Object.entries(timelineResult.messageCorrelation).map(([msgIndex, activities]) => ({

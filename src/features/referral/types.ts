@@ -10,7 +10,7 @@ export interface ReferralAsset {
   created_at?: string;
   updated_at?: string;
   dateScheduled?: string | null;
-  status?: string;
+  status?: "draft" | "accepted" | string;
   dateSent?: string | null;
 }
 

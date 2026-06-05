@@ -1,4 +1,5 @@
 import { useState, useRef, useEffect, type Dispatch, type SetStateAction } from "react";
+import { MAX_PORTFOLIO_ITEM_HEIGHT_PX, PORTFOLIO_RESIZE_SNAP_PX } from "@/features/portfolio/constants/portfolioLayout";
 import { ColumnSpan, PortfolioItem } from "../types";
 
 type ResizeSession = {
@@ -66,7 +67,9 @@ export const useGridResize = (_items: PortfolioItem[], setItems: Dispatch<SetSta
 
         if (session.axis === "y" || session.axis === "both") {
           const deltaY = e.clientY - session.startY;
-          nextHeight = Math.max(minHeight, Math.min(1200, session.startHeight + deltaY));
+          // Snap to grid increments so dragging pins to the nearest grid pointer (matches column snap).
+          const snapped = Math.round((session.startHeight + deltaY) / PORTFOLIO_RESIZE_SNAP_PX) * PORTFOLIO_RESIZE_SNAP_PX;
+          nextHeight = Math.max(minHeight, Math.min(MAX_PORTFOLIO_ITEM_HEIGHT_PX, snapped));
         }
 
         const shouldResizeWidth = session.axis === "x" || session.axis === "both";
@@ -86,6 +89,7 @@ export const useGridResize = (_items: PortfolioItem[], setItems: Dispatch<SetSta
             span: shouldResizeWidth ? (nextSpan as ColumnSpan) : item.span,
             colStart: shouldResizeWidth ? nextCol : item.colStart,
             height: shouldResizeHeight ? nextHeight : item.height,
+            heightUserSet: shouldResizeHeight ? true : item.heightUserSet,
           };
         });
       });
@@ -128,6 +132,10 @@ export const useGridResize = (_items: PortfolioItem[], setItems: Dispatch<SetSta
       if (Number.isFinite(parsedStart) && parsedStart > 0) startCol = parsedStart;
     } catch {
       // Keep fallback
+    }
+
+    if (axis === "y" || axis === "both") {
+      setItems(prev => prev.map(entry => (entry.id === item.id ? { ...entry, heightUserSet: true } : entry)));
     }
 
     setResizing({

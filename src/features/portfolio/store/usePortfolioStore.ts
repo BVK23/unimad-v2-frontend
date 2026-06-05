@@ -23,7 +23,7 @@ export const usePortfolioStore = create<PortfolioStoreState>((set, get) => ({
     const dataMap: Record<string, PortfolioData> = {};
     portfolios.forEach(p => {
       if (p.id) {
-        dataMap[p.id] = normalizePortfolioData(p);
+        dataMap[p.id] = normalizePortfolioData(p, { clampTitleOnlyHeights: true });
       }
     });
     set({ portfolioData: dataMap });
@@ -33,7 +33,7 @@ export const usePortfolioStore = create<PortfolioStoreState>((set, get) => ({
     set(state => ({
       portfolioData: {
         ...state.portfolioData,
-        [portfolioId]: normalizePortfolioData({ ...data, id: portfolioId }),
+        [portfolioId]: normalizePortfolioData({ ...data, id: portfolioId }, { clampTitleOnlyHeights: true }),
       },
     })),
 

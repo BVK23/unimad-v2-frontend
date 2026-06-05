@@ -7,6 +7,8 @@ export interface AgentMessage {
   content: string;
   id: string;
   timestamp: Date;
+  /** ADK invocation for this turn — required for session rewind. */
+  invocationId?: string;
   agent?: string;
   timelineActivities?: TimelineActivity[];
 }
@@ -22,7 +24,7 @@ export interface AdkEvent {
   /** API may return JSON string or structured content */
   content?: AdkContent | string;
   actions?: AdkEventActions;
-  invocationId: string;
+  invocationId?: string;
   timestamp: number;
   partial?: boolean;
   turnComplete?: boolean;

@@ -349,6 +349,61 @@ export class AdkSessionService {
   }
 
   /**
+   * Rewinds a session to before the given invocation (undoes that turn and everything after).
+   * Supported on self-hosted `adk api_server` (local + Cloud Run). Not available on managed Agent Engine.
+   */
+  static async rewindSession(
+    userId: string,
+    sessionId: string,
+    rewindBeforeInvocationId: string
+  ): Promise<{ success: boolean; error?: string }> {
+    if (shouldUseAgentEngine()) {
+      return {
+        success: false,
+        error: "Session rewind is not available on managed Agent Engine.",
+      };
+    }
+
+    const appName = getAdkAppName();
+    const endpoint = getEndpointForPath(`/apps/${appName}/users/${userId}/sessions/${sessionId}/rewind`);
+
+    try {
+      const authHeaders = await getAuthHeaders();
+      const response = await fetch(endpoint, {
+        method: "POST",
+        headers: {
+          ...authHeaders,
+        },
+        body: JSON.stringify({
+          rewind_before_invocation_id: rewindBeforeInvocationId,
+        }),
+      });
+
+      if (!response.ok) {
+        let detail = response.statusText;
+        try {
+          const body = await response.text();
+          if (body) detail = body;
+        } catch {
+          /* ignore */
+        }
+        return {
+          success: false,
+          error: `Rewind failed (${response.status}): ${detail}`,
+        };
+      }
+
+      return { success: true };
+    } catch (error) {
+      console.error("❌ [ADK SESSION SERVICE] rewindSession error:", error);
+      return {
+        success: false,
+        error: error instanceof Error ? error.message : String(error),
+      };
+    }
+  }
+
+  /**
    * Tries to patch local ADK session state. Agent Engine uses a different API path
    * and currently does not use this helper.
    */

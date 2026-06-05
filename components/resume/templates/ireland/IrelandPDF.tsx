@@ -274,8 +274,17 @@ const IrelandPDF: React.FC<IrelandPDFProps> = ({ data }) => {
         {visible.map((proj, idx) => (
           <View key={idx} style={styles.entryRow} wrap={false}>
             {idx === 0 && renderSectionHeading("Projects", isFirstSection)}
-            <Text style={styles.entryTitle}>{proj.title}</Text>
-            <HtmlRenderer html={proj.description} style={styles.description} />
+            {proj.url ? (
+              <Link
+                src={proj.url.startsWith("http") ? proj.url : `https://${proj.url}`}
+                style={{ ...styles.entryTitle, textDecoration: "none" }}
+              >
+                {proj.title}
+              </Link>
+            ) : (
+              <Text style={styles.entryTitle}>{proj.title}</Text>
+            )}
+            {proj.description && <HtmlRenderer html={proj.description} style={styles.description} />}
           </View>
         ))}
       </View>

@@ -2,13 +2,11 @@
 
 import React, { useCallback, useEffect, useRef, useState } from "react";
 import InterviewLaunchOverlay from "@/components/interview-prep/InterviewLaunchOverlay";
+import { APPLICATION_ASSET_EVENTS } from "@/features/application-assets/api/application-asset-events";
+import { checkApplicationAssetAvailability } from "@/features/application-assets/server-actions/application-asset-actions";
 import { getLinkedAssetId } from "@/features/application-tracker/application-assets";
-import { generateColdEmail, fetchColdEmailWithContent, updateColdEmail } from "@/src/features/cold-email/server-actions/cold-email-actions";
-import {
-  generateCoverLetter,
-  fetchCoverLetterWithContent,
-  updateCoverLetter,
-} from "@/src/features/cover-letter/server-actions/cover-letter-actions";
+import { fetchColdEmailById, updateColdEmail } from "@/src/features/cold-email/server-actions/cold-email-actions";
+import { fetchCoverLetterById, updateCoverLetter } from "@/src/features/cover-letter/server-actions/cover-letter-actions";
 import { storeInterviewLaunch } from "@/src/features/interview-prep/interview-launch";
 import { startInterviewSession } from "@/src/features/interview-prep/server-actions/interview-actions";
 import type { StartInterviewFromJobPayload } from "@/src/features/interview-prep/types";
@@ -170,7 +168,7 @@ const PrepareApplicationModal: React.FC<PrepareApplicationModalProps> = ({
       }
 
       if (tab === "cover-letter") {
-        const asset = await fetchCoverLetterWithContent(syncedId);
+        const asset = await fetchCoverLetterById(syncedId);
         setTabState(tab, {
           status: "ready",
           assetId: syncedId,
@@ -181,7 +179,7 @@ const PrepareApplicationModal: React.FC<PrepareApplicationModalProps> = ({
       }
 
       if (tab === "cold-email") {
-        const asset = await fetchColdEmailWithContent(syncedId);
+        const asset = await fetchColdEmailById(syncedId);
         setTabState(tab, {
           status: "ready",
           assetId: syncedId,
@@ -258,7 +256,10 @@ const PrepareApplicationModal: React.FC<PrepareApplicationModalProps> = ({
       }
 
       if (tab === "cover-letter") {
-        const result = await generateCoverLetter(baseParams);
+        const result = await checkApplicationAssetAvailability({
+          type: "coverletter",
+          ...baseParams,
+        });
         if ("error_code" in result) {
           throw new Error("Plus membership required to generate cover letters");
         }
@@ -266,12 +267,30 @@ const PrepareApplicationModal: React.FC<PrepareApplicationModalProps> = ({
           await applySyncedAsset(tab, String(result.error.data.existing_asset_id));
           return;
         }
-        await applySyncedAsset(tab, String(result.id));
+        onNavigateToStudio?.({
+          type: "cover-letter",
+          jobId: job.id,
+          company: job.company,
+          role: job.role,
+          description: job.description,
+        });
+        onClose();
+        window.dispatchEvent(
+          new CustomEvent(APPLICATION_ASSET_EVENTS.requestDraft, {
+            detail: {
+              assetType: "coverletter",
+              role: job.role,
+              company: job.company,
+              jobDescription: jd,
+            },
+          })
+        );
         return;
       }
 
       if (tab === "cold-email") {
-        const result = await generateColdEmail({
+        const result = await checkApplicationAssetAvailability({
+          type: "coldemail",
           ...baseParams,
           hirname: "Hiring Manager",
         });
@@ -282,7 +301,25 @@ const PrepareApplicationModal: React.FC<PrepareApplicationModalProps> = ({
           await applySyncedAsset(tab, String(result.error.data.existing_asset_id));
           return;
         }
-        await applySyncedAsset(tab, String(result.id));
+        onNavigateToStudio?.({
+          type: "cold-email",
+          jobId: job.id,
+          company: job.company,
+          role: job.role,
+          description: job.description,
+        });
+        onClose();
+        window.dispatchEvent(
+          new CustomEvent(APPLICATION_ASSET_EVENTS.requestDraft, {
+            detail: {
+              assetType: "coldemail",
+              role: job.role,
+              company: job.company,
+              jobDescription: jd,
+              contactName: "Hiring Manager",
+            },
+          })
+        );
       }
     } catch (e) {
       setTabState(tab, {

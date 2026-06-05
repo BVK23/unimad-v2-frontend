@@ -6,10 +6,10 @@ export type FormattedUnibotStreamError = {
   retryable: boolean;
 };
 
-export const RATE_LIMIT_RETRY_COOLDOWN_SEC = 30;
+export const RATE_LIMIT_RETRY_COOLDOWN_SEC = 15;
 
 /** Shown in the sidebar — keep short and non-technical. */
-export const RATE_LIMIT_USER_MESSAGE = "Unibot's servers are way too busy right now. Give it a minute, then try again.";
+export const RATE_LIMIT_USER_MESSAGE = "Unibot's servers are busy right now. Wait a moment, then try again.";
 
 /** Shown for tool/agent/stream failures — no stack traces or tool names. */
 export const GENERIC_USER_MESSAGE = "Something broke while Unibot was working with his team. Please try again.";

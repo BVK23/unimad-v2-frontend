@@ -2,7 +2,7 @@
 
 import React, { useState, useRef, useEffect } from "react";
 import { resolveProfilePictureFromProfile } from "@/features/user-profile/utils/resolve-profile-picture";
-import { Settings, CreditCard, LogOut, Sun, Moon, ChevronDown } from "lucide-react";
+import { Settings, CreditCard, LogOut, Sun, Moon, ChevronDown, LayoutDashboard } from "lucide-react";
 import Link from "next/link";
 
 type UserData = {
@@ -10,6 +10,7 @@ type UserData = {
   profilePictureUrl?: string;
   email?: string;
   firstName?: string;
+  is_team_member?: boolean;
   profilePictureSources?: {
     unimad?: string | null;
     google?: string | null;
@@ -116,6 +117,16 @@ const ProfileMenu: React.FC<ProfileMenuProps> = ({ isDarkMode, toggleTheme, user
               <Settings size={18} className="text-slate-400" />
               Profile Settings
             </Link>
+            {userData?.is_team_member ? (
+              <Link
+                href="/uniboard/team"
+                onClick={() => setIsOpen(false)}
+                className="w-full flex items-center gap-3 p-3 rounded-xl hover:bg-slate-50 dark:hover:bg-white/5 text-sm font-medium text-slate-700 dark:text-slate-200 transition-colors"
+              >
+                <LayoutDashboard size={18} className="text-slate-400" />
+                Team dashboard
+              </Link>
+            ) : null}
             <Link
               href="/uniboard/user/subscription"
               onClick={() => setIsOpen(false)}

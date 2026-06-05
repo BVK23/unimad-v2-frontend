@@ -13,8 +13,48 @@ import {
   topicIdForSubSession,
 } from "@/features/adk-chat/improve-topic-helpers";
 import { getSessionDisplayName, getSessionMeta, groupSessionsForSidebar } from "@/features/adk-chat/session-metadata";
+import { useAdkApplicationAssetReviewStore } from "@/features/adk-chat/stores/useAdkApplicationAssetReviewStore";
+import { useAdkContentGenReviewStore } from "@/features/adk-chat/stores/useAdkContentGenReviewStore";
 import { useAdkPortfolioReviewStore, type AdkPortfolioReviewCard } from "@/features/adk-chat/stores/useAdkPortfolioReviewStore";
 import { useAdkResumeReviewStore, type AdkReviewCard } from "@/features/adk-chat/stores/useAdkResumeReviewStore";
+import {
+  APPLICATION_ASSET_EVENTS,
+  type ApplicationAssetSelectionFreeformDetail,
+  type ApplicationAssetSelectionRefineDetail,
+} from "@/features/application-assets/api/application-asset-events";
+import {
+  messageHasApplicationAssetDraft,
+  stripApplicationAssetDraftFromMessage,
+} from "@/features/application-assets/api/applicationAssetDraftDisplay";
+import { offerApplicationAssetDraftReview } from "@/features/application-assets/api/offerApplicationAssetDraftReview";
+import { buildFreeformSelectionUserMessage } from "@/features/application-assets/config/selection-presets";
+import { useApplicationAssetReviewActions } from "@/features/application-assets/hooks/useApplicationAssetReviewActions";
+import { useApplicationAssetStudioStore } from "@/features/application-assets/store/useApplicationAssetStudioStore";
+import type { ApplicationAssetApiType } from "@/features/application-assets/types";
+import type { ContentGenFunnel } from "@/features/content-lab/api/adk-mappers";
+import type { ContentGenPlannerAction } from "@/features/content-lab/api/content-gen-events";
+import { CONTENT_GEN_EVENTS, CONTENT_GEN_PUBLISH_BLOCKED_MESSAGE } from "@/features/content-lab/api/content-gen-events";
+import { shouldForceDjangoContentGenDraft } from "@/features/content-lab/api/contentGenDraftConfig";
+import { stripContentGenDraftFromMessage, messageHasContentGenDraft } from "@/features/content-lab/api/contentGenDraftDisplay";
+import { isValidContentGenTopicTitle } from "@/features/content-lab/api/contentGenTopicUtils";
+import {
+  extractConfirmedTopicFromThread,
+  inferFunnelFromChipLabel,
+  messageHasPlannerChips,
+  stripPlannerJsonFromMessage,
+} from "@/features/content-lab/api/extractPlannerChips";
+import { offerContentGenDraftReview } from "@/features/content-lab/api/offerContentGenDraftReview";
+import { parseContentGenTopicIntent } from "@/features/content-lab/api/parseContentGenTopicIntent";
+import { parseGenerateDraftRequest } from "@/features/content-lab/api/parseGenerateDraftRequest";
+import { parsePublishIntent } from "@/features/content-lab/api/parsePublishIntent";
+import { syncContentGenDraftToStudio } from "@/features/content-lab/api/syncContentGenDraftToStudio";
+import {
+  publishStepLabel,
+  runContentGenPublishFromChat,
+  successMessageForPublishResult,
+} from "@/features/content-lab/hooks/runContentGenPublishFromChat";
+import { runDjangoContentGenDraftFallback } from "@/features/content-lab/hooks/runDjangoContentGenDraftFallback";
+import { useContentGenStudioStore } from "@/features/content-lab/store/useContentGenStudioStore";
 import { buildAdkPortfolioDataMap, buildAdkPortfolioStateDelta } from "@/features/portfolio/api/mappers";
 import { portfolioQueryKey } from "@/features/portfolio/hooks/usePortfolio";
 import { usePortfolioStore } from "@/features/portfolio/store/usePortfolioStore";
@@ -25,15 +65,37 @@ import { UNTITLED_THREAD_TITLE } from "@/src/features/adk-chat/constants";
 import { getRegistryRow, upsertRegistryRow } from "@/src/features/adk-chat/session-registry";
 import { registerUnibotAdkSessionAction } from "@/src/features/adk-chat/unibot-adk-session-actions";
 import { useQueryClient } from "@tanstack/react-query";
-import { Send, Loader2, Minimize2, Maximize2, ChevronDown, ChevronUp, ArrowUp, History, Plus, Search, Trash2, X } from "lucide-react";
-import type { ChatMessage } from "../types";
+import {
+  Send,
+  Loader2,
+  Minimize2,
+  Maximize2,
+  ChevronDown,
+  ChevronUp,
+  ArrowUp,
+  History,
+  Plus,
+  Search,
+  Trash2,
+  Undo2,
+  X,
+  Check,
+} from "lucide-react";
+import { usePathname } from "next/navigation";
+import type { AssetActionMeta, ChatMessage } from "../types";
 import Logo from "./Logo";
 import UnimadUMark from "./UnimadUMark";
 import { useAdkChatContext } from "./chat/AdkChatProvider";
+import { AdkRewindConfirmDialog } from "./chat/AdkRewindConfirmDialog";
+import { ContentGenPublishChips } from "./chat/ContentGenPublishChips";
+import { ContentGenTopicChips } from "./chat/ContentGenTopicChips";
 import { FormattedAgentMessage } from "./chat/FormattedAgentMessage";
 import { UnibotErrorBubble } from "./chat/UnibotErrorBubble";
+import { applicationAssetTopicTitle, buildApplicationAssetDraftBootstrap } from "./chat/application-asset-topic";
+import { buildContentGenDraftBootstrap, buildContentGenTopicBootstrap, contentGenTopicUserDisplayText } from "./chat/content-gen-topic";
 import { resetAssistantTurnForRetryInTree } from "./chat/set-chat-message-stream-error";
 import { type UnibotIncomingRequest, incomingRequestSignature, UNIBOT_SECTION_REVIEW_PROMPTS } from "./chat/unibot-incoming-request";
+import RefineActionCard from "./studio/RefineActionCard";
 
 interface ChatSidebarProps {
   incomingRequest?: UnibotIncomingRequest | null;
@@ -132,7 +194,16 @@ const ChatSidebar: React.FC<ChatSidebarProps> = ({ incomingRequest, onRequestHan
     streamError,
     clearStreamError,
     setStreamError,
+    rewindToMessage,
+    isRewinding,
   } = useAdkChatContext();
+
+  const [pendingRewind, setPendingRewind] = useState<{
+    invocationId: string;
+    previewText: string;
+    targetSessionId: string;
+    topicId?: string;
+  } | null>(null);
 
   const [input, setInput] = useState("");
   const messagesScrollRef = useRef<HTMLDivElement>(null);
@@ -141,6 +212,41 @@ const ChatSidebar: React.FC<ChatSidebarProps> = ({ incomingRequest, onRequestHan
   const [isCollapsed, setIsCollapsed] = useState(false);
   const [sidebarWidth, setSidebarWidth] = useState(SIDEBAR_DEFAULT_WIDTH_PX);
   const [isResizing, setIsResizing] = useState(false);
+  const canRewind = sessionReady && !isAgentLoading && !isLoadingHistory && !isRewinding;
+
+  const openRewindDialog = useCallback(
+    (message: ChatMessage, targetSessionId: string, topicId?: string) => {
+      if (!message.invocationId || !canRewind) return;
+      setPendingRewind({
+        invocationId: message.invocationId,
+        previewText: message.text,
+        targetSessionId,
+        topicId,
+      });
+    },
+    [canRewind]
+  );
+
+  const handleRewindConfirm = useCallback(
+    async (revertEditorState: boolean) => {
+      if (!pendingRewind) return;
+      try {
+        await rewindToMessage({
+          invocationId: pendingRewind.invocationId,
+          previewText: pendingRewind.previewText,
+          revertEditorState,
+          targetSessionId: pendingRewind.targetSessionId,
+          topicId: pendingRewind.topicId,
+        });
+      } catch (err) {
+        setStreamError(formatUnibotStreamError(err, { source: "rewind" }));
+      } finally {
+        setPendingRewind(null);
+      }
+    },
+    [pendingRewind, rewindToMessage, setStreamError]
+  );
+
   const [historyPanelOpen, setHistoryPanelOpen] = useState(false);
   const [historySearchQuery, setHistorySearchQuery] = useState("");
   const [allChatsOpen, setAllChatsOpen] = useState(true);
@@ -150,12 +256,49 @@ const ChatSidebar: React.FC<ChatSidebarProps> = ({ incomingRequest, onRequestHan
   const [improveReplyTopicId, setImproveReplyTopicId] = useState<string | null>(null);
   const lastIncomingSigRef = useRef<string | null>(null);
   const pendingRetryRef = useRef<{ text: string; topicId?: string; botMsgId?: string } | null>(null);
+  const contentGenFunnelRef = useRef<ContentGenFunnel | null>(null);
+  const contentGenAppliedTopicRef = useRef<string | null>(null);
+  const contentGenAdkDraftJobRef = useRef<{
+    topicId: string;
+    botMsgId: string;
+    topic: string;
+    funnel: ContentGenFunnel | null;
+  } | null>(null);
+  const applicationAssetAdkDraftJobRef = useRef<{
+    topicId: string;
+    botMsgId: string;
+    assetType: ApplicationAssetApiType;
+    assetId?: string;
+  } | null>(null);
+  const prevAgentLoadingRef = useRef(isAgentLoading);
+  const contentGenLastSyncedBotIdRef = useRef<string | null>(null);
+  const applicationAssetLastSyncedBotIdRef = useRef<string | null>(null);
+  const contentGenAcceptedBotMsgIdRef = useRef<string | null>(null);
+  const contentGenStudioAssetId = useContentGenStudioStore(s => s.assetId);
+  const [isContentGenPublishing, setIsContentGenPublishing] = useState(false);
+  const [contentGenPublishActivity, setContentGenPublishActivity] = useState<Record<string, string>>({});
   const queryClient = useQueryClient();
   const adkReviewStack = useAdkResumeReviewStore(s => s.reviewStack);
   const adkActiveReviewId = useAdkResumeReviewStore(s => s.reviewStack.at(-1)?.id ?? null);
   const adkPortfolioReviewStack = useAdkPortfolioReviewStore(s => s.reviewStack);
   const adkPortfolioActiveReviewId = useAdkPortfolioReviewStore(s => s.reviewStack.at(-1)?.id ?? null);
+  const adkContentGenReviewStack = useAdkContentGenReviewStore(s => s.reviewStack);
+  const adkContentGenActiveReviewId = useAdkContentGenReviewStore(s => s.reviewStack.at(-1)?.id ?? null);
+  const adkApplicationAssetReviewStack = useAdkApplicationAssetReviewStore(s => s.reviewStack);
+  const adkApplicationAssetActiveReviewId = useAdkApplicationAssetReviewStore(s => s.reviewStack.at(-1)?.id ?? null);
+  const pathname = usePathname();
   const [adkReviewBusy, setAdkReviewBusy] = useState(false);
+  const {
+    adkReviewBusy: applicationAssetReviewBusy,
+    acceptApplicationAssetReview,
+    discardApplicationAssetReview,
+  } = useApplicationAssetReviewActions();
+  const [selectionQuoteContext, setSelectionQuoteContext] = useState<{
+    assetType: ApplicationAssetApiType;
+    selectedText: string;
+  } | null>(null);
+  const [selectionSentPill, setSelectionSentPill] = useState<string | null>(null);
+  const selectionSentPillTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   useEffect(() => {
     sidebarWidthRef.current = sidebarWidth;
@@ -286,8 +429,305 @@ const ChatSidebar: React.FC<ChatSidebarProps> = ({ incomingRequest, onRequestHan
       }
       setStreamError(formatted);
     },
-    [applyAssistantError]
+    [applyAssistantError, setStreamError]
   );
+
+  const tryOfferApplicationAssetDraftReview = useCallback(
+    (botMessage: string, assistantMessageId: string, assetTypeOverride?: ApplicationAssetApiType, threadMessages?: ChatMessage[]) => {
+      const studio = useApplicationAssetStudioStore.getState();
+      const offered = offerApplicationAssetDraftReview({
+        botMessage,
+        assistantMessageId,
+        pathname,
+        assetTypeOverride: assetTypeOverride ?? studio.assetType ?? undefined,
+        threadMessages,
+      });
+      if (offered) {
+        applicationAssetLastSyncedBotIdRef.current = assistantMessageId;
+      }
+      return offered;
+    },
+    [pathname]
+  );
+
+  const tryOfferContentGenDraftReview = useCallback(
+    (botMessage: string, assistantMessageId: string, topicOverride?: string, threadMessages?: ChatMessage[]) => {
+      const studio = useContentGenStudioStore.getState();
+      const offered = offerContentGenDraftReview({
+        botMessage,
+        assistantMessageId,
+        pathname,
+        topicOverride,
+        appliedTopicRef: contentGenAppliedTopicRef.current,
+        funnelOverride: contentGenFunnelRef.current ?? studio.funnel,
+        threadMessages,
+      });
+      if (offered) {
+        const card = useAdkContentGenReviewStore.getState().getActiveCard();
+        if (card?.topic && isValidContentGenTopicTitle(card.topic)) {
+          contentGenAppliedTopicRef.current = card.topic;
+        }
+        contentGenLastSyncedBotIdRef.current = assistantMessageId;
+      }
+      return offered;
+    },
+    [pathname]
+  );
+
+  const attemptContentGenDjangoFallback = useCallback(async (topic: string, funnel: ContentGenFunnel | null) => {
+    try {
+      await runDjangoContentGenDraftFallback(topic, funnel);
+    } catch (err) {
+      window.dispatchEvent(
+        new CustomEvent(CONTENT_GEN_EVENTS.draftFailed, {
+          detail: {
+            message: err instanceof Error ? err.message : "Draft generation failed. Please try again.",
+          },
+        })
+      );
+    }
+  }, []);
+
+  useEffect(() => {
+    const onOpenDraft = (e: Event) => {
+      const d = (e as CustomEvent<{ topic?: string; funnel?: ContentGenFunnel }>).detail;
+      const topic = d?.topic?.trim();
+      if (!topic || !userId || !sessionReady) {
+        return;
+      }
+      contentGenFunnelRef.current = d.funnel ?? null;
+      setIsCollapsed(false);
+
+      const topicId = newId("topic");
+      const bootstrap = buildContentGenDraftBootstrap(topic);
+      const initialUserMsg: ChatMessage = {
+        id: newId("u"),
+        role: "user",
+        text: bootstrap,
+        timestamp: new Date(),
+      };
+      const botMsgId = typeof crypto !== "undefined" && crypto.randomUUID ? crypto.randomUUID() : newId("bot");
+      const placeholderMsg: ChatMessage = {
+        id: botMsgId,
+        role: "model",
+        text: "",
+        timestamp: new Date(),
+      };
+      const newTopic: ChatMessage = {
+        id: topicId,
+        role: "model",
+        text: "",
+        timestamp: new Date(),
+        isTopic: true,
+        topicKind: "content_gen",
+        topicTitle: "LinkedIn Draft",
+        isExpanded: true,
+        messages: [initialUserMsg, placeholderMsg],
+      };
+
+      contentGenAdkDraftJobRef.current = {
+        topicId,
+        botMsgId,
+        topic,
+        funnel: d.funnel ?? null,
+      };
+
+      setMessages(prev => [...prev, newTopic]);
+
+      void (async () => {
+        try {
+          if (isAgentLoading || isLoadingHistory) {
+            return;
+          }
+          await sendTopicMessage(initialUserMsg.text, botMsgId);
+        } catch (err) {
+          const job = contentGenAdkDraftJobRef.current;
+          contentGenAdkDraftJobRef.current = null;
+          handleStreamFailure(err, { text: initialUserMsg.text, topicId, botMsgId });
+          if (job) {
+            void attemptContentGenDjangoFallback(job.topic, job.funnel);
+          }
+        }
+      })();
+    };
+
+    window.addEventListener(CONTENT_GEN_EVENTS.openDraft, onOpenDraft);
+    return () => window.removeEventListener(CONTENT_GEN_EVENTS.openDraft, onOpenDraft);
+  }, [
+    attemptContentGenDjangoFallback,
+    handleStreamFailure,
+    isAgentLoading,
+    isLoadingHistory,
+    sendTopicMessage,
+    sessionReady,
+    setMessages,
+    userId,
+  ]);
+
+  useEffect(() => {
+    const onOpenApplicationAssetDraft = (e: Event) => {
+      // Chat-only: opens a collapsible ADK topic when the user starts from natural language in Unibot.
+      const d = (
+        e as CustomEvent<{
+          assetType: ApplicationAssetApiType;
+          assetId?: string;
+          role: string;
+          company: string;
+          jobDescription: string;
+          contactName?: string;
+        }>
+      ).detail;
+      if (!d?.assetType || !userId || !sessionReady) {
+        return;
+      }
+      setIsCollapsed(false);
+
+      const topicId = newId("topic");
+      const bootstrap = buildApplicationAssetDraftBootstrap(d.assetType, d.role, d.company, d.jobDescription, d.contactName);
+      const initialUserMsg: ChatMessage = {
+        id: newId("u"),
+        role: "user",
+        text: bootstrap,
+        timestamp: new Date(),
+      };
+      const botMsgId = typeof crypto !== "undefined" && crypto.randomUUID ? crypto.randomUUID() : newId("bot");
+      const placeholderMsg: ChatMessage = {
+        id: botMsgId,
+        role: "model",
+        text: "",
+        timestamp: new Date(),
+      };
+      const newTopic: ChatMessage = {
+        id: topicId,
+        role: "model",
+        text: "",
+        timestamp: new Date(),
+        isTopic: true,
+        topicKind: "application_asset",
+        topicTitle: applicationAssetTopicTitle(d.assetType, d.company, d.role),
+        isExpanded: true,
+        messages: [initialUserMsg, placeholderMsg],
+      };
+
+      applicationAssetAdkDraftJobRef.current = {
+        topicId,
+        botMsgId,
+        assetType: d.assetType,
+        assetId: d.assetId?.trim() || undefined,
+      };
+
+      setMessages(prev => [...prev, newTopic]);
+
+      void (async () => {
+        try {
+          if (isAgentLoading || isLoadingHistory) {
+            return;
+          }
+          await sendTopicMessage(initialUserMsg.text, botMsgId);
+        } catch (err) {
+          const job = applicationAssetAdkDraftJobRef.current;
+          applicationAssetAdkDraftJobRef.current = null;
+          handleStreamFailure(err, { text: initialUserMsg.text, topicId, botMsgId });
+        }
+      })();
+    };
+
+    window.addEventListener(APPLICATION_ASSET_EVENTS.openDraft, onOpenApplicationAssetDraft);
+    return () => window.removeEventListener(APPLICATION_ASSET_EVENTS.openDraft, onOpenApplicationAssetDraft);
+  }, [handleStreamFailure, isAgentLoading, isLoadingHistory, sendTopicMessage, sessionReady, setMessages, userId]);
+
+  useEffect(() => {
+    prevAgentLoadingRef.current = isAgentLoading;
+    if (isAgentLoading || isLoadingHistory) {
+      return;
+    }
+
+    if (useApplicationAssetStudioStore.getState().selectionRefineLoading) {
+      useApplicationAssetStudioStore.getState().setSelectionRefineLoading(false);
+    }
+
+    const aaJob = applicationAssetAdkDraftJobRef.current;
+    if (aaJob) {
+      const topicCard = messages.find(m => m.id === aaJob.topicId && m.topicKind === "application_asset");
+      const botMsg = topicCard?.messages?.find(m => m.id === aaJob.botMsgId);
+      applicationAssetAdkDraftJobRef.current = null;
+
+      if (botMsg?.isError || !botMsg?.text?.trim()) {
+        window.dispatchEvent(
+          new CustomEvent(APPLICATION_ASSET_EVENTS.draftFailed, {
+            detail: { message: "Draft generation failed. Please try again." },
+          })
+        );
+        return;
+      }
+
+      const offered = tryOfferApplicationAssetDraftReview(botMsg.text, aaJob.botMsgId, aaJob.assetType);
+      if (!offered) {
+        window.dispatchEvent(
+          new CustomEvent(APPLICATION_ASSET_EVENTS.draftFailed, {
+            detail: { message: "Could not read the generated draft. Please try again." },
+          })
+        );
+      }
+      return;
+    }
+
+    const job = contentGenAdkDraftJobRef.current;
+    if (job) {
+      const topicCard = messages.find(m => m.id === job.topicId && m.topicKind === "content_gen");
+      const botMsg = topicCard?.messages?.find(m => m.id === job.botMsgId);
+      contentGenAdkDraftJobRef.current = null;
+
+      if (botMsg?.isError || !botMsg?.text?.trim()) {
+        void attemptContentGenDjangoFallback(job.topic, job.funnel);
+        return;
+      }
+
+      if (!tryOfferContentGenDraftReview(botMsg.text, job.botMsgId, job.topic, topicCard?.messages)) {
+        void attemptContentGenDjangoFallback(job.topic, job.funnel);
+      }
+      return;
+    }
+
+    const lastMainBot = [...messages].reverse().find(m => !m.isTopic && m.role === "model" && m.text?.trim() && !m.isError);
+    if (lastMainBot?.id) {
+      if (applicationAssetLastSyncedBotIdRef.current !== lastMainBot.id) {
+        if (tryOfferApplicationAssetDraftReview(lastMainBot.text, lastMainBot.id, undefined, messages)) {
+          return;
+        }
+      }
+      if (contentGenLastSyncedBotIdRef.current !== lastMainBot.id) {
+        tryOfferContentGenDraftReview(lastMainBot.text, lastMainBot.id, undefined, messages);
+      }
+    }
+
+    for (const card of messages) {
+      if (card.topicKind === "content_gen") {
+        const threadMessages = card.messages ?? [];
+        const lastBot = [...threadMessages].reverse().find(m => m.role === "model" && m.text?.trim() && !m.isError);
+        if (!lastBot?.id || contentGenLastSyncedBotIdRef.current === lastBot.id) {
+          continue;
+        }
+        tryOfferContentGenDraftReview(lastBot.text, lastBot.id, undefined, threadMessages);
+        continue;
+      }
+      if (card.topicKind === "application_asset") {
+        const threadMessages = card.messages ?? [];
+        const lastBot = [...threadMessages].reverse().find(m => m.role === "model" && m.text?.trim() && !m.isError);
+        if (!lastBot?.id || applicationAssetLastSyncedBotIdRef.current === lastBot.id) {
+          continue;
+        }
+        tryOfferApplicationAssetDraftReview(lastBot.text, lastBot.id, undefined, threadMessages);
+      }
+    }
+  }, [
+    attemptContentGenDjangoFallback,
+    isAgentLoading,
+    isLoadingHistory,
+    messages,
+    tryOfferApplicationAssetDraftReview,
+    tryOfferContentGenDraftReview,
+  ]);
 
   const groupedSessions = useMemo(() => (userId ? groupSessionsForSidebar(userId, sessions) : []), [userId, sessions]);
 
@@ -465,6 +905,62 @@ const ChatSidebar: React.FC<ChatSidebarProps> = ({ incomingRequest, onRequestHan
       return;
     }
 
+    if (req.type === "content_gen_topic") {
+      const followUp = req.followUpText?.trim();
+
+      if (followUp) {
+        const inferred = inferFunnelFromChipLabel(followUp);
+        if (inferred) {
+          contentGenFunnelRef.current = inferred;
+        }
+      } else {
+        contentGenFunnelRef.current = null;
+      }
+
+      const topicId = newId("topic");
+      const initialText = followUp ?? buildContentGenTopicBootstrap(req.seedTopic);
+      const initialUserMsg: ChatMessage = {
+        id: newId("u"),
+        role: "user",
+        text: initialText,
+        timestamp: new Date(),
+      };
+      const botMsgId = typeof crypto !== "undefined" && crypto.randomUUID ? crypto.randomUUID() : newId("bot");
+      const placeholderMsg: ChatMessage = {
+        id: botMsgId,
+        role: "model",
+        text: "",
+        timestamp: new Date(),
+      };
+      const newTopic: ChatMessage = {
+        id: topicId,
+        role: "model",
+        text: "",
+        timestamp: new Date(),
+        isTopic: true,
+        topicKind: "content_gen",
+        topicTitle: "LinkedIn Topic",
+        isExpanded: true,
+        messages: [initialUserMsg, placeholderMsg],
+      };
+
+      setMessages(prev => [...prev, newTopic]);
+
+      void (async () => {
+        try {
+          if (!userId || !sessionReady || isAgentLoading || isLoadingHistory) {
+            return;
+          }
+          pendingRetryRef.current = { text: initialText, topicId, botMsgId };
+          await sendTopicMessage(initialText, botMsgId);
+          pendingRetryRef.current = null;
+        } catch (err) {
+          handleStreamFailure(err, { text: initialText, topicId, botMsgId });
+        }
+      })();
+      return;
+    }
+
     const isResumeSub = req.improveType === "resume" && Boolean(req.featureId && req.section);
 
     const isLinkedIn = req.improveType === "linkedin";
@@ -512,6 +1008,7 @@ const ChatSidebar: React.FC<ChatSidebarProps> = ({ incomingRequest, onRequestHan
     incomingRequest,
     sessionReady,
     sendMainMessage,
+    sendTopicMessage,
     onRequestHandled,
     handleStreamFailure,
     userId,
@@ -519,6 +1016,9 @@ const ChatSidebar: React.FC<ChatSidebarProps> = ({ incomingRequest, onRequestHan
     currentMainSessionId,
     refreshSessions,
     openImproveSubTopic,
+    isAgentLoading,
+    isLoadingHistory,
+    setMessages,
   ]);
 
   useEffect(() => {
@@ -541,7 +1041,16 @@ const ChatSidebar: React.FC<ChatSidebarProps> = ({ incomingRequest, onRequestHan
 
   useEffect(() => {
     scrollToLatest();
-  }, [messages, isCollapsed, adkReviewStack, adkActiveReviewId, adkPortfolioReviewStack, adkPortfolioActiveReviewId]);
+  }, [
+    messages,
+    isCollapsed,
+    adkReviewStack,
+    adkActiveReviewId,
+    adkPortfolioReviewStack,
+    adkPortfolioActiveReviewId,
+    adkContentGenReviewStack,
+    adkContentGenActiveReviewId,
+  ]);
 
   useEffect(() => {
     if (!historyPanelOpen) return;
@@ -557,10 +1066,22 @@ const ChatSidebar: React.FC<ChatSidebarProps> = ({ incomingRequest, onRequestHan
     if (!historyPanelOpen) setHistorySearchQuery("");
   }, [historyPanelOpen]);
 
-  const canSendMessage = Boolean(userId && sessionReady && !isAgentLoading && !isLoadingHistory);
+  const canSendMessage = Boolean(userId && sessionReady && !isAgentLoading && !isLoadingHistory && !isContentGenPublishing);
   const canSend = canSendMessage && !streamError;
 
   const canUseHistory = Boolean(userId && !isBootstrappingSession);
+
+  /** When a streaming placeholder exists in the transcript, loading UI stays inline only (no duplicate footer). */
+  const hasInlineStreamingPlaceholder = useMemo(() => {
+    if (!isAgentLoading && !isContentGenPublishing) {
+      return false;
+    }
+    const topicPlaceholder = messages.some(
+      msg => msg.isTopic && (msg.messages ?? []).some(sub => sub.role === "model" && !sub.text?.trim() && !sub.isError)
+    );
+    const mainPlaceholder = messages.some(msg => !msg.isTopic && msg.role === "model" && !msg.text?.trim() && !msg.isError);
+    return topicPlaceholder || mainPlaceholder;
+  }, [isAgentLoading, isContentGenPublishing, messages]);
 
   const handleAdkAccept = useCallback(async () => {
     setAdkReviewBusy(true);
@@ -610,6 +1131,204 @@ const ChatSidebar: React.FC<ChatSidebarProps> = ({ incomingRequest, onRequestHan
     }
   }, []);
 
+  const handleContentGenAccept = useCallback(async () => {
+    const card = useAdkContentGenReviewStore.getState().getActiveCard();
+    if (!card) {
+      return;
+    }
+    setAdkReviewBusy(true);
+    try {
+      const existingAssetId = card.isTopicChange ? null : card.baselineAssetId;
+      const result = await syncContentGenDraftToStudio({
+        topic: card.topic,
+        funnel: card.funnel,
+        botMessage: "",
+        draftText: card.proposedDraft,
+        existingAssetId,
+      });
+      if (result) {
+        contentGenAppliedTopicRef.current = card.topic;
+        if (card.assistantMessageId) {
+          contentGenAcceptedBotMsgIdRef.current = card.assistantMessageId;
+        }
+        useAdkContentGenReviewStore.getState().markReviewAccepted();
+      }
+    } catch (err) {
+      console.error("Content gen accept failed:", err);
+    } finally {
+      setAdkReviewBusy(false);
+    }
+  }, []);
+
+  const handleContentGenDiscard = useCallback(() => {
+    const card = useAdkContentGenReviewStore.getState().getActiveCard();
+    if (!card) {
+      return;
+    }
+    useAdkContentGenReviewStore.getState().popReviewAfterDiscard();
+    contentGenAppliedTopicRef.current = card.baselineTopic.trim() || null;
+    window.dispatchEvent(
+      new CustomEvent(CONTENT_GEN_EVENTS.applyTopic, {
+        detail: {
+          topic: card.baselineTopic,
+          funnel: card.baselineFunnel ?? undefined,
+          assetId: card.baselineAssetId,
+        },
+      })
+    );
+    window.dispatchEvent(
+      new CustomEvent(CONTENT_GEN_EVENTS.draftPreview, {
+        detail: {
+          draft: card.baselineDraft,
+          topic: card.baselineTopic,
+          funnel: card.baselineFunnel,
+          assetId: card.baselineAssetId,
+        },
+      })
+    );
+  }, []);
+
+  const appendContentGenPublishHint = useCallback(
+    (hintText: string, topicThreadId: string | null) => {
+      const hintMsg: ChatMessage = {
+        id: newId("cg-publish-hint"),
+        role: "model",
+        text: hintText,
+        timestamp: new Date(),
+      };
+      if (topicThreadId) {
+        setMessages(prev =>
+          prev.map(msg =>
+            msg.id === topicThreadId && msg.isTopic ? { ...msg, messages: [...(msg.messages || []), hintMsg], isExpanded: true } : msg
+          )
+        );
+        return;
+      }
+      setMessages(prev => [...prev, hintMsg]);
+    },
+    [setMessages]
+  );
+
+  const setContentGenPublishBotText = useCallback(
+    (botMsgId: string, topicThreadId: string | null, text: string) => {
+      if (topicThreadId) {
+        setMessages(prev =>
+          prev.map(msg =>
+            msg.id === topicThreadId && msg.isTopic
+              ? {
+                  ...msg,
+                  messages: (msg.messages ?? []).map(sub => (sub.id === botMsgId ? { ...sub, text } : sub)),
+                }
+              : msg
+          )
+        );
+        return;
+      }
+      setMessages(prev => prev.map(msg => (msg.id === botMsgId ? { ...msg, text } : msg)));
+    },
+    [setMessages]
+  );
+
+  const handleContentGenPublishIntent = useCallback(
+    async (
+      mode: "post_now" | "schedule",
+      scheduledAt: string | undefined,
+      topicThreadId: string | null,
+      options?: { background?: boolean; userText?: string }
+    ) => {
+      const studio = useContentGenStudioStore.getState();
+      if (!studio.assetId) {
+        window.dispatchEvent(
+          new CustomEvent(CONTENT_GEN_EVENTS.publishBlocked, {
+            detail: { message: CONTENT_GEN_PUBLISH_BLOCKED_MESSAGE },
+          })
+        );
+        appendContentGenPublishHint(CONTENT_GEN_PUBLISH_BLOCKED_MESSAGE, topicThreadId);
+        return;
+      }
+
+      if (!options?.background) {
+        window.dispatchEvent(
+          new CustomEvent(CONTENT_GEN_EVENTS.requestPublish, {
+            detail: { mode, scheduledAt },
+          })
+        );
+        return;
+      }
+
+      const userText = options.userText?.trim();
+      if (!userText) {
+        return;
+      }
+
+      const userMsg: ChatMessage = {
+        id: newId("u"),
+        role: "user",
+        text: userText,
+        timestamp: new Date(),
+      };
+      const botMsgId = typeof crypto !== "undefined" && crypto.randomUUID ? crypto.randomUUID() : newId("bot");
+      const placeholderMsg: ChatMessage = { id: botMsgId, role: "model", text: "", timestamp: new Date() };
+
+      if (topicThreadId) {
+        setMessages(prev =>
+          prev.map(msg =>
+            msg.id === topicThreadId && msg.isTopic
+              ? { ...msg, messages: [...(msg.messages ?? []), userMsg, placeholderMsg], isExpanded: true }
+              : msg
+          )
+        );
+      } else {
+        setMessages(prev => [...prev, userMsg, placeholderMsg]);
+      }
+
+      const setActivity = (label: string) => {
+        setContentGenPublishActivity(prev => ({ ...prev, [botMsgId]: label }));
+      };
+
+      setIsContentGenPublishing(true);
+      setActivity(publishStepLabel("validate"));
+
+      const result = await runContentGenPublishFromChat({
+        assetId: studio.assetId,
+        content: studio.draftPreview,
+        mode,
+        scheduledAt,
+        onStep: step => setActivity(publishStepLabel(step)),
+      });
+
+      setContentGenPublishActivity(prev => {
+        const next = { ...prev };
+        delete next[botMsgId];
+        return next;
+      });
+      setIsContentGenPublishing(false);
+
+      if (result.ok) {
+        const successText = successMessageForPublishResult(result);
+        setContentGenPublishBotText(botMsgId, topicThreadId, successText);
+        window.dispatchEvent(
+          new CustomEvent(CONTENT_GEN_EVENTS.publishComplete, {
+            detail: {
+              mode: result.mode,
+              assetId: studio.assetId,
+              scheduledAt: result.mode === "schedule" ? result.scheduledAt : undefined,
+            },
+          })
+        );
+        return;
+      }
+
+      setContentGenPublishBotText(botMsgId, topicThreadId, result.message);
+      window.dispatchEvent(
+        new CustomEvent(CONTENT_GEN_EVENTS.publishFailed, {
+          detail: { message: result.message },
+        })
+      );
+    },
+    [appendContentGenPublishHint, setContentGenPublishBotText, setMessages]
+  );
+
   const handleAdkPortfolioDiscard = useCallback(async () => {
     const baseline = useAdkPortfolioReviewStore.getState().getBaselinePortfolio();
     if (!baseline || !userId || !sessionId) return;
@@ -638,55 +1357,279 @@ const ChatSidebar: React.FC<ChatSidebarProps> = ({ incomingRequest, onRequestHan
     }
   }, [queryClient, sessionId, userId]);
 
-  const sendUserMessageToTopic = async (topicId: string, text: string) => {
-    const trimmed = text.trim();
-    if (!trimmed || !canSend) return;
-    const topic = messages.find(m => m.id === topicId && m.isTopic);
-    const subAdkId = topic?.subSessionAdkId;
-    const userMsg: ChatMessage = { id: newId("u"), role: "user", text: trimmed, timestamp: new Date() };
-    const botMsgId = typeof crypto !== "undefined" && crypto.randomUUID ? crypto.randomUUID() : newId("bot");
-    const placeholderMsg: ChatMessage = { id: botMsgId, role: "model", text: "", timestamp: new Date() };
-    setMessages(prev =>
-      prev.map(msg =>
-        msg.id === topicId && msg.isTopic ? { ...msg, messages: [...(msg.messages || []), userMsg, placeholderMsg], isExpanded: true } : msg
-      )
-    );
-    pendingRetryRef.current = { text: trimmed, topicId, botMsgId };
-    try {
-      await sendTopicMessage(trimmed, botMsgId, subAdkId ? { sessionIdOverride: subAdkId } : undefined);
-      pendingRetryRef.current = null;
-    } catch (err) {
-      handleStreamFailure(err, { text: trimmed, topicId, botMsgId });
-    }
-  };
+  const sendUserMessageToTopic = useCallback(
+    async (topicId: string, text: string, actionMeta?: AssetActionMeta) => {
+      const trimmed = text.trim();
+      if (!trimmed || !canSend) return;
+      const topic = messages.find(m => m.id === topicId && m.isTopic);
+      const subAdkId = topic?.subSessionAdkId;
+      const userMsg: ChatMessage = { id: newId("u"), role: "user", text: trimmed, timestamp: new Date(), assetActionMeta: actionMeta };
+      const botMsgId = typeof crypto !== "undefined" && crypto.randomUUID ? crypto.randomUUID() : newId("bot");
+      const placeholderMsg: ChatMessage = { id: botMsgId, role: "model", text: "", timestamp: new Date() };
+      setMessages(prev =>
+        prev.map(msg =>
+          msg.id === topicId && msg.isTopic
+            ? { ...msg, messages: [...(msg.messages || []), userMsg, placeholderMsg], isExpanded: true }
+            : msg
+        )
+      );
+      pendingRetryRef.current = { text: trimmed, topicId, botMsgId };
+      try {
+        await sendTopicMessage(trimmed, botMsgId, subAdkId ? { sessionIdOverride: subAdkId } : undefined);
+        pendingRetryRef.current = null;
+      } catch (err) {
+        handleStreamFailure(err, { text: trimmed, topicId, botMsgId });
+      }
+    },
+    [canSend, messages, sendTopicMessage, handleStreamFailure, setMessages]
+  );
 
-  const handleSend = async (overrideText?: string, options?: { afterRetry?: boolean }) => {
-    const textToSend = (overrideText ?? input).trim();
-    if (!textToSend || !canSendMessage) return;
-    if (!options?.afterRetry && streamError) return;
-    clearStreamError();
-    if (improveReplyTopicId && improveContextTopic) {
+  const findApplicationAssetTopicId = useCallback((): string | null => {
+    for (let i = messages.length - 1; i >= 0; i--) {
+      const m = messages[i];
+      if (m?.isTopic && m.topicKind === "application_asset") {
+        return m.id;
+      }
+    }
+    return null;
+  }, [messages]);
+
+  const sendApplicationAssetRefinement = useCallback(
+    async (message: string, assetType: ApplicationAssetApiType, actionMeta?: AssetActionMeta) => {
+      if (!userId || !sessionReady) {
+        return;
+      }
+      setIsCollapsed(false);
+      useApplicationAssetStudioStore.getState().setSelectionRefineLoading(true);
+
+      const existingTopicId = findApplicationAssetTopicId();
+      if (existingTopicId) {
+        await sendUserMessageToTopic(existingTopicId, message, actionMeta);
+        return;
+      }
+
+      const studio = useApplicationAssetStudioStore.getState();
+      const topicId = newId("topic");
+      const userMsg: ChatMessage = {
+        id: newId("u"),
+        role: "user",
+        text: message,
+        timestamp: new Date(),
+        assetActionMeta: actionMeta,
+      };
+      const botMsgId = typeof crypto !== "undefined" && crypto.randomUUID ? crypto.randomUUID() : newId("bot");
+      const placeholderMsg: ChatMessage = {
+        id: botMsgId,
+        role: "model",
+        text: "",
+        timestamp: new Date(),
+      };
+      const newTopic: ChatMessage = {
+        id: topicId,
+        role: "model",
+        text: "",
+        timestamp: new Date(),
+        isTopic: true,
+        topicKind: "application_asset",
+        topicTitle: applicationAssetTopicTitle(assetType, studio.company, studio.role),
+        isExpanded: true,
+        messages: [userMsg, placeholderMsg],
+      };
+
+      setMessages(prev => [...prev, newTopic]);
+
+      try {
+        if (isAgentLoading || isLoadingHistory) {
+          useApplicationAssetStudioStore.getState().setSelectionRefineLoading(false);
+          return;
+        }
+        pendingRetryRef.current = { text: message, topicId, botMsgId };
+        await sendTopicMessage(message, botMsgId);
+        pendingRetryRef.current = null;
+      } catch (err) {
+        useApplicationAssetStudioStore.getState().setSelectionRefineLoading(false);
+        handleStreamFailure(err, { text: message, topicId, botMsgId });
+      }
+    },
+    [
+      userId,
+      sessionReady,
+      findApplicationAssetTopicId,
+      sendUserMessageToTopic,
+      setMessages,
+      isAgentLoading,
+      isLoadingHistory,
+      sendTopicMessage,
+      handleStreamFailure,
+    ]
+  );
+
+  const showSelectionSentPill = useCallback((label: string) => {
+    if (selectionSentPillTimerRef.current) {
+      clearTimeout(selectionSentPillTimerRef.current);
+    }
+    setSelectionSentPill(label);
+    selectionSentPillTimerRef.current = setTimeout(() => {
+      setSelectionSentPill(null);
+      selectionSentPillTimerRef.current = null;
+    }, 3000);
+  }, []);
+
+  useEffect(() => {
+    const onSelectionRefine = (e: Event) => {
+      const d = (e as CustomEvent<ApplicationAssetSelectionRefineDetail>).detail;
+      if (!d?.message?.trim() || !d.assetType) {
+        return;
+      }
+      const store = useApplicationAssetStudioStore.getState();
+      store.clearSelection();
+      store.setPendingRefineContext({
+        assetType: d.assetType,
+        selectedText: d.selectedText,
+        presetLabel: d.presetLabel,
+        kind: "preset",
+      });
+      showSelectionSentPill(d.presetLabel);
+      const meta: AssetActionMeta = {
+        kind: "preset",
+        assetType: d.assetType,
+        presetLabel: d.presetLabel,
+        selectedText: d.selectedText,
+        prompt: d.message,
+      };
+      void sendApplicationAssetRefinement(d.message, d.assetType, meta);
+    };
+
+    const onSelectionFreeform = (e: Event) => {
+      const d = (e as CustomEvent<ApplicationAssetSelectionFreeformDetail>).detail;
+      if (!d?.selectedText?.trim() || !d.assetType) {
+        return;
+      }
+      setIsCollapsed(false);
+      const store = useApplicationAssetStudioStore.getState();
+      store.clearSelection();
+      store.setPendingRefineContext({
+        assetType: d.assetType,
+        selectedText: d.selectedText.trim(),
+        kind: "freeform",
+      });
+      setSelectionQuoteContext({ assetType: d.assetType, selectedText: d.selectedText.trim() });
+    };
+
+    window.addEventListener(APPLICATION_ASSET_EVENTS.selectionRefine, onSelectionRefine);
+    window.addEventListener(APPLICATION_ASSET_EVENTS.selectionFreeform, onSelectionFreeform);
+    return () => {
+      window.removeEventListener(APPLICATION_ASSET_EVENTS.selectionRefine, onSelectionRefine);
+      window.removeEventListener(APPLICATION_ASSET_EVENTS.selectionFreeform, onSelectionFreeform);
+    };
+  }, [sendApplicationAssetRefinement, showSelectionSentPill]);
+
+  useEffect(() => {
+    return () => {
+      if (selectionSentPillTimerRef.current) {
+        clearTimeout(selectionSentPillTimerRef.current);
+      }
+    };
+  }, []);
+
+  const handleSend = useCallback(
+    async (overrideText?: string, options?: { afterRetry?: boolean }) => {
+      const textToSend = (overrideText ?? input).trim();
+      if (!textToSend || !canSendMessage) return;
+      if (!options?.afterRetry && streamError) return;
+      clearStreamError();
+
+      if (selectionQuoteContext) {
+        const quoteCtx = selectionQuoteContext;
+        const message = buildFreeformSelectionUserMessage(quoteCtx.assetType, quoteCtx.selectedText, textToSend);
+        const meta: AssetActionMeta = {
+          kind: "freeform",
+          assetType: quoteCtx.assetType,
+          selectedText: quoteCtx.selectedText,
+          prompt: message,
+        };
+        setSelectionQuoteContext(null);
+        setInput("");
+        await sendApplicationAssetRefinement(message, quoteCtx.assetType, meta);
+        return;
+      }
+
+      if (improveReplyTopicId && improveContextTopic) {
+        setInput("");
+        await sendUserMessageToTopic(improveReplyTopicId, textToSend);
+        return;
+      }
+
+      const publishIntent = parsePublishIntent(textToSend);
+      if (publishIntent) {
+        setInput("");
+        void handleContentGenPublishIntent(publishIntent.mode, publishIntent.scheduledAt, null, {
+          background: true,
+          userText: textToSend,
+        });
+        return;
+      }
+
+      const topicIntent = parseContentGenTopicIntent(textToSend);
+      if (topicIntent) {
+        setInput("");
+        setMessages(prev => [
+          ...prev,
+          {
+            id: newId("u"),
+            role: "user",
+            text: textToSend,
+            timestamp: new Date(),
+          },
+        ]);
+        window.dispatchEvent(
+          new CustomEvent(CONTENT_GEN_EVENTS.openTopic, {
+            detail: {
+              seedTopic: topicIntent.seedTopic,
+              requestKey: Date.now(),
+            },
+          })
+        );
+        return;
+      }
+
       setInput("");
-      await sendUserMessageToTopic(improveReplyTopicId, textToSend);
-      return;
-    }
-    setInput("");
-    const mainId = currentMainSessionId ?? sessionId;
-    let assistantMsgId: string | undefined;
-    try {
-      const { assistantId } = await sendMainMessage(textToSend);
-      assistantMsgId = assistantId || undefined;
-      pendingRetryRef.current = { text: textToSend, botMsgId: assistantMsgId };
-      pendingRetryRef.current = null;
-      void generateMainSessionTitleIfNeeded(mainId, textToSend, refreshSessions);
-    } catch (err) {
-      const fromErr =
-        err && typeof err === "object" && "assistantMessageId" in err
-          ? String((err as { assistantMessageId?: string }).assistantMessageId)
-          : undefined;
-      handleStreamFailure(err, { text: textToSend, botMsgId: assistantMsgId ?? fromErr });
-    }
-  };
+      const mainId = currentMainSessionId ?? sessionId;
+      let assistantMsgId: string | undefined;
+      try {
+        const { assistantId } = await sendMainMessage(textToSend);
+        assistantMsgId = assistantId || undefined;
+        pendingRetryRef.current = { text: textToSend, botMsgId: assistantMsgId };
+        pendingRetryRef.current = null;
+        void generateMainSessionTitleIfNeeded(mainId, textToSend, refreshSessions);
+      } catch (err) {
+        const fromErr =
+          err && typeof err === "object" && "assistantMessageId" in err
+            ? String((err as { assistantMessageId?: string }).assistantMessageId)
+            : undefined;
+        handleStreamFailure(err, { text: textToSend, botMsgId: assistantMsgId ?? fromErr });
+      }
+    },
+    [
+      input,
+      canSendMessage,
+      streamError,
+      clearStreamError,
+      improveReplyTopicId,
+      improveContextTopic,
+      sendUserMessageToTopic,
+      sendMainMessage,
+      handleStreamFailure,
+      handleContentGenPublishIntent,
+      currentMainSessionId,
+      sessionId,
+      refreshSessions,
+      setMessages,
+      setInput,
+      selectionQuoteContext,
+      sendApplicationAssetRefinement,
+    ]
+  );
 
   const retryFailedStream = useCallback(() => {
     const pending = pendingRetryRef.current;
@@ -769,50 +1712,204 @@ const ChatSidebar: React.FC<ChatSidebarProps> = ({ incomingRequest, onRequestHan
     }
   };
 
+  const sendTopicCardMessage = useCallback(
+    async (topicId: string, text: string) => {
+      if (!text.trim() || !canSend) return;
+
+      const topicCard = messages.find(m => m.id === topicId && m.isTopic);
+      const publishIntent = parsePublishIntent(text);
+      if (publishIntent && topicCard?.topicKind === "content_gen") {
+        void handleContentGenPublishIntent(publishIntent.mode, publishIntent.scheduledAt, topicId, {
+          background: true,
+          userText: text,
+        });
+        return;
+      }
+
+      if (topicCard?.topicKind === "content_gen") {
+        const draftIntent = parseGenerateDraftRequest(text);
+        if (draftIntent) {
+          const studio = useContentGenStudioStore.getState();
+          const resolvedTopic = (draftIntent.topic ?? studio.topic).trim();
+          const funnel = contentGenFunnelRef.current ?? studio.funnel;
+
+          if (resolvedTopic) {
+            if (draftIntent.topic) {
+              contentGenAppliedTopicRef.current = resolvedTopic;
+              window.dispatchEvent(
+                new CustomEvent(CONTENT_GEN_EVENTS.applyTopic, {
+                  detail: { topic: resolvedTopic, funnel: funnel ?? undefined },
+                })
+              );
+            } else if (resolvedTopic) {
+              contentGenAppliedTopicRef.current = resolvedTopic;
+            }
+
+            if (shouldForceDjangoContentGenDraft()) {
+              window.dispatchEvent(
+                new CustomEvent(CONTENT_GEN_EVENTS.requestDraft, {
+                  detail: { topic: resolvedTopic, funnel },
+                })
+              );
+              return;
+            }
+          }
+        }
+      }
+
+      const userMsg: ChatMessage = {
+        id: newId("u"),
+        role: "user",
+        text: text.trim(),
+        timestamp: new Date(),
+      };
+
+      const botMsgId = typeof crypto !== "undefined" && crypto.randomUUID ? crypto.randomUUID() : newId("bot");
+
+      const placeholderMsg: ChatMessage = {
+        id: botMsgId,
+        role: "model",
+        text: "",
+        timestamp: new Date(),
+      };
+
+      setMessages(prev =>
+        prev.map(msg => {
+          if (msg.id === topicId && msg.isTopic) {
+            return {
+              ...msg,
+              messages: [...(msg.messages || []), userMsg, placeholderMsg],
+            };
+          }
+          return msg;
+        })
+      );
+
+      pendingRetryRef.current = { text: text.trim(), topicId, botMsgId };
+      try {
+        await sendTopicMessage(text.trim(), botMsgId);
+        pendingRetryRef.current = null;
+      } catch (err) {
+        handleStreamFailure(err, { text: text.trim(), topicId, botMsgId });
+      }
+    },
+    [canSend, handleContentGenPublishIntent, messages, sendTopicMessage, handleStreamFailure, setMessages]
+  );
+
+  const handleApplyContentGenTopic = useCallback(
+    (topicId: string, title: string, funnel: ContentGenFunnel | null) => {
+      contentGenAppliedTopicRef.current = title.trim();
+      const resolvedFunnel = funnel ?? contentGenFunnelRef.current ?? undefined;
+      window.dispatchEvent(
+        new CustomEvent(CONTENT_GEN_EVENTS.applyTopic, {
+          detail: { topic: title, funnel: resolvedFunnel },
+        })
+      );
+      setMessages(prev => prev.map(msg => (msg.id === topicId ? { ...msg, isExpanded: false } : msg)));
+    },
+    [setMessages]
+  );
+
+  const handleContentGenAction = useCallback(
+    (action: ContentGenPlannerAction, topicId?: string) => {
+      const studio = useContentGenStudioStore.getState();
+      const funnel = contentGenFunnelRef.current ?? studio.funnel;
+
+      if (action.id === "generate_draft") {
+        let topic = "";
+
+        if (topicId) {
+          const threadCard = messages.find(m => m.id === topicId && m.isTopic);
+          const threadMessages = threadCard?.messages ?? [];
+          const confirmedTopic = extractConfirmedTopicFromThread(threadMessages);
+          if (confirmedTopic) {
+            topic = confirmedTopic;
+          }
+        }
+
+        if (!topic) {
+          topic = contentGenAppliedTopicRef.current?.trim() || studio.topic.trim();
+        }
+
+        if (!topic) {
+          return;
+        }
+
+        contentGenAppliedTopicRef.current = topic;
+        window.dispatchEvent(
+          new CustomEvent(CONTENT_GEN_EVENTS.applyTopic, {
+            detail: { topic, funnel: funnel ?? undefined },
+          })
+        );
+        window.dispatchEvent(
+          new CustomEvent(CONTENT_GEN_EVENTS.requestDraft, {
+            detail: { topic, funnel },
+          })
+        );
+        return;
+      }
+
+      if (action.id === "post_now") {
+        handleContentGenPublishIntent("post_now", undefined, topicId ?? null);
+        return;
+      }
+
+      if (action.id === "schedule") {
+        handleContentGenPublishIntent("schedule", action.scheduledAt, topicId ?? null);
+      }
+    },
+    [handleContentGenPublishIntent, messages]
+  );
+
+  const handleContentGenAffirmation = useCallback(
+    (topicId: string, label: string) => {
+      const inferred = inferFunnelFromChipLabel(label);
+      if (inferred) {
+        contentGenFunnelRef.current = inferred;
+      }
+      void sendTopicCardMessage(topicId, label);
+    },
+    [sendTopicCardMessage]
+  );
+
+  const handleMainContentGenAffirmation = useCallback((label: string) => {
+    const inferred = inferFunnelFromChipLabel(label);
+    if (inferred) {
+      contentGenFunnelRef.current = inferred;
+      const studioTopic = useContentGenStudioStore.getState().topic;
+      window.dispatchEvent(
+        new CustomEvent(CONTENT_GEN_EVENTS.applyTopic, {
+          detail: { topic: studioTopic, funnel: inferred },
+        })
+      );
+    }
+    window.dispatchEvent(
+      new CustomEvent(CONTENT_GEN_EVENTS.openTopic, {
+        detail: { followUpText: label, requestKey: Date.now() },
+      })
+    );
+  }, []);
+
+  const handleMainApplyContentGenTopic = useCallback((title: string, funnel: ContentGenFunnel | null) => {
+    const resolvedFunnel = funnel ?? contentGenFunnelRef.current ?? undefined;
+    window.dispatchEvent(
+      new CustomEvent(CONTENT_GEN_EVENTS.applyTopic, {
+        detail: { topic: title, funnel: resolvedFunnel },
+      })
+    );
+  }, []);
+
   const handleTopicSend = async (topicId: string) => {
     const topicInput = topicInputs[topicId];
     if (!topicInput?.trim() || !canSend) return;
-
-    const userMsg: ChatMessage = {
-      id: newId("u"),
-      role: "user",
-      text: topicInput,
-      timestamp: new Date(),
-    };
-
-    const botMsgId = typeof crypto !== "undefined" && crypto.randomUUID ? crypto.randomUUID() : newId("bot");
-
-    const placeholderMsg: ChatMessage = {
-      id: botMsgId,
-      role: "model",
-      text: "",
-      timestamp: new Date(),
-    };
-
-    setMessages(prev =>
-      prev.map(msg => {
-        if (msg.id === topicId && msg.isTopic) {
-          return {
-            ...msg,
-            messages: [...(msg.messages || []), userMsg, placeholderMsg],
-          };
-        }
-        return msg;
-      })
-    );
-
     setTopicInputs(prev => ({ ...prev, [topicId]: "" }));
 
     const topic = messages.find(m => m.id === topicId && m.isTopic);
-    const subAdkId = topic?.subSessionAdkId;
-    const trimmed = topicInput.trim();
-    pendingRetryRef.current = { text: trimmed, topicId, botMsgId };
-    try {
-      await sendTopicMessage(trimmed, botMsgId, subAdkId ? { sessionIdOverride: subAdkId } : undefined);
-      pendingRetryRef.current = null;
-    } catch (err) {
-      handleStreamFailure(err, { text: trimmed, topicId, botMsgId });
+    if (topic?.topicKind === "content_gen") {
+      await sendTopicCardMessage(topicId, topicInput);
+      return;
     }
+    await sendUserMessageToTopic(topicId, topicInput);
   };
 
   const selectImproveTopic = (topicId: string) => {
@@ -1027,30 +2124,128 @@ const ChatSidebar: React.FC<ChatSidebarProps> = ({ incomingRequest, onRequestHan
 
                 {expanded && (
                   <div className="mt-2">
-                    <div className="mb-3 flex flex-col gap-4">
-                      {msg.messages?.map(subMsg => (
-                        <div key={subMsg.id} className={`flex flex-col gap-1 ${subMsg.role === "user" ? "items-end" : "items-start"}`}>
-                          {subMsg.isError ? (
-                            <UnibotErrorBubble message={subMsg} onRetry={retryFailedStream} />
-                          ) : (
-                            <div
-                              className={`text-[13px] py-2 px-3 leading-relaxed ${
-                                subMsg.role === "user"
-                                  ? "bg-slate-50 text-slate-800 rounded-2xl rounded-tr-sm"
-                                  : "text-slate-600 dark:text-slate-300"
-                              }`}
-                            >
-                              {subMsg.role === "model" && subMsg.text ? (
-                                <FormattedAgentMessage content={subMsg.text} />
-                              ) : subMsg.text ? (
-                                <span className="whitespace-pre-wrap">{subMsg.text}</span>
+                    <div className="space-y-4 mb-3">
+                      {msg.messages?.map(subMsg => {
+                        const isContentGen = msg.topicKind === "content_gen";
+                        const isApplicationAsset = msg.topicKind === "application_asset";
+                        const subHasDraft =
+                          isContentGen && subMsg.role === "model" && Boolean(subMsg.text && messageHasContentGenDraft(subMsg.text));
+                        const subHasAppAssetDraft =
+                          isApplicationAsset &&
+                          subMsg.role === "model" &&
+                          Boolean(subMsg.text && messageHasApplicationAssetDraft(subMsg.text));
+                        const subHasPlanner =
+                          isContentGen &&
+                          subMsg.role === "model" &&
+                          Boolean(subMsg.text && messageHasPlannerChips(subMsg.text) && !subHasDraft);
+                        const modelVisibleText =
+                          subMsg.role === "model" && subMsg.text
+                            ? isContentGen
+                              ? subHasDraft
+                                ? stripContentGenDraftFromMessage(subMsg.text)
+                                : subHasPlanner
+                                  ? stripPlannerJsonFromMessage(subMsg.text)
+                                  : subMsg.text
+                              : isApplicationAsset && subHasAppAssetDraft
+                                ? stripApplicationAssetDraftFromMessage(subMsg.text)
+                                : subMsg.text
+                            : "";
+                        const userVisibleText =
+                          subMsg.role === "user" && subMsg.text
+                            ? isContentGen
+                              ? contentGenTopicUserDisplayText(subMsg.text)
+                              : subMsg.text
+                            : "";
+                        const showModelBubble = subMsg.role === "model" && (modelVisibleText || !subMsg.text);
+                        const showUserBubble = subMsg.role === "user" && userVisibleText;
+                        const hasActionCard = subMsg.role === "user" && subMsg.assetActionMeta;
+
+                        return (
+                          <div key={subMsg.id} className={`flex flex-col gap-1 ${subMsg.role === "user" ? "items-end" : "items-start"}`}>
+                            {subMsg.isError ? (
+                              <UnibotErrorBubble message={subMsg} onRetry={retryFailedStream} />
+                            ) : hasActionCard ? (
+                              <RefineActionCard meta={subMsg.assetActionMeta!} />
+                            ) : showModelBubble || showUserBubble ? (
+                              subMsg.role === "user" && showUserBubble ? (
+                                <div className="group flex max-w-full flex-col items-end">
+                                  {subMsg.invocationId ? (
+                                    <button
+                                      type="button"
+                                      onClick={() => openRewindDialog(subMsg, msg.subSessionAdkId ?? sessionId, msg.id)}
+                                      disabled={!canRewind}
+                                      title="Rewind to here"
+                                      aria-label="Rewind to here"
+                                      className="mb-0.5 inline-flex items-center gap-1 rounded-md px-1.5 py-0.5 text-[11px] text-slate-400 opacity-0 transition-opacity hover:text-brand-600 group-hover:opacity-100 disabled:opacity-30"
+                                    >
+                                      <Undo2 size={12} aria-hidden />
+                                      <span>Rewind</span>
+                                    </button>
+                                  ) : null}
+                                  <div className="rounded-2xl rounded-tr-sm bg-slate-50 px-3 py-2 text-[13px] leading-relaxed text-slate-800 dark:bg-white/5 dark:text-slate-100">
+                                    <span className="whitespace-pre-wrap">{userVisibleText}</span>
+                                  </div>
+                                </div>
                               ) : (
-                                <Loader2 size={14} className="animate-spin text-slate-400" />
-                              )}
-                            </div>
-                          )}
-                        </div>
-                      ))}
+                                <div className="text-[13px] py-2 px-3 leading-relaxed text-slate-600 dark:text-slate-300">
+                                  {modelVisibleText ? (
+                                    <FormattedAgentMessage content={modelVisibleText} />
+                                  ) : (
+                                    <div className="flex items-center gap-2 text-slate-400">
+                                      <Loader2 size={14} className="animate-spin shrink-0" />
+                                      <span>{contentGenPublishActivity[subMsg.id] ?? streamActivityLabel ?? "Thinking…"}</span>
+                                    </div>
+                                  )}
+                                </div>
+                              )
+                            ) : null}
+                            {subHasPlanner ? (
+                              <ContentGenTopicChips
+                                botMessage={subMsg.text!}
+                                topicId={msg.id}
+                                activeFunnel={contentGenFunnelRef.current}
+                                onAffirmationClick={(label, _f) => handleContentGenAffirmation(msg.id, label)}
+                                onUseTopic={(title, funnel) => handleApplyContentGenTopic(msg.id, title, funnel)}
+                                onActionClick={handleContentGenAction}
+                              />
+                            ) : null}
+                            {subMsg.role === "model" &&
+                              adkContentGenReviewStack
+                                .filter(c => c.assistantMessageId === subMsg.id)
+                                .map(card => (
+                                  <AdkReviewCardBlock
+                                    key={card.id}
+                                    card={card}
+                                    isActive={card.id === adkContentGenActiveReviewId}
+                                    adkReviewBusy={adkReviewBusy}
+                                    sessionReady={sessionReady}
+                                    onAccept={handleContentGenAccept}
+                                    onDiscard={handleContentGenDiscard}
+                                  />
+                                ))}
+                            {subMsg.role === "model" &&
+                              adkApplicationAssetReviewStack
+                                .filter(c => c.assistantMessageId === subMsg.id)
+                                .map(card => (
+                                  <AdkReviewCardBlock
+                                    key={card.id}
+                                    card={card}
+                                    isActive={card.id === adkApplicationAssetActiveReviewId}
+                                    adkReviewBusy={applicationAssetReviewBusy}
+                                    sessionReady={sessionReady}
+                                    onAccept={() => void acceptApplicationAssetReview()}
+                                    onDiscard={discardApplicationAssetReview}
+                                  />
+                                ))}
+                            {subMsg.role === "model" && contentGenAcceptedBotMsgIdRef.current === subMsg.id && contentGenStudioAssetId ? (
+                              <ContentGenPublishChips
+                                onPostNow={() => handleContentGenPublishIntent("post_now", undefined, msg.id)}
+                                onSchedule={() => handleContentGenPublishIntent("schedule", undefined, msg.id)}
+                              />
+                            ) : null}
+                          </div>
+                        );
+                      })}
                     </div>
 
                     <div className="relative flex items-center gap-2 pt-2">
@@ -1082,25 +2277,98 @@ const ChatSidebar: React.FC<ChatSidebarProps> = ({ incomingRequest, onRequestHan
             );
           }
 
+          const mainHasAppAssetDraft = msg.role === "model" && Boolean(msg.text && messageHasApplicationAssetDraft(msg.text));
+          const mainHasDraft = !mainHasAppAssetDraft && msg.role === "model" && Boolean(msg.text && messageHasContentGenDraft(msg.text));
+          const mainPlannerPayload =
+            msg.role === "model" && msg.text && messageHasPlannerChips(msg.text) && !mainHasDraft && !mainHasAppAssetDraft
+              ? msg.text
+              : null;
+          const mainModelVisible = mainHasAppAssetDraft
+            ? stripApplicationAssetDraftFromMessage(msg.text!)
+            : mainHasDraft
+              ? stripContentGenDraftFromMessage(msg.text!)
+              : mainPlannerPayload != null
+                ? stripPlannerJsonFromMessage(mainPlannerPayload)
+                : msg.text;
+
           return (
             <div key={msg.id} className={`flex min-w-0 flex-col gap-1 ${msg.role === "user" ? "items-end" : "items-start"}`}>
               {msg.isError ? (
                 <UnibotErrorBubble message={msg} onRetry={retryFailedStream} />
-              ) : (
-                <div
-                  className={`text-[13px] leading-relaxed ${
-                    msg.role === "user"
-                      ? "bg-slate-100 dark:bg-white/5 text-slate-900 dark:text-slate-100 px-4 py-3 rounded-2xl rounded-tr-sm max-w-[90%]"
-                      : "bg-transparent text-slate-600 dark:text-slate-300 px-1 max-w-full"
-                  }`}
-                >
-                  {msg.role === "model" && msg.text ? (
-                    <FormattedAgentMessage content={msg.text} />
-                  ) : msg.text ? (
+              ) : msg.role === "user" && msg.text ? (
+                <div className="group flex max-w-[90%] flex-col items-end">
+                  {msg.invocationId ? (
+                    <button
+                      type="button"
+                      onClick={() => openRewindDialog(msg, sessionId)}
+                      disabled={!canRewind}
+                      title="Rewind to here"
+                      aria-label="Rewind to here"
+                      className="mb-0.5 inline-flex items-center gap-1 rounded-md px-1.5 py-0.5 text-[11px] text-slate-400 opacity-0 transition-opacity hover:text-brand-600 group-hover:opacity-100 disabled:opacity-30"
+                    >
+                      <Undo2 size={12} aria-hidden />
+                      <span>Rewind</span>
+                    </button>
+                  ) : null}
+                  <div className="rounded-2xl rounded-tr-sm bg-slate-100 px-4 py-3 text-[13px] leading-relaxed text-slate-900 dark:bg-white/5 dark:text-slate-100">
                     <span className="whitespace-pre-wrap">{msg.text}</span>
+                  </div>
+                </div>
+              ) : (
+                <div className="max-w-full bg-transparent px-1 text-[13px] leading-relaxed text-slate-600 dark:text-slate-300">
+                  {msg.role === "model" && mainModelVisible ? (
+                    <FormattedAgentMessage content={mainModelVisible} />
+                  ) : msg.role === "model" && !msg.text ? (
+                    <div className="flex items-center gap-2 text-slate-400 px-1">
+                      <Loader2 size={14} className="animate-spin shrink-0" />
+                      <span>{contentGenPublishActivity[msg.id] ?? streamActivityLabel ?? "Thinking…"}</span>
+                    </div>
                   ) : null}
                 </div>
               )}
+              {mainPlannerPayload ? (
+                <ContentGenTopicChips
+                  botMessage={mainPlannerPayload}
+                  activeFunnel={contentGenFunnelRef.current}
+                  onAffirmationClick={label => handleMainContentGenAffirmation(label)}
+                  onUseTopic={(title, funnel) => handleMainApplyContentGenTopic(title, funnel)}
+                  onActionClick={handleContentGenAction}
+                />
+              ) : null}
+              {msg.role === "model" &&
+                adkContentGenReviewStack
+                  .filter(c => c.assistantMessageId === msg.id)
+                  .map(card => (
+                    <AdkReviewCardBlock
+                      key={card.id}
+                      card={card}
+                      isActive={card.id === adkContentGenActiveReviewId}
+                      adkReviewBusy={adkReviewBusy}
+                      sessionReady={sessionReady}
+                      onAccept={handleContentGenAccept}
+                      onDiscard={handleContentGenDiscard}
+                    />
+                  ))}
+              {msg.role === "model" &&
+                adkApplicationAssetReviewStack
+                  .filter(c => c.assistantMessageId === msg.id)
+                  .map(card => (
+                    <AdkReviewCardBlock
+                      key={card.id}
+                      card={card}
+                      isActive={card.id === adkApplicationAssetActiveReviewId}
+                      adkReviewBusy={applicationAssetReviewBusy}
+                      sessionReady={sessionReady}
+                      onAccept={() => void acceptApplicationAssetReview()}
+                      onDiscard={discardApplicationAssetReview}
+                    />
+                  ))}
+              {msg.role === "model" && contentGenAcceptedBotMsgIdRef.current === msg.id && contentGenStudioAssetId ? (
+                <ContentGenPublishChips
+                  onPostNow={() => handleContentGenPublishIntent("post_now", undefined, null)}
+                  onSchedule={() => handleContentGenPublishIntent("schedule", undefined, null)}
+                />
+              ) : null}
               {msg.role === "model" &&
                 adkReviewStack
                   .filter(c => c.assistantMessageId === msg.id)
@@ -1133,7 +2401,10 @@ const ChatSidebar: React.FC<ChatSidebarProps> = ({ incomingRequest, onRequestHan
           );
         })}
 
-        {(adkReviewStack.some(c => !c.assistantMessageId) || adkPortfolioReviewStack.some(c => !c.assistantMessageId)) && (
+        {(adkReviewStack.some(c => !c.assistantMessageId) ||
+          adkPortfolioReviewStack.some(c => !c.assistantMessageId) ||
+          adkContentGenReviewStack.some(c => !c.assistantMessageId) ||
+          adkApplicationAssetReviewStack.some(c => !c.assistantMessageId)) && (
           <div className="flex flex-col gap-2 items-start pl-1">
             {adkReviewStack
               .filter(c => !c.assistantMessageId)
@@ -1161,10 +2432,36 @@ const ChatSidebar: React.FC<ChatSidebarProps> = ({ incomingRequest, onRequestHan
                   onDiscard={handleAdkPortfolioDiscard}
                 />
               ))}
+            {adkContentGenReviewStack
+              .filter(c => !c.assistantMessageId)
+              .map(card => (
+                <AdkReviewCardBlock
+                  key={card.id}
+                  card={card}
+                  isActive={card.id === adkContentGenActiveReviewId}
+                  adkReviewBusy={adkReviewBusy}
+                  sessionReady={sessionReady}
+                  onAccept={handleContentGenAccept}
+                  onDiscard={handleContentGenDiscard}
+                />
+              ))}
+            {adkApplicationAssetReviewStack
+              .filter(c => !c.assistantMessageId)
+              .map(card => (
+                <AdkReviewCardBlock
+                  key={card.id}
+                  card={card}
+                  isActive={card.id === adkApplicationAssetActiveReviewId}
+                  adkReviewBusy={applicationAssetReviewBusy}
+                  sessionReady={sessionReady}
+                  onAccept={() => void acceptApplicationAssetReview()}
+                  onDiscard={discardApplicationAssetReview}
+                />
+              ))}
           </div>
         )}
 
-        {isAgentLoading && (
+        {isAgentLoading && !hasInlineStreamingPlaceholder && (
           <div className="flex flex-col gap-1 items-start pl-1">
             <div className="text-[13px] text-slate-400 flex items-center gap-2 px-1">
               <Loader2 size={14} className="animate-spin" />
@@ -1179,6 +2476,35 @@ const ChatSidebar: React.FC<ChatSidebarProps> = ({ incomingRequest, onRequestHan
           ref={footerInputCardRef}
           className="relative rounded-xl border border-slate-200/90 bg-white px-3 pt-3 pb-2 shadow-sm dark:border-slate-700/80 dark:bg-[#161616]"
         >
+          {selectionSentPill ? (
+            <div className="mb-2">
+              <span className="inline-flex max-w-full items-center gap-1 rounded-full border border-emerald-200 bg-emerald-50 py-1 pl-2.5 pr-2 text-[11px] font-medium text-emerald-900 dark:border-emerald-500/40 dark:bg-emerald-500/15 dark:text-emerald-100">
+                <Check size={13} className="shrink-0" aria-hidden />
+                <span className="truncate">Sent: {selectionSentPill}</span>
+              </span>
+            </div>
+          ) : null}
+          {selectionQuoteContext ? (
+            <div className="mb-2">
+              <span className="inline-flex max-w-full items-center gap-1 rounded-full border border-brand-200 bg-brand-50 py-1 pl-2.5 pr-1 text-[11px] font-medium text-brand-900 dark:border-brand-500/40 dark:bg-brand-500/15 dark:text-brand-100">
+                <span className="truncate">
+                  &ldquo;
+                  {selectionQuoteContext.selectedText.length > 60
+                    ? `${selectionQuoteContext.selectedText.slice(0, 57)}…`
+                    : selectionQuoteContext.selectedText}
+                  &rdquo;
+                </span>
+                <button
+                  type="button"
+                  onClick={() => setSelectionQuoteContext(null)}
+                  className="shrink-0 rounded-full p-0.5"
+                  aria-label="Clear selected quote"
+                >
+                  <X size={13} />
+                </button>
+              </span>
+            </div>
+          ) : null}
           {improveReplyTopicId && improveContextTopic?.topicTitle ? (
             <div className="mb-2">
               <span className="inline-flex max-w-full items-center gap-1 rounded-full border border-brand-200 bg-brand-50 py-1 pl-2.5 pr-1 text-[11px] font-medium text-brand-900 dark:border-brand-500/40 dark:bg-brand-500/15 dark:text-brand-100">
@@ -1215,9 +2541,11 @@ const ChatSidebar: React.FC<ChatSidebarProps> = ({ incomingRequest, onRequestHan
             placeholder={
               streamError
                 ? "Fix the error above to continue…"
-                : improveReplyTopicId && improveContextTopic
-                  ? "Reply in this topic…"
-                  : "Ask anything"
+                : selectionQuoteContext
+                  ? "How should Unibot change this section?"
+                  : improveReplyTopicId && improveContextTopic
+                    ? "Reply in this topic…"
+                    : "Ask anything"
             }
             rows={1}
             disabled={!canSend}
@@ -1443,6 +2771,16 @@ const ChatSidebar: React.FC<ChatSidebarProps> = ({ incomingRequest, onRequestHan
           </div>,
           document.body
         )}
+
+      <AdkRewindConfirmDialog
+        open={pendingRewind !== null}
+        previewText={pendingRewind?.previewText ?? ""}
+        isSubmitting={isRewinding}
+        onClose={() => {
+          if (!isRewinding) setPendingRewind(null);
+        }}
+        onConfirm={revertEditorState => void handleRewindConfirm(revertEditorState)}
+      />
     </div>
   );
 };

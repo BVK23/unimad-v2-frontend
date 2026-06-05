@@ -1,41 +1,19 @@
 "use server";
 
-import { load } from "cheerio";
 import { cookies } from "next/headers";
 import { hostnameLooksLikeWebAddress, normalizeExternalUrl } from "../utils/external-url";
 
-export type ResolveLinkTitleResult = { ok: true; title: string } | { ok: false; error: string };
+export type ResolveLinkTitleResult = { ok: true; title: string; iconUrl?: string } | { ok: false; error: string };
 
-const decodeBasicEntities = (s: string) => {
-  if (!s.includes("&")) return s;
-  return s
-    .replace(/&amp;/g, "&")
-    .replace(/&lt;/g, "<")
-    .replace(/&gt;/g, ">")
-    .replace(/&quot;/g, '"')
-    .replace(/&#39;/g, "'")
-    .replace(/&nbsp;/g, " ");
+const getBackendUrl = () => {
+  const url = process.env.NEXT_PUBLIC_BACKEND_URL;
+  if (!url) {
+    throw new Error("NEXT_PUBLIC_BACKEND_URL is not defined");
+  }
+  return url.replace(/\/+$/, "");
 };
 
-const extractTitleFromHtml = (html: string): string | null => {
-  const $ = load(html);
-  const fromMeta = (selector: string) => {
-    const raw = $(selector).attr("content")?.trim();
-    return raw ? decodeBasicEntities(raw) : null;
-  };
-
-  const og = fromMeta('meta[property="og:title"]');
-  if (og) return og;
-
-  const tw = fromMeta('meta[name="twitter:title"]');
-  if (tw) return tw;
-
-  const named = fromMeta('meta[name="title"]');
-  if (named) return named;
-
-  const doc = $("title").first().text().replace(/\s+/g, " ").trim();
-  return doc ? decodeBasicEntities(doc) : null;
-};
+const looksLikeJwt = (value: string) => /^ey[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+\.[A-Za-z0-9_-]*$/.test(value.trim());
 
 export async function resolveLinkTitle(rawUrl: string): Promise<ResolveLinkTitleResult> {
   const cookieStore = await cookies();
@@ -60,30 +38,37 @@ export async function resolveLinkTitle(rawUrl: string): Promise<ResolveLinkTitle
   }
 
   try {
-    const res = await fetch(url, {
-      redirect: "follow",
-      signal: AbortSignal.timeout(10_000),
+    const backendUrl = getBackendUrl();
+    const authHeader = `${looksLikeJwt(token) ? "Bearer" : "Token"} ${token}`;
+    const res = await fetch(`${backendUrl}/api/portfolio/link-metadata/`, {
+      method: "POST",
       headers: {
-        "User-Agent": "UnimadPortfolioBot/1.0",
-        Accept: "text/html,application/xhtml+xml;q=0.9,*/*;q=0.8",
+        "Content-Type": "application/json",
+        Authorization: authHeader,
       },
+      body: JSON.stringify({ url }),
+      cache: "no-store",
+      signal: AbortSignal.timeout(10_000),
     });
 
-    if (!res.ok) {
-      return { ok: false, error: "Could not load page" };
+    const payload = (await res.json().catch(() => ({}))) as {
+      ok?: boolean;
+      title?: string;
+      favicon?: string;
+      error?: string;
+    };
+
+    if (!res.ok || payload.ok === false) {
+      return { ok: false, error: payload.error ?? "Could not load page metadata" };
     }
 
-    const buf = await res.arrayBuffer();
-    const maxBytes = 512 * 1024;
-    const slice = buf.byteLength > maxBytes ? buf.slice(0, maxBytes) : buf;
-    const html = new TextDecoder("utf-8", { fatal: false }).decode(slice);
-
-    const title = extractTitleFromHtml(html);
+    const title = (payload.title ?? "").trim();
     if (!title) {
       return { ok: false, error: "No title found" };
     }
 
-    return { ok: true, title };
+    const iconUrl = (payload.favicon ?? "").trim() || undefined;
+    return { ok: true, title, iconUrl };
   } catch {
     return { ok: false, error: "Failed to fetch URL" };
   }

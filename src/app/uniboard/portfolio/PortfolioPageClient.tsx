@@ -1,19 +1,12 @@
 "use client";
 
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useEffect, useMemo, useRef } from "react";
 import Portfolio from "@/components/Portfolio";
-import PortfolioDashboard from "@/components/PortfolioDashboard";
 import PortfolioCreatingOverlay from "@/components/portfolio/PortfolioCreatingOverlay";
 import type { PortfolioCreationVariant } from "@/features/portfolio/constants/portfolioCreationCopy";
-import {
-  buildCreateInputFromDashboardType,
-  defaultBootstrapCreateInput,
-  getCreatePortfolioVariant,
-  useCreatePortfolio,
-} from "@/features/portfolio/hooks/useCreatePortfolio";
+import { defaultBootstrapCreateInput, useCreatePortfolio } from "@/features/portfolio/hooks/useCreatePortfolio";
 import { usePortfolio } from "@/features/portfolio/hooks/usePortfolio";
 import { usePortfolioStore } from "@/features/portfolio/store/usePortfolioStore";
-import type { PortfolioData } from "@/types";
 
 type PortfolioCreationPhase = "idle" | "fetching" | "creating" | "ready" | "error";
 
@@ -25,9 +18,11 @@ const getFriendlyCreateError = (err: unknown) => {
   return message;
 };
 
+/**
+ * Single-portfolio UX: load (or bootstrap-create) the user's portfolio and open the editor directly.
+ * No multi-portfolio dashboard or base-portfolio picker.
+ */
 export default function PortfolioPageClient() {
-  const [view, setView] = useState<"list" | "editor">("editor");
-  const [manualOverlayVariant, setManualOverlayVariant] = useState<PortfolioCreationVariant | null>(null);
   const bootstrapAttemptedRef = useRef(false);
   const portfolioQuery = usePortfolio();
   const createPortfolioMutation = useCreatePortfolio();
@@ -80,46 +75,15 @@ export default function PortfolioPageClient() {
     return "idle";
   }, [awaitingBootstrap, displayPortfolio?.id, isCreateError, isCreatePending, portfolioQuery.data, portfolioQuery.isLoading]);
 
-  const activeOverlayVariant: PortfolioCreationVariant = useMemo(() => {
-    if (phase === "fetching") {
-      return "fetch";
-    }
-    if (manualOverlayVariant) {
-      return manualOverlayVariant;
-    }
-    if (phase === "creating") {
-      return "ai_initial";
-    }
-    return "fetch";
-  }, [manualOverlayVariant, phase]);
-
-  const portfolios = useMemo(() => (displayPortfolio ? [displayPortfolio] : []), [displayPortfolio]);
-
-  const handleEditPortfolio = (portfolio: PortfolioData) => {
-    if (portfolio.id) {
-      usePortfolioStore.getState().setPortfolioData(portfolio.id, portfolio);
-    }
-    setView("editor");
-  };
-
-  const handleCreatePortfolio = (type: "scratch" | "template") => {
-    const input = buildCreateInputFromDashboardType(type, Boolean(portfolioQuery.data?.id));
-    setManualOverlayVariant(getCreatePortfolioVariant(input));
-    mutateCreatePortfolio(input, {
-      onSuccess: () => {
-        setView("editor");
-      },
-    });
-  };
+  const activeOverlayVariant: PortfolioCreationVariant = phase === "fetching" ? "fetch" : "ai_initial";
 
   const handleRetryCreate = () => {
     createPortfolioMutation.reset();
-    setManualOverlayVariant(null);
     bootstrapAttemptedRef.current = true;
     mutateCreatePortfolio(defaultBootstrapCreateInput);
   };
 
-  const showOverlay = phase === "fetching" || phase === "creating";
+  const showOverlay = (phase === "fetching" || phase === "creating") && !displayPortfolio?.id;
   const createErrorMessage = isCreateError ? getFriendlyCreateError(createPortfolioMutation.error) : null;
 
   if (phase === "error" && !displayPortfolio) {
@@ -143,7 +107,7 @@ export default function PortfolioPageClient() {
     );
   }
 
-  if (showOverlay && !displayPortfolio) {
+  if (showOverlay) {
     return (
       <div className="relative h-full">
         <PortfolioCreatingOverlay variant={activeOverlayVariant} />
@@ -151,29 +115,10 @@ export default function PortfolioPageClient() {
     );
   }
 
-  if (view === "list") {
-    return (
-      <div className="relative h-full">
-        {isCreatePending && <PortfolioCreatingOverlay variant={activeOverlayVariant} />}
-        <PortfolioDashboard
-          portfolios={portfolios}
-          onEditPortfolio={handleEditPortfolio}
-          onCreatePortfolio={handleCreatePortfolio}
-          isCreating={isCreatePending}
-        />
-      </div>
-    );
-  }
-
   if (displayPortfolio?.id) {
     return (
       <div className="relative h-full transition-opacity duration-200">
-        <Portfolio
-          key={displayPortfolio.id}
-          portfolioId={displayPortfolio.id}
-          initialData={displayPortfolio}
-          onBack={() => setView("list")}
-        />
+        <Portfolio key={displayPortfolio.id} portfolioId={displayPortfolio.id} initialData={displayPortfolio} />
       </div>
     );
   }

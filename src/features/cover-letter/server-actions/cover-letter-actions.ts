@@ -47,6 +47,11 @@ async function authedFetch(path: string, options: RequestInit = {}): Promise<Res
 
 const ASSET_TYPE = "coverletter";
 
+const normalizeCoverLetterAsset = (asset: CoverLetterAsset): CoverLetterAsset => ({
+  ...asset,
+  job_description: (asset.job_description ?? asset.jd ?? "").trim() || undefined,
+});
+
 // ---------------------------------------------------------------------------
 // Server Actions
 // ---------------------------------------------------------------------------
@@ -65,7 +70,7 @@ export async function fetchCoverLetters(): Promise<CoverLetterAsset[]> {
     throw new Error((data as { error?: string })?.error ?? "Failed to fetch cover letters");
   }
   const data = (await res.json()) as { assetData?: CoverLetterAsset[] };
-  return data.assetData ?? [];
+  return (data.assetData ?? []).map(normalizeCoverLetterAsset);
 }
 
 /**
@@ -77,7 +82,7 @@ export async function fetchCoverLetterById(id: string | number): Promise<CoverLe
     if (res.ok) {
       const detail = (await res.json()) as CoverLetterAsset;
       if (detail?.content != null || detail?.id != null) {
-        return detail;
+        return normalizeCoverLetterAsset(detail);
       }
     }
   } catch {

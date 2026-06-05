@@ -448,7 +448,8 @@ export async function fetchResumeAtsScore(resumeId: string): Promise<ResumeAtsCa
 }
 
 /**
- * ATS compatibility score for a resume vs its linked job description.
+ * ATS compatibility score for a resume.
+ * General quality is rule-based; job-match uses LLM when linked application has a JD.
  *
  * POST `/api/resume/ats-score/` with `{ resume_id, force? }`.
  */

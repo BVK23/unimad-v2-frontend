@@ -1,6 +1,11 @@
 "use client";
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { buildAdkApplicationAssetStateDelta } from "@/features/application-assets/api/adk-mappers";
+import { useApplicationAssetStudioStore } from "@/features/application-assets/store/useApplicationAssetStudioStore";
+import { STUDIO_TOPIC_TO_API_TYPE, type ApplicationAssetStudioTopic } from "@/features/application-assets/types";
+import { buildAdkContentGenStateDelta } from "@/features/content-lab/api/adk-mappers";
+import { useContentGenStudioStore } from "@/features/content-lab/store/useContentGenStudioStore";
 import { buildAdkPortfolioDataMap, buildAdkPortfolioStateDelta, mapAdkPortfolioDataMapToFrontend } from "@/features/portfolio/api/mappers";
 import { portfolioQueryKey } from "@/features/portfolio/hooks/usePortfolio";
 import { usePortfolioStore } from "@/features/portfolio/store/usePortfolioStore";
@@ -49,6 +54,8 @@ type AdkStateSyncSource =
   | "list_zustand"
   | "portfolio_zustand"
   | "portfolio_react_query"
+  | "content_gen_studio"
+  | "application_asset_studio"
   | "clear_context"
   | "linkedin_query";
 
@@ -119,6 +126,7 @@ export function useAdkStreamingManager({
   } => {
     const isResumeRoute = pathname.startsWith("/uniboard/resume");
     const isPortfolioRoute = pathname.startsWith("/uniboard/portfolio");
+    const isStudioRoute = pathname.startsWith("/uniboard/studio");
     const allStoreResumes = useResumeStore.getState().resumeData;
     const allStorePortfolios = usePortfolioStore.getState().portfolioData;
     const warmResumeData = buildAdkResumeDataMap(allStoreResumes);
@@ -139,6 +147,41 @@ export function useAdkStreamingManager({
           linkedin_data: {},
         },
         source: "linkedin_query",
+      };
+    }
+
+    if (isStudioRoute) {
+      const studioTypeParam = searchParams.get("type");
+      const documentTopics: ApplicationAssetStudioTopic[] = ["cover-letter", "cold-email", "referral"];
+      const isDocumentStudioTopic = (t: string | null): t is ApplicationAssetStudioTopic =>
+        Boolean(t && documentTopics.includes(t as ApplicationAssetStudioTopic));
+      if (isDocumentStudioTopic(studioTypeParam)) {
+        const aa = useApplicationAssetStudioStore.getState();
+        const apiType = STUDIO_TOPIC_TO_API_TYPE[studioTypeParam];
+        return {
+          stateDelta: buildAdkApplicationAssetStateDelta({
+            assetType: apiType,
+            assetId: aa.assetId,
+            applicationId: aa.applicationId,
+            role: aa.role,
+            company: aa.company,
+            jobDescription: aa.jobDescription,
+            contactName: aa.contactName,
+            draftPreview: aa.draftPreview,
+            acceptedBody: aa.acceptedContent,
+          }),
+          source: "application_asset_studio",
+        };
+      }
+      const cg = useContentGenStudioStore.getState();
+      return {
+        stateDelta: buildAdkContentGenStateDelta({
+          topic: cg.topic,
+          funnel: cg.funnel,
+          assetId: cg.assetId,
+          draftPreview: cg.draftPreview,
+        }),
+        source: "content_gen_studio",
       };
     }
 
@@ -223,7 +266,7 @@ export function useAdkStreamingManager({
       },
       source: "clear_context",
     };
-  }, [pathname, resumeId, queryClient, linkedInSnapshot, isLinkedInRoute]);
+  }, [pathname, resumeId, searchParams, queryClient, linkedInSnapshot, isLinkedInRoute]);
 
   /** Snapshot current route context into ADK session (call once per user send). */
   const patchSessionContextBeforeSend = useCallback(

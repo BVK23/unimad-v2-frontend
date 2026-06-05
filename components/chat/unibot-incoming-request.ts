@@ -20,7 +20,8 @@ export type UnibotIncomingRequest =
       /** Bumps when the wand is clicked so repeat improves on the same entry can run. */
       requestKey?: number;
     }
-  | { type: "section_review"; section: UnibotResumeSection; requestKey: number };
+  | { type: "section_review"; section: UnibotResumeSection; requestKey: number }
+  | { type: "content_gen_topic"; seedTopic?: string; followUpText?: string; requestKey: number };
 
 export interface UnibotImproveTarget {
   section: UnibotResumeSection;
@@ -46,6 +47,9 @@ export const UNIBOT_SECTION_REVIEW_PROMPTS: Record<UnibotResumeSection, string> 
 export function incomingRequestSignature(req: UnibotIncomingRequest): string {
   if (req.type === "section_review") {
     return `section_review:${req.section}:${req.requestKey}`;
+  }
+  if (req.type === "content_gen_topic") {
+    return `content_gen_topic:${req.requestKey}`;
   }
   return [
     "improve",

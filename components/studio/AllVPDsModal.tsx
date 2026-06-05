@@ -21,7 +21,7 @@ const AllVPDsModal: React.FC<AllVPDsModalProps> = ({ onClose, vpds, onVPClick, i
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 p-4 backdrop-blur-sm animate-in fade-in duration-200">
-      <div className="flex h-[75vh] w-full max-w-4xl flex-col overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-2xl animate-in zoom-in-95 duration-200 dark:border-slate-800 dark:bg-[#1a1a1a]">
+      <div className="flex h-[75vh] w-full max-w-4xl flex-col overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-2xl animate-in zoom-in-95 duration-200 dark:border-slate-800 dark:bg-slate-900">
         <div className="flex items-center justify-between gap-4 border-b border-slate-100 p-6 dark:border-slate-800">
           <div className="flex min-w-0 flex-wrap items-center gap-4">
             <h2 className="text-xl font-semibold tracking-tight text-slate-900 dark:text-white">All VPDs</h2>
@@ -66,12 +66,12 @@ const AllVPDsModal: React.FC<AllVPDsModalProps> = ({ onClose, vpds, onVPClick, i
               value={searchQuery}
               onChange={e => setSearchQuery(e.target.value)}
               placeholder="Search documents..."
-              className="w-full rounded-xl border border-slate-200 bg-slate-50 py-3 pl-11 pr-4 text-sm font-medium outline-none focus:ring-2 focus:ring-blue-500/20 dark:border-slate-700 dark:bg-slate-900"
+              className="w-full rounded-xl border border-slate-200 bg-slate-50 py-3 pl-11 pr-4 text-sm font-medium outline-none focus:ring-2 focus:ring-brand-500/20 dark:border-slate-700 dark:bg-slate-900"
             />
           </div>
         </div>
 
-        <div className="flex-1 overflow-y-auto bg-slate-50/30 p-4 dark:bg-[#111]">
+        <div className="flex-1 overflow-y-auto bg-slate-50/30 p-4 dark:bg-slate-900">
           {filteredVPDs.length > 0 ? (
             <div className="grid grid-cols-3 gap-3">
               {filteredVPDs.map(vpd => (

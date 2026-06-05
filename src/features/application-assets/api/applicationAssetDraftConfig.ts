@@ -1,0 +1,1 @@
+export const APPLICATION_ASSET_MIN_DRAFT_CHARS = 40;

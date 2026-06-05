@@ -29,13 +29,32 @@ export const DEFAULT_ITEM_HEIGHT_BY_TYPE: Partial<Record<ContentType, number>> =
 
 export const getDefaultItemHeightPx = (type: ContentType): number => DEFAULT_ITEM_HEIGHT_BY_TYPE[type] ?? DEFAULT_ITEM_HEIGHT_PX;
 
+/**
+ * Fine row height for the portfolio grid. Small rows keep the track height close to the
+ * block's content height so the leftover slack (and therefore the inter-block gap) stays
+ * consistent. The vertical gap is provided via `PORTFOLIO_BLOCK_GAP_PX` baked into the span.
+ */
+export const PORTFOLIO_GRID_ROW_HEIGHT_PX = 4;
+
+/** Consistent visual gap between vertically stacked blocks (added into each block's row span). */
+export const PORTFOLIO_BLOCK_GAP_PX = 24;
+
+/** Vertical resize snap step (px). Manual height resize pins to multiples of this for a grid feel. */
+export const PORTFOLIO_RESIZE_SNAP_PX = 24;
+
+/** Max height (px) a block can take, via manual resize or content auto-grow. Generous so long content is not clipped. */
+export const MAX_PORTFOLIO_ITEM_HEIGHT_PX = 4000;
+
+/** Upper bound on row span; derived from the max block height (+ gap) at the fine row height, with buffer. */
+const MAX_GRID_ROW_SPAN = Math.ceil((MAX_PORTFOLIO_ITEM_HEIGHT_PX + PORTFOLIO_BLOCK_GAP_PX) / PORTFOLIO_GRID_ROW_HEIGHT_PX) + 4;
+
 /** Grid track height for `grid-row-end: span N` with fixed row size + gap. */
 export const gridTrackHeightForSpan = (span: number, rowHeightPx: number, rowGapPx: number): number =>
   span * rowHeightPx + Math.max(0, span - 1) * rowGapPx;
 
 export const gridRowSpanForHeightPx = (heightPx: number, minRows: number, rowHeightPx: number, rowGapPx: number): number => {
   let span = Math.max(1, minRows);
-  while (span < 120 && gridTrackHeightForSpan(span, rowHeightPx, rowGapPx) < heightPx) {
+  while (span < MAX_GRID_ROW_SPAN && gridTrackHeightForSpan(span, rowHeightPx, rowGapPx) < heightPx) {
     span += 1;
   }
   return span;
@@ -56,7 +75,8 @@ export const getDefaultSpanForContentType = (type: ContentType): ColumnSpan => {
   return PORTFOLIO_SPAN_BY_ROLE.section;
 };
 
-const resolveLayoutRole = (item: PortfolioItem): PortfolioLayoutRole | null => {
+/** Infers template layout role for span normalization and section title semantics. */
+export const resolvePortfolioLayoutRole = (item: PortfolioItem): PortfolioLayoutRole | null => {
   const role = (item as PortfolioItem & { layoutRole?: PortfolioLayoutRole }).layoutRole;
   if (role && role in PORTFOLIO_SPAN_BY_ROLE) {
     return role;
@@ -86,7 +106,7 @@ const shouldNormalizeItemSpan = (item: PortfolioItem): boolean => {
     return false;
   }
 
-  const role = resolveLayoutRole(item);
+  const role = resolvePortfolioLayoutRole(item);
   if (!role) {
     return false;
   }
@@ -113,7 +133,7 @@ export const normalizeTemplateSpans = (items: PortfolioItem[]): PortfolioItem[] 
       return { ...item, detailedBlocks: normalizedDetailed };
     }
 
-    const role = resolveLayoutRole(item);
+    const role = resolvePortfolioLayoutRole(item);
     if (!role) {
       return item;
     }

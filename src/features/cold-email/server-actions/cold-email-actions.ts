@@ -47,6 +47,11 @@ async function authedFetch(path: string, options: RequestInit = {}): Promise<Res
 
 const ASSET_TYPE = "coldemail";
 
+const normalizeColdEmailAsset = (asset: ColdEmailAsset): ColdEmailAsset => ({
+  ...asset,
+  job_description: (asset.job_description ?? asset.jd ?? "").trim() || undefined,
+});
+
 // ---------------------------------------------------------------------------
 // Server Actions
 // ---------------------------------------------------------------------------
@@ -65,7 +70,7 @@ export async function fetchColdEmails(): Promise<ColdEmailAsset[]> {
     throw new Error((data as { error?: string })?.error ?? "Failed to fetch cold emails");
   }
   const data = (await res.json()) as { assetData?: ColdEmailAsset[] };
-  return data.assetData ?? [];
+  return (data.assetData ?? []).map(normalizeColdEmailAsset);
 }
 
 /**
@@ -77,7 +82,7 @@ export async function fetchColdEmailById(id: string | number): Promise<ColdEmail
     if (res.ok) {
       const detail = (await res.json()) as ColdEmailAsset;
       if (detail?.content != null || detail?.id != null) {
-        return detail;
+        return normalizeColdEmailAsset(detail);
       }
     }
   } catch {

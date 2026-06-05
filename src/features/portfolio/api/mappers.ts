@@ -2,6 +2,7 @@ import { normalizeTemplateSpans } from "@/features/portfolio/constants/portfolio
 import { resolvePortfolioBlockType } from "@/features/portfolio/utils/normalizePortfolioBlockType";
 import { reconcileHeroProfileContacts } from "@/features/portfolio/utils/reconcileHeroProfileContacts";
 import type { ContactButton, PortfolioData, PortfolioItem, UserProfile } from "@/types";
+import { resolveMediaDisplayUrl } from "@/utils/resolve-media-url";
 
 function safeObject<T extends Record<string, unknown>>(value: unknown, fallback: T): T {
   if (!value || typeof value !== "object" || Array.isArray(value)) {
@@ -16,16 +17,14 @@ function safeArray<T>(value: unknown): T[] {
 }
 
 function readMediaUrl(value: unknown): string {
+  let raw = "";
   if (typeof value === "string") {
-    return value;
-  }
-
-  if (value && typeof value === "object" && !Array.isArray(value)) {
+    raw = value;
+  } else if (value && typeof value === "object" && !Array.isArray(value)) {
     const url = (value as Record<string, unknown>).url;
-    return typeof url === "string" ? url : "";
+    raw = typeof url === "string" ? url : "";
   }
-
-  return "";
+  return resolveMediaDisplayUrl(raw);
 }
 
 const V2_UNSUPPORTED_ITEM_TYPES = new Set(["divider"]);

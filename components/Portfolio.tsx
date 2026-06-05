@@ -8,6 +8,8 @@ import {
   getDefaultSpanForContentType,
   getMinGridRowsForItem,
   gridRowSpanForHeightPx,
+  PORTFOLIO_BLOCK_GAP_PX,
+  PORTFOLIO_GRID_ROW_HEIGHT_PX,
 } from "@/features/portfolio/constants/portfolioLayout";
 import { useAutoItemHeights } from "@/features/portfolio/hooks/useAutoItemHeights";
 import { usePortfolioAutosave } from "@/features/portfolio/hooks/usePortfolioAutosave";
@@ -16,7 +18,12 @@ import { flushPortfolioLayoutRemeasure } from "@/features/portfolio/layout/portf
 import { publishPortfolioAsset } from "@/features/portfolio/server-actions/portfolio-actions";
 import { usePortfolioStore } from "@/features/portfolio/store/usePortfolioStore";
 import { normalizePortfolioItems } from "@/features/portfolio/utils/normalizePortfolioItems";
+import { estimateTitleOnlyTextLayoutHeightPx, isTemplateTitleOnlyTextItem } from "@/features/portfolio/utils/portfolio-html";
+import { UploadError, uploadHeroImageFromDataUrl } from "@/features/portfolio/utils/upload";
+import { profileQk } from "@/features/user-profile/hooks/use-profile-data";
 import { loadPublishedUrl, savePublishedUrl } from "@/lib/portfolio/portfolioStorage";
+import { resolveMediaDisplayUrl } from "@/utils/resolve-media-url";
+import { useQueryClient } from "@tanstack/react-query";
 import { motion } from "framer-motion";
 import {
   Edit3,
@@ -234,10 +241,14 @@ const buildFallbackPortfolio = (portfolioId: string, initialData?: PortfolioData
   isBase: initialData?.isBase,
   themeMode: initialData?.themeMode,
   profile: initialData?.profile ?? INITIAL_PROFILE,
-  items: normalizePortfolioItems(initialData?.items ?? INITIAL_ITEMS),
+  items: normalizePortfolioItems(initialData?.items ?? INITIAL_ITEMS, { clampTitleOnlyHeights: true }),
 });
 
+const AVATAR_CROP_MAX_OUTPUT_PX = 512;
+const COVER_CROP_MAX_OUTPUT_PX = 1920;
+
 const Portfolio: React.FC<PortfolioProps> = ({ portfolioId, initialData, onBack, isReadOnly = false }) => {
+  const queryClient = useQueryClient();
   const updatePortfolio = usePortfolioStore(s => s.updatePortfolio);
   const portfolioFromStore = usePortfolioStore(s => s.getPortfolioData(portfolioId));
 
@@ -309,6 +320,11 @@ const Portfolio: React.FC<PortfolioProps> = ({ portfolioId, initialData, onBack,
   const [coverCropZoom, setCoverCropZoom] = useState(1);
   const [coverCropPan, setCoverCropPan] = useState({ x: 0, y: 0 });
   const [coverCropImageSize, setCoverCropImageSize] = useState({ width: 0, height: 0 });
+  const [avatarCropModal, setAvatarCropModal] = useState<{ source: string; mimeType?: string } | null>(null);
+  const [avatarCropZoom, setAvatarCropZoom] = useState(1);
+  const [avatarCropPan, setAvatarCropPan] = useState({ x: 0, y: 0 });
+  const [avatarCropImageSize, setAvatarCropImageSize] = useState({ width: 0, height: 0 });
+  const [isHeroImageUploading, setIsHeroImageUploading] = useState(false);
 
   const coverInputRef = useRef<HTMLInputElement>(null);
   const avatarInputRef = useRef<HTMLInputElement>(null);
@@ -316,6 +332,8 @@ const Portfolio: React.FC<PortfolioProps> = ({ portfolioId, initialData, onBack,
   const toastTimeoutRef = useRef<number | null>(null);
   const coverCropPreviewRef = useRef<HTMLDivElement>(null);
   const coverCropDragStateRef = useRef<{ x: number; y: number } | null>(null);
+  const avatarCropPreviewRef = useRef<HTMLDivElement>(null);
+  const avatarCropDragStateRef = useRef<{ x: number; y: number } | null>(null);
   const nextIdRef = useRef(0);
   const historyPastRef = useRef<PortfolioSnapshot[]>([]);
   const historyFutureRef = useRef<PortfolioSnapshot[]>([]);
@@ -329,7 +347,6 @@ const Portfolio: React.FC<PortfolioProps> = ({ portfolioId, initialData, onBack,
     return JSON.parse(JSON.stringify(snapshot)) as PortfolioSnapshot;
   };
   const [collapsedHeights, setCollapsedHeights] = useState<Record<string, number>>({});
-  const [gridMetrics, setGridMetrics] = useState({ rowHeight: 12, rowGap: 24 });
 
   const getNextId = (prefix = "item") => {
     nextIdRef.current += 1;
@@ -572,7 +589,7 @@ const Portfolio: React.FC<PortfolioProps> = ({ portfolioId, initialData, onBack,
       type,
       content: "",
       span: getDefaultSpanForContentType(type),
-      title: type === "page-card" ? "New Page" : type === "link-box" ? "New Link" : undefined,
+      title: type === "page-card" ? "New Page" : undefined,
       fontSize: "base",
       height: getDefaultItemHeightPx(type),
       ...preset,
@@ -586,7 +603,7 @@ const Portfolio: React.FC<PortfolioProps> = ({ portfolioId, initialData, onBack,
       type,
       content: "",
       span: getDefaultSpanForContentType(type),
-      title: type === "page-card" ? "New Page" : type === "link-box" ? "New Link" : undefined,
+      title: type === "page-card" ? "New Page" : undefined,
       fontSize: "base",
       height: getDefaultItemHeightPx(type),
     };
@@ -645,30 +662,65 @@ const Portfolio: React.FC<PortfolioProps> = ({ portfolioId, initialData, onBack,
     ratioLabel: NonNullable<UserProfile["coverCropRatio"]>,
     zoom: number,
     pan: { x: number; y: number },
-    callback: (croppedDataUrl: string) => void
+    callback: (croppedDataUrl: string) => void,
+    maxOutputPx?: number
   ) => {
     const img = new Image();
+    if (source.startsWith("http")) {
+      img.crossOrigin = "anonymous";
+    }
     img.onload = () => {
       const { cropWidth, cropHeight, offsetX, offsetY } = getCoverCropGeometry(img.naturalWidth, img.naturalHeight, ratioLabel, zoom, pan);
 
+      let outWidth = Math.round(cropWidth);
+      let outHeight = Math.round(cropHeight);
+      if (maxOutputPx) {
+        const maxDim = Math.max(outWidth, outHeight);
+        if (maxDim > maxOutputPx) {
+          const scale = maxOutputPx / maxDim;
+          outWidth = Math.round(outWidth * scale);
+          outHeight = Math.round(outHeight * scale);
+        }
+      }
+
       const canvas = document.createElement("canvas");
-      canvas.width = Math.round(cropWidth);
-      canvas.height = Math.round(cropHeight);
+      canvas.width = outWidth;
+      canvas.height = outHeight;
       const ctx = canvas.getContext("2d");
       if (!ctx) return;
 
-      ctx.drawImage(img, offsetX, offsetY, cropWidth, cropHeight, 0, 0, canvas.width, canvas.height);
+      ctx.drawImage(img, offsetX, offsetY, cropWidth, cropHeight, 0, 0, outWidth, outHeight);
 
       callback(canvas.toDataURL("image/jpeg", 0.92));
     };
     img.src = source;
   };
 
+  const persistCroppedHeroImage = useCallback(
+    async (croppedDataUrl: string, category: "profile-picture" | "cover-picture", applyUrl: (url: string) => void) => {
+      setIsHeroImageUploading(true);
+      try {
+        const url = await uploadHeroImageFromDataUrl(croppedDataUrl, category);
+        applyUrl(url);
+        if (category === "profile-picture") {
+          void queryClient.invalidateQueries({ queryKey: profileQk.media("profile-picture") });
+        }
+        showToast(category === "profile-picture" ? "Profile photo saved" : "Cover image saved");
+      } catch (error) {
+        const message = error instanceof UploadError ? error.message : "Failed to upload image";
+        showToast(message);
+      } finally {
+        setIsHeroImageUploading(false);
+      }
+    },
+    [queryClient, showToast]
+  );
+
   const openCoverCropModal = (source: string, mimeType?: string) => {
     setSelectedCoverCropRatio(profile.coverCropRatio || "16:9");
     setCoverCropZoom(1);
     setCoverCropPan({ x: 0, y: 0 });
-    setCoverCropModal({ source, mimeType });
+    setCoverCropModal({ source: resolveMediaDisplayUrl(source), mimeType });
   };
 
   const handleCoverUpload = async (file: File) => {
@@ -676,9 +728,15 @@ const Portfolio: React.FC<PortfolioProps> = ({ portfolioId, initialData, onBack,
     openCoverCropModal(dataUrl, file.type || "image/jpeg");
   };
 
+  const openAvatarCropModal = (source: string, mimeType?: string) => {
+    setAvatarCropZoom(1);
+    setAvatarCropPan({ x: 0, y: 0 });
+    setAvatarCropModal({ source: resolveMediaDisplayUrl(source), mimeType });
+  };
+
   const handleAvatarUpload = async (file: File) => {
     const dataUrl = await fileToDataUrl(file);
-    setProfile(prev => ({ ...prev, avatarUrl: dataUrl, showAvatar: true }));
+    openAvatarCropModal(dataUrl, file.type || "image/jpeg");
   };
 
   useEffect(() => {
@@ -689,6 +747,15 @@ const Portfolio: React.FC<PortfolioProps> = ({ portfolioId, initialData, onBack,
     };
     img.src = coverCropModal.source;
   }, [coverCropModal]);
+
+  useEffect(() => {
+    if (!avatarCropModal) return;
+    const img = new Image();
+    img.onload = () => {
+      setAvatarCropImageSize({ width: img.naturalWidth, height: img.naturalHeight });
+    };
+    img.src = avatarCropModal.source;
+  }, [avatarCropModal]);
 
   const coverCropGeometry =
     coverCropModal && coverCropImageSize.width && coverCropImageSize.height
@@ -727,6 +794,43 @@ const Portfolio: React.FC<PortfolioProps> = ({ portfolioId, initialData, onBack,
     e.currentTarget.releasePointerCapture(e.pointerId);
   };
 
+  const avatarCropGeometry =
+    avatarCropModal && avatarCropImageSize.width && avatarCropImageSize.height
+      ? getCoverCropGeometry(avatarCropImageSize.width, avatarCropImageSize.height, "1:1", avatarCropZoom, avatarCropPan)
+      : null;
+
+  const avatarCropPreviewStyle =
+    avatarCropGeometry && avatarCropImageSize.width && avatarCropImageSize.height
+      ? {
+          backgroundImage: `url(${avatarCropModal?.source})`,
+          backgroundSize: `${(avatarCropImageSize.width / avatarCropGeometry.cropWidth) * 100}% ${(avatarCropImageSize.height / avatarCropGeometry.cropHeight) * 100}%`,
+          backgroundPosition: `${(avatarCropGeometry.offsetX / Math.max(1, avatarCropImageSize.width - avatarCropGeometry.cropWidth)) * 100}% ${(avatarCropGeometry.offsetY / Math.max(1, avatarCropImageSize.height - avatarCropGeometry.cropHeight)) * 100}%`,
+        }
+      : undefined;
+
+  const handleAvatarCropPointerDown = (e: React.PointerEvent<HTMLDivElement>) => {
+    if (!avatarCropPreviewRef.current) return;
+    avatarCropDragStateRef.current = { x: e.clientX, y: e.clientY };
+    e.currentTarget.setPointerCapture(e.pointerId);
+  };
+
+  const handleAvatarCropPointerMove = (e: React.PointerEvent<HTMLDivElement>) => {
+    if (!avatarCropDragStateRef.current || !avatarCropPreviewRef.current) return;
+    const rect = avatarCropPreviewRef.current.getBoundingClientRect();
+    const dx = e.clientX - avatarCropDragStateRef.current.x;
+    const dy = e.clientY - avatarCropDragStateRef.current.y;
+    avatarCropDragStateRef.current = { x: e.clientX, y: e.clientY };
+    setAvatarCropPan(prev => ({
+      x: clamp(prev.x - dx / Math.max(1, rect.width), -1, 1),
+      y: clamp(prev.y - dy / Math.max(1, rect.height), -1, 1),
+    }));
+  };
+
+  const handleAvatarCropPointerUp = (e: React.PointerEvent<HTMLDivElement>) => {
+    avatarCropDragStateRef.current = null;
+    e.currentTarget.releasePointerCapture(e.pointerId);
+  };
+
   const duplicateItem = (id: string) => {
     const original = items.find(item => item.id === id);
     if (original) {
@@ -751,28 +855,36 @@ const Portfolio: React.FC<PortfolioProps> = ({ portfolioId, initialData, onBack,
   const dragHandleArmedItemIdRef = useRef<string | null>(null);
   const [measuredHeights, setMeasuredHeights] = useState<Record<string, number>>({});
 
-  const GRID_ROW_PX = 12;
   const COLLAPSIBLE_TEXT_COLLAPSED_HEIGHT_PX = 72;
 
-  const handleMeasuredHeightOnly = useCallback((id: string, height: number) => {
-    setMeasuredHeights(prev => {
-      if (prev[id] === height) return prev;
-      return { ...prev, [id]: height };
-    });
-  }, []);
+  const HEIGHT_MEASURE_EPSILON_PX = 2;
+
+  const handleMeasuredHeightOnly = useCallback(
+    (id: string, height: number) => {
+      if (!hasPendingAdkReview) return;
+      setMeasuredHeights(prev => {
+        const previous = prev[id];
+        if (previous !== undefined && Math.abs(previous - height) <= HEIGHT_MEASURE_EPSILON_PX) {
+          return prev;
+        }
+        if (previous === height) return prev;
+        return { ...prev, [id]: height };
+      });
+    },
+    [hasPendingAdkReview]
+  );
 
   const handleAutoItemHeight = useCallback(
     (id: string, height: number) => {
-      handleMeasuredHeightOnly(id, height);
       setItems(prev => {
         const target = prev.find(item => item.id === id);
         if (!target || target.heightUserSet) return prev;
         const stored = target.height ?? getDefaultItemHeightPx(target.type);
-        if (Math.abs(stored - height) <= 2) return prev;
+        if (Math.abs(stored - height) <= HEIGHT_MEASURE_EPSILON_PX) return prev;
         return prev.map(item => (item.id === id ? { ...item, height } : item));
       });
     },
-    [handleMeasuredHeightOnly, setItems]
+    [setItems]
   );
 
   const { handleMeasureContentHeight } = useAutoItemHeights({
@@ -795,7 +907,7 @@ const Portfolio: React.FC<PortfolioProps> = ({ portfolioId, initialData, onBack,
     items,
     itemRefs,
     gridRef,
-    onMeasureContentHeight: handleMeasureForLayout,
+    onMeasureContentHeight: hasPendingAdkReview ? handleMeasureForLayout : undefined,
   });
 
   useEffect(() => {
@@ -805,23 +917,6 @@ const Portfolio: React.FC<PortfolioProps> = ({ portfolioId, initialData, onBack,
     });
     return () => cancelAnimationFrame(raf);
   }, [hasPendingAdkReview, items]);
-
-  useEffect(() => {
-    if (!gridRef.current) return;
-    const node = gridRef.current;
-
-    const updateGridMetrics = () => {
-      const styles = window.getComputedStyle(node);
-      const parsedRowGap = Number.parseFloat(styles.rowGap || "24");
-      const rowGap = Number.isFinite(parsedRowGap) ? parsedRowGap : 24;
-      setGridMetrics(prev => (prev.rowHeight === GRID_ROW_PX && prev.rowGap === rowGap ? prev : { rowHeight: GRID_ROW_PX, rowGap }));
-    };
-
-    updateGridMetrics();
-    const observer = new ResizeObserver(updateGridMetrics);
-    observer.observe(node);
-    return () => observer.disconnect();
-  }, [gridRef]);
 
   const handleCollapsedHeightMeasure = (id: string, measuredHeight: number) => {
     setCollapsedHeights(prev => {
@@ -838,8 +933,16 @@ const Portfolio: React.FC<PortfolioProps> = ({ portfolioId, initialData, onBack,
 
     if (!item.heightUserSet) {
       const stored = item.height ?? getDefaultItemHeightPx(item.type);
-      const live = measuredHeights[item.id];
-      if (live) return Math.max(stored, live);
+      // Title-only template blocks hug the title in preview (edit mode keeps the editable content area).
+      if (!isEditMode && isTemplateTitleOnlyTextItem(item)) {
+        return Math.min(stored, estimateTitleOnlyTextLayoutHeightPx(item));
+      }
+      // Use live measure only during ADK review (heights are not persisted). Otherwise
+      // driving the grid from measuredHeights causes resize ↔ measure feedback loops.
+      if (hasPendingAdkReview) {
+        const live = measuredHeights[item.id];
+        if (live) return Math.max(stored, live);
+      }
       return stored;
     }
 
@@ -847,8 +950,12 @@ const Portfolio: React.FC<PortfolioProps> = ({ portfolioId, initialData, onBack,
   };
 
   const getRowSpanForItem = (item: PortfolioItem) => {
-    const heightPx = getLayoutHeightPx(item);
-    return gridRowSpanForHeightPx(heightPx, getMinGridRowsForItem(item.type), gridMetrics.rowHeight, gridMetrics.rowGap);
+    // The grid uses row-gap 0 with a fine row height; the inter-block gap is baked into the span
+    // so the slack below the block (track − content) becomes a consistent ~24px gap.
+    // rowGap is hardcoded to 0 (not read from the DOM) so the computed track is always
+    // >= content + gap — this makes overlap impossible even if computed styles lag the CSS.
+    const heightPx = getLayoutHeightPx(item) + PORTFOLIO_BLOCK_GAP_PX;
+    return gridRowSpanForHeightPx(heightPx, getMinGridRowsForItem(item.type), PORTFOLIO_GRID_ROW_HEIGHT_PX, 0);
   };
 
   const EDGE_RESIZE_HIT_AREA_PX = 18;
@@ -1159,6 +1266,7 @@ const Portfolio: React.FC<PortfolioProps> = ({ portfolioId, initialData, onBack,
     const fillsGridHeight = item.heightUserSet === true;
     const layoutHeightPx = getLayoutHeightPx(item);
     const blockHighlight = adkPortfolioHighlights[`block:${item.id}`];
+    const isResizingThis = resizing?.id === item.id;
 
     return (
       <motion.div
@@ -1174,14 +1282,14 @@ const Portfolio: React.FC<PortfolioProps> = ({ portfolioId, initialData, onBack,
         }}
         className={`
           ${getSpanClass(item.span)}
-          relative transition-all duration-300
+          relative ${isResizingThis ? "transition-none" : "transition-all duration-300"}
           ${isEditMode ? "rounded-[2rem]" : ""}
           ${draggedItemIndex === index ? "opacity-30 scale-[0.98]" : "opacity-100"}
         `}
         style={{
           gridColumnStart: item.colStart,
           gridRowEnd: `span ${getRowSpanForItem(item)}`,
-          height: fillsGridHeight ? "100%" : `${layoutHeightPx}px`,
+          height: `${layoutHeightPx}px`,
           alignSelf: "start",
         }}
       >
@@ -1457,7 +1565,7 @@ const Portfolio: React.FC<PortfolioProps> = ({ portfolioId, initialData, onBack,
 
             {showProfileSection && itemsAboveProfile > 0 && (
               <div
-                className="relative mb-6 grid min-h-[80px] grid-flow-row-dense auto-rows-[12px] grid-cols-1 gap-6 md:grid-cols-12"
+                className="relative mb-6 grid min-h-[80px] grid-flow-row-dense auto-rows-[4px] grid-cols-1 gap-x-6 gap-y-0 md:grid-cols-12"
                 onDragOver={isEditMode ? handleGridDragOver : undefined}
               >
                 {items.slice(0, itemsAboveProfile).map((item, sliceIndex) => renderPortfolioGridItem(item, sliceIndex))}
@@ -1544,16 +1652,27 @@ const Portfolio: React.FC<PortfolioProps> = ({ portfolioId, initialData, onBack,
                                 <AlignCenter size={14} />
                               </button>
                             </div>
-                            <div className="absolute inset-0 rounded-full bg-black/60 hidden group-hover:flex flex-col items-center justify-center gap-3 cursor-pointer backdrop-blur-sm overflow-hidden p-2 z-10">
+                            <div className="absolute inset-0 rounded-full bg-black/60 hidden group-hover:flex flex-col items-center justify-center gap-2 cursor-pointer backdrop-blur-sm overflow-hidden p-2 z-10">
                               <div
                                 onClick={e => {
                                   e.stopPropagation();
                                   avatarInputRef.current?.click();
                                 }}
-                                className="flex items-center justify-center gap-2 text-white hover:text-brand-400 transition-colors"
+                                className="flex items-center justify-center gap-1.5 text-white hover:text-brand-400 transition-colors"
                               >
-                                <Edit3 size={18} /> <span className="text-xs font-medium">Edit</span>
+                                <Edit3 size={16} /> <span className="text-[10px] font-medium">Update</span>
                               </div>
+                              {profile.avatarUrl ? (
+                                <div
+                                  onClick={e => {
+                                    e.stopPropagation();
+                                    openAvatarCropModal(profile.avatarUrl, "image/jpeg");
+                                  }}
+                                  className="flex items-center justify-center gap-1.5 text-white hover:text-brand-400 transition-colors"
+                                >
+                                  <ImageIcon size={16} /> <span className="text-[10px] font-medium">Crop</span>
+                                </div>
+                              ) : null}
                               <div className="h-px w-1/2 bg-white/20"></div>
                               <div
                                 onClick={e => {
@@ -1731,7 +1850,7 @@ const Portfolio: React.FC<PortfolioProps> = ({ portfolioId, initialData, onBack,
             {/* Notion-style Grid Canvas */}
             <div
               ref={gridRef}
-              className="grid grid-cols-1 md:grid-cols-12 gap-6 relative min-h-[400px] grid-flow-row-dense auto-rows-[12px]"
+              className="grid grid-cols-1 md:grid-cols-12 gap-x-6 gap-y-0 relative min-h-[400px] grid-flow-row-dense auto-rows-[4px]"
               onClick={closeContextMenu}
               onDragOver={handleGridDragOver}
             >
@@ -1837,6 +1956,102 @@ const Portfolio: React.FC<PortfolioProps> = ({ portfolioId, initialData, onBack,
             </div>
           )}
 
+          {avatarCropModal && (
+            <div
+              className="fixed inset-0 z-[220] bg-black/60 backdrop-blur-sm flex items-center justify-center p-4"
+              onClick={() => setAvatarCropModal(null)}
+            >
+              <div
+                className="w-full max-w-md bg-white dark:bg-[#0c0c0c] rounded-3xl shadow-2xl border border-slate-200 dark:border-white/10 overflow-hidden"
+                onClick={e => e.stopPropagation()}
+              >
+                <div className="flex items-center justify-between px-5 py-4 border-b border-slate-100 dark:border-white/10">
+                  <div>
+                    <h3 className="text-sm font-semibold text-slate-900 dark:text-white">Crop Profile Photo</h3>
+                    <p className="text-xs text-slate-500 dark:text-slate-400 mt-1">Drag to reposition and use zoom to frame your photo.</p>
+                  </div>
+                  <button
+                    type="button"
+                    onClick={() => setAvatarCropModal(null)}
+                    className="p-2 rounded-full text-slate-400 hover:text-slate-700 dark:hover:text-white transition-colors"
+                  >
+                    Close
+                  </button>
+                </div>
+
+                <div className="p-5 space-y-5">
+                  <div className="rounded-2xl bg-slate-100 dark:bg-slate-900 p-4 flex items-center justify-center">
+                    <div
+                      ref={avatarCropPreviewRef}
+                      className="w-48 h-48 shrink-0 overflow-hidden rounded-full bg-black/5 dark:bg-black/30 shadow-inner ring-2 ring-white/40 dark:ring-white/10"
+                      onPointerDown={handleAvatarCropPointerDown}
+                      onPointerMove={handleAvatarCropPointerMove}
+                      onPointerUp={handleAvatarCropPointerUp}
+                      onPointerCancel={handleAvatarCropPointerUp}
+                    >
+                      <div
+                        className="w-full h-full bg-center bg-no-repeat bg-cover cursor-grab active:cursor-grabbing"
+                        style={avatarCropPreviewStyle}
+                      />
+                    </div>
+                  </div>
+
+                  <div className="space-y-2">
+                    <div className="flex items-center justify-between text-xs font-medium text-slate-500 dark:text-slate-400">
+                      <span>Zoom</span>
+                      <span>{avatarCropZoom.toFixed(1)}x</span>
+                    </div>
+                    <input
+                      type="range"
+                      min={1}
+                      max={3}
+                      step={0.1}
+                      value={avatarCropZoom}
+                      onChange={e => setAvatarCropZoom(Number(e.target.value))}
+                      className="w-full accent-brand-600"
+                    />
+                  </div>
+
+                  <div className="flex items-center justify-end gap-3">
+                    <button
+                      type="button"
+                      onClick={() => setAvatarCropModal(null)}
+                      className="px-4 py-2 rounded-full text-xs font-semibold border border-slate-200 dark:border-white/10 text-slate-500 hover:text-slate-800 dark:hover:text-white transition-colors"
+                    >
+                      Cancel
+                    </button>
+                    <button
+                      type="button"
+                      disabled={isHeroImageUploading}
+                      onClick={() => {
+                        applyCoverCrop(
+                          avatarCropModal.source,
+                          "1:1",
+                          avatarCropZoom,
+                          avatarCropPan,
+                          croppedDataUrl => {
+                            void persistCroppedHeroImage(croppedDataUrl, "profile-picture", url => {
+                              setProfile(prev => ({
+                                ...prev,
+                                avatarUrl: url,
+                                showAvatar: true,
+                              }));
+                              setAvatarCropModal(null);
+                            });
+                          },
+                          AVATAR_CROP_MAX_OUTPUT_PX
+                        );
+                      }}
+                      className="px-5 py-2 rounded-full text-xs font-semibold bg-brand-600 text-white hover:scale-105 active:scale-95 transition-all shadow-lg shadow-brand-500/25 disabled:opacity-60 disabled:pointer-events-none"
+                    >
+                      {isHeroImageUploading ? "Uploading…" : "Save Crop"}
+                    </button>
+                  </div>
+                </div>
+              </div>
+            </div>
+          )}
+
           {coverCropModal && (
             <div
               className="fixed inset-0 z-[220] bg-black/60 backdrop-blur-sm flex items-center justify-center p-4"
@@ -1934,20 +2149,30 @@ const Portfolio: React.FC<PortfolioProps> = ({ portfolioId, initialData, onBack,
                     </button>
                     <button
                       type="button"
+                      disabled={isHeroImageUploading}
                       onClick={() => {
-                        applyCoverCrop(coverCropModal.source, selectedCoverCropRatio, coverCropZoom, coverCropPan, croppedDataUrl => {
-                          setProfile(prev => ({
-                            ...prev,
-                            coverUrl: croppedDataUrl,
-                            coverCropRatio: selectedCoverCropRatio,
-                            showCover: true,
-                          }));
-                          setCoverCropModal(null);
-                        });
+                        applyCoverCrop(
+                          coverCropModal.source,
+                          selectedCoverCropRatio,
+                          coverCropZoom,
+                          coverCropPan,
+                          croppedDataUrl => {
+                            void persistCroppedHeroImage(croppedDataUrl, "cover-picture", url => {
+                              setProfile(prev => ({
+                                ...prev,
+                                coverUrl: url,
+                                coverCropRatio: selectedCoverCropRatio,
+                                showCover: true,
+                              }));
+                              setCoverCropModal(null);
+                            });
+                          },
+                          COVER_CROP_MAX_OUTPUT_PX
+                        );
                       }}
-                      className="px-5 py-2 rounded-full text-xs font-semibold bg-brand-600 text-white hover:scale-105 active:scale-95 transition-all shadow-lg shadow-brand-500/25"
+                      className="px-5 py-2 rounded-full text-xs font-semibold bg-brand-600 text-white hover:scale-105 active:scale-95 transition-all shadow-lg shadow-brand-500/25 disabled:opacity-60 disabled:pointer-events-none"
                     >
-                      Save Crop
+                      {isHeroImageUploading ? "Uploading…" : "Save Crop"}
                     </button>
                   </div>
                 </div>

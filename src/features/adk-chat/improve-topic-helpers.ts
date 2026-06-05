@@ -21,6 +21,7 @@ function agentToChat(m: AgentMessage): ChatMessage {
     role: m.type === "human" ? "user" : "model",
     text: m.content,
     timestamp: parseTimestamp(m.timestamp as unknown as Date | string | number),
+    ...(m.invocationId ? { invocationId: m.invocationId } : {}),
   };
 }
 

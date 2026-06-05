@@ -2,6 +2,7 @@
 
 import type { ProfileData } from "@/features/user-profile/types";
 import { resolveProfilePictureFromProfile } from "@/features/user-profile/utils/resolve-profile-picture";
+import { resolveMediaDisplayUrl } from "@/utils/resolve-media-url";
 import { Camera } from "lucide-react";
 
 type UserProfileAvatarProps = {
@@ -20,7 +21,14 @@ export function UserProfileAvatar({ profile, size = 128, onClick, showHover = fa
 
   const inner = url ? (
     // eslint-disable-next-line @next/next/no-img-element -- OAuth/CDN URLs; avoids Next Image fill issues
-    <img src={url} alt="" width={size} height={size} className="h-full w-full object-cover" referrerPolicy="no-referrer" />
+    <img
+      src={resolveMediaDisplayUrl(url)}
+      alt=""
+      width={size}
+      height={size}
+      className="h-full w-full object-cover"
+      referrerPolicy="no-referrer"
+    />
   ) : (
     <div className="flex h-full w-full items-center justify-center font-semibold text-slate-400" style={{ fontSize: size * 0.35 }}>
       {initial}

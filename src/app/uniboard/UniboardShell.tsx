@@ -19,6 +19,7 @@ type UserData = {
   profilePictureUrl?: string;
   email?: string;
   firstName?: string;
+  is_team_member?: boolean;
 };
 
 const NAV_ITEMS = [
@@ -97,8 +98,21 @@ export default function UniboardShell({ children, userData }: { children: React.
         });
       }
     };
+    const handleOpenContentGenTopic = (e: Event) => {
+      const d = (e as CustomEvent<{ seedTopic?: string; followUpText?: string; requestKey?: number }>).detail;
+      setPendingAIRequest({
+        type: "content_gen_topic",
+        seedTopic: d?.seedTopic,
+        followUpText: d?.followUpText,
+        requestKey: typeof d?.requestKey === "number" ? d.requestKey : Date.now(),
+      });
+    };
     window.addEventListener("open-unibot", handleOpenUnibot);
-    return () => window.removeEventListener("open-unibot", handleOpenUnibot);
+    window.addEventListener("open-content-gen-topic", handleOpenContentGenTopic);
+    return () => {
+      window.removeEventListener("open-unibot", handleOpenUnibot);
+      window.removeEventListener("open-content-gen-topic", handleOpenContentGenTopic);
+    };
   }, []);
 
   const toggleDarkMode = () => setIsDarkMode(prev => !prev);

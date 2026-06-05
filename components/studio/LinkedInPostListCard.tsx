@@ -18,7 +18,7 @@ const LinkedInPostListCard: React.FC<LinkedInPostListCardProps> = ({ post, onCli
   <div
     className={`group/card relative w-full rounded-xl border transition-all ${
       isSelected
-        ? "border-brand-500/50 bg-brand-50 shadow-sm ring-1 ring-brand-500/25 dark:border-brand-500/40 dark:bg-brand-950/40 dark:ring-brand-500/30"
+        ? "border-brand-500/50 bg-brand-50 shadow-sm ring-1 ring-brand-500/25 dark:border-brand-500/40 dark:bg-brand-900/40 dark:ring-brand-500/30"
         : "border-slate-200/80 bg-slate-100 hover:border-slate-300 hover:bg-slate-200/90 hover:shadow-sm dark:border-slate-700/80 dark:bg-slate-800/90 dark:hover:border-slate-600 dark:hover:bg-slate-800"
     }`}
   >
