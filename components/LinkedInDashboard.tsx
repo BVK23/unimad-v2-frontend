@@ -2,6 +2,7 @@ import React, { useCallback, useState } from "react";
 import LinkedInScheduledPostsModal from "@/components/LinkedInScheduledPostsModal";
 import type { UnibotIncomingRequest } from "@/components/chat/unibot-incoming-request";
 import LinkedInAnalyzeErrorMessage from "@/components/linkedin/LinkedInAnalyzeErrorMessage";
+import LinkedInCalculateScorePreview from "@/components/linkedin/LinkedInCalculateScorePreview";
 import type { LinkedInListItem } from "@/components/studio/LinkedInPostListCard";
 import StudioSectionDot from "@/components/studio/StudioSectionDot";
 import { deleteContentGenAsset } from "@/features/content-lab/server-actions/content-lab-actions";
@@ -211,7 +212,14 @@ const LinkedInDashboard: React.FC<LinkedInDashboardProps> = ({ onImprove, onNavi
   }
 
   if (!analysis) {
-    return null;
+    return (
+      <LinkedInCalculateScorePreview
+        isAnalyzing={analyzeMutation.isPending}
+        error={mutationError.message || null}
+        errorCode={mutationError.code}
+        onCalculate={handleConnectAndAnalyze}
+      />
+    );
   }
 
   return (
