@@ -655,7 +655,7 @@ const BlockRenderer: React.FC<BlockRendererProps> = ({
       <div
         ref={contentMeasureRef}
         onClick={() => (!isEditMode && onSelectProject ? onSelectProject(item) : undefined)}
-        className={`rounded-2xl bg-white dark:bg-[#111] ${shellOverflowClass} group/card transition-all duration-500 flex flex-col border border-slate-100 dark:border-white/5 shadow-sm relative
+        className={`rounded-2xl bg-white dark:bg-slate-900 ${shellOverflowClass} group/card transition-all duration-500 flex flex-col border border-slate-100 dark:border-white/5 shadow-sm relative
                     ${isEditMode ? "hover:border-brand-500/30" : "cursor-pointer hover:shadow-2xl hover:-translate-y-1 hover:border-slate-200"}
                     ${blockCellSizingClass(item.heightUserSet)}
                 `}
@@ -718,7 +718,7 @@ const BlockRenderer: React.FC<BlockRendererProps> = ({
                 type="button"
                 onClick={openMediaPicker}
                 disabled={isUploading}
-                className="w-full px-4 py-2 rounded-full bg-white dark:bg-[#111] border border-slate-200 dark:border-white/10 text-slate-700 dark:text-slate-200 hover:border-brand-500/40 transition-all disabled:opacity-50"
+                className="w-full px-4 py-2 rounded-full bg-white dark:bg-slate-900 border border-slate-200 dark:border-white/10 text-slate-700 dark:text-slate-200 hover:border-brand-500/40 transition-all disabled:opacity-50"
               >
                 {isUploading ? "Uploading..." : "Add Cover Image"}
               </button>

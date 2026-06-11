@@ -1,5 +1,6 @@
 "use server";
 
+import { messageFromFailedResponse } from "@/utils/message-from-failed-response";
 import { cookies } from "next/headers";
 import type { BackendJob, ImportJobFromUrlResponse, JobListResponse, JobSearchParams } from "../types";
 
@@ -57,22 +58,6 @@ function buildQueryString(params: Record<string, unknown>): string {
 
   const queryString = searchParams.toString();
   return queryString ? `?${queryString}` : "";
-}
-
-/** Avoid surfacing Django HTML debug pages or other non-JSON error bodies in the UI. */
-function messageFromFailedResponse(status: number, bodyText: string, jsonError?: string): string {
-  const candidate = (jsonError ?? bodyText).trim();
-  const lower = candidate.toLowerCase();
-  const looksLikeHtml =
-    lower.startsWith("<!doctype") || lower.startsWith("<html") || lower.includes("<title>") || lower.includes("attributeerror at /api");
-
-  if (looksLikeHtml || !candidate) {
-    return status >= 500
-      ? "Import failed due to a server error. Please try again in a moment."
-      : "Failed to import job from URL. Please try again.";
-  }
-
-  return candidate.length > 400 ? `${candidate.slice(0, 400)}…` : candidate;
 }
 
 // -----------------------------------------------------------------------------

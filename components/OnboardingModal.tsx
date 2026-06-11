@@ -12,8 +12,8 @@ const STEPS = [
     title: "Click to Edit",
     description: "Everything you see is editable. Just click on any text, title, or section to update it immediately.",
     image: "https://placehold.co/600x400/f1f5f9/334155?text=GIF:+Click+to+Edit",
-    icon: <Edit3 size={24} className="text-blue-500" />,
-    color: "bg-blue-50",
+    icon: <Edit3 size={24} className="text-brand-500" />,
+    color: "bg-brand-50",
   },
   {
     id: "sections",
@@ -36,8 +36,8 @@ const STEPS = [
     title: "Improve with Unibot",
     description: "Stuck on what to write? Use Unibot to rewrite your bullet points and summaries instantly.",
     image: "https://placehold.co/600x400/f1f5f9/334155?text=GIF:+AI+Improvement",
-    icon: <Wand2 size={24} className="text-blue-500" />,
-    color: "bg-blue-50",
+    icon: <Wand2 size={24} className="text-brand-500" />,
+    color: "bg-brand-50",
   },
   {
     id: "share",

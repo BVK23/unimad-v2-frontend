@@ -1,5 +1,6 @@
 "use server";
 
+import { messageFromFailedResponse } from "@/utils/message-from-failed-response";
 import { cookies } from "next/headers";
 import type { Application, CreateApplicationInput, UpdateApplicationInput } from "../types";
 
@@ -87,10 +88,16 @@ export async function createApplication(input: CreateApplicationInput): Promise<
     body: JSON.stringify(body),
   });
 
-  const data = (await res.json()) as { application_id?: string; error?: string };
+  const bodyText = await res.text();
+  let data = {} as { application_id?: string; error?: string };
+  try {
+    data = JSON.parse(bodyText) as { application_id?: string; error?: string };
+  } catch {
+    // not JSON
+  }
 
   if (!res.ok) {
-    throw new Error(data.error ?? "Failed to create application");
+    throw new Error(messageFromFailedResponse(res.status, bodyText, data.error ?? "Failed to create application"));
   }
 
   return data as { application_id: string } & Application;
@@ -114,10 +121,16 @@ export async function updateApplication(applicationId: string, input: UpdateAppl
     body: JSON.stringify(body),
   });
 
-  const data = (await res.json()) as Application & { error?: string };
+  const bodyText = await res.text();
+  let data = {} as Application & { error?: string };
+  try {
+    data = JSON.parse(bodyText) as Application & { error?: string };
+  } catch {
+    // not JSON
+  }
 
   if (!res.ok) {
-    throw new Error(data.error ?? "Failed to update application");
+    throw new Error(messageFromFailedResponse(res.status, bodyText, data.error ?? "Failed to update application"));
   }
 
   return data as Application;

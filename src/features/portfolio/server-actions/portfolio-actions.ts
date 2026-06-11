@@ -1,5 +1,6 @@
 "use server";
 
+import { messageFromFailedResponse } from "@/utils/message-from-failed-response";
 import { cookies } from "next/headers";
 
 function getBackendUrl(): string {
@@ -57,6 +58,16 @@ async function authedFetch(path: string, options: RequestInit = {}): Promise<Res
   });
 }
 
+function errorFromResponse(res: Response, bodyText: string, fallback: string): string {
+  let jsonError: string | undefined;
+  try {
+    jsonError = (JSON.parse(bodyText) as { error?: string })?.error;
+  } catch {
+    // body is not JSON
+  }
+  return messageFromFailedResponse(res.status, bodyText, jsonError ?? fallback);
+}
+
 export async function fetchPortfolioContent(): Promise<{ assetData?: Record<string, unknown> }> {
   const res = await authedFetch("/api/portfolio/");
 
@@ -64,12 +75,17 @@ export async function fetchPortfolioContent(): Promise<{ assetData?: Record<stri
     return {};
   }
 
+  const bodyText = await res.text();
+
   if (!res.ok) {
-    const data = await res.json().catch(() => ({}));
-    throw new Error(data?.error ?? "Failed to fetch portfolio");
+    throw new Error(errorFromResponse(res, bodyText, "Failed to fetch portfolio"));
   }
 
-  return res.json();
+  if (!bodyText.trim()) {
+    return {};
+  }
+
+  return JSON.parse(bodyText) as { assetData?: Record<string, unknown> };
 }
 
 export async function createInitialPortfolio(body: Record<string, unknown> = {}): Promise<{ assetData: Record<string, unknown> }> {

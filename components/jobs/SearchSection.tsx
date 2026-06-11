@@ -160,7 +160,7 @@ const SearchSection: React.FC<SearchSectionProps> = ({
             }}
           />
           {showRoleDropdown && searchTerm.trim().length >= 2 && (
-            <div className="absolute top-full left-0 right-0 z-50 mt-1 max-h-[280px] overflow-y-auto rounded-xl border border-slate-200 bg-white shadow-lg dark:border-slate-800 dark:bg-[#1a1a1a]">
+            <div className="absolute top-full left-0 right-0 z-50 mt-1 max-h-[280px] overflow-y-auto rounded-xl border border-slate-200 bg-white shadow-lg dark:border-slate-800 dark:bg-slate-900">
               {isSuggestionsLoading ? (
                 <div className="p-3 text-sm text-slate-500 dark:text-slate-400">Searching...</div>
               ) : suggestions.length > 0 ? (
@@ -201,7 +201,7 @@ const SearchSection: React.FC<SearchSectionProps> = ({
             }}
           />
           {showLocationDropdown && locationTerm.trim().length >= 1 && (
-            <div className="absolute top-full left-0 right-0 z-50 mt-1 max-h-[280px] overflow-y-auto rounded-xl border border-slate-200 bg-white shadow-lg dark:border-slate-800 dark:bg-[#1a1a1a]">
+            <div className="absolute top-full left-0 right-0 z-50 mt-1 max-h-[280px] overflow-y-auto rounded-xl border border-slate-200 bg-white shadow-lg dark:border-slate-800 dark:bg-slate-900">
               {isLocationsLoading ? (
                 <div className="p-3 text-sm text-slate-500 dark:text-slate-400">Loading...</div>
               ) : locations.length > 0 ? (
@@ -241,7 +241,7 @@ const SearchSection: React.FC<SearchSectionProps> = ({
             onClick={() => setShowFilters(!showFilters)}
             className={`flex items-center gap-2 rounded-xl border px-4 py-2.5 text-sm font-medium transition-all active:scale-95 ${
               showFilters
-                ? "border-brand-200 bg-brand-50 text-brand-600 dark:border-brand-800 dark:bg-brand-950/30 dark:text-brand-400"
+                ? "border-brand-200 bg-brand-50 text-brand-600 dark:border-brand-800 dark:bg-brand-900/30 dark:text-brand-400"
                 : "border-slate-200 bg-transparent text-slate-700 hover:border-slate-300 hover:bg-slate-50 dark:border-slate-700 dark:text-slate-300 dark:hover:bg-slate-800/50"
             }`}
           >
@@ -275,7 +275,7 @@ const SearchSection: React.FC<SearchSectionProps> = ({
       </div>
 
       {showFilters && (
-        <div className="absolute right-0 top-full z-30 mt-2 w-72 animate-in fade-in zoom-in-95 rounded-2xl border border-slate-200 bg-white p-6 shadow-xl duration-200 dark:border-slate-800 dark:bg-[#1a1a1a]">
+        <div className="absolute right-0 top-full z-30 mt-2 w-72 animate-in fade-in zoom-in-95 rounded-2xl border border-slate-200 bg-white p-6 shadow-xl duration-200 dark:border-slate-800 dark:bg-slate-900">
           <FilterGroup title="Job Type" options={[...JOB_TYPE_FILTER_OPTIONS]} activeFilters={activeFilters} onToggle={toggleFilter} />
           <FilterGroup title="Location" options={[...LOCATION_FILTER_OPTIONS]} activeFilters={activeFilters} onToggle={toggleFilter} />
           <FilterGroup title="Benefits" options={[VISA_FILTER_OPTION]} activeFilters={activeFilters} onToggle={toggleFilter} />

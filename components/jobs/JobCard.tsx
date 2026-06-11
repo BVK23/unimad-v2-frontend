@@ -39,7 +39,7 @@ const JobCard: React.FC<JobCardProps> = ({
   return (
     <div
       onClick={() => onClick(job)}
-      className={`group bg-white dark:bg-[#111] border border-slate-200 dark:border-slate-800 rounded-2xl p-4 hover:border-blue-200/60 dark:hover:border-blue-500/30 transition-all duration-300 shadow-[0_2px_8px_rgba(0,0,0,0.02)] hover:shadow-[0_8px_24px_rgba(0,0,0,0.04)] cursor-pointer flex flex-col h-full relative`}
+      className={`group bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-2xl p-4 hover:border-brand-200/60 dark:hover:border-brand-500/30 transition-all duration-300 shadow-[0_2px_8px_rgba(0,0,0,0.02)] hover:shadow-[0_8px_24px_rgba(0,0,0,0.04)] cursor-pointer flex flex-col h-full relative`}
     >
       <div className={`flex gap-4 ${hideButtons ? "mb-0" : "mb-4"}`}>
         {/* Logo - Left */}
@@ -54,7 +54,7 @@ const JobCard: React.FC<JobCardProps> = ({
               onError={() => setLogoError(true)}
             />
           ) : (
-            <div className="w-full h-full rounded-lg bg-gradient-to-br from-blue-500 via-purple-500 to-pink-500 flex items-center justify-center">
+            <div className="w-full h-full rounded-lg bg-gradient-to-br from-brand-500 via-purple-500 to-pink-500 flex items-center justify-center">
               <span className="text-white font-bold text-lg">{job.company?.charAt(0)?.toUpperCase() || "?"}</span>
             </div>
           )}
@@ -62,7 +62,7 @@ const JobCard: React.FC<JobCardProps> = ({
 
         {/* Text - Right */}
         <div className="min-w-0 flex-1">
-          <h3 className="font-medium text-slate-900 dark:text-white leading-tight truncate text-base mb-1 group-hover:text-blue-600 transition-colors">
+          <h3 className="font-medium text-slate-900 dark:text-white leading-tight truncate text-base mb-1 group-hover:text-brand-600 transition-colors">
             {job.role}
           </h3>
           <div className="flex items-center gap-2 text-xs text-slate-500 dark:text-slate-400 mb-2">
@@ -102,7 +102,7 @@ const JobCard: React.FC<JobCardProps> = ({
             }}
             className="flex-1 py-2 px-2 rounded-lg text-xs font-medium transition-all active:scale-95 border border-slate-200 dark:border-slate-700 hover:bg-slate-50 dark:hover:bg-slate-800 text-slate-700 dark:text-slate-200 flex items-center justify-center gap-1.5"
           >
-            <FileText size={12} className="text-blue-500" /> Prepare
+            <FileText size={12} className="text-brand-500" /> Prepare
           </button>
           <button
             onClick={e => {

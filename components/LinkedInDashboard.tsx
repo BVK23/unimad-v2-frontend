@@ -1,15 +1,17 @@
 import React, { useCallback, useState } from "react";
 import LinkedInScheduledPostsModal from "@/components/LinkedInScheduledPostsModal";
 import type { UnibotIncomingRequest } from "@/components/chat/unibot-incoming-request";
+import LinkedInAnalyzeErrorMessage from "@/components/linkedin/LinkedInAnalyzeErrorMessage";
 import type { LinkedInListItem } from "@/components/studio/LinkedInPostListCard";
 import StudioSectionDot from "@/components/studio/StudioSectionDot";
 import { deleteContentGenAsset } from "@/features/content-lab/server-actions/content-lab-actions";
-import { useAnalyzeLinkedInProfile, useLinkedInAnalysis } from "@/features/linkedin/hooks/useLinkedInAnalysis";
+import { LinkedInAnalyzerClientError, useAnalyzeLinkedInProfile, useLinkedInAnalysis } from "@/features/linkedin/hooks/useLinkedInAnalysis";
 import { generateLinkedInConnectionRequest } from "@/features/linkedin/server-actions/linkedin-connection-actions";
-import type { LinkedInAnalyzeResult } from "@/features/linkedin/types";
+import type { LinkedInAnalyzeResult, LinkedInAnalyzerErrorCode } from "@/features/linkedin/types";
 import { LINKEDIN_ADK_PROFILE_KEY, LINKEDIN_COMMENT_EXTENSION_URL } from "@/src/features/linkedin/constants";
 import { linkedinScheduledPostsQueryKey, useLinkedInScheduledPosts } from "@/src/features/linkedin/hooks/useLinkedInScheduledPosts";
 import { buildLinkedInImproveMessage, linkedInSectionIdToAdkSection } from "@/src/features/linkedin/improve-prompts";
+import { useUnibotAgentBusy } from "@/src/hooks/useUnibotAgentBusy";
 import type { GeneratorContext } from "@/types/jobs";
 import { useQueryClient } from "@tanstack/react-query";
 import { Linkedin, Download, RefreshCw, ChevronDown, Copy } from "lucide-react";
@@ -26,13 +28,13 @@ const PRIMARY_CTA_CLASS =
   "w-full inline-flex items-center justify-center gap-2 px-4 py-2 bg-slate-900 hover:bg-slate-800 text-white rounded-xl text-xs font-medium transition-all active:scale-95 shadow-sm disabled:pointer-events-none disabled:opacity-40 dark:bg-slate-900 dark:hover:bg-slate-800";
 
 const BLUE_PRIMARY_CTA_CLASS =
-  "w-full inline-flex items-center justify-center gap-2 px-4 py-2 bg-[#346DE0] hover:bg-[#254DB3] text-white rounded-xl text-xs font-medium transition-all active:scale-95 shadow-md shadow-blue-500/20 disabled:pointer-events-none disabled:opacity-40";
+  "w-full inline-flex items-center justify-center gap-2 px-4 py-2 bg-brand-600 hover:bg-brand-700 text-white rounded-xl text-xs font-medium transition-all active:scale-95 shadow-md shadow-brand-500/20 disabled:pointer-events-none disabled:opacity-40";
 
 const TEXT_LINK_CTA_CLASS =
-  "text-xs font-medium text-[#346DE0] underline underline-offset-2 transition-colors hover:text-[#254DB3] dark:text-blue-400 dark:hover:text-blue-300";
+  "text-xs font-medium text-brand-600 underline underline-offset-2 transition-colors hover:text-brand-700 dark:text-brand-400 dark:hover:text-brand-300";
 
 const TEXT_LINK_PLAIN_CLASS =
-  "text-xs font-medium text-[#346DE0] transition-colors hover:text-[#254DB3] dark:text-blue-400 dark:hover:text-blue-300";
+  "text-xs font-medium text-brand-600 transition-colors hover:text-brand-700 dark:text-brand-400 dark:hover:text-brand-300";
 
 const formatLastAnalyzedOn = (iso: string): string | null => {
   const d = new Date(iso);
@@ -45,6 +47,7 @@ const LinkedInDashboard: React.FC<LinkedInDashboardProps> = ({ onImprove, onNavi
   const queryClient = useQueryClient();
   const { data, isLoading, isError, error, refetch } = useLinkedInAnalysis();
   const analyzeMutation = useAnalyzeLinkedInProfile();
+  const isUnibotBusy = useUnibotAgentBusy();
   const { data: scheduledPosts = [] } = useLinkedInScheduledPosts(Boolean(data?.result));
 
   const [profileBreakdownOpen, setProfileBreakdownOpen] = useState(true);
@@ -62,10 +65,21 @@ const LinkedInDashboard: React.FC<LinkedInDashboardProps> = ({ onImprove, onNavi
   const score = analysis?.overallScore ?? 0;
   const hasScheduledPosts = scheduledPosts.length > 0;
 
-  const mutationErrorMessage =
-    analyzeMutation.error instanceof Error ? analyzeMutation.error.message : analyzeMutation.error ? String(analyzeMutation.error) : "";
+  const getAnalyzerError = (err: unknown): { message: string; code?: LinkedInAnalyzerErrorCode } => {
+    if (err instanceof LinkedInAnalyzerClientError) {
+      return { message: err.message, code: err.code as LinkedInAnalyzerErrorCode | undefined };
+    }
+    if (err instanceof Error) {
+      return { message: err.message };
+    }
+    if (err) {
+      return { message: String(err) };
+    }
+    return { message: "" };
+  };
 
-  const queryErrorMessage = error instanceof Error ? error.message : error ? String(error) : "Could not load your LinkedIn analysis.";
+  const mutationError = getAnalyzerError(analyzeMutation.error);
+  const queryError = getAnalyzerError(error);
 
   const handleConnectAndAnalyze = () => {
     analyzeMutation.reset();
@@ -110,7 +124,7 @@ const LinkedInDashboard: React.FC<LinkedInDashboardProps> = ({ onImprove, onNavi
   }, []);
 
   const openConnectionGenerateMore = () => {
-    if (!generatedConnectionRequest.trim()) return;
+    if (!generatedConnectionRequest.trim() || isUnibotBusy) return;
     onImprove({
       type: "improve",
       improveType: "linkedin",
@@ -133,8 +147,8 @@ const LinkedInDashboard: React.FC<LinkedInDashboardProps> = ({ onImprove, onNavi
 
   if (isLoading) {
     return (
-      <div className="flex-1 flex flex-col items-center justify-center p-8 bg-slate-50 dark:bg-[#0a0a0a] min-h-full">
-        <RefreshCw size={32} className="animate-spin text-[#346DE0] dark:text-blue-400 mb-4" aria-hidden />
+      <div className="flex-1 flex flex-col items-center justify-center p-8 bg-slate-50 dark:bg-slate-950 min-h-full">
+        <RefreshCw size={32} className="animate-spin text-brand-600 dark:text-brand-400 mb-4" aria-hidden />
         <p className="text-sm text-slate-600 dark:text-slate-400">Loading your LinkedIn analysis…</p>
       </div>
     );
@@ -142,13 +156,17 @@ const LinkedInDashboard: React.FC<LinkedInDashboardProps> = ({ onImprove, onNavi
 
   if (isError) {
     return (
-      <div className="flex-1 flex flex-col items-center justify-center p-8 bg-slate-50 dark:bg-[#0a0a0a] min-h-full">
-        <div className="max-w-md w-full bg-white dark:bg-[#111] rounded-2xl shadow-sm border border-slate-200 dark:border-slate-800 p-8 text-center">
-          <p className="text-sm text-slate-700 dark:text-slate-300 mb-4">{queryErrorMessage}</p>
+      <div className="flex-1 flex flex-col items-center justify-center p-8 bg-slate-50 dark:bg-slate-950 min-h-full">
+        <div className="max-w-md w-full bg-white dark:bg-slate-900 rounded-2xl shadow-sm border border-slate-200 dark:border-slate-800 p-8 text-center">
+          <LinkedInAnalyzeErrorMessage
+            error={queryError.message || "Could not load your LinkedIn analysis."}
+            code={queryError.code}
+            className="text-sm text-slate-700 dark:text-slate-300 mb-4"
+          />
           <button
             type="button"
             onClick={() => void refetch()}
-            className="w-full py-3 bg-[#346DE0] hover:bg-[#254DB3] text-white font-medium rounded-xl transition-colors"
+            className="w-full py-3 bg-brand-600 hover:bg-brand-700 text-white font-medium rounded-xl transition-colors"
           >
             Try again
           </button>
@@ -159,10 +177,10 @@ const LinkedInDashboard: React.FC<LinkedInDashboardProps> = ({ onImprove, onNavi
 
   if (data === null) {
     return (
-      <div className="flex-1 flex flex-col items-center justify-center p-8 bg-slate-50 dark:bg-[#0a0a0a] min-h-full">
-        <div className="max-w-md w-full bg-white dark:bg-[#111] rounded-2xl shadow-sm border border-slate-200 dark:border-slate-800 p-8 text-center">
-          <div className="w-16 h-16 bg-blue-50 dark:bg-blue-900/20 rounded-2xl flex items-center justify-center mx-auto mb-6">
-            <Linkedin size={32} className="text-[#346DE0] dark:text-blue-400" />
+      <div className="flex-1 flex flex-col items-center justify-center p-8 bg-slate-50 dark:bg-slate-950 min-h-full">
+        <div className="max-w-md w-full bg-white dark:bg-slate-900 rounded-2xl shadow-sm border border-slate-200 dark:border-slate-800 p-8 text-center">
+          <div className="w-16 h-16 bg-brand-50 dark:bg-brand-900/20 rounded-2xl flex items-center justify-center mx-auto mb-6">
+            <Linkedin size={32} className="text-brand-600 dark:text-brand-400" />
           </div>
           <h2 className="text-2xl font-normal text-slate-900 dark:text-white mb-3">Connect your LinkedIn</h2>
           <p className="text-slate-500 dark:text-slate-400 mb-8 leading-relaxed text-sm">
@@ -173,7 +191,7 @@ const LinkedInDashboard: React.FC<LinkedInDashboardProps> = ({ onImprove, onNavi
             type="button"
             onClick={handleConnectAndAnalyze}
             disabled={analyzeMutation.isPending}
-            className="w-full py-3.5 bg-[#346DE0] hover:bg-[#254DB3] text-white font-medium rounded-xl transition-all active:scale-95 flex items-center justify-center gap-2 shadow-lg shadow-blue-500/20 disabled:opacity-60 disabled:pointer-events-none"
+            className="w-full py-3.5 bg-brand-600 hover:bg-brand-700 text-white font-medium rounded-xl transition-all active:scale-95 flex items-center justify-center gap-2 shadow-lg shadow-brand-500/20 disabled:opacity-60 disabled:pointer-events-none"
           >
             {analyzeMutation.isPending ? (
               <>
@@ -184,7 +202,9 @@ const LinkedInDashboard: React.FC<LinkedInDashboardProps> = ({ onImprove, onNavi
             )}
           </button>
           <p className="text-[10px] text-slate-400 mt-4 uppercase tracking-wider font-medium">Secure connection via OAuth 2.0</p>
-          {mutationErrorMessage ? <p className="text-xs text-red-500 mt-3">{mutationErrorMessage}</p> : null}
+          {mutationError.message ? (
+            <LinkedInAnalyzeErrorMessage error={mutationError.message} code={mutationError.code} className="text-xs text-red-500 mt-3" />
+          ) : null}
         </div>
       </div>
     );
@@ -195,7 +215,7 @@ const LinkedInDashboard: React.FC<LinkedInDashboardProps> = ({ onImprove, onNavi
   }
 
   return (
-    <div className="flex-1 bg-slate-50 dark:bg-[#0a0a0a] h-full overflow-y-auto relative">
+    <div className="flex-1 bg-slate-50 dark:bg-slate-950 h-full overflow-y-auto relative">
       {copyFeedback ? (
         <div
           className="pointer-events-none fixed bottom-24 left-1/2 z-[60] -translate-x-1/2 rounded-full bg-slate-900/95 px-4 py-2 text-xs font-medium text-white shadow-lg dark:bg-white/95 dark:text-slate-900"
@@ -208,11 +228,11 @@ const LinkedInDashboard: React.FC<LinkedInDashboardProps> = ({ onImprove, onNavi
       <div className="sticky top-0 z-30 bg-slate-900 text-white px-6 py-3 flex justify-between items-center shadow-md">
         <div className="flex items-center gap-3">
           <div className="bg-white/10 p-1.5 rounded-lg">
-            <Download size={16} className="text-blue-400" />
+            <Download size={16} className="text-brand-400" />
           </div>
           <span className="text-sm font-medium" style={{ fontFamily: "Onest, sans-serif" }}>
             Get the{" "}
-            <span className="font-semibold bg-clip-text text-transparent bg-gradient-to-r from-blue-400 via-blue-300 to-blue-400 animate-gradient-x">
+            <span className="font-semibold bg-clip-text text-transparent bg-gradient-to-r from-brand-400 via-brand-300 to-brand-400 animate-gradient-x">
               Unimad | Comment Generator
             </span>{" "}
             for Chrome
@@ -222,7 +242,7 @@ const LinkedInDashboard: React.FC<LinkedInDashboardProps> = ({ onImprove, onNavi
           href={LINKEDIN_COMMENT_EXTENSION_URL}
           target="_blank"
           rel="noopener noreferrer"
-          className="text-xs bg-blue-600 hover:bg-blue-500 text-white px-3 py-1.5 rounded-md font-medium transition-colors"
+          className="text-xs bg-brand-600 hover:bg-brand-500 text-white px-3 py-1.5 rounded-md font-medium transition-colors"
         >
           Add to Chrome
         </a>
@@ -232,7 +252,7 @@ const LinkedInDashboard: React.FC<LinkedInDashboardProps> = ({ onImprove, onNavi
         <div className="grid grid-cols-1 lg:grid-cols-3 gap-8 items-start">
           {/* LEFT: Profile breakdown + Unicoach CTA */}
           <div className="lg:col-span-2 space-y-6">
-            <div className="overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-sm dark:border-slate-800 dark:bg-[#111]">
+            <div className="overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-sm dark:border-slate-800 dark:bg-slate-900">
               <div className="border-b border-slate-100 dark:border-slate-800">
                 <button
                   type="button"
@@ -283,7 +303,9 @@ const LinkedInDashboard: React.FC<LinkedInDashboardProps> = ({ onImprove, onNavi
                             <h4 className="text-base font-medium text-slate-900 dark:text-white">{section.name}</h4>
                             <button
                               type="button"
+                              disabled={isUnibotBusy}
                               onClick={() => {
+                                if (isUnibotBusy) return;
                                 const adkSection = linkedInSectionIdToAdkSection(section.id);
                                 if (!adkSection) return;
                                 onImprove({
@@ -297,9 +319,9 @@ const LinkedInDashboard: React.FC<LinkedInDashboardProps> = ({ onImprove, onNavi
                                   requestKey: Date.now(),
                                 });
                               }}
-                              className="flex shrink-0 items-center gap-1.5 rounded-lg bg-blue-50 px-3 py-1.5 text-xs font-medium text-[#346DE0] transition-colors hover:bg-blue-100 dark:bg-blue-950/50 dark:text-blue-300 dark:hover:bg-blue-900/40"
+                              className="flex shrink-0 items-center gap-1.5 rounded-lg bg-brand-50 px-3 py-1.5 text-xs font-medium text-brand-600 transition-colors hover:bg-brand-100 disabled:pointer-events-none disabled:opacity-50 dark:bg-brand-900/40 dark:text-brand-300 dark:hover:bg-brand-900/60"
                             >
-                              Improve
+                              {isUnibotBusy ? "Improving…" : "Improve"}
                             </button>
                           </div>
                           <p className="mb-2 text-sm leading-relaxed text-slate-600 dark:text-slate-400">{section.feedback}</p>
@@ -316,7 +338,7 @@ const LinkedInDashboard: React.FC<LinkedInDashboardProps> = ({ onImprove, onNavi
               <div className="border-t border-slate-100 p-6 dark:border-slate-800">
                 <Link
                   href="/uniboard/unicoach"
-                  className="relative block w-full overflow-hidden rounded-xl border border-[#0a66c2]/25 bg-[#0a66c2] transition-opacity hover:opacity-95"
+                  className="relative block w-full overflow-hidden rounded-xl border border-brand-600/25 bg-brand-600 transition-opacity hover:opacity-95"
                 >
                   <span className="linkedin-unicoach-cta-shimmer pointer-events-none absolute inset-0" aria-hidden />
                   <span className="relative z-10 flex w-full items-center justify-center px-4 py-2.5 text-xs font-medium text-white">
@@ -329,7 +351,7 @@ const LinkedInDashboard: React.FC<LinkedInDashboardProps> = ({ onImprove, onNavi
 
           {/* RIGHT: Profile strength, Content Lab, Connection request */}
           <div className="space-y-6">
-            <div className="flex flex-col items-center rounded-2xl border border-slate-200 bg-white p-6 shadow-sm dark:border-slate-800 dark:bg-[#111]">
+            <div className="flex flex-col items-center rounded-2xl border border-slate-200 bg-white p-6 shadow-sm dark:border-slate-800 dark:bg-slate-900">
               {analysis.coverPictureUrl ? (
                 <div className="mb-3 h-16 w-full overflow-hidden rounded-lg border border-slate-200 bg-slate-100 dark:border-slate-700 dark:bg-slate-800">
                   {/* eslint-disable-next-line @next/next/no-img-element */}
@@ -353,13 +375,13 @@ const LinkedInDashboard: React.FC<LinkedInDashboardProps> = ({ onImprove, onNavi
               </div>
 
               <h2 className="mb-1 font-medium text-slate-900 dark:text-white">Profile Strength</h2>
-              <span className="mb-3 text-2xl font-medium text-[#346DE0]">{score}/100</span>
+              <span className="mb-3 text-2xl font-medium text-brand-600">{score}/100</span>
               {lastAnalyzedLabel ? (
                 <p className="mb-3 px-1 text-center text-sm text-slate-600 dark:text-slate-300">{lastAnalyzedLabel}</p>
               ) : null}
 
               <div className="mb-4 h-2.5 w-full overflow-hidden rounded-full bg-slate-100 dark:bg-slate-800">
-                <div className="h-2.5 rounded-full bg-[#346DE0] transition-all duration-1000 ease-out" style={{ width: `${score}%` }} />
+                <div className="h-2.5 rounded-full bg-brand-600 transition-all duration-1000 ease-out" style={{ width: `${score}%` }} />
               </div>
 
               <button type="button" onClick={handleReanalyze} disabled={analyzeMutation.isPending} className={PRIMARY_CTA_CLASS}>
@@ -368,13 +390,13 @@ const LinkedInDashboard: React.FC<LinkedInDashboardProps> = ({ onImprove, onNavi
               </button>
             </div>
 
-            {mutationErrorMessage ? (
+            {mutationError.message ? (
               <div className="rounded-xl border border-red-200 bg-red-50 p-3 text-xs text-red-600 dark:border-red-900/50 dark:bg-red-900/10 dark:text-red-300">
-                {mutationErrorMessage}
+                <LinkedInAnalyzeErrorMessage error={mutationError.message} code={mutationError.code} />
               </div>
             ) : null}
 
-            <div className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm dark:border-slate-800 dark:bg-[#111]">
+            <div className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm dark:border-slate-800 dark:bg-slate-900">
               <h2 className="text-base font-semibold leading-tight text-slate-900 dark:text-white">Content Lab</h2>
               <p className="mt-1 text-xs leading-relaxed text-slate-500 dark:text-slate-400">
                 {hasScheduledPosts
@@ -406,19 +428,19 @@ const LinkedInDashboard: React.FC<LinkedInDashboardProps> = ({ onImprove, onNavi
               ) : null}
             </div>
 
-            <div className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm dark:border-slate-700 dark:bg-[#111]">
+            <div className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm dark:border-slate-700 dark:bg-slate-900">
               <h3 className="mb-3 text-sm font-semibold text-slate-900 dark:text-white">Connection request</h3>
               {connectionGenerateError ? <p className="mb-3 text-xs text-red-600 dark:text-red-400">{connectionGenerateError}</p> : null}
               <div className="space-y-3">
                 <input
-                  className="w-full rounded-xl border border-slate-200 bg-white px-3 py-2.5 text-sm text-slate-900 outline-none transition placeholder:text-slate-400 focus:border-[#346DE0] focus:ring-1 focus:ring-[#346DE0]/20 dark:border-slate-700 dark:bg-slate-950/50 dark:text-white"
+                  className="w-full rounded-xl border border-slate-200 bg-white px-3 py-2.5 text-sm text-slate-900 outline-none transition placeholder:text-slate-400 focus:border-brand-600 focus:ring-1 focus:ring-brand-600/20 dark:border-slate-700 dark:bg-slate-950/50 dark:text-white"
                   placeholder="Their name"
                   value={connectionRecipientName}
                   onChange={e => setConnectionRecipientName(e.target.value)}
                   autoComplete="off"
                 />
                 <input
-                  className="w-full rounded-xl border border-slate-200 bg-white px-3 py-2.5 text-sm text-slate-900 outline-none transition placeholder:text-slate-400 focus:border-[#346DE0] focus:ring-1 focus:ring-[#346DE0]/20 dark:border-slate-700 dark:bg-slate-950/50 dark:text-white"
+                  className="w-full rounded-xl border border-slate-200 bg-white px-3 py-2.5 text-sm text-slate-900 outline-none transition placeholder:text-slate-400 focus:border-brand-600 focus:ring-1 focus:ring-brand-600/20 dark:border-slate-700 dark:bg-slate-950/50 dark:text-white"
                   placeholder="Designation (e.g. Product Lead at Stripe)"
                   value={connectionRecipientDesignation}
                   onChange={e => setConnectionRecipientDesignation(e.target.value)}
@@ -445,7 +467,7 @@ const LinkedInDashboard: React.FC<LinkedInDashboardProps> = ({ onImprove, onNavi
                     <button
                       type="button"
                       onClick={() => void copyToClipboard(generatedConnectionRequest)}
-                      className="absolute right-2 top-2 rounded-md p-1.5 text-slate-400 transition-colors hover:text-[#346DE0] dark:hover:text-blue-400"
+                      className="absolute right-2 top-2 rounded-md p-1.5 text-slate-400 transition-colors hover:text-brand-600 dark:hover:text-brand-400"
                       aria-label="Copy connection request"
                       title="Copy"
                     >
@@ -459,8 +481,13 @@ const LinkedInDashboard: React.FC<LinkedInDashboardProps> = ({ onImprove, onNavi
                       className="block w-full resize-none border-0 bg-transparent p-0 text-xs leading-relaxed text-slate-700 shadow-none outline-none ring-0 focus:ring-0 dark:text-slate-300"
                     />
                   </div>
-                  <button type="button" onClick={openConnectionGenerateMore} className={`mt-2 ${TEXT_LINK_PLAIN_CLASS}`}>
-                    Generate more
+                  <button
+                    type="button"
+                    onClick={openConnectionGenerateMore}
+                    disabled={isUnibotBusy}
+                    className={`mt-2 ${TEXT_LINK_PLAIN_CLASS} disabled:pointer-events-none disabled:opacity-50`}
+                  >
+                    {isUnibotBusy ? "Generating…" : "Generate more"}
                   </button>
                 </>
               ) : null}

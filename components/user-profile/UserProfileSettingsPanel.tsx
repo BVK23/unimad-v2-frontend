@@ -22,16 +22,7 @@ const inputClass =
   "w-full rounded-xl border border-slate-200 bg-white px-3 py-2.5 text-sm text-slate-900 outline-none transition focus:border-brand-500 focus:ring-1 focus:ring-brand-500 dark:border-slate-700 dark:bg-[#0a0a0a] dark:text-slate-100";
 
 function profileFormKey(profile: ProfileData): string {
-  return [
-    profile.name,
-    profile.headline,
-    profile.linkedin_url,
-    profile.portfolio_url,
-    profile.github_url,
-    profile.phone_number,
-    profile.role?.[0],
-    profile.profilePictureUrl,
-  ].join("\0");
+  return String(profile.user_id ?? profile.email ?? "profile");
 }
 
 export function UserProfileSettingsPanel() {

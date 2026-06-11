@@ -1,4 +1,3 @@
-import { Suspense } from "react";
 import { requireOnboardingComplete } from "@/features/onboarding/server/requireOnboardingComplete";
 import ResumePageClient from "./ResumePageClient";
 
@@ -7,11 +6,15 @@ export const metadata = {
   description: "Resume dashboard and editor",
 };
 
-export default async function ResumePage() {
+type ResumePageProps = {
+  searchParams: Promise<{ id?: string | string[] }>;
+};
+
+export default async function ResumePage({ searchParams }: ResumePageProps) {
   await requireOnboardingComplete();
-  return (
-    <Suspense fallback={null}>
-      <ResumePageClient />
-    </Suspense>
-  );
+  const params = await searchParams;
+  const rawId = params.id;
+  const initialResumeId = typeof rawId === "string" && rawId.trim() !== "" ? rawId.trim() : undefined;
+
+  return <ResumePageClient initialResumeId={initialResumeId} />;
 }

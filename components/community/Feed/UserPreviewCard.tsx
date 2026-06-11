@@ -11,7 +11,7 @@ interface UserPreviewCardProps {
 
 const UserPreviewCard: React.FC<UserPreviewCardProps> = ({ author, onViewProfile }) => {
   return (
-    <div className="w-80 bg-white dark:bg-[#0F0F0F] rounded-xl shadow-xl border border-slate-200 dark:border-white/10 overflow-hidden z-50">
+    <div className="w-80 bg-white dark:bg-slate-950 rounded-xl shadow-xl border border-slate-200 dark:border-white/10 overflow-hidden z-50">
       {/* Banner */}
       <div className="h-20 bg-slate-200 dark:bg-white/5 relative">
         {author.bannerUrl && <Image src={author.bannerUrl} alt="Cover" fill sizes="320px" className="object-cover" />}
@@ -20,7 +20,7 @@ const UserPreviewCard: React.FC<UserPreviewCardProps> = ({ author, onViewProfile
       <div className="px-4 pb-4">
         {/* Avatar */}
         <div className="relative -top-8 mb-[-1.5rem] flex justify-between items-end">
-          <div className="w-20 h-20 rounded-full p-1 bg-white dark:bg-[#0F0F0F]">
+          <div className="w-20 h-20 rounded-full p-1 bg-white dark:bg-slate-950">
             <div className="w-full h-full rounded-full bg-slate-100 overflow-hidden relative">
               {author.avatarUrl ? (
                 <Image src={author.avatarUrl} alt={author.name} fill sizes="80px" className="object-cover" />

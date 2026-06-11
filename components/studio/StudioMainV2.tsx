@@ -1991,7 +1991,7 @@ const StudioMainV2: React.FC<StudioMainProps> = ({ initialContext, initialAssetI
                   aria-disabled
                   title="Coming soon"
                   onChange={e => setMood(e.target.value)}
-                  className="w-full bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-xl px-4 py-3 text-sm font-medium outline-none focus:ring-2 focus:ring-blue-500/20 appearance-none bg-white dark:bg-slate-900 opacity-60 cursor-not-allowed"
+                  className="w-full bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-xl px-4 py-3 text-sm font-medium outline-none focus:ring-2 focus:ring-brand-500/20 appearance-none bg-white dark:bg-slate-900 opacity-60 cursor-not-allowed"
                 >
                   {MOODS.map(m => (
                     <option key={m} value={m}>
@@ -2027,7 +2027,7 @@ const StudioMainV2: React.FC<StudioMainProps> = ({ initialContext, initialAssetI
                   aria-disabled
                   title="Coming soon"
                   onChange={e => setContentType(e.target.value)}
-                  className="w-full cursor-not-allowed appearance-none rounded-xl border border-slate-200 bg-slate-50 px-4 py-3 text-sm font-medium opacity-60 outline-none focus:ring-2 focus:ring-blue-500/20 dark:border-slate-700 dark:bg-slate-900"
+                  className="w-full cursor-not-allowed appearance-none rounded-xl border border-slate-200 bg-slate-50 px-4 py-3 text-sm font-medium opacity-60 outline-none focus:ring-2 focus:ring-brand-500/20 dark:border-slate-700 dark:bg-slate-900"
                 >
                   <option value="Top of Funnel">Top of Funnel</option>
                   <option value="Middle of Funnel">Middle of Funnel</option>
@@ -2809,7 +2809,7 @@ const StudioMainV2: React.FC<StudioMainProps> = ({ initialContext, initialAssetI
           role="dialog"
           aria-labelledby="referral-duplicate-modal-title"
         >
-          <div className="bg-white dark:bg-[#1a1a1a] w-full max-w-md rounded-2xl shadow-2xl p-6 border border-slate-200 dark:border-slate-800">
+          <div className="bg-white dark:bg-slate-900 w-full max-w-md rounded-2xl shadow-2xl p-6 border border-slate-200 dark:border-slate-800">
             <h2 id="referral-duplicate-modal-title" className="text-lg font-semibold text-slate-900 dark:text-white mb-2">
               Referral Already Exists
             </h2>
@@ -2859,7 +2859,7 @@ const StudioMainV2: React.FC<StudioMainProps> = ({ initialContext, initialAssetI
           role="dialog"
           aria-labelledby="referral-subscription-modal-title"
         >
-          <div className="bg-white dark:bg-[#1a1a1a] w-full max-w-md rounded-2xl shadow-2xl p-6 border border-slate-200 dark:border-slate-800">
+          <div className="bg-white dark:bg-slate-900 w-full max-w-md rounded-2xl shadow-2xl p-6 border border-slate-200 dark:border-slate-800">
             <h2 id="referral-subscription-modal-title" className="text-lg font-semibold text-slate-900 dark:text-white mb-2">
               Subscription required
             </h2>

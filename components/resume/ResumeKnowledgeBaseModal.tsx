@@ -55,7 +55,7 @@ function MediaPlaceholder({ label, aspect = "video" }: { label: string; aspect?:
 
   return (
     <div
-      className={`relative ${aspectClass} w-full overflow-hidden rounded-xl border border-slate-200 bg-gradient-to-br from-slate-100 via-brand-50/40 to-slate-100 dark:border-slate-700 dark:from-slate-800 dark:via-brand-950/30 dark:to-slate-800`}
+      className={`relative ${aspectClass} w-full overflow-hidden rounded-xl border border-slate-200 bg-gradient-to-br from-slate-100 via-brand-50/40 to-slate-100 dark:border-slate-700 dark:from-slate-800 dark:via-brand-900/30 dark:to-slate-800`}
     >
       <div className="absolute inset-0 flex flex-col items-center justify-center gap-2 p-4 text-center">
         <div className="flex h-12 w-12 items-center justify-center rounded-full bg-white/80 shadow-sm dark:bg-slate-900/80">
@@ -81,7 +81,7 @@ export default function ResumeKnowledgeBaseModal({ open, onClose }: ResumeKnowle
       >
         <div className="flex items-center justify-between border-b border-slate-100 px-6 py-5 dark:border-slate-800 sm:px-8">
           <div className="flex items-center gap-3">
-            <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-brand-50 text-brand-600 dark:bg-brand-950/50">
+            <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-brand-50 text-brand-600 dark:bg-brand-900/50">
               <BookOpen size={20} />
             </div>
             <div>
@@ -104,7 +104,7 @@ export default function ResumeKnowledgeBaseModal({ open, onClose }: ResumeKnowle
         </div>
 
         <div className="scrollbar-on-hover flex-1 overflow-y-auto px-6 py-6 sm:px-8">
-          <div className="mb-8 rounded-xl border border-brand-100 bg-brand-50/60 p-5 dark:border-brand-900/40 dark:bg-brand-950/30">
+          <div className="mb-8 rounded-xl border border-brand-100 bg-brand-50/60 p-5 dark:border-brand-900/40 dark:bg-brand-900/30">
             <div className="flex gap-3">
               <Lightbulb size={20} className="mt-0.5 flex-shrink-0 text-brand-600" />
               <div>

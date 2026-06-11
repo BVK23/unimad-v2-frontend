@@ -5,9 +5,11 @@ import { mapBackendResumeToFrontend } from "../api/mappers";
 import { fetchUserResumes } from "../server-actions/resume-actions";
 import { useResumeStore } from "../store/useResumeStore";
 
+export const resumesListQueryKey = ["resumes"] as const;
+
 export function useResumesList() {
   const query = useQuery({
-    queryKey: ["resumes"],
+    queryKey: resumesListQueryKey,
     queryFn: async () => {
       const response = await fetchUserResumes();
 

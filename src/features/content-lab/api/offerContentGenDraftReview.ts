@@ -59,9 +59,9 @@ export const offerContentGenDraftReview = (params: OfferContentGenDraftReviewPar
 
   const bannerTitle = isTopicChange
     ? resolved.topicInferredFromDraft
-      ? `Draft topic: "${truncateContentGenTopic(topic)}". Review in Studio, then accept or discard.`
-      : `New topic: "${truncateContentGenTopic(topic)}". Review the draft in Studio, then accept or discard.`
-    : "Review the LinkedIn post edit in Studio, then accept or discard.";
+      ? `Draft topic: "${truncateContentGenTopic(topic)}". Review in Studio, then accept or improve.`
+      : `New topic: "${truncateContentGenTopic(topic)}". Review the draft in Studio, then accept or improve.`
+    : "Review the LinkedIn post edit in Studio, then accept or improve.";
 
   useAdkContentGenReviewStore.getState().beginReview({
     assistantMessageId: params.assistantMessageId,

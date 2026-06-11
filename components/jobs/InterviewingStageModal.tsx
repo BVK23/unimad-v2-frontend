@@ -16,7 +16,7 @@ const InterviewingStageModal: React.FC<InterviewingStageModalProps> = ({ job, on
     role="presentation"
   >
     <div
-      className="w-full max-w-md rounded-3xl border border-slate-200 bg-white p-6 shadow-2xl dark:border-slate-800 dark:bg-[#1a1a1a]"
+      className="w-full max-w-md rounded-3xl border border-slate-200 bg-white p-6 shadow-2xl dark:border-slate-800 dark:bg-slate-900"
       onClick={e => e.stopPropagation()}
       role="dialog"
       aria-modal="true"
@@ -24,7 +24,7 @@ const InterviewingStageModal: React.FC<InterviewingStageModalProps> = ({ job, on
     >
       <div className="flex items-start justify-between gap-4">
         <div>
-          <p className="text-xs font-semibold uppercase tracking-wider text-blue-600 dark:text-blue-400">Interview stage</p>
+          <p className="text-xs font-semibold uppercase tracking-wider text-brand-600 dark:text-brand-400">Interview stage</p>
           <h2 id="interviewing-stage-title" className="mt-1 text-xl font-semibold text-slate-900 dark:text-white">
             {job.role} at {job.company}
           </h2>
@@ -48,7 +48,7 @@ const InterviewingStageModal: React.FC<InterviewingStageModalProps> = ({ job, on
         <button
           type="button"
           onClick={onBuildVpd}
-          className="flex w-full items-center justify-center gap-2 rounded-xl bg-blue-600 py-3 text-sm font-semibold text-white shadow-md shadow-blue-500/20 transition-all hover:bg-blue-700 active:scale-[0.99]"
+          className="flex w-full items-center justify-center gap-2 rounded-xl bg-brand-600 py-3 text-sm font-semibold text-white shadow-md shadow-brand-500/20 transition-all hover:bg-brand-700 active:scale-[0.99]"
         >
           <Sparkles size={16} />
           Build your VPD
@@ -56,7 +56,7 @@ const InterviewingStageModal: React.FC<InterviewingStageModalProps> = ({ job, on
         <button
           type="button"
           onClick={onStartInterviewPrep}
-          className="flex w-full items-center justify-center gap-2 rounded-xl border border-slate-200 bg-white py-3 text-sm font-semibold text-slate-800 transition-all hover:border-blue-300 hover:bg-blue-50 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-100 dark:hover:border-blue-600 dark:hover:bg-blue-950/40"
+          className="flex w-full items-center justify-center gap-2 rounded-xl border border-slate-200 bg-white py-3 text-sm font-semibold text-slate-800 transition-all hover:border-brand-300 hover:bg-brand-50 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-100 dark:hover:border-brand-600 dark:hover:bg-brand-950/40"
         >
           <Mic2 size={16} />
           Start interview prep

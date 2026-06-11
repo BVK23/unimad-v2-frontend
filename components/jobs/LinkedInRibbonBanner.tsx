@@ -8,7 +8,7 @@ interface LinkedInRibbonBannerProps {
 
 export default function LinkedInRibbonBanner({ onNavigateToStudio }: LinkedInRibbonBannerProps) {
   return (
-    <div className="linkedin-ribbon relative w-full overflow-hidden border-y border-[#0a66c2]/25 bg-[#0a66c2]">
+    <div className="linkedin-ribbon relative w-full overflow-hidden border-y border-brand-600/25 bg-brand-600">
       <span className="linkedin-ribbon-shimmer pointer-events-none absolute inset-0" aria-hidden />
       <div className="relative z-10 mx-auto flex max-w-[1400px] items-center justify-between gap-4 px-6 py-2.5 sm:py-3">
         <p className="min-w-0 flex-1 text-center text-[13px] font-medium leading-snug text-white sm:text-left">

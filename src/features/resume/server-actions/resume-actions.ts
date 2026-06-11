@@ -165,10 +165,17 @@ export async function generateResume(jobData?: GenerateResumeParams): Promise<{ 
   }
 
   if (!res.ok) {
-    throw new Error(data?.error ?? "Failed to generate resume");
+    const message =
+      (typeof data?.error === "string" && data.error) || (typeof data?.message === "string" && data.message) || "Failed to generate resume";
+    throw new Error(message);
   }
 
-  return data as { id: string };
+  const id = data?.id != null ? String(data.id) : "";
+  if (!id) {
+    throw new Error("Resume was created but no ID was returned.");
+  }
+
+  return { id };
 }
 
 /**

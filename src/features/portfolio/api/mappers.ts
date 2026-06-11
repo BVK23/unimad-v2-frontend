@@ -183,14 +183,16 @@ export function mapBackendPortfolioToFrontend(dto: Record<string, unknown>): Por
     )
   );
 
+  const profile = Object.keys(documentProfile).length ? mapProfile(documentProfile) : mapLegacyProfile(fallbackProfile);
+
   return {
     id: String(dto.portfolio_id ?? dto.id ?? ""),
-    title: String(dto.name ?? "Untitled Portfolio"),
+    title: profile.name,
     lastModified: toDate(dto.updated_at),
     slug: typeof dto.slug === "string" && dto.slug.trim() ? dto.slug.trim() : undefined,
     isBase: dto.is_base === true || dto.isBase === true,
     themeMode: dto.themeMode === "dark" ? "dark" : "light",
-    profile: Object.keys(documentProfile).length ? mapProfile(documentProfile) : mapLegacyProfile(fallbackProfile),
+    profile,
     items,
   };
 }
@@ -201,7 +203,7 @@ export function mapFrontendPortfolioToBackend(portfolio: PortfolioData): Record<
   return {
     portfolio_id: portfolio.id,
     id: portfolio.id,
-    name: portfolio.title,
+    name: syncedProfile.name,
     is_base: Boolean(portfolio.isBase),
     profile: {
       name: syncedProfile.name,

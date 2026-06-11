@@ -19,7 +19,7 @@ interface JobDetailsModalProps {
 const statusColors: Record<ApplicationStatus, string> = {
   draft: "bg-slate-200 text-slate-700 dark:bg-slate-700 dark:text-slate-300",
   applied: "bg-slate-500 text-white",
-  interviewing: "bg-blue-500 text-white",
+  interviewing: "bg-brand-500 text-white",
   offer: "bg-green-500 text-white",
   rejected: "bg-red-500 text-white",
 };
@@ -72,7 +72,7 @@ const JobDetailsModal: React.FC<JobDetailsModalProps> = ({
 
   return (
     <div className="fixed inset-0 bg-black/50 backdrop-blur-sm z-40 flex items-center justify-center p-4 animate-in fade-in duration-200">
-      <div className="bg-white dark:bg-[#1a1a1a] w-full max-w-3xl max-h-[90vh] rounded-3xl shadow-2xl overflow-hidden flex flex-col border border-slate-200 dark:border-slate-800 animate-in zoom-in-95 duration-200">
+      <div className="bg-white dark:bg-slate-900 w-full max-w-3xl max-h-[90vh] rounded-3xl shadow-2xl overflow-hidden flex flex-col border border-slate-200 dark:border-slate-800 animate-in zoom-in-95 duration-200">
         {/* Header */}
         <div className="p-6 border-b border-slate-100 dark:border-slate-800 flex justify-between items-start bg-slate-50/50 dark:bg-slate-900/50">
           <div className="flex gap-4">
@@ -87,7 +87,7 @@ const JobDetailsModal: React.FC<JobDetailsModalProps> = ({
                   onError={() => setLogoError(true)}
                 />
               ) : (
-                <div className="w-full h-full rounded-xl bg-gradient-to-br from-blue-500 via-purple-500 to-pink-500 flex items-center justify-center">
+                <div className="w-full h-full rounded-xl bg-gradient-to-br from-brand-500 via-purple-500 to-pink-500 flex items-center justify-center">
                   <span className="text-white font-bold text-2xl">{job.company?.charAt(0)?.toUpperCase() || "?"}</span>
                 </div>
               )}
@@ -111,7 +111,7 @@ const JobDetailsModal: React.FC<JobDetailsModalProps> = ({
                                     px-4 py-2 rounded-lg text-sm font-medium border transition-all flex items-center gap-2
                                     ${
                                       isSaved
-                                        ? "bg-blue-50 dark:bg-blue-900/20 text-blue-600 dark:text-blue-400 border-blue-200 dark:border-blue-800"
+                                        ? "bg-brand-50 dark:bg-brand-900/20 text-brand-600 dark:text-brand-400 border-brand-200 dark:border-brand-800"
                                         : "bg-white dark:bg-slate-800 text-slate-600 dark:text-slate-300 border-slate-200 dark:border-slate-700 hover:bg-slate-50 dark:hover:bg-slate-700"
                                     }
                                 `}
@@ -140,7 +140,7 @@ const JobDetailsModal: React.FC<JobDetailsModalProps> = ({
                         }}
                         className={`w-full px-4 py-3 text-left text-sm font-medium transition-colors hover:bg-slate-50 dark:hover:bg-slate-700 ${
                           job.applicationStatus === status
-                            ? "bg-blue-50 text-blue-600 dark:bg-blue-900/20 dark:text-blue-400"
+                            ? "bg-brand-50 text-brand-600 dark:bg-brand-900/20 dark:text-brand-400"
                             : "text-slate-700 dark:text-slate-200"
                         }`}
                       >
@@ -206,16 +206,16 @@ const JobDetailsModal: React.FC<JobDetailsModalProps> = ({
         </div>
 
         {/* Footer Actions */}
-        <div className="p-6 border-t border-slate-100 dark:border-slate-800 bg-white dark:bg-[#1a1a1a] flex items-center gap-4">
+        <div className="p-6 border-t border-slate-100 dark:border-slate-800 bg-white dark:bg-slate-900 flex items-center gap-4">
           <button
             onClick={() => setShowPrepareModal(true)}
             className="flex-1 py-3 bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 hover:bg-slate-50 dark:hover:bg-slate-700 text-slate-900 dark:text-white font-medium rounded-xl transition-all shadow-sm flex items-center justify-center gap-2 active:scale-95"
           >
-            <FileText size={18} className="text-blue-500" /> Prepare Application
+            <FileText size={18} className="text-brand-500" /> Prepare Application
           </button>
           <button
             onClick={() => onApply && onApply(job)}
-            className="flex-1 py-3 bg-blue-600 hover:bg-blue-700 text-white font-medium rounded-xl shadow-lg shadow-blue-500/20 transition-all flex items-center justify-center gap-2 active:scale-95"
+            className="flex-1 py-3 bg-brand-600 hover:bg-brand-700 text-white font-medium rounded-xl shadow-lg shadow-brand-500/20 transition-all flex items-center justify-center gap-2 active:scale-95"
           >
             Apply Now <ExternalLink size={18} />
           </button>

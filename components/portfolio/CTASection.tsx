@@ -50,7 +50,7 @@ const CTASection: React.FC<CTASectionProps> = ({ variant = "contact", data }) =>
 
   return (
     <section className="py-24 px-6 max-w-7xl mx-auto">
-      <div className="bg-slate-900 dark:bg-brand-950 rounded-[3rem] overflow-hidden shadow-2xl flex flex-col lg:flex-row">
+      <div className="bg-slate-900 dark:bg-brand-900 rounded-[3rem] overflow-hidden shadow-2xl flex flex-col lg:flex-row">
         <div className="p-12 lg:p-20 lg:w-1/2 space-y-12">
           <div className="space-y-4">
             <h2 className="text-4xl md:text-5xl font-bold text-white leading-tight">

@@ -126,7 +126,7 @@ export default function UniboardShell({ children, userData }: { children: React.
   ];
 
   return (
-    <div className="flex h-screen bg-slate-50 dark:bg-[#0a0a0a] font-sans text-slate-900 dark:text-slate-100 text-[13px] transition-colors duration-300">
+    <div className="flex h-screen bg-slate-50 dark:bg-slate-950 font-sans text-slate-900 dark:text-slate-100 text-[13px] transition-colors duration-300">
       <Suspense fallback={null}>
         <AdkChatProvider userId={adkUserId}>
           <ChatSidebar incomingRequest={pendingAIRequest} onRequestHandled={() => setPendingAIRequest(null)} />
@@ -134,7 +134,7 @@ export default function UniboardShell({ children, userData }: { children: React.
       </Suspense>
 
       <div className="flex-1 flex flex-col h-full overflow-hidden">
-        <header className="h-16 min-h-[4rem] bg-white/80 dark:bg-[#0a0a0a]/80 backdrop-blur-md border-b border-slate-100 dark:border-white/5 sticky top-0 z-30 flex-none font-sans transition-colors">
+        <header className="h-16 min-h-[4rem] bg-white/80 dark:bg-slate-950/80 backdrop-blur-md border-b border-slate-100 dark:border-white/5 sticky top-0 z-30 flex-none font-sans transition-colors">
           <div className="flex h-full w-full items-center justify-between gap-4 px-6">
             <nav className="flex min-w-0 flex-1 items-center gap-2 overflow-x-auto no-scrollbar">
               {navItems.map(({ href, label }) => {

@@ -95,7 +95,7 @@ function TrackerColumn({
           <button
             type="button"
             onClick={() => onAddClick(status)}
-            className="flex w-full items-center justify-center gap-2 rounded-xl border-2 border-dashed border-slate-200 p-3 text-xs font-medium text-slate-400 transition-colors hover:border-blue-300 hover:bg-blue-50 hover:text-blue-500 dark:border-slate-800 dark:hover:border-blue-700 dark:hover:bg-blue-900/10"
+            className="flex w-full items-center justify-center gap-2 rounded-xl border-2 border-dashed border-slate-200 p-3 text-xs font-medium text-slate-400 transition-colors hover:border-brand-300 hover:bg-brand-50 hover:text-brand-500 dark:border-slate-800 dark:hover:border-brand-700 dark:hover:bg-brand-900/10"
           >
             <Plus size={14} /> Add Application
           </button>
@@ -357,7 +357,7 @@ const ApplicationTracker: React.FC<ApplicationTrackerProps> = ({
         <TrackerColumn
           title="Interviewing"
           status="interviewing"
-          statusColor="bg-blue-500"
+          statusColor="bg-brand-500"
           columnApps={appsByStatus.get("interviewing") ?? []}
           {...columnProps}
         />
@@ -417,7 +417,7 @@ const ApplicationTracker: React.FC<ApplicationTrackerProps> = ({
 
       {showRejectedModal && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4 backdrop-blur-sm">
-          <div className="flex max-h-[80vh] w-full max-w-2xl flex-col rounded-3xl border border-slate-200 bg-white p-8 shadow-2xl dark:border-slate-800 dark:bg-[#1a1a1a]">
+          <div className="flex max-h-[80vh] w-full max-w-2xl flex-col rounded-3xl border border-slate-200 bg-white p-8 shadow-2xl dark:border-slate-800 dark:bg-slate-900">
             <div className="mb-6 flex items-center justify-between">
               <h2 className="flex items-center gap-2 text-2xl font-semibold text-slate-900 dark:text-white">
                 <Trash2 className="text-red-500" /> Rejected

@@ -384,9 +384,9 @@ const InterviewPrep: React.FC<InterviewPrepProps> = ({
       )}
 
       <div className="relative mb-10 overflow-hidden rounded-3xl border border-slate-800 bg-[#0B1121] p-10 text-white shadow-2xl">
-        <div className="pointer-events-none absolute -right-32 -top-32 h-[500px] w-[500px] rounded-full bg-blue-600/20 blur-[100px]" />
+        <div className="pointer-events-none absolute -right-32 -top-32 h-[500px] w-[500px] rounded-full bg-brand-600/20 blur-[100px]" />
         <div className="relative z-10 max-w-2xl">
-          <div className="mb-6 inline-flex items-center gap-2 rounded-full border border-blue-500/20 bg-blue-500/10 px-3 py-1 text-xs font-medium text-blue-400">
+          <div className="mb-6 inline-flex items-center gap-2 rounded-full border border-brand-500/20 bg-brand-500/10 px-3 py-1 text-xs font-medium text-brand-400">
             <Bot size={12} fill="currentColor" /> AI Interview Coach
           </div>
           <h2 className="mb-4 text-4xl font-medium tracking-tight">Ace Your Next Interview</h2>
@@ -397,7 +397,7 @@ const InterviewPrep: React.FC<InterviewPrepProps> = ({
           <button
             type="button"
             onClick={() => navigate({ view: "setup", setup: "1" })}
-            className="flex items-center gap-2.5 rounded-xl bg-blue-600 px-8 py-3.5 font-medium text-white shadow-lg shadow-blue-600/20 transition-all hover:bg-blue-500 active:scale-95"
+            className="flex items-center gap-2.5 rounded-xl bg-brand-600 px-8 py-3.5 font-medium text-white shadow-lg shadow-brand-600/20 transition-all hover:bg-brand-500 active:scale-95"
           >
             <Mic size={20} /> Start New Session
           </button>
@@ -443,7 +443,7 @@ const InterviewPrep: React.FC<InterviewPrepProps> = ({
                   });
                 }
               }}
-              className="flex cursor-pointer items-center justify-between rounded-xl border border-slate-200 bg-white p-4 transition-all hover:shadow-md dark:border-slate-800 dark:bg-[#1a1a1a]"
+              className="flex cursor-pointer items-center justify-between rounded-xl border border-slate-200 bg-white p-4 transition-all hover:shadow-md dark:border-slate-800 dark:bg-slate-900"
             >
               <div className="flex items-center gap-4">
                 <div className="flex h-12 w-12 items-center justify-center overflow-hidden rounded-lg border border-slate-100 bg-slate-50 text-lg font-medium text-slate-500 dark:border-slate-800 dark:bg-slate-900">

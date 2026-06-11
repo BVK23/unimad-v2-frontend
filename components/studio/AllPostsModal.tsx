@@ -28,7 +28,7 @@ const AllPostsModal: React.FC<AllPostsModalProps> = ({ onClose, initialTab, sche
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 p-4 backdrop-blur-sm animate-in fade-in duration-200">
-      <div className="flex h-[80vh] w-full max-w-3xl flex-col overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-2xl animate-in zoom-in-95 duration-200 dark:border-slate-800 dark:bg-[#1a1a1a]">
+      <div className="flex h-[80vh] w-full max-w-3xl flex-col overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-2xl animate-in zoom-in-95 duration-200 dark:border-slate-800 dark:bg-slate-900">
         <div className="flex items-center justify-between border-b border-slate-100 p-6 dark:border-slate-800">
           <div className="flex min-w-0 flex-wrap items-center gap-3">
             <h2 className="text-xl font-semibold tracking-tight text-slate-900 dark:text-white">All Posts</h2>
@@ -73,7 +73,7 @@ const AllPostsModal: React.FC<AllPostsModalProps> = ({ onClose, initialTab, sche
               value={searchQuery}
               onChange={e => setSearchQuery(e.target.value)}
               placeholder="Search posts..."
-              className="w-full rounded-xl border border-slate-200 bg-slate-50 py-2.5 pl-11 pr-4 text-sm font-medium outline-none focus:ring-2 focus:ring-blue-500/20 dark:border-slate-700 dark:bg-slate-900"
+              className="w-full rounded-xl border border-slate-200 bg-slate-50 py-2.5 pl-11 pr-4 text-sm font-medium outline-none focus:ring-2 focus:ring-brand-500/20 dark:border-slate-700 dark:bg-slate-900"
             />
           </div>
           {activeTab === "history" && (
@@ -82,7 +82,7 @@ const AllPostsModal: React.FC<AllPostsModalProps> = ({ onClose, initialTab, sche
               <select
                 value={filterStatus}
                 onChange={e => setFilterStatus(e.target.value as "All" | "Posted" | "Draft")}
-                className="h-full w-full cursor-pointer appearance-none rounded-xl border border-slate-200 bg-slate-50 py-2.5 pl-8 pr-4 text-sm font-medium outline-none focus:ring-2 focus:ring-blue-500/20 dark:border-slate-700 dark:bg-slate-900"
+                className="h-full w-full cursor-pointer appearance-none rounded-xl border border-slate-200 bg-slate-50 py-2.5 pl-8 pr-4 text-sm font-medium outline-none focus:ring-2 focus:ring-brand-500/20 dark:border-slate-700 dark:bg-slate-900"
               >
                 <option value="All">All Status</option>
                 <option value="Posted">Posted</option>
@@ -92,7 +92,7 @@ const AllPostsModal: React.FC<AllPostsModalProps> = ({ onClose, initialTab, sche
           )}
         </div>
 
-        <div className="flex-1 space-y-3 overflow-y-auto bg-slate-50/30 p-4 dark:bg-[#111]">
+        <div className="flex-1 space-y-3 overflow-y-auto bg-slate-50/30 p-4 dark:bg-slate-900">
           {filteredPosts.length > 0 ? (
             filteredPosts.map(post => {
               const historyPost = post as LinkedInListItem & { status?: string; stats?: string };

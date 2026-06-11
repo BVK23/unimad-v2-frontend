@@ -205,7 +205,7 @@ const StudioMain: React.FC<StudioMainProps> = ({ initialContext }) => {
           <div className="space-y-4">
             <button
               onClick={() => setVpdMode("create")}
-              className="w-full py-4 border-2 border-dashed border-slate-300 dark:border-slate-700 rounded-xl flex flex-col items-center justify-center gap-2 text-slate-500 hover:border-blue-500 hover:text-blue-600 hover:bg-slate-50 dark:hover:bg-slate-900 transition-all font-medium"
+              className="w-full py-4 border-2 border-dashed border-slate-300 dark:border-slate-700 rounded-xl flex flex-col items-center justify-center gap-2 text-slate-500 hover:border-brand-500 hover:text-brand-600 hover:bg-slate-50 dark:hover:bg-slate-900 transition-all font-medium"
             >
               <Plus size={24} />
               <span>Create New VPD</span>
@@ -217,9 +217,9 @@ const StudioMain: React.FC<StudioMainProps> = ({ initialContext }) => {
                 {MOCK_VPDS.map(vpd => (
                   <div
                     key={vpd.id}
-                    className="p-4 bg-slate-50 dark:bg-slate-900 rounded-xl border border-slate-100 dark:border-slate-800 flex items-center gap-3 cursor-pointer hover:border-blue-500 transition-all"
+                    className="p-4 bg-slate-50 dark:bg-slate-900 rounded-xl border border-slate-100 dark:border-slate-800 flex items-center gap-3 cursor-pointer hover:border-brand-500 transition-all"
                   >
-                    <div className="w-10 h-10 rounded-lg bg-blue-100 text-blue-600 flex items-center justify-center">
+                    <div className="w-10 h-10 rounded-lg bg-brand-100 text-brand-600 flex items-center justify-center">
                       <FileText size={20} />
                     </div>
                     <div>
@@ -253,10 +253,10 @@ const StudioMain: React.FC<StudioMainProps> = ({ initialContext }) => {
                 <input
                   value={topicIdea}
                   onChange={e => setTopicIdea(e.target.value)}
-                  className="flex-1 bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-xl px-4 py-3 text-sm font-medium outline-none focus:ring-2 focus:ring-blue-500/20"
+                  className="flex-1 bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-xl px-4 py-3 text-sm font-medium outline-none focus:ring-2 focus:ring-brand-500/20"
                   placeholder="e.g. Learnings from my first design sprint..."
                 />
-                <button className="px-4 bg-blue-50 text-blue-600 rounded-xl hover:bg-blue-100 transition-colors font-medium">
+                <button className="px-4 bg-brand-50 text-brand-600 rounded-xl hover:bg-brand-100 transition-colors font-medium">
                   <Wand2 size={18} />
                 </button>
               </div>
@@ -267,7 +267,7 @@ const StudioMain: React.FC<StudioMainProps> = ({ initialContext }) => {
                 <select
                   value={mood}
                   onChange={e => setMood(e.target.value)}
-                  className="w-full bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-xl px-4 py-3 text-sm font-medium outline-none focus:ring-2 focus:ring-blue-500/20 appearance-none bg-white dark:bg-slate-900"
+                  className="w-full bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-xl px-4 py-3 text-sm font-medium outline-none focus:ring-2 focus:ring-brand-500/20 appearance-none bg-white dark:bg-slate-900"
                 >
                   {MOODS.map(m => (
                     <option key={m} value={m}>
@@ -281,7 +281,7 @@ const StudioMain: React.FC<StudioMainProps> = ({ initialContext }) => {
                 <input
                   value={contentType}
                   onChange={e => setContentType(e.target.value)}
-                  className="w-full bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-xl px-4 py-3 text-sm font-medium outline-none focus:ring-2 focus:ring-blue-500/20"
+                  className="w-full bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-xl px-4 py-3 text-sm font-medium outline-none focus:ring-2 focus:ring-brand-500/20"
                   placeholder="e.g. Career Update"
                 />
               </div>
@@ -290,8 +290,8 @@ const StudioMain: React.FC<StudioMainProps> = ({ initialContext }) => {
             {/* Media Upload Options */}
             <div>
               <label className="block text-xs font-medium text-slate-500 uppercase mb-2">Media Attachment</label>
-              <button className="w-full py-8 border-2 border-dashed border-slate-300 dark:border-slate-700 rounded-xl flex flex-col items-center justify-center gap-2 text-slate-400 hover:border-blue-500 hover:text-blue-500 hover:bg-slate-50 dark:hover:bg-slate-900 transition-all group">
-                <div className="p-3 bg-slate-100 dark:bg-slate-800 rounded-full group-hover:bg-blue-100 dark:group-hover:bg-blue-900/30 transition-colors">
+              <button className="w-full py-8 border-2 border-dashed border-slate-300 dark:border-slate-700 rounded-xl flex flex-col items-center justify-center gap-2 text-slate-400 hover:border-brand-500 hover:text-brand-500 hover:bg-slate-50 dark:hover:bg-slate-900 transition-all group">
+                <div className="p-3 bg-slate-100 dark:bg-slate-800 rounded-full group-hover:bg-brand-100 dark:group-hover:bg-brand-900/30 transition-colors">
                   <Upload size={20} />
                 </div>
                 <span className="text-xs font-medium">Click to upload media</span>
@@ -311,7 +311,7 @@ const StudioMain: React.FC<StudioMainProps> = ({ initialContext }) => {
                 onClick={() => handleViewAll("scheduled")}
                 className="p-6 bg-white border border-slate-200 rounded-2xl flex flex-col items-center justify-center text-center hover:shadow-md cursor-pointer transition-all h-full"
               >
-                <div className="w-12 h-12 rounded-full bg-blue-50 text-blue-600 flex items-center justify-center mb-3">
+                <div className="w-12 h-12 rounded-full bg-brand-50 text-brand-600 flex items-center justify-center mb-3">
                   <Calendar size={20} />
                 </div>
                 <span className="text-base font-semibold text-slate-900">Scheduled</span>
@@ -340,7 +340,7 @@ const StudioMain: React.FC<StudioMainProps> = ({ initialContext }) => {
               <input
                 value={role}
                 onChange={e => setRole(e.target.value)}
-                className="w-full bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-xl px-4 py-3 text-sm font-medium outline-none focus:ring-2 focus:ring-blue-500/20"
+                className="w-full bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-xl px-4 py-3 text-sm font-medium outline-none focus:ring-2 focus:ring-brand-500/20"
                 placeholder="e.g. Product Designer"
               />
             </div>
@@ -349,7 +349,7 @@ const StudioMain: React.FC<StudioMainProps> = ({ initialContext }) => {
               <input
                 value={company}
                 onChange={e => setCompany(e.target.value)}
-                className="w-full bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-xl px-4 py-3 text-sm font-medium outline-none focus:ring-2 focus:ring-blue-500/20"
+                className="w-full bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-xl px-4 py-3 text-sm font-medium outline-none focus:ring-2 focus:ring-brand-500/20"
                 placeholder="e.g. Spotify"
               />
             </div>
@@ -363,7 +363,7 @@ const StudioMain: React.FC<StudioMainProps> = ({ initialContext }) => {
             <textarea
               value={jobDescription}
               onChange={e => setJobDescription(e.target.value)}
-              className="w-full bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-xl px-4 py-3 text-sm font-medium h-32 resize-none outline-none focus:ring-2 focus:ring-blue-500/20"
+              className="w-full bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-xl px-4 py-3 text-sm font-medium h-32 resize-none outline-none focus:ring-2 focus:ring-brand-500/20"
               placeholder="Paste the JD here..."
             />
           </div>
@@ -375,7 +375,7 @@ const StudioMain: React.FC<StudioMainProps> = ({ initialContext }) => {
             <input
               value={managerName}
               onChange={e => setManagerName(e.target.value)}
-              className="w-full bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-xl px-4 py-3 text-sm font-medium outline-none focus:ring-2 focus:ring-blue-500/20"
+              className="w-full bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-xl px-4 py-3 text-sm font-medium outline-none focus:ring-2 focus:ring-brand-500/20"
               placeholder="e.g. John Doe"
             />
           </div>
@@ -387,7 +387,7 @@ const StudioMain: React.FC<StudioMainProps> = ({ initialContext }) => {
             <input
               value={connectionName}
               onChange={e => setConnectionName(e.target.value)}
-              className="w-full bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-xl px-4 py-3 text-sm font-medium outline-none focus:ring-2 focus:ring-blue-500/20"
+              className="w-full bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-xl px-4 py-3 text-sm font-medium outline-none focus:ring-2 focus:ring-brand-500/20"
               placeholder="e.g. Jane Smith"
             />
           </div>
@@ -397,7 +397,7 @@ const StudioMain: React.FC<StudioMainProps> = ({ initialContext }) => {
         <button
           onClick={handleGenerate}
           disabled={isGenerating}
-          className="w-full py-4 bg-blue-600 hover:bg-blue-700 text-white font-medium rounded-xl flex items-center justify-center gap-2 shadow-lg shadow-blue-500/30 transition-all active:scale-95 disabled:opacity-70 disabled:cursor-not-allowed mt-4"
+          className="w-full py-4 bg-brand-600 hover:bg-brand-700 text-white font-medium rounded-xl flex items-center justify-center gap-2 shadow-lg shadow-brand-500/30 transition-all active:scale-95 disabled:opacity-70 disabled:cursor-not-allowed mt-4"
         >
           {isGenerating ? <Wand2 size={18} className="animate-spin" /> : <Wand2 size={18} fill="currentColor" />}
           {isGenerating ? " crafting..." : "Generate Draft"}
@@ -407,10 +407,10 @@ const StudioMain: React.FC<StudioMainProps> = ({ initialContext }) => {
   };
 
   return (
-    <div className="flex-1 bg-white dark:bg-[#0a0a0a] h-full overflow-hidden font-sans flex flex-col">
+    <div className="flex-1 bg-white dark:bg-slate-950 h-full overflow-hidden font-sans flex flex-col">
       <div className="flex-1 flex flex-col lg:flex-row overflow-hidden">
         {/* LEFT: Input / Generator */}
-        <div className="w-full lg:w-[45%] h-1/2 lg:h-full bg-white dark:bg-[#111] border-b lg:border-b-0 lg:border-r border-slate-100 dark:border-slate-800 p-8 overflow-y-auto">
+        <div className="w-full lg:w-[45%] h-1/2 lg:h-full bg-white dark:bg-slate-900 border-b lg:border-b-0 lg:border-r border-slate-100 dark:border-slate-800 p-8 overflow-y-auto">
           <div className="mb-8">
             {/* Typography Update: 20px Header, 14px Subtext */}
             <h1 className="text-[20px] font-semibold text-slate-900 dark:text-white mb-2 font-['Onest']">Content Lab (UPDATED)</h1>
@@ -421,9 +421,9 @@ const StudioMain: React.FC<StudioMainProps> = ({ initialContext }) => {
         </div>
 
         {/* RIGHT: Preview + Tabs */}
-        <div className="flex-1 bg-slate-100 dark:bg-[#050505] flex flex-col relative">
+        <div className="flex-1 bg-slate-100 dark:bg-slate-950 flex flex-col relative">
           {/* Top Bar for Tabs - Sticky */}
-          <div className="w-full px-8 py-6 border-b border-slate-200/50 dark:border-slate-800/50 bg-slate-100/50 dark:bg-[#050505] backdrop-blur-sm sticky top-0 z-20">
+          <div className="w-full px-8 py-6 border-b border-slate-200/50 dark:border-slate-800/50 bg-slate-100/50 dark:bg-slate-950 backdrop-blur-sm sticky top-0 z-20">
             {/* Pill Tabs - Fully Rounded */}
             <div className="inline-flex p-1 bg-slate-200/50 dark:bg-slate-900 rounded-full">
               {TOPICS.map(t => (
@@ -469,7 +469,7 @@ const StudioMain: React.FC<StudioMainProps> = ({ initialContext }) => {
               </div>
               {/* Conditional Preview Rendering */}
               {selectedTopic === "vpd" && vpdMode === "create" ? (
-                <div className="absolute inset-0 bg-white dark:bg-[#050505] z-10 flex flex-col">
+                <div className="absolute inset-0 bg-white dark:bg-slate-950 z-10 flex flex-col">
                   <VPDEditor />
                 </div>
               ) : selectedTopic === "linkedin-post" ? (
@@ -481,7 +481,7 @@ const StudioMain: React.FC<StudioMainProps> = ({ initialContext }) => {
                         AB
                       </div>
                       <div>
-                        <h3 className="font-semibold text-slate-900 text-sm leading-tight hover:text-blue-600 hover:underline cursor-pointer">
+                        <h3 className="font-semibold text-slate-900 text-sm leading-tight hover:text-brand-600 hover:underline cursor-pointer">
                           Abhi B.
                         </h3>
                         <p className="text-xs text-slate-500 leading-tight mt-0.5">Product Designer @ Unimad</p>
@@ -501,9 +501,9 @@ const StudioMain: React.FC<StudioMainProps> = ({ initialContext }) => {
                     className="w-full min-h-[160px] text-sm text-slate-800 whitespace-pre-wrap leading-relaxed bg-transparent border-none outline-none resize-none placeholder:text-slate-300 mb-2"
                   />
                   <div className="flex items-center justify-between text-xs text-slate-500 border-b border-slate-100 pb-3 mt-2">
-                    <div className="flex items-center gap-1.5 cursor-pointer hover:text-blue-600 hover:underline">
+                    <div className="flex items-center gap-1.5 cursor-pointer hover:text-brand-600 hover:underline">
                       <div className="flex -space-x-1">
-                        <div className="w-4 h-4 rounded-full bg-blue-500 flex items-center justify-center ring-2 ring-white">
+                        <div className="w-4 h-4 rounded-full bg-brand-500 flex items-center justify-center ring-2 ring-white">
                           <ThumbsUp size={8} className="text-white fill-current" />
                         </div>
                         <div className="w-4 h-4 rounded-full bg-red-500 flex items-center justify-center ring-2 ring-white">
@@ -512,7 +512,7 @@ const StudioMain: React.FC<StudioMainProps> = ({ initialContext }) => {
                       </div>
                       <span>1,245</span>
                     </div>
-                    <div className="hover:text-blue-600 hover:underline cursor-pointer">88 comments • 12 reposts</div>
+                    <div className="hover:text-brand-600 hover:underline cursor-pointer">88 comments • 12 reposts</div>
                   </div>
                   <div className="flex items-center justify-between pt-1 px-2">
                     <button className="py-3 px-2 rounded hover:bg-slate-100 flex items-center gap-2 text-slate-600 text-sm font-semibold transition-colors">
@@ -531,7 +531,7 @@ const StudioMain: React.FC<StudioMainProps> = ({ initialContext }) => {
                 </div>
               ) : (
                 /* Plain Text / Document Preview for Others */
-                <div className="bg-white dark:bg-[#111] border border-slate-200 dark:border-slate-800 rounded-xl shadow-lg w-full max-w-xl mx-auto flex flex-col min-h-[600px]">
+                <div className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-xl shadow-lg w-full max-w-xl mx-auto flex flex-col min-h-[600px]">
                   {/* Document Header (PDF Button) */}
                   {selectedTopic === "cover-letter" && (
                     <div className="border-b border-slate-100 dark:border-slate-800 p-4 flex justify-end">

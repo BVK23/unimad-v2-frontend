@@ -45,7 +45,7 @@ const CommunityMain: React.FC = () => {
   };
 
   return (
-    <div className="w-full h-full bg-slate-50 dark:bg-[#0a0a0a] overflow-y-auto overflow-x-hidden">
+    <div className="w-full h-full bg-slate-50 dark:bg-slate-950 overflow-y-auto overflow-x-hidden">
       {showDiscovery && <CommunityDiscoveryModal onClose={() => setShowDiscovery(false)} />}
 
       <div className="max-w-7xl mx-auto px-4 md:px-6 py-4 md:py-6">

@@ -1,12 +1,13 @@
 import React, { useState } from "react";
+import ResumeGenerationOverlay from "@/components/resume/ResumeGenerationOverlay";
 import ResumeThumbnail from "@/components/resume/ResumeThumbnail";
 import { useResumesList } from "@/features/resume/hooks/useResumesList";
 import {
   duplicateResume,
   deleteResume,
+  extractResumePreview,
   generateResume,
   setBaseResume,
-  extractResumeToBaseResume,
 } from "@/features/resume/server-actions/resume-actions";
 import { ResumeData } from "@/types";
 import { useQueryClient } from "@tanstack/react-query";
@@ -32,7 +33,7 @@ import {
 
 interface ResumeDashboardProps {
   onEditResume: (resume: ResumeData) => void;
-  onCreateResume: (type: "scratch" | "jd" | "upload", resumeId?: string) => void;
+  onCreateResume: (type: "scratch" | "jd" | "upload", resumeId?: string) => void | Promise<void>;
 }
 
 const ResumeDashboard: React.FC<ResumeDashboardProps> = ({ onEditResume, onCreateResume }) => {
@@ -62,6 +63,7 @@ const ResumeDashboard: React.FC<ResumeDashboardProps> = ({ onEditResume, onCreat
   const [duplicateResumeId, setDuplicateResumeId] = useState<string | null>(null);
   const [isUploadingFromFile, setIsUploadingFromFile] = useState(false);
   const [uploadError, setUploadError] = useState<string | null>(null);
+  const isCreateFlowBusy = isGenerating || isUploadingFromFile;
 
   const handleDuplicate = async (e: React.MouseEvent, resume: ResumeData) => {
     e.stopPropagation();
@@ -117,18 +119,37 @@ const ResumeDashboard: React.FC<ResumeDashboardProps> = ({ onEditResume, onCreat
     try {
       const formData = new FormData();
       formData.append("resume", uploadFile);
-      const result = await extractResumeToBaseResume(formData);
+      const preview = await extractResumePreview(formData);
 
-      const resumeId = result.resume_id;
-      if (!resumeId) {
-        setUploadError(result.message ?? "No resume was returned. Please try again.");
+      if (preview.status !== "success") {
+        setUploadError(preview.message ?? "We couldn't extract data from your resume. Please try again.");
         return;
       }
 
-      queryClient.invalidateQueries({ queryKey: ["resumes"] });
+      const rawExtracted = preview.extracted_data;
+      const resumeData =
+        rawExtracted && typeof rawExtracted === "object" && "data" in rawExtracted
+          ? (rawExtracted as { data?: Record<string, unknown> }).data
+          : (rawExtracted as Record<string, unknown> | undefined);
+
+      if (!resumeData || !Object.keys(resumeData).length) {
+        setUploadError("We couldn't extract usable sections from that PDF. Try another file or create from scratch.");
+        return;
+      }
+
+      const result = await generateResume({ resumeData });
+      if ("error" in result) {
+        setUploadError(result.error.message ?? "Failed to create resume from upload.");
+        return;
+      }
+      if (!result.id) {
+        setUploadError("Resume was created but no ID was returned. Please refresh and try again.");
+        return;
+      }
+
       resetUploadState();
       setCreateModalState("closed");
-      onCreateResume("upload", resumeId);
+      await onCreateResume("upload", String(result.id));
     } catch (err) {
       setUploadError(err instanceof Error ? err.message : "Failed to process your resume. Please try again.");
     } finally {
@@ -206,14 +227,17 @@ const ResumeDashboard: React.FC<ResumeDashboardProps> = ({ onEditResume, onCreat
         setDuplicateResumeId(result.error.resume_id ?? null);
         return;
       }
-      queryClient.invalidateQueries({ queryKey: ["resumes"] });
+      if (!result.id) {
+        setJdError("Resume was created but no ID was returned. Please refresh and try again.");
+        return;
+      }
       setCreateModalState("closed");
       setJdCompany("");
       setJdRole("");
       setJdText("");
       setJdError(null);
       setDuplicateResumeId(null);
-      onCreateResume("jd", result.id);
+      await onCreateResume("jd", String(result.id));
     } catch (err) {
       setJdError(err instanceof Error ? err.message : "Failed to generate resume. Please try again.");
     } finally {
@@ -381,13 +405,15 @@ const ResumeDashboard: React.FC<ResumeDashboardProps> = ({ onEditResume, onCreat
           onClick={e => e.stopPropagation()}
         >
           <div className="bg-white rounded-2xl w-full max-w-2xl shadow-2xl overflow-hidden relative">
+            {isCreateFlowBusy && <ResumeGenerationOverlay variant={isGenerating ? "jd" : "upload"} />}
             {/* Header */}
             <div className="p-6 border-b border-slate-100 flex justify-between items-center bg-white z-10 relative">
               <div className="flex items-center gap-3">
                 {createModalState !== "menu" && (
                   <button
                     onClick={() => setCreateModalState("menu")}
-                    className="p-1 hover:bg-slate-100 rounded-full text-slate-400 hover:text-slate-600 transition-colors"
+                    disabled={isCreateFlowBusy}
+                    className="p-1 hover:bg-slate-100 rounded-full text-slate-400 hover:text-slate-600 transition-colors disabled:opacity-40 disabled:cursor-not-allowed disabled:hover:bg-transparent"
                   >
                     <ArrowLeft size={20} />
                   </button>
@@ -400,12 +426,14 @@ const ResumeDashboard: React.FC<ResumeDashboardProps> = ({ onEditResume, onCreat
               </div>
               <button
                 onClick={() => {
+                  if (isCreateFlowBusy) return;
                   setCreateModalState("closed");
                   setJdError(null);
                   setDuplicateResumeId(null);
                   resetUploadState();
                 }}
-                className="text-slate-400 hover:text-slate-600 p-1 hover:bg-slate-100 rounded-full transition-colors"
+                disabled={isCreateFlowBusy}
+                className="text-slate-400 hover:text-slate-600 p-1 hover:bg-slate-100 rounded-full transition-colors disabled:opacity-40 disabled:cursor-not-allowed disabled:hover:bg-transparent"
               >
                 <X size={20} />
               </button>
@@ -456,26 +484,14 @@ const ResumeDashboard: React.FC<ResumeDashboardProps> = ({ onEditResume, onCreat
                       <Upload size={24} />
                     </div>
                     <h3 className="font-medium text-slate-900 mb-2">Upload Resume</h3>
-                    <p className="text-xs text-slate-500">Upload a PDF to extract into your base resume and edit.</p>
+                    <p className="text-xs text-slate-500">Upload a PDF to extract content and create a new resume.</p>
                   </button>
                 </div>
               )}
 
               {/* 2. TARGET JD FORM */}
               {createModalState === "jd" && (
-                <div className="space-y-4 max-w-lg mx-auto relative">
-                  {isGenerating && (
-                    <div
-                      className="absolute inset-0 bg-white/80 z-10 flex items-center justify-center rounded-lg"
-                      aria-busy="true"
-                      aria-label="Generating resume"
-                    >
-                      <div className="flex flex-col items-center gap-3">
-                        <Loader2 size={32} className="animate-spin text-brand-600" />
-                        <span className="text-sm text-slate-600">Generating your tailored resume…</span>
-                      </div>
-                    </div>
-                  )}
+                <div className="space-y-4 max-w-lg mx-auto">
                   {jdError && (
                     <div className="space-y-2">
                       <div className="p-3 bg-amber-50 border border-amber-200 rounded-lg text-sm text-amber-800 flex items-start gap-2">
@@ -492,7 +508,7 @@ const ResumeDashboard: React.FC<ResumeDashboardProps> = ({ onEditResume, onCreat
                             setJdCompany("");
                             setJdRole("");
                             setJdText("");
-                            onCreateResume("jd", duplicateResumeId);
+                            void onCreateResume("jd", duplicateResumeId);
                           }}
                           className="w-full py-2 text-sm font-medium text-brand-600 hover:text-brand-700 hover:bg-brand-50 rounded-lg transition-colors"
                         >
@@ -544,21 +560,14 @@ const ResumeDashboard: React.FC<ResumeDashboardProps> = ({ onEditResume, onCreat
                   <button
                     disabled={!jdCompany.trim() || !jdRole.trim() || !jdText.trim() || isGenerating}
                     onClick={handleCreateTargetedResume}
-                    className="w-full py-3 bg-brand-600 hover:bg-brand-700 text-white font-medium rounded-lg shadow-md hover:shadow-lg disabled:opacity-50 disabled:cursor-not-allowed transition-all mt-2 flex items-center justify-center gap-2"
+                    className="w-full py-3 bg-brand-600 hover:bg-brand-700 text-white font-medium rounded-lg shadow-md hover:shadow-lg disabled:opacity-50 disabled:cursor-not-allowed transition-all mt-2"
                   >
-                    {isGenerating ? (
-                      <>
-                        <Loader2 size={18} className="animate-spin" />
-                        Generating…
-                      </>
-                    ) : (
-                      "Create Targeted Resume"
-                    )}
+                    Create Targeted Resume
                   </button>
                 </div>
               )}
 
-              {/* 3. UPLOAD FORM (base resume PDF extraction) */}
+              {/* 3. UPLOAD FORM */}
               {createModalState === "upload" && (
                 <div className="max-w-lg mx-auto space-y-6">
                   {uploadError && (
@@ -570,8 +579,8 @@ const ResumeDashboard: React.FC<ResumeDashboardProps> = ({ onEditResume, onCreat
 
                   <div className="space-y-4">
                     <p className="text-sm text-slate-600">
-                      Upload a PDF to extract content into your base resume. We will create or update your base resume and open it in the
-                      editor.
+                      Upload a PDF to extract your experience, education, skills, and projects into a new resume. Your base resume will not
+                      be changed.
                     </p>
                     <label className="block text-sm font-medium text-slate-700">Upload your existing resume (PDF)</label>
                     <label className="border-2 border-dashed border-slate-300 hover:border-brand-400 bg-slate-50 hover:bg-brand-50/30 rounded-xl p-8 text-center transition-all cursor-pointer group block">
@@ -605,16 +614,9 @@ const ResumeDashboard: React.FC<ResumeDashboardProps> = ({ onEditResume, onCreat
                     <button
                       onClick={handleUploadExtract}
                       disabled={!uploadFile || isUploadingFromFile}
-                      className="w-full py-3 bg-brand-600 hover:bg-brand-700 text-white font-medium rounded-lg shadow-md hover:shadow-lg disabled:opacity-50 disabled:cursor-not-allowed transition-all flex items-center justify-center gap-2"
+                      className="w-full py-3 bg-brand-600 hover:bg-brand-700 text-white font-medium rounded-lg shadow-md hover:shadow-lg disabled:opacity-50 disabled:cursor-not-allowed transition-all"
                     >
-                      {isUploadingFromFile ? (
-                        <>
-                          <Loader2 size={18} className="animate-spin" />
-                          Extracting into base resume…
-                        </>
-                      ) : (
-                        "Extract & Open Base Resume"
-                      )}
+                      Extract & Create Resume
                     </button>
                   </div>
                 </div>

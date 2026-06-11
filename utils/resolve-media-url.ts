@@ -1,3 +1,10 @@
+/** Frontend static assets under `public/` — must not be prefixed with the API origin. */
+const FRONTEND_STATIC_PATH_PREFIXES = ["/images/", "/home/", "/assets/", "/fonts/"] as const;
+
+function isFrontendStaticPath(path: string): boolean {
+  return FRONTEND_STATIC_PATH_PREFIXES.some(prefix => path.startsWith(prefix));
+}
+
 /** Turn stored media paths into a browser-loadable absolute URL. */
 export function resolveMediaDisplayUrl(src: string | undefined | null): string {
   if (!src?.trim()) return "";
@@ -10,6 +17,10 @@ export function resolveMediaDisplayUrl(src: string | undefined | null): string {
   }
 
   if (trimmed.startsWith("data:") || /^https?:\/\//i.test(trimmed)) {
+    return trimmed;
+  }
+
+  if (trimmed.startsWith("/") && isFrontendStaticPath(trimmed)) {
     return trimmed;
   }
 

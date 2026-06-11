@@ -36,7 +36,7 @@ const InterviewReportModal: React.FC<InterviewReportModalProps> = ({ session, on
 
   return (
     <div className="fixed inset-0 z-50 bg-black/50 backdrop-blur-sm flex items-center justify-center p-4 animate-in fade-in duration-200">
-      <div className="bg-white dark:bg-[#1a1a1a] w-full max-w-4xl h-[85vh] rounded-3xl shadow-2xl overflow-hidden flex flex-col border border-slate-200 dark:border-slate-800 animate-in zoom-in-95 duration-200">
+      <div className="bg-white dark:bg-slate-900 w-full max-w-4xl h-[85vh] rounded-3xl shadow-2xl overflow-hidden flex flex-col border border-slate-200 dark:border-slate-800 animate-in zoom-in-95 duration-200">
         {/* Header */}
         <div className="p-6 border-b border-slate-100 dark:border-slate-800 flex justify-between items-start bg-slate-50/50 dark:bg-slate-900/50">
           <div>
@@ -99,8 +99,8 @@ const InterviewReportModal: React.FC<InterviewReportModalProps> = ({ session, on
           </div>
 
           {/* Overall feedback */}
-          <div className="bg-blue-50 dark:bg-blue-900/10 border border-blue-100 dark:border-blue-800/30 p-6 rounded-2xl">
-            <h4 className="flex items-center gap-2 font-medium text-blue-900 dark:text-blue-200 mb-2">
+          <div className="bg-brand-50 dark:bg-brand-900/10 border border-brand-100 dark:border-brand-800/30 p-6 rounded-2xl">
+            <h4 className="flex items-center gap-2 font-medium text-brand-900 dark:text-brand-200 mb-2">
               <span className="text-lg">💡</span> AI Coach Feedback
             </h4>
             <p className="text-slate-700 dark:text-slate-300 leading-relaxed text-sm">
@@ -116,7 +116,7 @@ const InterviewReportModal: React.FC<InterviewReportModalProps> = ({ session, on
               {mockTranscript.map((item, idx) => (
                 <div
                   key={idx}
-                  className="group border border-slate-200 dark:border-slate-800 rounded-xl p-5 hover:border-blue-200 dark:hover:border-blue-700 transition-colors bg-white dark:bg-slate-900/50"
+                  className="group border border-slate-200 dark:border-slate-800 rounded-xl p-5 hover:border-brand-200 dark:hover:border-brand-700 transition-colors bg-white dark:bg-slate-900/50"
                 >
                   <div className="flex justify-between items-start mb-3">
                     <h4 className="font-medium text-slate-900 dark:text-white text-sm">
@@ -131,7 +131,7 @@ const InterviewReportModal: React.FC<InterviewReportModalProps> = ({ session, on
                   <p className="text-slate-600 dark:text-slate-400 text-sm mb-3 pl-3 border-l-2 border-slate-200 dark:border-slate-700 font-mono bg-slate-50 dark:bg-black/20 p-2 rounded-r-lg">
                     &quot;{item.a}&quot;
                   </p>
-                  <div className="flex items-start gap-2 text-xs text-blue-600 dark:text-blue-400 bg-blue-50 dark:bg-blue-900/20 px-3 py-2 rounded-lg">
+                  <div className="flex items-start gap-2 text-xs text-brand-600 dark:text-brand-400 bg-brand-50 dark:bg-brand-900/20 px-3 py-2 rounded-lg">
                     <span className="font-bold">Feedback:</span> {item.feedback}
                   </div>
                 </div>
@@ -150,7 +150,7 @@ const InterviewReportModal: React.FC<InterviewReportModalProps> = ({ session, on
           </button>
           <button
             onClick={onRetake}
-            className="px-6 py-2.5 bg-blue-600 hover:bg-blue-700 text-white font-medium rounded-xl shadow-lg shadow-blue-600/20 flex items-center gap-2 transition-all active:scale-95"
+            className="px-6 py-2.5 bg-brand-600 hover:bg-brand-700 text-white font-medium rounded-xl shadow-lg shadow-brand-600/20 flex items-center gap-2 transition-all active:scale-95"
           >
             <RotateCcw size={18} /> Retake Interview
           </button>

@@ -47,7 +47,7 @@ const CommunityPage: React.FC<CommunityPageProps> = ({ communityId, onBack, onVi
         <div className="px-6 pb-6">
           <div className="flex justify-between items-start">
             <div className="flex gap-4 -mt-6">
-              <div className="w-20 h-20 rounded-2xl bg-white dark:bg-[#1a1a1a] p-1 shadow-sm">
+              <div className="w-20 h-20 rounded-2xl bg-white dark:bg-slate-900 p-1 shadow-sm">
                 <div className="w-full h-full rounded-xl bg-slate-50 dark:bg-white/5 flex items-center justify-center text-4xl border border-slate-100 dark:border-white/5">
                   {communityInfo.icon}
                 </div>

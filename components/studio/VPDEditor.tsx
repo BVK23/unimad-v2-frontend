@@ -170,9 +170,9 @@ const VPDEditor: React.FC<VPDEditorProps> = ({ initialItems = INITIAL_VPD_ITEMS 
   return (
     <div className="flex-1 h-full relative flex flex-col">
       {/* Toolbar / Header */}
-      <div className="flex items-center justify-between p-4 border-b border-slate-200 dark:border-slate-800 bg-white dark:bg-[#111]">
+      <div className="flex items-center justify-between p-4 border-b border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900">
         <div className="flex items-center gap-2">
-          <div className="p-2 bg-blue-100 text-blue-600 rounded-lg">
+          <div className="p-2 bg-brand-100 text-brand-600 rounded-lg">
             <FileText size={20} />
           </div>
           <div>
@@ -199,7 +199,7 @@ const VPDEditor: React.FC<VPDEditorProps> = ({ initialItems = INITIAL_VPD_ITEMS 
       </div>
 
       {/* Canvas */}
-      <div className="flex-1 overflow-y-auto p-8 bg-slate-50/50 dark:bg-[#050505]">
+      <div className="flex-1 overflow-y-auto p-8 bg-slate-50/50 dark:bg-slate-950">
         <div ref={gridRef} className="grid grid-cols-1 md:grid-cols-3 gap-6 max-w-4xl mx-auto pb-32">
           <AnimatePresence>
             {items.map((item, index) => (
@@ -217,9 +217,9 @@ const VPDEditor: React.FC<VPDEditorProps> = ({ initialItems = INITIAL_VPD_ITEMS 
                 className={`
                                     ${getSpanClass(item.span)} 
                                     relative group rounded-2xl transition-all duration-200
-                                    ${isEditMode ? "hover:ring-2 hover:ring-blue-500/50 cursor-grab active:cursor-grabbing" : ""}
+                                    ${isEditMode ? "hover:ring-2 hover:ring-brand-500/50 cursor-grab active:cursor-grabbing" : ""}
                                     ${draggedItemIndex === index ? "opacity-40 scale-95" : "opacity-100"}
-                                    bg-white dark:bg-[#111] shadow-sm border border-slate-200 dark:border-slate-800 overflow-hidden
+                                    bg-white dark:bg-slate-900 shadow-sm border border-slate-200 dark:border-slate-800 overflow-hidden
                                 `}
               >
                 {/* Delete Controls */}
@@ -292,10 +292,10 @@ const VPDEditor: React.FC<VPDEditorProps> = ({ initialItems = INITIAL_VPD_ITEMS 
                   {item.type === "link" && (
                     <div className="p-6 h-full flex flex-col justify-between hover:bg-slate-50 dark:hover:bg-slate-900 transition-colors cursor-pointer group/link">
                       <div className="flex items-center justify-between mb-4">
-                        <div className="p-2 bg-blue-100 dark:bg-blue-900/30 text-blue-600 rounded-lg">
+                        <div className="p-2 bg-brand-100 dark:bg-brand-900/30 text-brand-600 rounded-lg">
                           <LinkIcon size={20} />
                         </div>
-                        <ExternalLink size={16} className="text-slate-400 group-hover/link:text-blue-500" />
+                        <ExternalLink size={16} className="text-slate-400 group-hover/link:text-brand-500" />
                       </div>
                       <div>
                         <h4 className="font-medium text-slate-900 dark:text-white">External Link</h4>
@@ -330,7 +330,7 @@ const VPDEditor: React.FC<VPDEditorProps> = ({ initialItems = INITIAL_VPD_ITEMS 
       </div>
 
       {/* Floating Action Bar */}
-      <div className="absolute bottom-8 left-1/2 -translate-x-1/2 bg-white dark:bg-[#1a1a1a] shadow-xl border border-slate-200 dark:border-slate-800 rounded-full px-4 py-2 flex items-center gap-2 z-40">
+      <div className="absolute bottom-8 left-1/2 -translate-x-1/2 bg-white dark:bg-slate-900 shadow-xl border border-slate-200 dark:border-slate-800 rounded-full px-4 py-2 flex items-center gap-2 z-40">
         <button
           onClick={() => addItem("text")}
           className="p-2 hover:bg-slate-100 dark:hover:bg-slate-800 rounded-full text-slate-600 dark:text-slate-300 transition-colors"

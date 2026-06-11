@@ -56,11 +56,11 @@ import {
   Table2,
   Code2,
   Figma,
+  Check,
 } from "lucide-react";
 import { useGridResize } from "../hooks/useGridResize";
 import { PortfolioItem, UserProfile, ContentType, PortfolioData, ContactButton } from "../types";
 import BlockRenderer from "./BlockRenderer";
-import FloatingToolbar from "./FloatingToolbar";
 import ProjectDetailView from "./ProjectDetailView";
 import { PortfolioAdkBlockHighlight } from "./portfolio/PortfolioAdkBlockHighlight";
 import PortfolioImage from "./portfolio/PortfolioImage";
@@ -136,13 +136,18 @@ const buildLocationButtonUrl = (location: string) => {
   return `https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(trimmed)}`;
 };
 
+const hasStoredContactButtons = (profile: UserProfile): boolean => profile.contactButtons !== undefined;
+
 /**
- * Contact buttons for the hero. If a location chip already exists in the store, use it as-is.
- * Otherwise append one from profile.location (one-time hydrate for legacy/API data).
+ * Contact buttons for display. Uses the stored list when present (including an intentional empty list).
+ * Falls back to profile scalars only when contactButtons was never set (legacy/API data).
  */
 const resolveContactButtons = (profile: UserProfile): ContactButton[] => {
-  const stored = profile.contactButtons ?? [];
-  const base = stored.length > 0 ? [...stored] : getDefaultContactButtons(profile);
+  if (hasStoredContactButtons(profile)) {
+    return [...(profile.contactButtons ?? [])];
+  }
+
+  const base = getDefaultContactButtons(profile);
 
   if (base.some(button => button.icon === "location" || button.id === "contact-location")) {
     return base;
@@ -164,6 +169,10 @@ const resolveContactButtons = (profile: UserProfile): ContactButton[] => {
     },
   ];
 };
+
+/** Base list for add/update/remove — stored array when set, otherwise the resolved legacy view. */
+const getMutableContactButtons = (profile: UserProfile): ContactButton[] =>
+  hasStoredContactButtons(profile) ? [...(profile.contactButtons ?? [])] : resolveContactButtons(profile);
 
 const getDefaultContactButtons = (profile: UserProfile): ContactButton[] => {
   const buttons: ContactButton[] = [
@@ -303,7 +312,7 @@ const Portfolio: React.FC<PortfolioProps> = ({ portfolioId, initialData, onBack,
     };
   }, [portfolioId, runSave]);
 
-  const [isEditMode, setIsEditMode] = useState(true);
+  const [isEditMode, setIsEditMode] = useState(!isReadOnly);
   const selectedProjectId = usePortfolioStore(s => s.getFocusedPageCardId(portfolioId));
   const setFocusedPageCardId = usePortfolioStore(s => s.setFocusedPageCardId);
   const [contextMenu, setContextMenu] = useState<{ x: number; y: number; targetId: string | null } | null>(null);
@@ -311,6 +320,8 @@ const Portfolio: React.FC<PortfolioProps> = ({ portfolioId, initialData, onBack,
   const [publishUrlInput, setPublishUrlInput] = useState("");
   const [publishedUrl, setPublishedUrl] = useState<string | null>(null);
   const [isPublishing, setIsPublishing] = useState(false);
+  const [publishShowPublished, setPublishShowPublished] = useState(false);
+  const [inlineInsertIndex, setInlineInsertIndex] = useState<number | null>(null);
   const publishMenuRef = useRef<HTMLDivElement>(null);
   const [toastMessage, setToastMessage] = useState<string | null>(null);
   const [coverCropModal, setCoverCropModal] = useState<{ source: string; mimeType?: string } | null>(null);
@@ -474,25 +485,76 @@ const Portfolio: React.FC<PortfolioProps> = ({ portfolioId, initialData, onBack,
     setShowPublishMenu(open => !open);
   };
 
-  const handlePublish = async () => {
-    if (isPublishing) return;
-
-    if (publishedUrl) {
-      try {
-        await runSave("manual");
-        showToast("Changes saved");
-        setShowPublishMenu(false);
-      } catch {
-        showToast("Could not save changes");
-      }
-      return;
-    }
-
-    const slug = publishUrlInput
+  const normalizePublishSlug = (raw: string) =>
+    raw
       .trim()
       .toLowerCase()
       .replace(/[^a-z0-9-]/g, "-")
       .replace(/^-|-$/g, "");
+
+  const resolvePublishedSlug = () => {
+    const fromProfile = normalizePublishSlug(portfolio.slug ?? "");
+    if (fromProfile) return fromProfile;
+
+    const fromInput = normalizePublishSlug(publishUrlInput);
+    if (fromInput) return fromInput;
+
+    if (publishedUrl) {
+      try {
+        const pathname = new URL(publishedUrl, window.location.origin).pathname;
+        const match = pathname.match(/\/portfolio\/([^/]+)\/?$/);
+        if (match?.[1]) return normalizePublishSlug(match[1]);
+      } catch {
+        /* ignore */
+      }
+    }
+
+    return "";
+  };
+
+  const saveAndPublishPortfolio = async (slug: string, successToast: string) => {
+    await runSave("manual");
+
+    const current = usePortfolioStore.getState().getPortfolioData(portfolioId) ?? portfolio;
+    const content = mapFrontendPortfolioToBackend({ ...current, id: portfolioId });
+    const result = await publishPortfolioAsset(content, slug);
+
+    if (!result.ok) {
+      showToast(result.error || "Failed to publish");
+      return false;
+    }
+
+    const publicUrl = buildPortfolioPublicUrl(result.slug);
+    setPublishedUrl(publicUrl);
+    savePublishedUrl(portfolioId, publicUrl);
+    updatePortfolio(portfolioId, prev => ({ ...prev, slug: result.slug }));
+    showToast(successToast);
+    setPublishShowPublished(true);
+    return true;
+  };
+
+  const handlePublish = async () => {
+    if (isPublishing) return;
+
+    if (publishedUrl) {
+      const slug = resolvePublishedSlug();
+      if (!slug) {
+        showToast("Could not find published link");
+        return;
+      }
+
+      setIsPublishing(true);
+      try {
+        await saveAndPublishPortfolio(slug, "Changes saved and published");
+      } catch {
+        showToast("Could not save changes");
+      } finally {
+        setIsPublishing(false);
+      }
+      return;
+    }
+
+    const slug = normalizePublishSlug(publishUrlInput);
     if (!slug) {
       showToast("Enter a link name");
       return;
@@ -500,23 +562,9 @@ const Portfolio: React.FC<PortfolioProps> = ({ portfolioId, initialData, onBack,
 
     setIsPublishing(true);
     try {
-      await runSave("manual");
-
-      const current = usePortfolioStore.getState().getPortfolioData(portfolioId) ?? portfolio;
-      const content = mapFrontendPortfolioToBackend({ ...current, id: portfolioId });
-      const result = await publishPortfolioAsset(content, slug);
-
-      if (!result.ok) {
-        showToast(result.error || "Failed to publish");
-        return;
-      }
-
-      const publicUrl = buildPortfolioPublicUrl(result.slug);
-      setPublishedUrl(publicUrl);
-      savePublishedUrl(portfolioId, publicUrl);
-      updatePortfolio(portfolioId, prev => ({ ...prev, slug: result.slug }));
-      showToast("Published");
-      setShowPublishMenu(false);
+      await saveAndPublishPortfolio(slug, "Published");
+    } catch {
+      showToast("Could not publish portfolio");
     } finally {
       setIsPublishing(false);
     }
@@ -537,24 +585,29 @@ const Portfolio: React.FC<PortfolioProps> = ({ portfolioId, initialData, onBack,
   };
 
   const publishMenuDropdown = showPublishMenu ? (
-    <div className="absolute right-0 top-[calc(100%+0.5rem)] z-50 w-[min(20rem,calc(100vw-2rem))] rounded-2xl border border-slate-200 bg-white p-4 shadow-xl dark:border-white/10 dark:bg-[#0b0b0b]">
+    <div className="absolute right-0 top-[calc(100%+0.5rem)] z-50 w-[min(20rem,calc(100vw-2rem))] rounded-2xl border border-slate-200 bg-white p-4 shadow-xl dark:border-white/10 dark:bg-slate-950">
       <p className="text-sm font-semibold text-slate-900 dark:text-white">Publish portfolio</p>
       {!publishedUrl && (
         <p className="mt-2 rounded-lg border border-amber-200/80 bg-amber-50 px-3 py-2 text-[11px] leading-snug text-amber-800 dark:border-amber-500/20 dark:bg-amber-950/40 dark:text-amber-200/90">
           Your portfolio URL can only be chosen once. Pick carefully — it cannot be changed after you publish.
         </p>
       )}
-      <label className="mt-3 block text-[10px] font-semibold uppercase tracking-widest text-slate-500 dark:text-slate-400">Link name</label>
-      <input
-        value={publishUrlInput}
-        onChange={e => setPublishUrlInput(e.target.value)}
-        readOnly={Boolean(publishedUrl)}
-        disabled={Boolean(publishedUrl) || isPublishing}
-        placeholder="e.g. alex-morgan"
-        className={`mt-1.5 w-full rounded-xl border border-slate-200 bg-white px-3 py-2.5 text-sm text-slate-800 outline-none focus:border-brand-500/40 focus:ring-2 focus:ring-brand-500/30 dark:border-white/10 dark:bg-[#0f0f0f] dark:text-slate-100 ${
-          publishedUrl ? "cursor-not-allowed opacity-70" : ""
-        }`}
-      />
+      <label className="mt-3 block text-[10px] font-semibold uppercase tracking-widest text-slate-500 dark:text-slate-400">URL</label>
+      <div className="mt-1.5 flex w-full items-center rounded-xl border border-slate-200 bg-white px-3 py-2.5 text-sm text-slate-800 transition-colors focus-within:border-brand-500/40 focus-within:ring-2 focus-within:ring-brand-500/30 dark:border-white/10 dark:bg-slate-900 dark:text-slate-100">
+        <span className="mr-1 hidden flex-none select-none whitespace-nowrap text-slate-400 sm:inline-block">unimad.com/portfolio/</span>
+        <span className="mr-1 flex-none select-none whitespace-nowrap text-slate-400 sm:hidden">unimad.com/</span>
+        <input
+          value={publishUrlInput}
+          onChange={e => {
+            setPublishUrlInput(e.target.value);
+            setPublishShowPublished(false);
+          }}
+          readOnly={Boolean(publishedUrl)}
+          disabled={Boolean(publishedUrl) || isPublishing}
+          placeholder="e.g. alex-morgan"
+          className="min-w-0 flex-1 bg-transparent outline-none disabled:cursor-not-allowed disabled:opacity-70"
+        />
+      </div>
       <div className="mt-3 flex items-center gap-2">
         <button
           type="button"
@@ -567,12 +620,16 @@ const Portfolio: React.FC<PortfolioProps> = ({ portfolioId, initialData, onBack,
         {isEditMode && (
           <button
             type="button"
-            onClick={handlePublish}
-            disabled={isPublishing}
-            className="inline-flex flex-1 items-center justify-center gap-1.5 rounded-full bg-brand-600 px-3 py-2 text-xs font-semibold text-white shadow-md shadow-brand-500/20 transition-all hover:scale-[1.02] active:scale-95 disabled:opacity-60"
+            onClick={publishShowPublished ? undefined : () => void handlePublish()}
+            disabled={isPublishing || publishShowPublished}
+            className={`inline-flex flex-1 items-center justify-center gap-1.5 rounded-full px-3 py-2 text-xs font-semibold shadow-md transition-all disabled:opacity-60 ${
+              publishShowPublished
+                ? "cursor-default bg-emerald-500 text-white shadow-emerald-500/20"
+                : "bg-brand-600 text-white shadow-brand-500/20 hover:scale-[1.02] active:scale-95"
+            }`}
           >
-            <ExternalLink size={13} />
-            {isPublishing ? "Publishing…" : publishedUrl ? "Save" : "Publish"}
+            {publishShowPublished ? <Check size={13} /> : <ExternalLink size={13} />}
+            {isPublishing ? "Publishing…" : publishShowPublished ? "Published" : publishedUrl ? "Save" : "Publish"}
           </button>
         )}
       </div>
@@ -597,7 +654,7 @@ const Portfolio: React.FC<PortfolioProps> = ({ portfolioId, initialData, onBack,
     setItems([...items, newItem]);
   };
 
-  const insertItemAfter = (index: number, type: ContentType = "text") => {
+  const insertItemAfter = (index: number, type: ContentType = "text", preset?: Partial<PortfolioItem>) => {
     const newItem: PortfolioItem = {
       id: getNextId("item"),
       type,
@@ -606,12 +663,108 @@ const Portfolio: React.FC<PortfolioProps> = ({ portfolioId, initialData, onBack,
       title: type === "page-card" ? "New Page" : undefined,
       fontSize: "base",
       height: getDefaultItemHeightPx(type),
+      ...preset,
     };
     setItems(prev => {
       const next = [...prev];
       next.splice(index + 1, 0, newItem);
       return next;
     });
+    setInlineInsertIndex(null);
+  };
+
+  const renderInlineInserter = (index: number) => {
+    if (!isEditMode) return null;
+    const isActive = inlineInsertIndex === index + 1;
+    return (
+      <>
+        <div
+          style={{ overflow: "visible", pointerEvents: "auto" }}
+          className={`absolute -bottom-5 left-0 right-0 z-[60] flex h-10 items-center justify-center transition-opacity duration-150 ${
+            isActive ? "opacity-100" : "opacity-0 hover:opacity-100"
+          }`}
+        >
+          <div className="absolute inset-x-4 top-1/2 h-[2px] rounded-full bg-brand-400/40" />
+          <button
+            type="button"
+            onMouseDown={e => e.stopPropagation()}
+            onClick={e => {
+              e.preventDefault();
+              e.stopPropagation();
+              setInlineInsertIndex(isActive ? null : index + 1);
+            }}
+            className={`relative z-[61] flex h-7 w-7 items-center justify-center rounded-full border shadow-md transition-all ${
+              isActive
+                ? "scale-110 border-brand-500 bg-brand-500 text-white"
+                : "border-slate-200 bg-white text-slate-400 hover:scale-110 hover:border-brand-400 hover:text-brand-600 dark:border-white/10 dark:bg-slate-800"
+            }`}
+          >
+            <Plus size={15} />
+          </button>
+          {isActive ? (
+            <div
+              className="absolute left-1/2 top-full z-50 mt-2 flex w-max max-w-[90vw] flex-row items-center gap-1.5 overflow-x-auto rounded-full border border-slate-100 bg-white p-2 shadow-lg dark:border-white/10 dark:bg-slate-900"
+              onMouseDown={e => e.stopPropagation()}
+              onClick={e => e.stopPropagation()}
+            >
+              {[
+                { type: "text" as ContentType, icon: <Type size={14} />, label: "Text" },
+                { type: "media" as ContentType, icon: <ImageIcon size={14} />, label: "Media" },
+                { type: "page-card" as ContentType, icon: <FileText size={14} />, label: "Page" },
+                { type: "link-box" as ContentType, icon: <LinkIcon size={14} />, label: "Link" },
+                {
+                  type: "table" as ContentType,
+                  icon: <Table2 size={14} />,
+                  label: "Table",
+                  preset: {
+                    title: "Table",
+                    content: JSON.stringify([
+                      ["Header 1", "Header 2", "Header 3"],
+                      ["", "", ""],
+                      ["", "", ""],
+                    ]),
+                  },
+                },
+                {
+                  type: "embed" as ContentType,
+                  icon: <Code2 size={14} />,
+                  label: "Code",
+                  preset: { title: "Embed Code", variant: "code" as const },
+                },
+                {
+                  type: "embed" as ContentType,
+                  icon: <Figma size={14} />,
+                  label: "Figma",
+                  preset: { title: "Figma Embed", variant: "figma" as const },
+                },
+              ].map(opt => (
+                <button
+                  key={opt.label}
+                  type="button"
+                  onClick={e => {
+                    e.stopPropagation();
+                    insertItemAfter(index, opt.type, opt.preset);
+                  }}
+                  className="flex items-center gap-1.5 whitespace-nowrap rounded-full px-3 py-1.5 text-xs font-medium text-slate-600 transition-colors hover:bg-slate-50 hover:text-brand-600 dark:text-slate-300 dark:hover:bg-white/5"
+                >
+                  {opt.icon}
+                  {opt.label}
+                </button>
+              ))}
+            </div>
+          ) : null}
+        </div>
+        {isActive ? (
+          <div
+            className="fixed inset-0 z-[59]"
+            onClick={e => {
+              e.stopPropagation();
+              setInlineInsertIndex(null);
+            }}
+          />
+        ) : null}
+      </>
+    );
   };
 
   const fileToDataUrl = (file: File) =>
@@ -736,7 +889,19 @@ const Portfolio: React.FC<PortfolioProps> = ({ portfolioId, initialData, onBack,
 
   const handleAvatarUpload = async (file: File) => {
     const dataUrl = await fileToDataUrl(file);
+    setProfile(prev => ({ ...prev, showAvatar: true }));
     openAvatarCropModal(dataUrl, file.type || "image/jpeg");
+  };
+
+  const handleShowAvatar = () => {
+    setProfile(prev => ({ ...prev, showAvatar: true }));
+    if (!resolveMediaDisplayUrl(profile.avatarUrl)?.trim()) {
+      avatarInputRef.current?.click();
+    }
+  };
+
+  const handleHideAvatar = () => {
+    setProfile(prev => ({ ...prev, showAvatar: false }));
   };
 
   useEffect(() => {
@@ -1013,13 +1178,13 @@ const Portfolio: React.FC<PortfolioProps> = ({ portfolioId, initialData, onBack,
     };
     setProfile(prev => ({
       ...prev,
-      contactButtons: [...resolveContactButtons(prev), newButton],
+      contactButtons: [...getMutableContactButtons(prev), newButton],
     }));
   };
 
   const updateContactButton = (id: string, updates: Partial<ContactButton>) => {
     setProfile(prev => {
-      const base = resolveContactButtons(prev);
+      const base = getMutableContactButtons(prev);
       const nextButtons = base.map(button => {
         if (button.id !== id) {
           return button;
@@ -1036,6 +1201,7 @@ const Portfolio: React.FC<PortfolioProps> = ({ portfolioId, initialData, onBack,
       });
       const locationButton = nextButtons.find(button => button.id === id && button.icon === "location");
       const websiteButton = nextButtons.find(button => button.id === id && button.id === "contact-site");
+      const hasAnyLocationButton = nextButtons.some(button => button.icon === "location" || button.id === "contact-location");
 
       if (locationButton) {
         return {
@@ -1054,13 +1220,17 @@ const Portfolio: React.FC<PortfolioProps> = ({ portfolioId, initialData, onBack,
         };
       }
 
-      return { ...prev, contactButtons: nextButtons };
+      return {
+        ...prev,
+        contactButtons: nextButtons,
+        ...(!hasAnyLocationButton ? { location: "" } : {}),
+      };
     });
   };
 
   const removeContactButton = (id: string) => {
     setProfile(prev => {
-      const base = resolveContactButtons(prev);
+      const base = getMutableContactButtons(prev);
       const removed = base.find(button => button.id === id);
       return {
         ...prev,
@@ -1140,6 +1310,9 @@ const Portfolio: React.FC<PortfolioProps> = ({ portfolioId, initialData, onBack,
 
   const heroContactButtons = resolveContactButtons(profile);
   const visibleContactButtons = heroContactButtons.filter(button => button.isVisible && button.label.trim());
+  const avatarDisplayUrl = resolveMediaDisplayUrl(profile.avatarUrl);
+  const hasAvatarImage = Boolean(avatarDisplayUrl?.trim());
+  const avatarOverlapClass = profile.showCover !== false ? "-mt-16 md:-mt-20" : "mt-0";
 
   // -- Drag & Drop Logic --
   const handleDragStart = (e: React.DragEvent, index: number, itemId: string) => {
@@ -1342,6 +1515,7 @@ const Portfolio: React.FC<PortfolioProps> = ({ portfolioId, initialData, onBack,
               onMeasureCollapsedHeight={handleCollapsedHeightMeasure}
               onMeasureContentHeight={blockContentMeasure}
             />
+            {renderInlineInserter(index)}
 
             {isEditMode && (
               <>
@@ -1378,7 +1552,7 @@ const Portfolio: React.FC<PortfolioProps> = ({ portfolioId, initialData, onBack,
           maxWidthClassName="max-w-5xl"
         />
       ) : (
-        <div className="flex-1 bg-slate-50 dark:bg-[#080808] h-full overflow-y-auto no-scrollbar relative">
+        <div className="flex-1 bg-slate-50 dark:bg-slate-950 h-full overflow-y-auto no-scrollbar relative">
           <input
             ref={coverInputRef}
             type="file"
@@ -1402,7 +1576,7 @@ const Portfolio: React.FC<PortfolioProps> = ({ portfolioId, initialData, onBack,
             }}
           />
           {/* Top Published Status Bar (Mock) */}
-          {!isEditMode && (
+          {!isEditMode && !isReadOnly && (
             <div className="bg-brand-600 text-white text-[10px] uppercase font-medium tracking-[0.2em] py-2 text-center">
               Live Portfolio Mode
             </div>
@@ -1410,7 +1584,7 @@ const Portfolio: React.FC<PortfolioProps> = ({ portfolioId, initialData, onBack,
 
           {/* Editor / preview header */}
           {(isEditMode || onBack) && (
-            <div className="sticky top-0 z-40 flex items-center justify-between border-b border-slate-100 bg-white/80 px-6 py-4 backdrop-blur-md dark:border-white/5 dark:bg-[#080808]/80">
+            <div className="sticky top-0 z-40 flex items-center justify-between border-b border-slate-100 bg-white/80 px-6 py-4 backdrop-blur-md dark:border-white/5 dark:bg-slate-950/80">
               {onBack ? (
                 <button
                   type="button"
@@ -1438,7 +1612,7 @@ const Portfolio: React.FC<PortfolioProps> = ({ portfolioId, initialData, onBack,
                         aria-haspopup="true"
                         className={`flex items-center gap-2 rounded-full border px-5 py-2 text-xs font-semibold transition-all ${
                           showPublishMenu
-                            ? "border-brand-500/50 bg-brand-50 text-brand-800 dark:border-brand-500/40 dark:bg-brand-950/50 dark:text-brand-200"
+                            ? "border-brand-500/50 bg-brand-50 text-brand-800 dark:border-brand-500/40 dark:bg-brand-900/50 dark:text-brand-200"
                             : "border-slate-200 bg-white/80 text-slate-700 hover:border-brand-500/40 hover:text-brand-700 dark:border-white/10 dark:bg-white/5 dark:text-slate-200 dark:hover:text-white"
                         }`}
                         title="Save and publish your portfolio"
@@ -1556,7 +1730,7 @@ const Portfolio: React.FC<PortfolioProps> = ({ portfolioId, initialData, onBack,
                 <button
                   type="button"
                   onClick={() => setProfile({ ...profile, showProfileSection: true })}
-                  className="inline-flex items-center gap-2 rounded-full border border-slate-200 bg-white px-4 py-2 text-xs font-medium text-slate-700 shadow-sm transition-colors hover:border-brand-500/40 dark:border-white/10 dark:bg-[#111] dark:text-slate-200"
+                  className="inline-flex items-center gap-2 rounded-full border border-slate-200 bg-white px-4 py-2 text-xs font-medium text-slate-700 shadow-sm transition-colors hover:border-brand-500/40 dark:border-white/10 dark:bg-slate-900 dark:text-slate-200"
                 >
                   <Eye size={14} aria-hidden /> Show profile section
                 </button>
@@ -1594,7 +1768,7 @@ const Portfolio: React.FC<PortfolioProps> = ({ portfolioId, initialData, onBack,
             {showProfileSection && (
               <PortfolioAdkBlockHighlight kind={adkPortfolioHighlights.hero} className="w-full">
                 <div
-                  className={`relative mb-16 flex flex-col bg-white dark:bg-[#080808] border border-slate-200 dark:border-white/5 border-t-0 rounded-b-2xl px-6 md:px-10 pb-12 ${
+                  className={`relative mb-16 flex flex-col bg-white dark:bg-slate-950 border border-slate-200 dark:border-white/5 border-t-0 rounded-b-2xl px-6 md:px-10 pb-12 ${
                     profile.showCover !== false ? "pt-0" : "pt-10"
                   } ${
                     profile.profileAlignment === "center"
@@ -1609,7 +1783,7 @@ const Portfolio: React.FC<PortfolioProps> = ({ portfolioId, initialData, onBack,
                       <button
                         type="button"
                         onClick={() => setProfile({ ...profile, showProfileSection: false })}
-                        className="inline-flex items-center gap-1.5 rounded-full border border-slate-200 bg-white/95 px-3 py-1.5 text-[11px] font-medium text-slate-600 shadow-sm backdrop-blur hover:border-slate-300 dark:border-white/10 dark:bg-[#111]/95 dark:text-slate-300"
+                        className="inline-flex items-center gap-1.5 rounded-full border border-slate-200 bg-white/95 px-3 py-1.5 text-[11px] font-medium text-slate-600 shadow-sm backdrop-blur hover:border-slate-300 dark:border-white/10 dark:bg-slate-900/95 dark:text-slate-300"
                       >
                         <EyeOff size={14} aria-hidden /> Hide profile
                       </button>
@@ -1617,41 +1791,63 @@ const Portfolio: React.FC<PortfolioProps> = ({ portfolioId, initialData, onBack,
                   )}
                   {isEditMode && profile.showAvatar === false ? (
                     <button
-                      onClick={() => setProfile({ ...profile, showAvatar: true })}
-                      className={`w-32 h-32 md:w-36 md:h-36 rounded-full border-4 border-dashed border-slate-200 dark:border-white/10 flex flex-col items-center justify-center gap-2 text-slate-400 hover:text-brand-600 hover:border-brand-500 transition-colors ${profile.showCover !== false ? "-mt-16 md:-mt-20" : "mt-0"} z-10 bg-white dark:bg-white/5`}
+                      type="button"
+                      onClick={handleShowAvatar}
+                      className={`w-32 h-32 md:w-36 md:h-36 rounded-full border-4 border-dashed border-slate-200 dark:border-white/10 flex flex-col items-center justify-center gap-2 text-slate-400 hover:text-brand-600 hover:border-brand-500 transition-colors ${avatarOverlapClass} z-10 bg-white dark:bg-white/5`}
                     >
-                      <ImageIcon size={20} />
+                      <ImageIcon size={20} aria-hidden />
                       <span className="text-[10px] font-medium uppercase tracking-widest">Show</span>
                     </button>
                   ) : (
                     profile.showAvatar !== false && (
-                      <div className={`relative group ${profile.showCover !== false ? "-mt-16 md:-mt-20" : "mt-0"} z-10 flex-shrink-0`}>
-                        <PortfolioImage
-                          src={profile.avatarUrl}
-                          alt={profile.name ? `${profile.name} avatar` : "Profile avatar"}
-                          width={144}
-                          height={144}
-                          className="w-32 h-32 md:w-36 md:h-36 rounded-full border-4 border-white dark:border-[#080808] shadow-lg object-cover bg-white dark:bg-[#080808]"
-                        />
-                        {/* Profile Alignment Controls: show on dp hover (not on the area below it) */}
+                      <div className={`relative group ${avatarOverlapClass} z-10 w-32 h-32 md:w-36 md:h-36 flex-shrink-0`}>
+                        <div className="relative h-full w-full overflow-hidden rounded-full border-4 border-white bg-white shadow-lg dark:border-slate-950 dark:bg-slate-950">
+                          {hasAvatarImage ? (
+                            <PortfolioImage
+                              src={profile.avatarUrl}
+                              alt={profile.name ? `${profile.name} avatar` : "Profile avatar"}
+                              width={144}
+                              height={144}
+                              className="h-full w-full object-cover"
+                            />
+                          ) : isEditMode ? (
+                            <button
+                              type="button"
+                              onClick={() => avatarInputRef.current?.click()}
+                              className="flex h-full w-full flex-col items-center justify-center gap-1.5 text-slate-400 transition-colors hover:text-brand-600"
+                              aria-label="Add profile photo"
+                            >
+                              <ImageIcon size={20} aria-hidden />
+                              <span className="text-[10px] font-medium uppercase tracking-widest">Add Photo</span>
+                            </button>
+                          ) : (
+                            <div className="flex h-full w-full items-center justify-center text-[10px] font-medium uppercase tracking-widest text-slate-400">
+                              No Photo
+                            </div>
+                          )}
+                        </div>
                         {isEditMode && (
                           <>
-                            <div className="absolute top-0 left-1/2 -translate-x-1/2 -translate-y-full opacity-0 group-hover:opacity-100 transition-opacity bg-white dark:bg-slate-800 shadow-xl border border-slate-100 dark:border-white/5 rounded-lg flex items-center p-1 z-20 pointer-events-none group-hover:pointer-events-auto">
-                              <button
-                                onClick={() => setProfile({ ...profile, profileAlignment: "left" })}
-                                className={`p-1.5 rounded-md ${profile.profileAlignment === "left" ? "bg-slate-100 dark:bg-white/10 text-brand-600" : "text-slate-400 hover:text-slate-600 dark:hover:text-white"}`}
-                                title="Align Left"
-                              >
-                                <AlignLeft size={14} />
-                              </button>
-                              <button
-                                onClick={() => setProfile({ ...profile, profileAlignment: "center" })}
-                                className={`p-1.5 rounded-md ${profile.profileAlignment === "center" ? "bg-slate-100 dark:bg-white/10 text-brand-600" : "text-slate-400 hover:text-slate-600 dark:hover:text-white"}`}
-                                title="Align Center"
-                              >
-                                <AlignCenter size={14} />
-                              </button>
-                            </div>
+                            {hasAvatarImage ? (
+                              <div className="absolute top-0 left-1/2 -translate-x-1/2 -translate-y-full opacity-0 group-hover:opacity-100 transition-opacity bg-white dark:bg-slate-800 shadow-xl border border-slate-100 dark:border-white/5 rounded-lg flex items-center p-1 z-20 pointer-events-none group-hover:pointer-events-auto">
+                                <button
+                                  type="button"
+                                  onClick={() => setProfile(prev => ({ ...prev, profileAlignment: "left" }))}
+                                  className={`p-1.5 rounded-md ${profile.profileAlignment === "left" ? "bg-slate-100 dark:bg-white/10 text-brand-600" : "text-slate-400 hover:text-slate-600 dark:hover:text-white"}`}
+                                  title="Align Left"
+                                >
+                                  <AlignLeft size={14} />
+                                </button>
+                                <button
+                                  type="button"
+                                  onClick={() => setProfile(prev => ({ ...prev, profileAlignment: "center" }))}
+                                  className={`p-1.5 rounded-md ${profile.profileAlignment === "center" ? "bg-slate-100 dark:bg-white/10 text-brand-600" : "text-slate-400 hover:text-slate-600 dark:hover:text-white"}`}
+                                  title="Align Center"
+                                >
+                                  <AlignCenter size={14} />
+                                </button>
+                              </div>
+                            ) : null}
                             <div className="absolute inset-0 rounded-full bg-black/60 hidden group-hover:flex flex-col items-center justify-center gap-2 cursor-pointer backdrop-blur-sm overflow-hidden p-2 z-10">
                               <div
                                 onClick={e => {
@@ -1660,9 +1856,9 @@ const Portfolio: React.FC<PortfolioProps> = ({ portfolioId, initialData, onBack,
                                 }}
                                 className="flex items-center justify-center gap-1.5 text-white hover:text-brand-400 transition-colors"
                               >
-                                <Edit3 size={16} /> <span className="text-[10px] font-medium">Update</span>
+                                <Edit3 size={16} /> <span className="text-[10px] font-medium">{hasAvatarImage ? "Update" : "Add"}</span>
                               </div>
-                              {profile.avatarUrl ? (
+                              {hasAvatarImage ? (
                                 <div
                                   onClick={e => {
                                     e.stopPropagation();
@@ -1677,7 +1873,7 @@ const Portfolio: React.FC<PortfolioProps> = ({ portfolioId, initialData, onBack,
                               <div
                                 onClick={e => {
                                   e.stopPropagation();
-                                  setProfile({ ...profile, showAvatar: false });
+                                  handleHideAvatar();
                                 }}
                                 className="flex items-center justify-center gap-2 text-red-400 hover:text-red-500 transition-colors"
                               >
@@ -1695,7 +1891,14 @@ const Portfolio: React.FC<PortfolioProps> = ({ portfolioId, initialData, onBack,
                       <div className="space-y-1">
                         <input
                           value={profile.name}
-                          onChange={e => setProfile({ ...profile, name: e.target.value })}
+                          onChange={e => {
+                            const name = e.target.value;
+                            updatePortfolio(portfolioId, prev => ({
+                              ...prev,
+                              title: name,
+                              profile: { ...prev.profile, name },
+                            }));
+                          }}
                           className={`text-[32px] md:text-[40px] font-semibold tracking-tight text-slate-900 dark:text-white bg-transparent outline-none w-full ${
                             profile.profileAlignment === "center"
                               ? "text-center"
@@ -1868,25 +2071,25 @@ const Portfolio: React.FC<PortfolioProps> = ({ portfolioId, initialData, onBack,
                   <div className="flex flex-wrap gap-3">
                     <button
                       onClick={() => addItem("text")}
-                      className="px-4 py-2 border border-slate-200 dark:border-white/10 rounded-full text-slate-500 hover:text-brand-600 hover:border-brand-500 transition-all font-medium text-sm flex items-center gap-2 bg-white dark:bg-[#111] shadow-sm"
+                      className="px-4 py-2 border border-slate-200 dark:border-white/10 rounded-full text-slate-500 hover:text-brand-600 hover:border-brand-500 transition-all font-medium text-sm flex items-center gap-2 bg-white dark:bg-slate-900 shadow-sm"
                     >
                       <Type size={16} /> Text
                     </button>
                     <button
                       onClick={() => addItem("media")}
-                      className="px-4 py-2 border border-slate-200 dark:border-white/10 rounded-full text-slate-500 hover:text-brand-600 hover:border-brand-500 transition-all font-medium text-sm flex items-center gap-2 bg-white dark:bg-[#111] shadow-sm"
+                      className="px-4 py-2 border border-slate-200 dark:border-white/10 rounded-full text-slate-500 hover:text-brand-600 hover:border-brand-500 transition-all font-medium text-sm flex items-center gap-2 bg-white dark:bg-slate-900 shadow-sm"
                     >
                       <ImageIcon size={16} /> Media
                     </button>
                     <button
                       onClick={() => addItem("page-card")}
-                      className="px-4 py-2 border border-slate-200 dark:border-white/10 rounded-full text-slate-500 hover:text-brand-600 hover:border-brand-500 transition-all font-medium text-sm flex items-center gap-2 bg-white dark:bg-[#111] shadow-sm"
+                      className="px-4 py-2 border border-slate-200 dark:border-white/10 rounded-full text-slate-500 hover:text-brand-600 hover:border-brand-500 transition-all font-medium text-sm flex items-center gap-2 bg-white dark:bg-slate-900 shadow-sm"
                     >
                       <FileText size={16} /> Page
                     </button>
                     <button
                       onClick={() => addItem("link-box")}
-                      className="px-4 py-2 border border-slate-200 dark:border-white/10 rounded-full text-slate-500 hover:text-brand-600 hover:border-brand-500 transition-all font-medium text-sm flex items-center gap-2 bg-white dark:bg-[#111] shadow-sm"
+                      className="px-4 py-2 border border-slate-200 dark:border-white/10 rounded-full text-slate-500 hover:text-brand-600 hover:border-brand-500 transition-all font-medium text-sm flex items-center gap-2 bg-white dark:bg-slate-900 shadow-sm"
                     >
                       <LinkIcon size={16} /> Link
                     </button>
@@ -1901,19 +2104,19 @@ const Portfolio: React.FC<PortfolioProps> = ({ portfolioId, initialData, onBack,
                           ]),
                         })
                       }
-                      className="px-4 py-2 border border-slate-200 dark:border-white/10 rounded-full text-slate-500 hover:text-brand-600 hover:border-brand-500 transition-all font-medium text-sm flex items-center gap-2 bg-white dark:bg-[#111] shadow-sm"
+                      className="px-4 py-2 border border-slate-200 dark:border-white/10 rounded-full text-slate-500 hover:text-brand-600 hover:border-brand-500 transition-all font-medium text-sm flex items-center gap-2 bg-white dark:bg-slate-900 shadow-sm"
                     >
                       <Table2 size={16} /> Table
                     </button>
                     <button
                       onClick={() => addItem("embed", { title: "Embed Code", variant: "code" })}
-                      className="px-4 py-2 border border-slate-200 dark:border-white/10 rounded-full text-slate-500 hover:text-brand-600 hover:border-brand-500 transition-all font-medium text-sm flex items-center gap-2 bg-white dark:bg-[#111] shadow-sm"
+                      className="px-4 py-2 border border-slate-200 dark:border-white/10 rounded-full text-slate-500 hover:text-brand-600 hover:border-brand-500 transition-all font-medium text-sm flex items-center gap-2 bg-white dark:bg-slate-900 shadow-sm"
                     >
                       <Code2 size={16} /> Embed Code
                     </button>
                     <button
                       onClick={() => addItem("embed", { title: "Figma Embed", variant: "figma" })}
-                      className="px-4 py-2 border border-slate-200 dark:border-white/10 rounded-full text-slate-500 hover:text-brand-600 hover:border-brand-500 transition-all font-medium text-sm flex items-center gap-2 bg-white dark:bg-[#111] shadow-sm"
+                      className="px-4 py-2 border border-slate-200 dark:border-white/10 rounded-full text-slate-500 hover:text-brand-600 hover:border-brand-500 transition-all font-medium text-sm flex items-center gap-2 bg-white dark:bg-slate-900 shadow-sm"
                     >
                       <Figma size={16} /> Figma Embed
                     </button>
@@ -1962,7 +2165,7 @@ const Portfolio: React.FC<PortfolioProps> = ({ portfolioId, initialData, onBack,
               onClick={() => setAvatarCropModal(null)}
             >
               <div
-                className="w-full max-w-md bg-white dark:bg-[#0c0c0c] rounded-3xl shadow-2xl border border-slate-200 dark:border-white/10 overflow-hidden"
+                className="w-full max-w-md bg-white dark:bg-slate-950 rounded-3xl shadow-2xl border border-slate-200 dark:border-white/10 overflow-hidden"
                 onClick={e => e.stopPropagation()}
               >
                 <div className="flex items-center justify-between px-5 py-4 border-b border-slate-100 dark:border-white/10">
@@ -2058,7 +2261,7 @@ const Portfolio: React.FC<PortfolioProps> = ({ portfolioId, initialData, onBack,
               onClick={() => setCoverCropModal(null)}
             >
               <div
-                className="w-full max-w-3xl bg-white dark:bg-[#0c0c0c] rounded-3xl shadow-2xl border border-slate-200 dark:border-white/10 overflow-hidden"
+                className="w-full max-w-3xl bg-white dark:bg-slate-950 rounded-3xl shadow-2xl border border-slate-200 dark:border-white/10 overflow-hidden"
                 onClick={e => e.stopPropagation()}
               >
                 <div className="flex items-center justify-between px-5 py-4 border-b border-slate-100 dark:border-white/10">
@@ -2178,6 +2381,20 @@ const Portfolio: React.FC<PortfolioProps> = ({ portfolioId, initialData, onBack,
                 </div>
               </div>
             </div>
+          )}
+
+          {!isEditMode && !isReadOnly && (
+            <button
+              type="button"
+              onClick={() => setIsEditMode(true)}
+              aria-label="Edit portfolio"
+              className="fixed bottom-10 right-10 z-50 rounded-full bg-slate-900 p-5 text-white shadow-2xl transition-all hover:scale-110 active:scale-90 group dark:bg-white dark:text-slate-900"
+            >
+              <Edit3 size={24} aria-hidden />
+              <span className="absolute right-full top-1/2 mr-4 -translate-y-1/2 whitespace-nowrap rounded-lg bg-slate-900 px-3 py-1.5 text-xs font-medium uppercase tracking-widest text-white opacity-0 shadow-xl transition-opacity group-hover:opacity-100 dark:bg-white dark:text-slate-900">
+                Edit Portfolio
+              </span>
+            </button>
           )}
 
           {/* Toast */}

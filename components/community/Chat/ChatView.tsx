@@ -60,7 +60,7 @@ const ChatView: React.FC<ChatViewProps> = ({ initialUserId, onBack }) => {
               <div className="relative w-10 h-10 rounded-full overflow-hidden">
                 <Image src={chat.user.avatar} alt={chat.user.name} fill sizes="40px" className="object-cover" />
                 {chat.user.status === "online" && (
-                  <span className="absolute bottom-0 right-0 w-2.5 h-2.5 bg-green-500 border-2 border-white dark:border-[#1a1a1a] rounded-full"></span>
+                  <span className="absolute bottom-0 right-0 w-2.5 h-2.5 bg-green-500 border-2 border-white dark:border-slate-900 rounded-full"></span>
                 )}
               </div>
               <div className="flex-1 min-w-0">
@@ -85,7 +85,7 @@ const ChatView: React.FC<ChatViewProps> = ({ initialUserId, onBack }) => {
 
       {/* RIGHT SIDE - Active Chat */}
       {selectedChat ? (
-        <div className="flex-1 flex flex-col bg-slate-50 dark:bg-[#0a0a0a]">
+        <div className="flex-1 flex flex-col bg-slate-50 dark:bg-slate-950">
           {/* Chat Header */}
           <div className="h-16 px-4 bg-white dark:bg-white/5 border-b border-slate-200 dark:border-white/5 flex items-center justify-between shadow-sm z-10">
             <div className="flex items-center gap-3">

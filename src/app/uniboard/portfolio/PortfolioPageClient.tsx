@@ -18,6 +18,14 @@ const getFriendlyCreateError = (err: unknown) => {
   return message;
 };
 
+const getFriendlyLoadError = (err: unknown) => {
+  const message = err instanceof Error ? err.message : "Failed to load portfolio";
+  if (message.toLowerCase().includes("unauthorized")) {
+    return "Your session expired. Please sign in again.";
+  }
+  return message;
+};
+
 /**
  * Single-portfolio UX: load (or bootstrap-create) the user's portfolio and open the editor directly.
  * No multi-portfolio dashboard or base-portfolio picker.
@@ -43,6 +51,9 @@ export default function PortfolioPageClient() {
     if (portfolioQuery.isLoading || portfolioQuery.isFetching) {
       return;
     }
+    if (portfolioQuery.isError) {
+      return;
+    }
     if (portfolioQuery.data) {
       return;
     }
@@ -52,7 +63,14 @@ export default function PortfolioPageClient() {
 
     bootstrapAttemptedRef.current = true;
     mutateCreatePortfolio(defaultBootstrapCreateInput);
-  }, [isCreatePending, mutateCreatePortfolio, portfolioQuery.data, portfolioQuery.isFetching, portfolioQuery.isLoading]);
+  }, [
+    isCreatePending,
+    mutateCreatePortfolio,
+    portfolioQuery.data,
+    portfolioQuery.isError,
+    portfolioQuery.isFetching,
+    portfolioQuery.isLoading,
+  ]);
 
   const awaitingBootstrap = useMemo(
     () => portfolioQuery.isFetched && !portfolioQuery.data && !displayPortfolio?.id && !isCreateError,
@@ -60,7 +78,7 @@ export default function PortfolioPageClient() {
   );
 
   const phase: PortfolioCreationPhase = useMemo(() => {
-    if (isCreateError && !displayPortfolio?.id) {
+    if ((isCreateError || portfolioQuery.isError) && !displayPortfolio?.id) {
       return "error";
     }
     if (portfolioQuery.isLoading && !portfolioQuery.data) {
@@ -73,7 +91,15 @@ export default function PortfolioPageClient() {
       return "ready";
     }
     return "idle";
-  }, [awaitingBootstrap, displayPortfolio?.id, isCreateError, isCreatePending, portfolioQuery.data, portfolioQuery.isLoading]);
+  }, [
+    awaitingBootstrap,
+    displayPortfolio?.id,
+    isCreateError,
+    isCreatePending,
+    portfolioQuery.data,
+    portfolioQuery.isError,
+    portfolioQuery.isLoading,
+  ]);
 
   const activeOverlayVariant: PortfolioCreationVariant = phase === "fetching" ? "fetch" : "ai_initial";
 
@@ -84,7 +110,17 @@ export default function PortfolioPageClient() {
   };
 
   const showOverlay = (phase === "fetching" || phase === "creating") && !displayPortfolio?.id;
+  const loadErrorMessage = portfolioQuery.isError ? getFriendlyLoadError(portfolioQuery.error) : null;
   const createErrorMessage = isCreateError ? getFriendlyCreateError(createPortfolioMutation.error) : null;
+  const errorMessage = loadErrorMessage ?? createErrorMessage;
+
+  const handleRetry = () => {
+    if (portfolioQuery.isError) {
+      void portfolioQuery.refetch();
+      return;
+    }
+    handleRetryCreate();
+  };
 
   if (phase === "error" && !displayPortfolio) {
     return (
@@ -93,11 +129,13 @@ export default function PortfolioPageClient() {
           className="w-full max-w-md rounded-2xl border border-slate-200 bg-white p-6 shadow-2xl dark:border-slate-800 dark:bg-[#1a1a1a]"
           role="alert"
         >
-          <h2 className="mb-2 text-lg font-semibold text-slate-900 dark:text-white">Unable to create portfolio</h2>
-          <p className="mb-6 text-sm text-slate-600 dark:text-slate-400">{createErrorMessage}</p>
+          <h2 className="mb-2 text-lg font-semibold text-slate-900 dark:text-white">
+            {portfolioQuery.isError ? "Unable to load portfolio" : "Unable to create portfolio"}
+          </h2>
+          <p className="mb-6 text-sm text-slate-600 dark:text-slate-400">{errorMessage}</p>
           <button
             type="button"
-            onClick={handleRetryCreate}
+            onClick={handleRetry}
             className="rounded-full bg-brand-600 px-6 py-2 text-sm font-semibold text-white transition-colors hover:bg-brand-700"
           >
             Try again

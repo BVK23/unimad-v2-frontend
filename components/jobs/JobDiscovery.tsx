@@ -248,7 +248,9 @@ const JobDiscovery: React.FC<JobDiscoveryProps> = ({ onNavigateToStudio, onGoToT
   const handleToggleSave = (e: React.MouseEvent, jobId: string) => {
     e.stopPropagation();
     const job =
-      selectedJob?.id === jobId ? selectedJob : (allListedJobs.find((j: Job) => j.id === jobId) ?? searchResultsJobs.find((j: Job) => j.id === jobId));
+      selectedJob?.id === jobId
+        ? selectedJob
+        : (allListedJobs.find((j: Job) => j.id === jobId) ?? searchResultsJobs.find((j: Job) => j.id === jobId));
     if (!job || isMutatingSave) return;
 
     if (job.isSaved) {
@@ -286,7 +288,7 @@ const JobDiscovery: React.FC<JobDiscoveryProps> = ({ onNavigateToStudio, onGoToT
   return (
     <div className="pb-32">
       {/* Hero Carousel Section - White Background */}
-      <div className="bg-white dark:bg-[#111] border-b border-slate-200 dark:border-slate-800 py-10">
+      <div className="bg-white dark:bg-slate-900 border-b border-slate-200 dark:border-slate-800 py-10">
         <div className="max-w-[1400px] mx-auto px-6">
           <div className="flex items-center justify-between mb-6">
             <div>
@@ -299,7 +301,7 @@ const JobDiscovery: React.FC<JobDiscoveryProps> = ({ onNavigateToStudio, onGoToT
                 type="button"
                 onClick={handleHeroPrevPage}
                 disabled={isHeroLoading || recommendedUIPage <= 1}
-                className="flex h-9 w-9 items-center justify-center rounded-full border border-slate-200 bg-white text-slate-500 transition-colors hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-40 dark:border-slate-700 dark:bg-[#111]"
+                className="flex h-9 w-9 items-center justify-center rounded-full border border-slate-200 bg-white text-slate-500 transition-colors hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-40 dark:border-slate-700 dark:bg-slate-900"
               >
                 <ChevronLeft size={18} />
               </button>
@@ -307,7 +309,7 @@ const JobDiscovery: React.FC<JobDiscoveryProps> = ({ onNavigateToStudio, onGoToT
                 type="button"
                 onClick={handleHeroNextPage}
                 disabled={isHeroLoading || (isOnLastHeroUIPage && !recommendedHasNextPage)}
-                className="flex h-9 w-9 items-center justify-center rounded-full border border-slate-200 bg-white text-slate-500 transition-colors hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-40 dark:border-slate-700 dark:bg-[#111]"
+                className="flex h-9 w-9 items-center justify-center rounded-full border border-slate-200 bg-white text-slate-500 transition-colors hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-40 dark:border-slate-700 dark:bg-slate-900"
               >
                 <ChevronRight size={18} />
               </button>
@@ -347,7 +349,7 @@ const JobDiscovery: React.FC<JobDiscoveryProps> = ({ onNavigateToStudio, onGoToT
         <div className="grid grid-cols-1 gap-4 lg:grid-cols-12">
           <div className="relative flex min-h-[220px] flex-col justify-between rounded-2xl border border-slate-200 bg-white p-5 shadow-sm lg:col-span-5 dark:border-slate-700 dark:bg-slate-900">
             <div className="text-center">
-              <div className="mx-auto mb-3 flex h-11 w-11 items-center justify-center rounded-xl border border-brand-100 bg-brand-50 text-brand-600 dark:border-brand-900/40 dark:bg-brand-950/40 dark:text-brand-400">
+              <div className="mx-auto mb-3 flex h-11 w-11 items-center justify-center rounded-xl border border-brand-100 bg-brand-50 text-brand-600 dark:border-brand-900/40 dark:bg-brand-900/40 dark:text-brand-400">
                 <Plus size={20} strokeWidth={2} />
               </div>
               <h3 className="text-lg font-semibold leading-snug text-slate-900 dark:text-white">Add an application</h3>
@@ -432,7 +434,7 @@ const JobDiscovery: React.FC<JobDiscoveryProps> = ({ onNavigateToStudio, onGoToT
                 type="button"
                 onClick={handleSavedPrevPage}
                 disabled={isSavedLoading || savedUIPage <= 1}
-                className="flex h-9 w-9 items-center justify-center rounded-full border border-slate-200 bg-white text-slate-500 disabled:opacity-40 dark:border-slate-700 dark:bg-[#111]"
+                className="flex h-9 w-9 items-center justify-center rounded-full border border-slate-200 bg-white text-slate-500 disabled:opacity-40 dark:border-slate-700 dark:bg-slate-900"
               >
                 <ChevronLeft size={18} />
               </button>
@@ -440,7 +442,7 @@ const JobDiscovery: React.FC<JobDiscoveryProps> = ({ onNavigateToStudio, onGoToT
                 type="button"
                 onClick={handleSavedNextPage}
                 disabled={isSavedLoading || (isOnLastSavedUIPage && !savedPagination?.has_next)}
-                className="flex h-9 w-9 items-center justify-center rounded-full border border-slate-200 bg-white text-slate-500 disabled:opacity-40 dark:border-slate-700 dark:bg-[#111]"
+                className="flex h-9 w-9 items-center justify-center rounded-full border border-slate-200 bg-white text-slate-500 disabled:opacity-40 dark:border-slate-700 dark:bg-slate-900"
               >
                 <ChevronRight size={18} />
               </button>
@@ -517,7 +519,7 @@ const JobDiscovery: React.FC<JobDiscoveryProps> = ({ onNavigateToStudio, onGoToT
                 <button
                   type="button"
                   onClick={() => fetchMoreSearchJobs()}
-                  className="w-full h-full min-h-0 rounded-2xl border-2 border-dashed border-slate-200 dark:border-slate-700 bg-slate-50/50 dark:bg-slate-900/20 hover:border-blue-300 dark:hover:border-blue-600 hover:bg-slate-100 dark:hover:bg-slate-800/50 flex flex-col items-center justify-center p-4 text-slate-600 dark:text-slate-400 font-medium text-sm transition-colors"
+                  className="w-full h-full min-h-0 rounded-2xl border-2 border-dashed border-slate-200 dark:border-slate-700 bg-slate-50/50 dark:bg-slate-900/20 hover:border-brand-300 dark:hover:border-brand-600 hover:bg-slate-100 dark:hover:bg-slate-800/50 flex flex-col items-center justify-center p-4 text-slate-600 dark:text-slate-400 font-medium text-sm transition-colors"
                 >
                   Fetch more jobs
                 </button>
@@ -539,7 +541,7 @@ const JobDiscovery: React.FC<JobDiscoveryProps> = ({ onNavigateToStudio, onGoToT
               type="button"
               onClick={handleSearchPrevPage}
               disabled={searchUIPage <= 1}
-              className="w-9 h-9 flex items-center justify-center rounded-full border border-slate-200 dark:border-slate-700 bg-white dark:bg-[#111] text-slate-500 hover:bg-slate-50 disabled:opacity-40 disabled:cursor-not-allowed transition-colors"
+              className="w-9 h-9 flex items-center justify-center rounded-full border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 text-slate-500 hover:bg-slate-50 disabled:opacity-40 disabled:cursor-not-allowed transition-colors"
             >
               <ChevronLeft size={18} />
             </button>
@@ -550,7 +552,7 @@ const JobDiscovery: React.FC<JobDiscoveryProps> = ({ onNavigateToStudio, onGoToT
               type="button"
               onClick={handleSearchNextPage}
               disabled={searchUIPage >= searchTotalUIPages}
-              className="w-9 h-9 flex items-center justify-center rounded-full border border-slate-200 dark:border-slate-700 bg-white dark:bg-[#111] text-slate-500 hover:bg-slate-50 disabled:opacity-40 disabled:cursor-not-allowed transition-colors"
+              className="w-9 h-9 flex items-center justify-center rounded-full border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 text-slate-500 hover:bg-slate-50 disabled:opacity-40 disabled:cursor-not-allowed transition-colors"
             >
               <ChevronRight size={18} />
             </button>

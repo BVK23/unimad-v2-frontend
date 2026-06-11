@@ -50,7 +50,7 @@ const AddJobModal: React.FC<AddJobModalProps> = ({ onClose, onAdd }) => {
 
   return (
     <div className="fixed inset-0 bg-black/50 backdrop-blur-sm z-50 flex items-center justify-center p-4 animate-in fade-in duration-200">
-      <div className="bg-white dark:bg-[#1a1a1a] w-full max-w-lg rounded-3xl shadow-2xl p-6 border border-slate-200 dark:border-slate-800">
+      <div className="bg-white dark:bg-slate-900 w-full max-w-lg rounded-3xl shadow-2xl p-6 border border-slate-200 dark:border-slate-800">
         {/* Header */}
         <div className="flex items-center justify-between mb-6">
           <h2 className="text-xl font-semibold text-slate-900 dark:text-white">Add Application</h2>
@@ -70,7 +70,7 @@ const AddJobModal: React.FC<AddJobModalProps> = ({ onClose, onAdd }) => {
                   value={url}
                   onChange={e => setUrl(e.target.value)}
                   placeholder="https://linkedin.com/jobs/..."
-                  className="w-full pl-11 pr-4 py-3 bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-xl outline-none focus:ring-2 focus:ring-blue-500/20 text-slate-900 dark:text-white"
+                  className="w-full pl-11 pr-4 py-3 bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-xl outline-none focus:ring-2 focus:ring-brand-500/20 text-slate-900 dark:text-white"
                   autoFocus
                 />
               </div>
@@ -80,7 +80,7 @@ const AddJobModal: React.FC<AddJobModalProps> = ({ onClose, onAdd }) => {
             <button
               onClick={handleAnalyze}
               disabled={!url}
-              className="w-full py-3 bg-blue-600 hover:bg-blue-700 text-white font-medium rounded-xl shadow-lg shadow-blue-500/20 active:scale-95 transition-all flex items-center justify-center gap-2 disabled:opacity-50 disabled:cursor-not-allowed"
+              className="w-full py-3 bg-brand-600 hover:bg-brand-700 text-white font-medium rounded-xl shadow-lg shadow-brand-500/20 active:scale-95 transition-all flex items-center justify-center gap-2 disabled:opacity-50 disabled:cursor-not-allowed"
             >
               <FileSearch size={18} /> Analyze & Add Job
             </button>
@@ -90,9 +90,9 @@ const AddJobModal: React.FC<AddJobModalProps> = ({ onClose, onAdd }) => {
         {stage === "analyzing" && (
           <div className="py-12 flex flex-col items-center justify-center text-center space-y-4">
             <div className="relative">
-              <div className="w-16 h-16 rounded-full border-4 border-blue-100 border-t-blue-500 animate-spin"></div>
+              <div className="w-16 h-16 rounded-full border-4 border-brand-100 border-t-brand-500 animate-spin"></div>
               <div className="absolute inset-0 flex items-center justify-center">
-                <FileSearch size={24} className="text-blue-500 animate-pulse" />
+                <FileSearch size={24} className="text-brand-500 animate-pulse" />
               </div>
             </div>
             <div>
@@ -109,7 +109,7 @@ const AddJobModal: React.FC<AddJobModalProps> = ({ onClose, onAdd }) => {
                 {analyzedJob.logo ? (
                   <Image src={analyzedJob.logo} fill className="object-contain p-1" alt="Company logo" />
                 ) : (
-                  <div className="w-full h-full rounded-xl bg-gradient-to-br from-blue-500 via-purple-500 to-pink-500 flex items-center justify-center">
+                  <div className="w-full h-full rounded-xl bg-gradient-to-br from-brand-500 via-purple-500 to-pink-500 flex items-center justify-center">
                     <span className="text-white font-bold text-xl">{analyzedJob.company?.charAt(0)?.toUpperCase() || "?"}</span>
                   </div>
                 )}

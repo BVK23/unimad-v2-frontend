@@ -353,7 +353,7 @@ const ProjectDetailView: React.FC<ProjectDetailViewProps> = ({
   }, [enableDenseLayoutParity, GRID_ROW_PX, gridRef]);
 
   return (
-    <div className="flex-1 bg-slate-50 dark:bg-[#080808] h-full overflow-y-auto no-scrollbar relative animate-in slide-in-from-right duration-300">
+    <div className="flex-1 bg-slate-50 dark:bg-slate-950 h-full overflow-y-auto no-scrollbar relative animate-in slide-in-from-right duration-300">
       <input
         ref={fileInputRef}
         type="file"
@@ -367,7 +367,7 @@ const ProjectDetailView: React.FC<ProjectDetailViewProps> = ({
       />
 
       {!hideToolbar && (
-        <div className="sticky top-0 z-40 bg-white/80 dark:bg-[#080808]/80 backdrop-blur-md border-b border-slate-100 dark:border-white/5 py-4 px-6 flex items-center justify-between shadow-sm">
+        <div className="sticky top-0 z-40 bg-white/80 dark:bg-slate-950/80 backdrop-blur-md border-b border-slate-100 dark:border-white/5 py-4 px-6 flex items-center justify-between shadow-sm">
           <button
             onClick={onBack}
             className="flex items-center gap-2 text-slate-600 hover:text-slate-900 dark:text-slate-400 dark:hover:text-white transition-colors text-sm font-bold bg-slate-100 dark:bg-white/5 px-4 py-2 rounded-full"
@@ -584,7 +584,7 @@ const ProjectDetailView: React.FC<ProjectDetailViewProps> = ({
                 {allowedTypes.includes("text") && (
                   <button
                     onClick={() => handleAddBlock("text")}
-                    className="px-4 py-2 border border-slate-200 dark:border-white/10 rounded-full text-slate-500 hover:text-brand-600 hover:border-brand-500 transition-all font-medium text-sm flex items-center gap-2 bg-white dark:bg-[#111] shadow-sm"
+                    className="px-4 py-2 border border-slate-200 dark:border-white/10 rounded-full text-slate-500 hover:text-brand-600 hover:border-brand-500 transition-all font-medium text-sm flex items-center gap-2 bg-white dark:bg-slate-900 shadow-sm"
                   >
                     <Type size={16} /> Text
                   </button>
@@ -592,7 +592,7 @@ const ProjectDetailView: React.FC<ProjectDetailViewProps> = ({
                 {allowedTypes.includes("media") && (
                   <button
                     onClick={() => handleAddBlock("media")}
-                    className="px-4 py-2 border border-slate-200 dark:border-white/10 rounded-full text-slate-500 hover:text-brand-600 hover:border-brand-500 transition-all font-medium text-sm flex items-center gap-2 bg-white dark:bg-[#111] shadow-sm"
+                    className="px-4 py-2 border border-slate-200 dark:border-white/10 rounded-full text-slate-500 hover:text-brand-600 hover:border-brand-500 transition-all font-medium text-sm flex items-center gap-2 bg-white dark:bg-slate-900 shadow-sm"
                   >
                     <ImageIcon size={16} /> Media
                   </button>
@@ -600,7 +600,7 @@ const ProjectDetailView: React.FC<ProjectDetailViewProps> = ({
                 {allowedTypes.includes("page-card") && (
                   <button
                     onClick={() => handleAddBlock("page-card")}
-                    className="px-4 py-2 border border-slate-200 dark:border-white/10 rounded-full text-slate-500 hover:text-brand-600 hover:border-brand-500 transition-all font-medium text-sm flex items-center gap-2 bg-white dark:bg-[#111] shadow-sm"
+                    className="px-4 py-2 border border-slate-200 dark:border-white/10 rounded-full text-slate-500 hover:text-brand-600 hover:border-brand-500 transition-all font-medium text-sm flex items-center gap-2 bg-white dark:bg-slate-900 shadow-sm"
                   >
                     <FileText size={16} /> Page
                   </button>
@@ -608,7 +608,7 @@ const ProjectDetailView: React.FC<ProjectDetailViewProps> = ({
                 {allowedTypes.includes("link-box") && (
                   <button
                     onClick={() => handleAddBlock("link-box")}
-                    className="px-4 py-2 border border-slate-200 dark:border-white/10 rounded-full text-slate-500 hover:text-brand-600 hover:border-brand-500 transition-all font-medium text-sm flex items-center gap-2 bg-white dark:bg-[#111] shadow-sm"
+                    className="px-4 py-2 border border-slate-200 dark:border-white/10 rounded-full text-slate-500 hover:text-brand-600 hover:border-brand-500 transition-all font-medium text-sm flex items-center gap-2 bg-white dark:bg-slate-900 shadow-sm"
                   >
                     <LinkIcon size={16} /> Link
                   </button>
@@ -625,7 +625,7 @@ const ProjectDetailView: React.FC<ProjectDetailViewProps> = ({
                         ]),
                       })
                     }
-                    className="px-4 py-2 border border-slate-200 dark:border-white/10 rounded-full text-slate-500 hover:text-brand-600 hover:border-brand-500 transition-all font-medium text-sm flex items-center gap-2 bg-white dark:bg-[#111] shadow-sm"
+                    className="px-4 py-2 border border-slate-200 dark:border-white/10 rounded-full text-slate-500 hover:text-brand-600 hover:border-brand-500 transition-all font-medium text-sm flex items-center gap-2 bg-white dark:bg-slate-900 shadow-sm"
                   >
                     <Table2 size={16} /> Table
                   </button>
@@ -634,13 +634,13 @@ const ProjectDetailView: React.FC<ProjectDetailViewProps> = ({
                   <>
                     <button
                       onClick={() => handleAddBlock("embed", { title: "Embed Code", variant: "code" })}
-                      className="px-4 py-2 border border-slate-200 dark:border-white/10 rounded-full text-slate-500 hover:text-brand-600 hover:border-brand-500 transition-all font-medium text-sm flex items-center gap-2 bg-white dark:bg-[#111] shadow-sm"
+                      className="px-4 py-2 border border-slate-200 dark:border-white/10 rounded-full text-slate-500 hover:text-brand-600 hover:border-brand-500 transition-all font-medium text-sm flex items-center gap-2 bg-white dark:bg-slate-900 shadow-sm"
                     >
                       <Code2 size={16} /> Embed Code
                     </button>
                     <button
                       onClick={() => handleAddBlock("embed", { title: "Figma Embed", variant: "figma" })}
-                      className="px-4 py-2 border border-slate-200 dark:border-white/10 rounded-full text-slate-500 hover:text-brand-600 hover:border-brand-500 transition-all font-medium text-sm flex items-center gap-2 bg-white dark:bg-[#111] shadow-sm"
+                      className="px-4 py-2 border border-slate-200 dark:border-white/10 rounded-full text-slate-500 hover:text-brand-600 hover:border-brand-500 transition-all font-medium text-sm flex items-center gap-2 bg-white dark:bg-slate-900 shadow-sm"
                     >
                       <Figma size={16} /> Figma Embed
                     </button>

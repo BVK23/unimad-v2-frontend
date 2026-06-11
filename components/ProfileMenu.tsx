@@ -77,7 +77,7 @@ const ProfileMenu: React.FC<ProfileMenuProps> = ({ isDarkMode, toggleTheme, user
 
       {/* Dropdown Menu */}
       {isOpen && (
-        <div className="absolute right-0 top-full mt-2 w-72 bg-white dark:bg-[#161616] rounded-2xl shadow-xl border border-slate-100 dark:border-white/5 overflow-hidden animate-in fade-in zoom-in-95 duration-200 z-50">
+        <div className="absolute right-0 top-full mt-2 w-72 bg-white dark:bg-slate-900 rounded-2xl shadow-xl border border-slate-100 dark:border-white/5 overflow-hidden animate-in fade-in zoom-in-95 duration-200 z-50">
           {/* Header */}
           <div className="p-4 border-b border-slate-100 dark:border-white/5 bg-slate-50/50 dark:bg-white/5">
             <div className="flex items-center gap-3 mb-3">

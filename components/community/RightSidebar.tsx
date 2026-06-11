@@ -6,7 +6,7 @@ const RightSidebar: React.FC = () => {
   return (
     <div className="space-y-6">
       {/* Upcoming Webinar Widget */}
-      <div className="bg-gradient-to-br from-blue-900 to-slate-900 rounded-xl p-5 text-white shadow-md relative overflow-hidden group">
+      <div className="bg-gradient-to-br from-brand-900 to-slate-900 rounded-xl p-5 text-white shadow-md relative overflow-hidden group">
         <div className="absolute top-0 right-0 p-3 opacity-10 group-hover:opacity-20 transition-opacity">
           <Video size={80} />
         </div>

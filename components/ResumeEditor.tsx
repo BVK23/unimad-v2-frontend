@@ -14,6 +14,7 @@ import { useResumeStore } from "@/features/resume/store/useResumeStore";
 import { ATS_COMPLETE_THRESHOLD, MAX_RECALCULATIONS } from "@/lib/resume/atsConstants";
 import { getAtsScoreQuote } from "@/lib/resume/atsScoreQuote";
 import { loadResumeAtsSession, saveResumeAtsSession } from "@/lib/resume/atsStorage";
+import { useResumeFormsPanelResize } from "@/src/hooks/useResumeFormsPanelResize";
 import {
   ResumeData,
   ResumeExperience,
@@ -75,6 +76,7 @@ import {
 import ResumePDF from "./ResumePDF";
 import ResumePDFPreview from "./ResumePDFPreview";
 import TiptapEditor from "./TiptapEditor";
+import ResumeFieldError from "./resume/ResumeFieldError";
 import HtmlDisplay from "./resume/shared/HtmlDisplay";
 import { parseDate } from "./resume/shared/dateUtils";
 import { getTemplate } from "./resume/templates";
@@ -107,8 +109,8 @@ const TEMPLATES: {
     id: "modern",
     name: "Modern",
     description: "Clean and professional",
-    color: "bg-blue-50",
-    border: "border-blue-200",
+    color: "bg-brand-50",
+    border: "border-brand-200",
     available: true,
   },
   {
@@ -171,8 +173,8 @@ const TEMPLATES: {
     id: "nextgen",
     name: "Nextgen",
     description: "Two-column layout with Outfit typography",
-    color: "bg-blue-50",
-    border: "border-blue-300",
+    color: "bg-brand-50",
+    border: "border-brand-300",
     available: true,
   },
   {
@@ -195,8 +197,8 @@ const TEMPLATES: {
     id: "primeslate",
     name: "Prime Slate",
     description: "Blue-accent header, photo, summary, and two-column body with skill pills",
-    color: "bg-blue-50",
-    border: "border-blue-400",
+    color: "bg-brand-50",
+    border: "border-brand-400",
     available: true,
   },
   // PRO templates — re-enable when subscription/unlock flow ships
@@ -471,9 +473,12 @@ const ResumeEditor: React.FC<ResumeEditorProps> = ({
     };
   }, [initialData]);
 
-  // Single source of truth: Zustand store. Hydrate when editor opens.
+  // Seed the store once per resume id; avoid clobbering in-progress edits when parent props refresh.
   useEffect(() => {
-    useResumeStore.getState().setResumeData(resumeId, getInitialResume());
+    const store = useResumeStore.getState();
+    if (!store.getResumeData(resumeId)) {
+      store.setResumeData(resumeId, getInitialResume());
+    }
   }, [resumeId, getInitialResume]);
 
   const resumeFromStore = useResumeStore(s => s.getResumeData(resumeId));
@@ -545,10 +550,14 @@ const ResumeEditor: React.FC<ResumeEditorProps> = ({
   }, [availableTemplates, recommendedTemplate]);
 
   const [activeSection, setActiveSection] = useState<string>("profile");
+  const [showFieldValidation, setShowFieldValidation] = useState(false);
+  const { panelWidth: formsPanelWidth, isResizing: isFormsPanelResizing, startResize: startFormsPanelResize } = useResumeFormsPanelResize();
   const [draggedSectionId, setDraggedSectionId] = useState<string | null>(null);
   const lastSectionDropTargetRef = useRef<string | null>(null);
   const [lastAcknowledgedSnapshot, setLastAcknowledgedSnapshot] = useState<string>(() => JSON.stringify(getInitialResume()));
   const [activeSaveSource, setActiveSaveSource] = useState<"auto" | "manual" | null>(null);
+  const [savedConfirmationVisible, setSavedConfirmationVisible] = useState(false);
+  const savedConfirmationTimerRef = useRef<ReturnType<typeof window.setTimeout> | null>(null);
   const saveInFlightRef = useRef(false);
   const queuedSaveRef = useRef(false);
   const runSaveRef = useRef<((source: "auto" | "manual") => Promise<void>) | null>(null);
@@ -576,6 +585,7 @@ const ResumeEditor: React.FC<ResumeEditorProps> = ({
   const [recalcError, setRecalcError] = useState<string | null>(null);
   const [showKnowledgeBaseModal, setShowKnowledgeBaseModal] = useState(false);
   const [pendingDeleteSectionId, setPendingDeleteSectionId] = useState<string | null>(null);
+  const [pendingDeleteSkillCategoryId, setPendingDeleteSkillCategoryId] = useState<string | null>(null);
   const [pendingDeleteEntry, setPendingDeleteEntry] = useState<{
     type: "experience" | "education" | "projects" | "certifications" | "customItem";
     itemId: string;
@@ -713,12 +723,23 @@ const ResumeEditor: React.FC<ResumeEditorProps> = ({
     }));
   };
 
-  const removeSkillCategory = (id: string) => {
+  const requestRemoveSkillCategory = (id: string) => {
+    setPendingDeleteSkillCategoryId(id);
+  };
+
+  const confirmRemoveSkillCategory = () => {
+    if (!pendingDeleteSkillCategoryId) return;
+    const id = pendingDeleteSkillCategoryId;
     updateResume(prev => ({
       ...prev,
       skillCategories: (prev.skillCategories || []).filter(cat => cat.id !== id),
       skills: prev.skills.filter(skill => skill.categoryId !== id),
     }));
+    setPendingDeleteSkillCategoryId(null);
+  };
+
+  const cancelRemoveSkillCategory = () => {
+    setPendingDeleteSkillCategoryId(null);
   };
 
   const renameUncategorizedSkills = (nextCategoryName: string) => {
@@ -834,21 +855,30 @@ const ResumeEditor: React.FC<ResumeEditorProps> = ({
   const saveStatusLabel = useMemo(() => {
     if (isSavingRemote) return activeSaveSource === "manual" ? "Saving..." : "Autosaving...";
     if (hasPendingUnsavedChanges) return "Unsaved changes";
-    return "All changes saved";
-  }, [activeSaveSource, hasPendingUnsavedChanges, isSavingRemote]);
+    if (savedConfirmationVisible) return "All changes saved";
+    return null;
+  }, [activeSaveSource, hasPendingUnsavedChanges, isSavingRemote, savedConfirmationVisible]);
+
+  useEffect(() => {
+    return () => {
+      if (savedConfirmationTimerRef.current) {
+        window.clearTimeout(savedConfirmationTimerRef.current);
+      }
+    };
+  }, []);
 
   const getError = (section: string, field: string, id?: string) => {
+    if (!showFieldValidation) return undefined;
     return validationErrors.find(e => e.section === section && e.field === field && e.id === id);
   };
 
-  const ErrorMsg = ({ section, field, id }: { section: string; field: string; id?: string }) => {
-    const error = getError(section, field, id);
-    if (!error) return null;
-    return (
-      <p className="text-[11px] text-red-500 font-medium mt-1 ml-1 flex items-center gap-1">
-        <AlertCircle size={10} /> {error.message}
-      </p>
-    );
+  const handleExportClick = () => {
+    if (validationErrors.length > 0) {
+      setShowFieldValidation(true);
+      showToast("Please fill in all required fields before exporting.", "error");
+      return;
+    }
+    setShowExportModal(true);
   };
 
   // -- Handlers --
@@ -1173,6 +1203,14 @@ const ResumeEditor: React.FC<ResumeEditorProps> = ({
       try {
         const result = await updateResumeMutation({ resumeId, data: dataToSave });
         setLastAcknowledgedSnapshot(snapshotAtStart);
+        setSavedConfirmationVisible(true);
+        if (savedConfirmationTimerRef.current) {
+          window.clearTimeout(savedConfirmationTimerRef.current);
+        }
+        savedConfirmationTimerRef.current = window.setTimeout(() => {
+          setSavedConfirmationVisible(false);
+          savedConfirmationTimerRef.current = null;
+        }, 12_000);
 
         if (result.created && onSave) {
           onSave({ ...dataToSave, id: result.id });
@@ -1477,26 +1515,26 @@ const ResumeEditor: React.FC<ResumeEditorProps> = ({
         </div>
       )}
       {/* Top Toolbar */}
-      <div className="absolute top-0 right-0 left-0 h-16 bg-white/80 dark:bg-slate-900/80 backdrop-blur-md border-b border-slate-200 dark:border-slate-700 z-20 flex items-center justify-between px-6">
-        <div className="flex items-center gap-4">
+      <div className="absolute top-0 right-0 left-0 h-16 bg-white/80 dark:bg-slate-900/80 backdrop-blur-md border-b border-slate-200 dark:border-slate-700 z-20 flex items-center justify-between gap-4 px-6">
+        <div className="flex min-w-0 flex-1 items-center gap-4">
           <button
             onClick={onBack}
-            className="p-2 hover:bg-slate-100 dark:hover:bg-slate-800 rounded-full transition-colors text-slate-500 dark:text-slate-400"
+            className="shrink-0 p-2 hover:bg-slate-100 dark:hover:bg-slate-800 rounded-full transition-colors text-slate-500 dark:text-slate-400"
           >
             <ArrowLeft size={20} />
           </button>
-          <div className="flex flex-col">
+          <div className="min-w-0 flex-1 max-w-xl">
             <input
               value={resume.title}
               onChange={e => updateResume(prev => ({ ...prev, title: e.target.value }))}
-              className="font-medium text-slate-900 dark:text-white bg-transparent border-b border-transparent hover:border-slate-300 dark:hover:border-slate-600 focus:border-brand-500 outline-none transition-all px-1 py-0.5 min-w-[200px]"
+              className="w-full truncate font-medium text-slate-900 dark:text-white bg-transparent border-b border-transparent hover:border-slate-300 dark:hover:border-slate-600 focus:border-brand-500 outline-none transition-all px-1 py-0.5"
               placeholder="Untitled Resume"
             />
           </div>
         </div>
 
-        <div className="flex items-center gap-3">
-          <span className="text-xs text-slate-500 dark:text-slate-400">{saveStatusLabel}</span>
+        <div className="flex shrink-0 items-center gap-3">
+          {saveStatusLabel ? <span className="text-xs text-slate-500 dark:text-slate-400 whitespace-nowrap">{saveStatusLabel}</span> : null}
           <button
             type="button"
             onClick={() => setShowKnowledgeBaseModal(true)}
@@ -1529,10 +1567,9 @@ const ResumeEditor: React.FC<ResumeEditorProps> = ({
           </button>
 
           <button
-            onClick={() => setShowExportModal(true)}
-            disabled={validationErrors.length > 0}
+            onClick={handleExportClick}
             title={validationErrors.length > 0 ? "Please fill in all required fields" : "Export Resume"}
-            className={`flex items-center gap-2 px-4 py-2 text-white rounded-lg font-medium text-sm transition-all shadow-md ${validationErrors.length > 0 ? "bg-slate-400 cursor-not-allowed opacity-70" : "bg-slate-900 hover:bg-slate-800 hover:shadow-lg hover:-translate-y-0.5"}`}
+            className={`flex items-center gap-2 px-4 py-2 text-white rounded-lg font-medium text-sm transition-all shadow-md ${validationErrors.length > 0 ? "bg-slate-400 hover:bg-slate-500" : "bg-slate-900 hover:bg-slate-800 hover:shadow-lg hover:-translate-y-0.5"}`}
           >
             <Share2 size={16} /> Share & Download
           </button>
@@ -1574,7 +1611,7 @@ const ResumeEditor: React.FC<ResumeEditorProps> = ({
                                             ${isReorderableSection ? "cursor-move" : "cursor-pointer"}
                                             ${
                                               activeSection === secId
-                                                ? "bg-[#346DE0] text-white shadow-md scale-105"
+                                                ? "bg-brand-600 text-white shadow-md scale-105"
                                                 : secItem.hidden
                                                   ? "text-slate-300 bg-slate-50 dark:text-slate-600 dark:bg-slate-800/50"
                                                   : "text-slate-400 hover:bg-slate-100 hover:text-slate-700 dark:hover:bg-slate-800 dark:hover:text-slate-200"
@@ -1601,7 +1638,10 @@ const ResumeEditor: React.FC<ResumeEditorProps> = ({
           </div>
         </div>
         {/* 2. Forms Panel */}
-        <div className="w-[360px] bg-white dark:bg-slate-900 border-r border-slate-200 dark:border-slate-700 flex flex-col h-full overflow-hidden shadow-[4px_0_24px_rgba(0,0,0,0.02)] flex-shrink-0 z-0 relative">
+        <div
+          className={`bg-white dark:bg-slate-900 border-r border-slate-200 dark:border-slate-700 flex flex-col h-full overflow-hidden shadow-[4px_0_24px_rgba(0,0,0,0.02)] flex-shrink-0 z-0 relative ${isFormsPanelResizing ? "select-none" : ""}`}
+          style={{ width: formsPanelWidth }}
+        >
           <div className="flex-1 overflow-y-auto p-6 bg-white dark:bg-slate-900 scrollbar-on-hover">
             {activeSection === "profile" && (
               <div className="space-y-5 animate-in fade-in slide-in-from-left-2 duration-200">
@@ -1614,7 +1654,7 @@ const ResumeEditor: React.FC<ResumeEditorProps> = ({
                       onChange={e => handleProfileChange("fullName", e.target.value)}
                       className={`w-full p-3 bg-white dark:bg-slate-800 border rounded-lg text-sm font-medium focus:border-brand-500 focus:ring-1 focus:ring-brand-500 outline-none transition-all dark:text-white dark:placeholder:text-slate-500 ${getError("profile", "fullName") ? "border-red-500" : "border-slate-200 dark:border-slate-700"}`}
                     />
-                    <ErrorMsg section="profile" field="fullName" />
+                    <ResumeFieldError errors={validationErrors} section="profile" field="fullName" visible={showFieldValidation} />
                   </div>
                   <input
                     placeholder="Job Title"
@@ -1630,7 +1670,7 @@ const ResumeEditor: React.FC<ResumeEditorProps> = ({
                         onChange={e => handleProfileChange("email", e.target.value)}
                         className={`w-full p-3 bg-white dark:bg-slate-800 border rounded-lg text-sm focus:border-brand-500 focus:ring-1 focus:ring-brand-500 outline-none transition-all dark:text-white dark:placeholder:text-slate-500 ${getError("profile", "email") ? "border-red-500" : "border-slate-200 dark:border-slate-700"}`}
                       />
-                      <ErrorMsg section="profile" field="email" />
+                      <ResumeFieldError errors={validationErrors} section="profile" field="email" visible={showFieldValidation} />
                     </div>
                     <div>
                       <input
@@ -1639,7 +1679,7 @@ const ResumeEditor: React.FC<ResumeEditorProps> = ({
                         onChange={e => handleProfileChange("phone", e.target.value)}
                         className={`w-full p-3 bg-white dark:bg-slate-800 border rounded-lg text-sm focus:border-brand-500 focus:ring-1 focus:ring-brand-500 outline-none transition-all dark:text-white dark:placeholder:text-slate-500 ${getError("profile", "phone") ? "border-red-500" : "border-slate-200 dark:border-slate-700"}`}
                       />
-                      <ErrorMsg section="profile" field="phone" />
+                      <ResumeFieldError errors={validationErrors} section="profile" field="phone" visible={showFieldValidation} />
                     </div>
                   </div>
                   <div className="grid grid-cols-2 gap-3">
@@ -1763,7 +1803,13 @@ const ResumeEditor: React.FC<ResumeEditorProps> = ({
                               onChange={e => updateExperience(exp.id, "role", e.target.value)}
                               className={`w-full p-3 bg-white dark:bg-slate-700 border rounded-lg text-sm font-medium text-slate-900 dark:text-white focus:border-brand-500 focus:ring-1 focus:ring-brand-500 outline-none transition-all dark:placeholder:text-slate-400 ${getError("experience", "role", exp.id) ? "border-red-500" : "border-slate-200 dark:border-slate-600"}`}
                             />
-                            <ErrorMsg section="experience" field="role" id={exp.id} />
+                            <ResumeFieldError
+                              errors={validationErrors}
+                              section="experience"
+                              field="role"
+                              id={exp.id}
+                              visible={showFieldValidation}
+                            />
                           </div>
                           <div>
                             <input
@@ -1772,7 +1818,13 @@ const ResumeEditor: React.FC<ResumeEditorProps> = ({
                               onChange={e => updateExperience(exp.id, "company", e.target.value)}
                               className={`w-full p-3 bg-white dark:bg-slate-700 border rounded-lg text-sm focus:border-brand-500 focus:ring-1 focus:ring-brand-500 outline-none transition-all dark:text-white dark:placeholder:text-slate-400 ${getError("experience", "company", exp.id) ? "border-red-500" : "border-slate-200 dark:border-slate-600"}`}
                             />
-                            <ErrorMsg section="experience" field="company" id={exp.id} />
+                            <ResumeFieldError
+                              errors={validationErrors}
+                              section="experience"
+                              field="company"
+                              id={exp.id}
+                              visible={showFieldValidation}
+                            />
                           </div>
                         </div>
                         <div className="grid grid-cols-2 gap-3">
@@ -1783,7 +1835,13 @@ const ResumeEditor: React.FC<ResumeEditorProps> = ({
                               onChange={val => updateExperience(exp.id, "startDate", val)}
                               className={`${getError("experience", "startDate", exp.id) ? "border-red-500" : "border-slate-200 dark:border-slate-600"}`}
                             />
-                            <ErrorMsg section="experience" field="startDate" id={exp.id} />
+                            <ResumeFieldError
+                              errors={validationErrors}
+                              section="experience"
+                              field="startDate"
+                              id={exp.id}
+                              visible={showFieldValidation}
+                            />
                           </div>
                           <div>
                             <MonthYearPicker
@@ -1804,7 +1862,13 @@ const ResumeEditor: React.FC<ResumeEditorProps> = ({
                               allowPresent
                               className={`${getError("experience", "endDate", exp.id) ? "border-red-500" : "border-slate-200 dark:border-slate-600"}`}
                             />
-                            <ErrorMsg section="experience" field="endDate" id={exp.id} />
+                            <ResumeFieldError
+                              errors={validationErrors}
+                              section="experience"
+                              field="endDate"
+                              id={exp.id}
+                              visible={showFieldValidation}
+                            />
                           </div>
                         </div>
                         <div className="flex items-center gap-2 mb-2">
@@ -1918,7 +1982,13 @@ const ResumeEditor: React.FC<ResumeEditorProps> = ({
                               onChange={e => updateEducation(edu.id, "school", e.target.value)}
                               className={`w-full p-3 bg-white dark:bg-slate-700 border rounded-lg text-sm font-medium text-slate-900 dark:text-white focus:border-brand-500 focus:ring-1 focus:ring-brand-500 outline-none transition-all dark:placeholder:text-slate-400 ${getError("education", "school", edu.id) ? "border-red-500" : "border-slate-200 dark:border-slate-600"}`}
                             />
-                            <ErrorMsg section="education" field="school" id={edu.id} />
+                            <ResumeFieldError
+                              errors={validationErrors}
+                              section="education"
+                              field="school"
+                              id={edu.id}
+                              visible={showFieldValidation}
+                            />
                           </div>
                           <div>
                             <input
@@ -1927,7 +1997,13 @@ const ResumeEditor: React.FC<ResumeEditorProps> = ({
                               onChange={e => updateEducation(edu.id, "degree", e.target.value)}
                               className={`w-full p-3 bg-white dark:bg-slate-700 border rounded-lg text-sm focus:border-brand-500 focus:ring-1 focus:ring-brand-500 outline-none transition-all dark:text-white dark:placeholder:text-slate-400 ${getError("education", "degree", edu.id) ? "border-red-500" : "border-slate-200 dark:border-slate-600"}`}
                             />
-                            <ErrorMsg section="education" field="degree" id={edu.id} />
+                            <ResumeFieldError
+                              errors={validationErrors}
+                              section="education"
+                              field="degree"
+                              id={edu.id}
+                              visible={showFieldValidation}
+                            />
                           </div>
                         </div>
                         <div className="grid grid-cols-2 gap-3">
@@ -1938,7 +2014,13 @@ const ResumeEditor: React.FC<ResumeEditorProps> = ({
                               onChange={val => updateEducation(edu.id, "startDate", val)}
                               className={`${getError("education", "startDate", edu.id) ? "border-red-500" : "border-slate-200 dark:border-slate-600"}`}
                             />
-                            <ErrorMsg section="education" field="startDate" id={edu.id} />
+                            <ResumeFieldError
+                              errors={validationErrors}
+                              section="education"
+                              field="startDate"
+                              id={edu.id}
+                              visible={showFieldValidation}
+                            />
                           </div>
                           <div>
                             <MonthYearPicker
@@ -1959,7 +2041,13 @@ const ResumeEditor: React.FC<ResumeEditorProps> = ({
                               allowPresent
                               className={`${getError("education", "endDate", edu.id) ? "border-red-500" : "border-slate-200 dark:border-slate-600"}`}
                             />
-                            <ErrorMsg section="education" field="endDate" id={edu.id} />
+                            <ResumeFieldError
+                              errors={validationErrors}
+                              section="education"
+                              field="endDate"
+                              id={edu.id}
+                              visible={showFieldValidation}
+                            />
                           </div>
                         </div>
                         <div className="flex items-center gap-2 mb-2">
@@ -2044,7 +2132,7 @@ const ResumeEditor: React.FC<ResumeEditorProps> = ({
                         className="font-medium text-slate-900 dark:text-white bg-transparent outline-none flex-1 focus:border-b border-brand-500 pb-1"
                       />
                       <button
-                        onClick={() => removeSkillCategory(cat.id)}
+                        onClick={() => requestRemoveSkillCategory(cat.id)}
                         className="text-slate-400 hover:text-red-500 p-1 rounded hover:bg-red-50 transition-colors"
                       >
                         <Trash2 size={14} />
@@ -2377,7 +2465,13 @@ const ResumeEditor: React.FC<ResumeEditorProps> = ({
                           className={`text-xl font-medium text-slate-900 dark:text-white bg-transparent border-b hover:border-slate-300 dark:hover:border-slate-600 focus:border-brand-500 focus:ring-0 px-0 w-full transition-all dark:placeholder:text-slate-500 ${getError("custom", "title", sec.id) ? "border-red-500" : "border-transparent"}`}
                           placeholder="e.g. Projects, Volunteer, Awards"
                         />
-                        <ErrorMsg section="custom" field="title" id={sec.id} />
+                        <ResumeFieldError
+                          errors={validationErrors}
+                          section="custom"
+                          field="title"
+                          id={sec.id}
+                          visible={showFieldValidation}
+                        />
                       </div>
                       <div className="flex gap-2 items-center pt-5">
                         <button
@@ -2452,7 +2546,13 @@ const ResumeEditor: React.FC<ResumeEditorProps> = ({
                                 className={`w-full p-2 bg-transparent text-sm font-medium border-b hover:border-slate-300 dark:hover:border-slate-600 outline-none transition-all dark:text-white dark:placeholder:text-slate-400 ${getError("custom", "title", item.id) ? "border-red-500" : "border-transparent"}`}
                                 placeholder="Activity / Project Name"
                               />
-                              <ErrorMsg section="custom" field="title" id={item.id} />
+                              <ResumeFieldError
+                                errors={validationErrors}
+                                section="custom"
+                                field="title"
+                                id={item.id}
+                                visible={showFieldValidation}
+                              />
                               <input
                                 value={item.subtitle}
                                 onChange={e => updateCustomSectionItem(sec.id, item.id, "subtitle", e.target.value)}
@@ -2559,6 +2659,13 @@ const ResumeEditor: React.FC<ResumeEditorProps> = ({
               );
             })}
           </div>
+          <div
+            role="separator"
+            aria-orientation="vertical"
+            aria-label="Resize section editor"
+            onPointerDown={startFormsPanelResize}
+            className="absolute right-0 top-0 z-30 flex h-full w-3 cursor-col-resize select-none touch-none justify-end hover:bg-slate-200/40 dark:hover:bg-white/5"
+          />
         </div>
         {/* 3. Preview Area */}
         <div className="flex-1 min-w-0 bg-slate-100 dark:bg-slate-950 overflow-hidden relative flex flex-col items-center">
@@ -3105,6 +3212,39 @@ const ResumeEditor: React.FC<ResumeEditorProps> = ({
       )}
 
       <ResumeKnowledgeBaseModal open={showKnowledgeBaseModal} onClose={() => setShowKnowledgeBaseModal(false)} />
+
+      {pendingDeleteSkillCategoryId && (
+        <div className="fixed inset-0 z-[80] flex items-center justify-center bg-slate-900/50 backdrop-blur-sm animate-in fade-in duration-200">
+          <div className="bg-white dark:bg-slate-900 w-full max-w-md rounded-2xl shadow-2xl p-6 border border-slate-200 dark:border-slate-800 relative">
+            <div className="flex items-start gap-3 mb-4">
+              <div className="mt-0.5 p-2 rounded-full bg-red-50 dark:bg-red-900/20 text-red-500">
+                <AlertCircle size={18} />
+              </div>
+              <div>
+                <h2 className="text-lg font-medium text-slate-900 dark:text-white">Delete category?</h2>
+                <p className="text-sm text-slate-500 dark:text-slate-400 mt-1">
+                  This will permanently remove the category and all skills inside it.
+                </p>
+              </div>
+            </div>
+
+            <div className="flex items-center justify-end gap-3">
+              <button
+                onClick={cancelRemoveSkillCategory}
+                className="px-4 py-2 rounded-lg border border-slate-200 dark:border-slate-700 text-slate-700 dark:text-slate-200 hover:bg-slate-50 dark:hover:bg-slate-800 transition-colors"
+              >
+                Cancel
+              </button>
+              <button
+                onClick={confirmRemoveSkillCategory}
+                className="px-4 py-2 rounded-lg bg-red-600 text-white hover:bg-red-700 transition-colors"
+              >
+                Delete Category
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
 
       {pendingDeleteSectionId && (
         <div className="fixed inset-0 z-[80] flex items-center justify-center bg-slate-900/50 backdrop-blur-sm animate-in fade-in duration-200">

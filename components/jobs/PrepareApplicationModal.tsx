@@ -475,7 +475,7 @@ const PrepareApplicationModal: React.FC<PrepareApplicationModalProps> = ({
     if (state.status === "loading" || ensuringApp) {
       return (
         <div className="flex flex-1 flex-col items-center justify-center rounded-2xl border border-slate-100 bg-slate-50 p-8 text-center dark:border-slate-800 dark:bg-slate-900/50">
-          <Loader2 className="mb-4 h-10 w-10 animate-spin text-blue-600" />
+          <Loader2 className="mb-4 h-10 w-10 animate-spin text-brand-600" />
           <h3 className="mb-2 font-medium text-slate-900 dark:text-white">Generating your {tabLabel.toLowerCase()}…</h3>
           <p className="max-w-xs text-sm text-slate-500 dark:text-slate-400">
             {ensuringApp
@@ -493,7 +493,7 @@ const PrepareApplicationModal: React.FC<PrepareApplicationModalProps> = ({
           <button
             type="button"
             onClick={() => void handleGenerate(activeTab as GeneratableTab)}
-            className="rounded-xl bg-blue-600 px-5 py-2 text-sm font-medium text-white hover:bg-blue-700"
+            className="rounded-xl bg-brand-600 px-5 py-2 text-sm font-medium text-white hover:bg-brand-700"
           >
             Try again
           </button>
@@ -527,7 +527,7 @@ const PrepareApplicationModal: React.FC<PrepareApplicationModalProps> = ({
           <textarea
             value={state.content}
             onChange={e => setTabState("vpd", { content: e.target.value })}
-            className="h-full min-h-[320px] w-full resize-none rounded-xl border border-slate-200 bg-slate-50 p-6 font-mono text-sm leading-relaxed text-slate-800 outline-none focus:ring-2 focus:ring-blue-500/20 dark:border-slate-800 dark:bg-[#111] dark:text-slate-300"
+            className="h-full min-h-[320px] w-full resize-none rounded-xl border border-slate-200 bg-slate-50 p-6 font-mono text-sm leading-relaxed text-slate-800 outline-none focus:ring-2 focus:ring-brand-500/20 dark:border-slate-800 dark:bg-slate-900 dark:text-slate-300"
             spellCheck={false}
           />
         </div>
@@ -536,7 +536,7 @@ const PrepareApplicationModal: React.FC<PrepareApplicationModalProps> = ({
 
     return (
       <div className="mx-auto flex max-w-sm flex-1 flex-col items-center justify-center rounded-2xl border border-slate-100 bg-slate-50 p-8 text-center dark:border-slate-800 dark:bg-slate-900/50">
-        <Wand2 size={48} className="mb-4 text-blue-500 opacity-20" />
+        <Wand2 size={48} className="mb-4 text-brand-500 opacity-20" />
         <h3 className="mb-2 font-medium text-slate-900 dark:text-white">Ready to Generate?</h3>
         <p className="mb-6 text-sm text-slate-500 dark:text-slate-400">
           {applicationId
@@ -548,7 +548,7 @@ const PrepareApplicationModal: React.FC<PrepareApplicationModalProps> = ({
           type="button"
           onClick={() => void handleGenerate(activeTab as GeneratableTab)}
           disabled={ensuringApp}
-          className="flex items-center gap-2 rounded-xl bg-blue-600 px-6 py-2.5 font-medium text-white shadow-lg shadow-blue-500/20 transition-all hover:bg-blue-700 active:scale-95 disabled:opacity-50"
+          className="flex items-center gap-2 rounded-xl bg-brand-600 px-6 py-2.5 font-medium text-white shadow-lg shadow-brand-500/20 transition-all hover:bg-brand-700 active:scale-95 disabled:opacity-50"
         >
           <Wand2 size={16} fill="currentColor" />
           Generate Draft
@@ -559,7 +559,7 @@ const PrepareApplicationModal: React.FC<PrepareApplicationModalProps> = ({
 
   return (
     <div className="fixed inset-0 z-50 flex animate-in items-center justify-center bg-black/50 p-4 backdrop-blur-sm fade-in duration-200">
-      <div className="relative flex h-[600px] w-full max-w-4xl overflow-hidden rounded-3xl border border-slate-200 bg-white shadow-2xl dark:border-slate-800 dark:bg-[#1a1a1a]">
+      <div className="relative flex h-[600px] w-full max-w-4xl overflow-hidden rounded-3xl border border-slate-200 bg-white shadow-2xl dark:border-slate-800 dark:bg-slate-900">
         {isStartingInterview && (
           <InterviewLaunchOverlay
             error={interviewLaunchError}
@@ -569,7 +569,7 @@ const PrepareApplicationModal: React.FC<PrepareApplicationModalProps> = ({
             }}
           />
         )}
-        <div className="flex h-full w-64 shrink-0 flex-col border-r border-slate-200 bg-slate-50 p-5 dark:border-slate-800 dark:bg-[#111]">
+        <div className="flex h-full w-64 shrink-0 flex-col border-r border-slate-200 bg-slate-50 p-5 dark:border-slate-800 dark:bg-slate-900">
           <div className="mb-6">
             <h2 className="mb-3 text-xs font-medium uppercase tracking-widest text-slate-400">Prepare Application</h2>
             <h3 className="mb-1 line-clamp-1 text-lg font-medium text-slate-900 dark:text-white">{job.role}</h3>
@@ -596,13 +596,13 @@ const PrepareApplicationModal: React.FC<PrepareApplicationModalProps> = ({
                   onClick={() => setActiveTab(tab.id)}
                   className={`flex w-full items-center gap-3 rounded-xl px-3 py-2.5 text-left text-sm font-medium transition-all ${
                     isActive
-                      ? "bg-white text-blue-600 shadow-sm ring-1 ring-slate-200 dark:bg-slate-800 dark:text-blue-400 dark:ring-slate-700"
+                      ? "bg-white text-brand-600 shadow-sm ring-1 ring-slate-200 dark:bg-slate-800 dark:text-brand-400 dark:ring-slate-700"
                       : "text-slate-600 hover:bg-slate-100 dark:text-slate-400 dark:hover:bg-slate-800/50"
                   }`}
                 >
                   <Icon size={16} className="shrink-0 opacity-70" />
                   <span className="flex-1">{tab.label}</span>
-                  {isLoading && <Loader2 size={14} className="shrink-0 animate-spin text-blue-500" />}
+                  {isLoading && <Loader2 size={14} className="shrink-0 animate-spin text-brand-500" />}
                   {!isLoading && hasAsset && <Check size={14} className="shrink-0 text-emerald-500" />}
                 </button>
               );
@@ -613,7 +613,7 @@ const PrepareApplicationModal: React.FC<PrepareApplicationModalProps> = ({
             type="button"
             onClick={handleReferralCallout}
             disabled={!onNavigateToStudio}
-            className="mt-auto flex shrink-0 flex-col rounded-2xl border border-blue-900/40 bg-gradient-to-br from-[#001433] via-[#002654] to-[#003366] p-4 text-left transition-all hover:brightness-110 disabled:cursor-not-allowed disabled:opacity-50"
+            className="mt-auto flex shrink-0 flex-col rounded-2xl border border-brand-900/40 bg-gradient-to-br from-[#001433] via-[#002654] to-[#003366] p-4 text-left transition-all hover:brightness-110 disabled:cursor-not-allowed disabled:opacity-50"
           >
             <div>
               <p className="text-sm font-semibold text-white">Referral request</p>
@@ -628,18 +628,18 @@ const PrepareApplicationModal: React.FC<PrepareApplicationModalProps> = ({
           </button>
         </div>
 
-        <div className="flex flex-1 flex-col bg-white dark:bg-[#151515]">
+        <div className="flex flex-1 flex-col bg-white dark:bg-slate-900">
           <div className="flex h-16 items-center justify-between border-b border-slate-100 px-6 dark:border-slate-800">
             <h2 className="flex items-center gap-2 font-medium text-slate-900 dark:text-white">
               {isInterviewTab ? (
                 <>
-                  <Mic2 size={16} className="text-blue-500" /> Interview Prep
-                  {(isStartingInterview || ensuringApp) && <Loader2 size={14} className="animate-spin text-blue-500" />}
+                  <Mic2 size={16} className="text-brand-500" /> Interview Prep
+                  {(isStartingInterview || ensuringApp) && <Loader2 size={14} className="animate-spin text-brand-500" />}
                 </>
               ) : (
                 <>
-                  <Wand2 size={16} className="text-blue-500" /> Generate {PREPARE_TABS.find(t => t.id === activeTab)?.label}
-                  {activeAsset?.status === "loading" && <Loader2 size={14} className="animate-spin text-blue-500" />}
+                  <Wand2 size={16} className="text-brand-500" /> Generate {PREPARE_TABS.find(t => t.id === activeTab)?.label}
+                  {activeAsset?.status === "loading" && <Loader2 size={14} className="animate-spin text-brand-500" />}
                 </>
               )}
             </h2>
@@ -727,7 +727,7 @@ const PrepareApplicationModal: React.FC<PrepareApplicationModalProps> = ({
                 <button
                   type="button"
                   onClick={() => handleImproveWithUnibot(activeTextAssetId, activeTab === "cold-email" ? "cold-email" : "cover-letter")}
-                  className="flex items-center gap-2 rounded-xl border border-blue-200 bg-blue-50 px-4 py-2 text-sm font-medium text-blue-700 transition-colors hover:bg-blue-100 dark:border-blue-800 dark:bg-blue-950/40 dark:text-blue-300 dark:hover:bg-blue-950/60"
+                  className="flex items-center gap-2 rounded-xl border border-brand-200 bg-brand-50 px-4 py-2 text-sm font-medium text-brand-700 transition-colors hover:bg-brand-100 dark:border-brand-800 dark:bg-brand-900/40 dark:text-brand-300 dark:hover:bg-brand-900/60"
                 >
                   <Wand2 size={16} /> Improve with Unibot
                 </button>

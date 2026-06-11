@@ -133,7 +133,9 @@ const PostSchedulerModal: React.FC<PostSchedulerModalProps> = ({
                     </div>
                   </div>
                 </div>
-                <div className="whitespace-pre-wrap text-sm leading-relaxed text-slate-800 dark:text-slate-200">{currentContent}</div>
+                <div className="max-h-52 overflow-y-auto whitespace-pre-wrap text-sm leading-relaxed text-slate-800 dark:text-slate-200">
+                  {currentContent}
+                </div>
                 {linkedinPreviewPendingMedia.length > 0 || linkedinPreviewImages.length > 0 ? (
                   <div className="mt-4 grid grid-cols-2 gap-2">
                     {linkedinPreviewPendingMedia.map(p => (

@@ -69,8 +69,8 @@ const JobsMain: React.FC<JobsMainProps> = ({ onNavigateToStudio, activeTab, onTa
   };
 
   return (
-    <div className="flex h-full flex-1 flex-col overflow-hidden bg-slate-50 font-sans dark:bg-[#0a0a0a]">
-      <div className="sticky top-0 z-20 border-b border-slate-200 bg-white dark:border-slate-800 dark:bg-[#0a0a0a]">
+    <div className="flex h-full flex-1 flex-col overflow-hidden bg-slate-50 font-sans dark:bg-slate-950">
+      <div className="sticky top-0 z-20 border-b border-slate-200 bg-white dark:border-slate-800 dark:bg-slate-950">
         <div className="mx-auto flex max-w-7xl items-center justify-between px-6 py-4">
           <div>
             <h1 className="text-2xl font-medium leading-none tracking-tight text-slate-900 dark:text-white">Jobs & Career</h1>
@@ -83,7 +83,7 @@ const JobsMain: React.FC<JobsMainProps> = ({ onNavigateToStudio, activeTab, onTa
               onClick={() => onTabChange("discovery")}
               className={`flex items-center gap-2 rounded-full px-4 py-2 text-xs font-medium transition-all ${
                 activeTab === "discovery"
-                  ? "bg-white text-blue-600 shadow-sm dark:bg-slate-800 dark:text-blue-400"
+                  ? "bg-white text-brand-600 shadow-sm dark:bg-slate-800 dark:text-brand-400"
                   : "text-slate-500 hover:text-slate-900 dark:text-slate-400 dark:hover:text-white"
               }`}
             >
@@ -94,7 +94,7 @@ const JobsMain: React.FC<JobsMainProps> = ({ onNavigateToStudio, activeTab, onTa
               onClick={() => onTabChange("tracker")}
               className={`flex items-center gap-2 rounded-full px-4 py-2 text-xs font-medium transition-all ${
                 activeTab === "tracker"
-                  ? "bg-white text-blue-600 shadow-sm dark:bg-slate-800 dark:text-blue-400"
+                  ? "bg-white text-brand-600 shadow-sm dark:bg-slate-800 dark:text-brand-400"
                   : "text-slate-500 hover:text-slate-900 dark:text-slate-400 dark:hover:text-white"
               }`}
             >
@@ -109,7 +109,7 @@ const JobsMain: React.FC<JobsMainProps> = ({ onNavigateToStudio, activeTab, onTa
               }}
               className={`flex items-center gap-2 rounded-full px-4 py-2 text-xs font-medium transition-all ${
                 activeTab === "interview"
-                  ? "bg-white text-blue-600 shadow-sm dark:bg-slate-800 dark:text-blue-400"
+                  ? "bg-white text-brand-600 shadow-sm dark:bg-slate-800 dark:text-brand-400"
                   : "text-slate-500 hover:text-slate-900 dark:text-slate-400 dark:hover:text-white"
               }`}
             >

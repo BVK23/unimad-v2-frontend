@@ -93,7 +93,7 @@ const PortfolioCanvas: React.FC = () => {
   };
 
   return (
-    <div className="flex flex-col h-full bg-slate-50 dark:bg-[#0a0a0a] overflow-hidden">
+    <div className="flex flex-col h-full bg-slate-50 dark:bg-slate-950 overflow-hidden">
       {/* Top Toolbar */}
       <div className="bg-white dark:bg-slate-900 border-b border-slate-200 dark:border-slate-800 px-6 py-4 flex items-center justify-between z-[100]">
         <div className="flex items-center gap-6">

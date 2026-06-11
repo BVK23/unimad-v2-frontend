@@ -35,7 +35,11 @@ import type { ContentGenFunnel } from "@/features/content-lab/api/adk-mappers";
 import type { ContentGenPlannerAction } from "@/features/content-lab/api/content-gen-events";
 import { CONTENT_GEN_EVENTS, CONTENT_GEN_PUBLISH_BLOCKED_MESSAGE } from "@/features/content-lab/api/content-gen-events";
 import { shouldForceDjangoContentGenDraft } from "@/features/content-lab/api/contentGenDraftConfig";
-import { stripContentGenDraftFromMessage, messageHasContentGenDraft } from "@/features/content-lab/api/contentGenDraftDisplay";
+import {
+  CONTENT_GEN_IMPROVE_KICKOFF_USER_MESSAGE,
+  stripContentGenDraftFromMessage,
+  messageHasContentGenDraft,
+} from "@/features/content-lab/api/contentGenDraftDisplay";
 import { isValidContentGenTopicTitle } from "@/features/content-lab/api/contentGenTopicUtils";
 import {
   extractConfirmedTopicFromThread,
@@ -87,7 +91,7 @@ import Logo from "./Logo";
 import UnimadUMark from "./UnimadUMark";
 import { useAdkChatContext } from "./chat/AdkChatProvider";
 import { AdkRewindConfirmDialog } from "./chat/AdkRewindConfirmDialog";
-import { ContentGenPublishChips } from "./chat/ContentGenPublishChips";
+import { ContentGenDraftReviewChips } from "./chat/ContentGenDraftReviewChips";
 import { ContentGenTopicChips } from "./chat/ContentGenTopicChips";
 import { FormattedAgentMessage } from "./chat/FormattedAgentMessage";
 import { UnibotErrorBubble } from "./chat/UnibotErrorBubble";
@@ -158,7 +162,7 @@ function AdkReviewCardBlock({
             type="button"
             disabled={adkReviewBusy || !sessionReady}
             onClick={() => void onDiscard()}
-            className="rounded-lg border border-slate-200 bg-white px-3 py-1.5 text-[12px] font-medium text-slate-700 hover:bg-slate-50 dark:border-white/10 dark:bg-[#161616] dark:text-slate-200 dark:hover:bg-white/5 disabled:opacity-50"
+            className="rounded-lg border border-slate-200 bg-white px-3 py-1.5 text-[12px] font-medium text-slate-700 hover:bg-slate-50 dark:border-white/10 dark:bg-slate-900 dark:text-slate-200 dark:hover:bg-white/5 disabled:opacity-50"
           >
             Discard
           </button>
@@ -274,7 +278,6 @@ const ChatSidebar: React.FC<ChatSidebarProps> = ({ incomingRequest, onRequestHan
   const contentGenLastSyncedBotIdRef = useRef<string | null>(null);
   const applicationAssetLastSyncedBotIdRef = useRef<string | null>(null);
   const contentGenAcceptedBotMsgIdRef = useRef<string | null>(null);
-  const contentGenStudioAssetId = useContentGenStudioStore(s => s.assetId);
   const [isContentGenPublishing, setIsContentGenPublishing] = useState(false);
   const [contentGenPublishActivity, setContentGenPublishActivity] = useState<Record<string, string>>({});
   const queryClient = useQueryClient();
@@ -881,6 +884,11 @@ const ChatSidebar: React.FC<ChatSidebarProps> = ({ incomingRequest, onRequestHan
     }
     if (!sessionReady) return;
 
+    if (isAgentLoading || isLoadingHistory) {
+      onRequestHandled?.();
+      return;
+    }
+
     const sig = incomingRequestSignature(req);
     if (lastIncomingSigRef.current === sig) return;
     lastIncomingSigRef.current = sig;
@@ -1158,34 +1166,6 @@ const ChatSidebar: React.FC<ChatSidebarProps> = ({ incomingRequest, onRequestHan
     } finally {
       setAdkReviewBusy(false);
     }
-  }, []);
-
-  const handleContentGenDiscard = useCallback(() => {
-    const card = useAdkContentGenReviewStore.getState().getActiveCard();
-    if (!card) {
-      return;
-    }
-    useAdkContentGenReviewStore.getState().popReviewAfterDiscard();
-    contentGenAppliedTopicRef.current = card.baselineTopic.trim() || null;
-    window.dispatchEvent(
-      new CustomEvent(CONTENT_GEN_EVENTS.applyTopic, {
-        detail: {
-          topic: card.baselineTopic,
-          funnel: card.baselineFunnel ?? undefined,
-          assetId: card.baselineAssetId,
-        },
-      })
-    );
-    window.dispatchEvent(
-      new CustomEvent(CONTENT_GEN_EVENTS.draftPreview, {
-        detail: {
-          draft: card.baselineDraft,
-          topic: card.baselineTopic,
-          funnel: card.baselineFunnel,
-          assetId: card.baselineAssetId,
-        },
-      })
-    );
   }, []);
 
   const appendContentGenPublishHint = useCallback(
@@ -1796,6 +1776,25 @@ const ChatSidebar: React.FC<ChatSidebarProps> = ({ incomingRequest, onRequestHan
     [canSend, handleContentGenPublishIntent, messages, sendTopicMessage, handleStreamFailure, setMessages]
   );
 
+  const handleContentGenImprove = useCallback(
+    async (topicId: string | null) => {
+      const kickoff = CONTENT_GEN_IMPROVE_KICKOFF_USER_MESSAGE;
+      const resolvedTopicId = topicId ?? [...messages].reverse().find(m => m.isTopic && m.topicKind === "content_gen")?.id ?? null;
+
+      if (resolvedTopicId) {
+        await sendTopicCardMessage(resolvedTopicId, kickoff);
+        return;
+      }
+
+      try {
+        await sendMainMessage(kickoff);
+      } catch (err) {
+        handleStreamFailure(err, { text: kickoff });
+      }
+    },
+    [messages, sendTopicCardMessage, sendMainMessage, handleStreamFailure]
+  );
+
   const handleApplyContentGenTopic = useCallback(
     (topicId: string, title: string, funnel: ContentGenFunnel | null) => {
       contentGenAppliedTopicRef.current = title.trim();
@@ -2031,7 +2030,7 @@ const ChatSidebar: React.FC<ChatSidebarProps> = ({ incomingRequest, onRequestHan
 
   if (isCollapsed) {
     return (
-      <div className="relative flex h-full w-16 shrink-0 flex-col items-center border-r border-slate-200 bg-white py-4 transition-all duration-300 dark:border-white/5 dark:bg-[#0d0d0d] z-20">
+      <div className="relative flex h-full w-16 shrink-0 flex-col items-center border-r border-slate-200 bg-white py-4 transition-all duration-300 dark:border-white/5 dark:bg-slate-950 z-20">
         <button
           type="button"
           onClick={() => setIsCollapsed(false)}
@@ -2063,12 +2062,12 @@ const ChatSidebar: React.FC<ChatSidebarProps> = ({ incomingRequest, onRequestHan
 
   return (
     <div
-      className={`relative flex h-full min-h-0 shrink-0 flex-col border-r border-slate-200 bg-white shadow-sm dark:border-white/5 dark:bg-[#0d0d0d] z-20 ${
+      className={`relative flex h-full min-h-0 shrink-0 flex-col border-r border-slate-200 bg-white shadow-sm dark:border-white/5 dark:bg-slate-950 z-20 ${
         isResizing ? "" : "transition-[width] duration-200 ease-out"
       }`}
       style={{ width: sidebarWidth }}
     >
-      <div className="sticky top-0 z-10 flex h-16 items-center justify-between border-b border-slate-100 bg-white/80 px-4 backdrop-blur-md dark:border-white/5 dark:bg-[#0d0d0d]/80">
+      <div className="sticky top-0 z-10 flex h-16 items-center justify-between border-b border-slate-100 bg-white/80 px-4 backdrop-blur-md dark:border-white/5 dark:bg-slate-950/80">
         <Logo className="h-6 w-auto text-brand-600 dark:text-brand-400" />
         <button
           type="button"
@@ -2081,7 +2080,7 @@ const ChatSidebar: React.FC<ChatSidebarProps> = ({ incomingRequest, onRequestHan
 
       <div
         ref={messagesScrollRef}
-        className="flex min-h-0 flex-1 flex-col gap-6 overflow-y-auto overflow-x-hidden bg-white p-4 dark:bg-[#0d0d0d] scrollbar-on-hover"
+        className="flex min-h-0 flex-1 flex-col gap-6 overflow-y-auto overflow-x-hidden bg-white p-4 dark:bg-slate-950 scrollbar-on-hover"
       >
         {!userId && <p className="text-[11px] text-slate-400 px-1">Sign in to chat with Unibot.</p>}
         {userId && !sessionReady && (
@@ -2210,19 +2209,15 @@ const ChatSidebar: React.FC<ChatSidebarProps> = ({ incomingRequest, onRequestHan
                               />
                             ) : null}
                             {subMsg.role === "model" &&
-                              adkContentGenReviewStack
-                                .filter(c => c.assistantMessageId === subMsg.id)
-                                .map(card => (
-                                  <AdkReviewCardBlock
-                                    key={card.id}
-                                    card={card}
-                                    isActive={card.id === adkContentGenActiveReviewId}
-                                    adkReviewBusy={adkReviewBusy}
-                                    sessionReady={sessionReady}
-                                    onAccept={handleContentGenAccept}
-                                    onDiscard={handleContentGenDiscard}
-                                  />
-                                ))}
+                            adkContentGenReviewStack.some(
+                              c => c.assistantMessageId === subMsg.id && c.id === adkContentGenActiveReviewId
+                            ) ? (
+                              <ContentGenDraftReviewChips
+                                disabled={adkReviewBusy || !sessionReady}
+                                onAccept={() => void handleContentGenAccept()}
+                                onImprove={() => void handleContentGenImprove(msg.id)}
+                              />
+                            ) : null}
                             {subMsg.role === "model" &&
                               adkApplicationAssetReviewStack
                                 .filter(c => c.assistantMessageId === subMsg.id)
@@ -2237,36 +2232,40 @@ const ChatSidebar: React.FC<ChatSidebarProps> = ({ incomingRequest, onRequestHan
                                     onDiscard={discardApplicationAssetReview}
                                   />
                                 ))}
-                            {subMsg.role === "model" && contentGenAcceptedBotMsgIdRef.current === subMsg.id && contentGenStudioAssetId ? (
-                              <ContentGenPublishChips
-                                onPostNow={() => handleContentGenPublishIntent("post_now", undefined, msg.id)}
-                                onSchedule={() => handleContentGenPublishIntent("schedule", undefined, msg.id)}
-                              />
-                            ) : null}
                           </div>
                         );
                       })}
                     </div>
 
+                    {/* Topic Input - Seamless (nextjs layout; textarea for multi-line) */}
                     <div className="relative flex items-center gap-2 pt-2">
-                      <input
+                      <textarea
                         value={topicInputs[msg.id] || ""}
-                        onChange={e =>
+                        onChange={e => {
                           setTopicInputs(prev => ({
                             ...prev,
                             [msg.id]: e.target.value,
-                          }))
-                        }
-                        onKeyDown={e => e.key === "Enter" && handleTopicSend(msg.id)}
+                          }));
+                          e.target.style.height = "auto";
+                          e.target.style.height = `${e.target.scrollHeight}px`;
+                        }}
+                        onKeyDown={e => {
+                          if (e.key === "Enter" && !e.shiftKey) {
+                            e.preventDefault();
+                            void handleTopicSend(msg.id);
+                          }
+                        }}
                         placeholder="Reply..."
+                        rows={1}
                         disabled={!canSend}
-                        className="flex-1 bg-transparent text-[13px] py-2 border-none outline-none text-slate-700 dark:text-slate-200 placeholder:text-slate-300 dark:placeholder:text-slate-700 transition-colors"
+                        className="max-h-48 flex-1 resize-none overflow-y-auto border-none bg-transparent py-2 text-[13px] outline-none text-slate-700 placeholder:text-slate-300 transition-colors disabled:opacity-50 dark:text-slate-200 dark:placeholder:text-slate-700"
                       />
                       <button
                         type="button"
                         onClick={() => handleTopicSend(msg.id)}
                         disabled={!topicInputs[msg.id]?.trim() || !canSend}
-                        className="text-slate-300 hover:text-brand-600 disabled:opacity-0 transition-all p-2"
+                        className="p-2 text-slate-300 transition-all hover:text-brand-600 disabled:opacity-0"
+                        aria-label="Send reply"
                       >
                         <Send size={16} />
                       </button>
@@ -2336,19 +2335,13 @@ const ChatSidebar: React.FC<ChatSidebarProps> = ({ incomingRequest, onRequestHan
                 />
               ) : null}
               {msg.role === "model" &&
-                adkContentGenReviewStack
-                  .filter(c => c.assistantMessageId === msg.id)
-                  .map(card => (
-                    <AdkReviewCardBlock
-                      key={card.id}
-                      card={card}
-                      isActive={card.id === adkContentGenActiveReviewId}
-                      adkReviewBusy={adkReviewBusy}
-                      sessionReady={sessionReady}
-                      onAccept={handleContentGenAccept}
-                      onDiscard={handleContentGenDiscard}
-                    />
-                  ))}
+              adkContentGenReviewStack.some(c => c.assistantMessageId === msg.id && c.id === adkContentGenActiveReviewId) ? (
+                <ContentGenDraftReviewChips
+                  disabled={adkReviewBusy || !sessionReady}
+                  onAccept={() => void handleContentGenAccept()}
+                  onImprove={() => void handleContentGenImprove(null)}
+                />
+              ) : null}
               {msg.role === "model" &&
                 adkApplicationAssetReviewStack
                   .filter(c => c.assistantMessageId === msg.id)
@@ -2363,12 +2356,6 @@ const ChatSidebar: React.FC<ChatSidebarProps> = ({ incomingRequest, onRequestHan
                       onDiscard={discardApplicationAssetReview}
                     />
                   ))}
-              {msg.role === "model" && contentGenAcceptedBotMsgIdRef.current === msg.id && contentGenStudioAssetId ? (
-                <ContentGenPublishChips
-                  onPostNow={() => handleContentGenPublishIntent("post_now", undefined, null)}
-                  onSchedule={() => handleContentGenPublishIntent("schedule", undefined, null)}
-                />
-              ) : null}
               {msg.role === "model" &&
                 adkReviewStack
                   .filter(c => c.assistantMessageId === msg.id)
@@ -2432,19 +2419,13 @@ const ChatSidebar: React.FC<ChatSidebarProps> = ({ incomingRequest, onRequestHan
                   onDiscard={handleAdkPortfolioDiscard}
                 />
               ))}
-            {adkContentGenReviewStack
-              .filter(c => !c.assistantMessageId)
-              .map(card => (
-                <AdkReviewCardBlock
-                  key={card.id}
-                  card={card}
-                  isActive={card.id === adkContentGenActiveReviewId}
-                  adkReviewBusy={adkReviewBusy}
-                  sessionReady={sessionReady}
-                  onAccept={handleContentGenAccept}
-                  onDiscard={handleContentGenDiscard}
-                />
-              ))}
+            {adkContentGenReviewStack.some(c => !c.assistantMessageId && c.id === adkContentGenActiveReviewId) ? (
+              <ContentGenDraftReviewChips
+                disabled={adkReviewBusy || !sessionReady}
+                onAccept={() => void handleContentGenAccept()}
+                onImprove={() => void handleContentGenImprove(null)}
+              />
+            ) : null}
             {adkApplicationAssetReviewStack
               .filter(c => !c.assistantMessageId)
               .map(card => (
@@ -2471,10 +2452,10 @@ const ChatSidebar: React.FC<ChatSidebarProps> = ({ incomingRequest, onRequestHan
         )}
       </div>
 
-      <div className="p-4 bg-slate-50 dark:bg-[#0d0d0d] border-t border-slate-100 dark:border-white/5">
+      <div className="p-4 bg-slate-50 dark:bg-slate-950 border-t border-slate-100 dark:border-white/5">
         <div
           ref={footerInputCardRef}
-          className="relative rounded-xl border border-slate-200/90 bg-white px-3 pt-3 pb-2 shadow-sm dark:border-slate-700/80 dark:bg-[#161616]"
+          className="relative rounded-xl border border-slate-200/90 bg-white px-3 pt-3 pb-2 shadow-sm dark:border-slate-700/80 dark:bg-slate-900"
         >
           {selectionSentPill ? (
             <div className="mb-2">
@@ -2571,7 +2552,7 @@ const ChatSidebar: React.FC<ChatSidebarProps> = ({ incomingRequest, onRequestHan
               </button>
               {historyPanelOpen && (
                 <div
-                  className="absolute bottom-full left-0 right-0 z-40 mb-2 max-h-[min(320px,50vh)] w-[min(280px,90vw)] overflow-hidden rounded-xl border border-slate-200 bg-white shadow-lg dark:border-slate-600 dark:bg-[#1a1a1a]"
+                  className="absolute bottom-full left-0 right-0 z-40 mb-2 max-h-[min(320px,50vh)] w-[min(280px,90vw)] overflow-hidden rounded-xl border border-slate-200 bg-white shadow-lg dark:border-slate-600 dark:bg-slate-900"
                   role="dialog"
                   aria-label="Chat history"
                 >
@@ -2724,7 +2705,7 @@ const ChatSidebar: React.FC<ChatSidebarProps> = ({ incomingRequest, onRequestHan
             aria-modal="true"
             aria-labelledby="delete-chat-session-title"
           >
-            <div className="w-full max-w-md rounded-2xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-[#1a1a1a] shadow-2xl overflow-hidden">
+            <div className="w-full max-w-md rounded-2xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 shadow-2xl overflow-hidden">
               <div className="flex items-center justify-between p-5 border-b border-slate-100 dark:border-slate-800">
                 <h2 id="delete-chat-session-title" className="text-base font-semibold text-slate-900 dark:text-white">
                   Delete chat session?

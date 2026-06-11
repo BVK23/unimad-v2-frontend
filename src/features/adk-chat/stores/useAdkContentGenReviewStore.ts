@@ -114,7 +114,7 @@ export const useAdkContentGenReviewStore = create<AdkContentGenReviewState>((set
 
       proposedDraft: trimmed,
 
-      bannerTitle: bannerTitle ?? "Review the LinkedIn post edit in Studio, then accept or discard.",
+      bannerTitle: bannerTitle ?? "Review the LinkedIn post edit in Studio, then accept or improve.",
 
       baselineTopic: baselineTopic.trim(),
 

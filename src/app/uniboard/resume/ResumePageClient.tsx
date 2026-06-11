@@ -1,11 +1,10 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { Suspense, useCallback, useEffect, useState } from "react";
 import ResumeDashboard from "@/components/ResumeDashboard";
 import ResumeEditor from "@/components/ResumeEditor";
-import { mapBackendResumeToFrontend } from "@/features/resume/api/mappers";
 import { useResume, resumeByIdQueryKey } from "@/features/resume/hooks/useResume";
-import { fetchResumeContent } from "@/features/resume/server-actions/resume-actions";
+import { resumesListQueryKey } from "@/features/resume/hooks/useResumesList";
 import { getResumeContentSignature } from "@/features/resume/utils/getResumeContentSignature";
 import type { ResumeData } from "@/types";
 import { useQueryClient } from "@tanstack/react-query";
@@ -50,17 +49,28 @@ const getFriendlyResumeLoadError = (err: unknown) => {
   return "Unable to load resume right now. Please try again.";
 };
 
-export default function ResumePageClient() {
+type ResumePageClientProps = {
+  initialResumeId?: string;
+};
+
+/** Reads URL search params without suspending the resume list/editor shell. */
+function ResumeUrlSync({ onUrlIdChange }: { onUrlIdChange: (id: string | undefined) => void }) {
+  const searchParams = useSearchParams();
+  const urlId = searchParams.get("id")?.trim() || undefined;
+
+  useEffect(() => {
+    onUrlIdChange(urlId);
+  }, [urlId, onUrlIdChange]);
+
+  return null;
+}
+
+function ResumePageContent({ initialResumeId }: ResumePageClientProps) {
   const router = useRouter();
   const pathname = usePathname();
-  const searchParams = useSearchParams();
   const queryClient = useQueryClient();
 
-  const urlId = useMemo(() => {
-    const raw = searchParams.get("id");
-    return raw && raw.trim() !== "" ? raw : undefined;
-  }, [searchParams]);
-
+  const [urlId, setUrlId] = useState<string | undefined>(initialResumeId);
   const resumeQuery = useResume(urlId);
 
   const [resumeView, setResumeView] = useState<"list" | "editor">("list");
@@ -68,28 +78,43 @@ export default function ResumePageClient() {
   const [showTemplateModal, setShowTemplateModal] = useState(false);
   const [showExportModal, setShowExportModal] = useState(false);
   const [showOnboardingModal, setShowOnboardingModal] = useState(false);
-  /** JD/upload create path still does a one-off fetch before URL + query take over */
-  const [isLoadingResume, setIsLoadingResume] = useState(false);
   const [resumeLoadError, setResumeLoadError] = useState<string | null>(null);
 
-  const updateResumeUrl = (id?: string) => {
-    const params = new URLSearchParams(searchParams.toString());
-    if (id) {
-      params.set("id", id);
-    } else {
-      params.delete("id");
+  const handleUrlIdFromBrowser = useCallback((nextId: string | undefined) => {
+    if (!nextId) {
+      const fromWindow = new URLSearchParams(window.location.search).get("id")?.trim() || undefined;
+      if (fromWindow) {
+        setUrlId(fromWindow);
+        return;
+      }
     }
-    const query = params.toString();
-    router.push(query ? `${pathname}?${query}` : pathname, { scroll: false });
-  };
+    setUrlId(nextId);
+  }, []);
+
+  const updateResumeUrl = useCallback(
+    (id?: string) => {
+      setUrlId(id);
+      const params = new URLSearchParams(window.location.search);
+      if (id) {
+        params.set("id", id);
+      } else {
+        params.delete("id");
+      }
+      const query = params.toString();
+      router.replace(query ? `${pathname}?${query}` : pathname, { scroll: false });
+    },
+    [pathname, router]
+  );
 
   // No ?id=: show list and clear URL-driven state, but keep local-only editor (new resume, not saved yet)
+  /* eslint-disable react-hooks/set-state-in-effect -- URL-driven view sync; list vs editor follows search params */
   useEffect(() => {
     if (urlId) return;
 
     const isLocalOnlyEditor = resumeView === "editor" && currentResume !== null && !String(currentResume.id || "").trim();
+    const isActiveEditor = resumeView === "editor" && currentResume !== null;
 
-    if (isLocalOnlyEditor) return;
+    if (isLocalOnlyEditor || isActiveEditor) return;
 
     setResumeView("list");
     setCurrentResume(null);
@@ -119,11 +144,9 @@ export default function ResumePageClient() {
     if (!urlId || !resumeQuery.isError || !resumeQuery.error) return;
 
     setResumeLoadError(getFriendlyResumeLoadError(resumeQuery.error));
-    const params = new URLSearchParams(searchParams.toString());
-    params.delete("id");
-    const query = params.toString();
-    router.replace(query ? `${pathname}?${query}` : pathname, { scroll: false });
-  }, [urlId, resumeQuery.isError, resumeQuery.error, pathname, router, searchParams]);
+    updateResumeUrl();
+  }, [urlId, resumeQuery.isError, resumeQuery.error, updateResumeUrl]);
+  /* eslint-enable react-hooks/set-state-in-effect */
 
   const handleEditResume = (resume: ResumeData) => {
     if (resume.id) {
@@ -138,26 +161,9 @@ export default function ResumePageClient() {
 
   const handleCreateResume = async (type: "scratch" | "jd" | "upload", resumeId?: string) => {
     if ((type === "jd" || type === "upload") && resumeId) {
-      setIsLoadingResume(true);
-      try {
-        const response = await fetchResumeContent(resumeId);
-        if (!response.resumeData) {
-          throw new Error("Resume not found");
-        }
-        const mapped = mapBackendResumeToFrontend(response.resumeData);
-        const resumeWithId: ResumeData = {
-          ...mapped,
-          id: resumeId,
-        };
-        queryClient.setQueryData(resumeByIdQueryKey(resumeId), resumeWithId);
-        setCurrentResume(resumeWithId);
-        setResumeView("editor");
-        updateResumeUrl(String(resumeId));
-      } catch (err) {
-        alert(err instanceof Error ? err.message : "Failed to load resume. Please try again.");
-      } finally {
-        setIsLoadingResume(false);
-      }
+      setResumeLoadError(null);
+      await queryClient.refetchQueries({ queryKey: resumesListQueryKey, exact: true });
+      updateResumeUrl(String(resumeId));
       return;
     }
     const newResume: ResumeData = {
@@ -180,11 +186,8 @@ export default function ResumePageClient() {
       setCurrentResume(data);
     }
 
-    if (data.id) {
-      const currentId = searchParams.get("id");
-      if (currentId !== String(data.id)) {
-        updateResumeUrl(String(data.id));
-      }
+    if (data.id && urlId !== String(data.id)) {
+      updateResumeUrl(String(data.id));
     }
   };
 
@@ -198,11 +201,18 @@ export default function ResumePageClient() {
 
   const urlIdLoading = Boolean(urlId && resumeView === "list" && !resumeQuery.isSuccess && !resumeQuery.isError);
 
-  const showListLoader = isLoadingResume || urlIdLoading;
+  const showListLoader = urlIdLoading;
+
+  const urlSync = (
+    <Suspense fallback={null}>
+      <ResumeUrlSync onUrlIdChange={handleUrlIdFromBrowser} />
+    </Suspense>
+  );
 
   if (resumeView === "list") {
     return (
       <div className="relative flex flex-col h-full">
+        {urlSync}
         {showListLoader && (
           <div
             className="absolute inset-0 z-50 flex items-center justify-center bg-slate-50/90"
@@ -244,21 +254,25 @@ export default function ResumePageClient() {
 
   if (currentResume) {
     return (
-      <ResumeEditor
-        resumeId={currentResume.id}
-        initialData={currentResume}
-        onBack={() => {
-          setResumeView("list");
-          setCurrentResume(null);
-          updateResumeUrl();
-        }}
-        onSave={handleSaveResume}
-        onImprove={handleImproveWithAI}
-        showTemplateModal={showTemplateModal}
-        setShowTemplateModal={setShowTemplateModal}
-        showExportModal={showExportModal}
-        setShowExportModal={setShowExportModal}
-      />
+      <>
+        {urlSync}
+        <ResumeEditor
+          resumeId={currentResume.id}
+          initialData={currentResume}
+          onBack={() => {
+            void queryClient.refetchQueries({ queryKey: resumesListQueryKey, exact: true });
+            setResumeView("list");
+            setCurrentResume(null);
+            updateResumeUrl();
+          }}
+          onSave={handleSaveResume}
+          onImprove={handleImproveWithAI}
+          showTemplateModal={showTemplateModal}
+          setShowTemplateModal={setShowTemplateModal}
+          showExportModal={showExportModal}
+          setShowExportModal={setShowExportModal}
+        />
+      </>
     );
   }
 
@@ -284,4 +298,8 @@ export default function ResumePageClient() {
       </div>
     </div>
   ) : null;
+}
+
+export default function ResumePageClient({ initialResumeId }: ResumePageClientProps) {
+  return <ResumePageContent initialResumeId={initialResumeId} />;
 }

@@ -14,6 +14,7 @@ import { useAdkContentGenReviewStore } from "@/src/features/adk-chat/stores/useA
 import { useAdkPortfolioReviewStore } from "@/src/features/adk-chat/stores/useAdkPortfolioReviewStore";
 import { useAdkResumeReviewStore } from "@/src/features/adk-chat/stores/useAdkResumeReviewStore";
 import type { AgentMessage, ProcessedEvent } from "@/src/features/adk-chat/types";
+import { UNIBOT_AGENT_LOADING_EVENT } from "@/src/hooks/useUnibotAgentBusy";
 import type { ChatMessage } from "@/types";
 import { useQueryClient } from "@tanstack/react-query";
 import { usePathname } from "next/navigation";
@@ -161,6 +162,10 @@ export function AdkChatProvider({ userId, children }: { userId: string; children
     onEventUpdate,
     onWebsiteCountUpdate,
   });
+
+  useEffect(() => {
+    window.dispatchEvent(new CustomEvent(UNIBOT_AGENT_LOADING_EVENT, { detail: { loading: isAgentLoading } }));
+  }, [isAgentLoading]);
 
   useEffect(() => {
     useAdkResumeReviewStore.getState().clearAllReviews();

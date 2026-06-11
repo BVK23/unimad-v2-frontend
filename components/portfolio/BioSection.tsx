@@ -53,7 +53,7 @@ const BioSection: React.FC<BioSectionProps> = ({ variant = "standard", data }) =
           </div>
           {/* Accent decoration */}
           <div className="absolute -top-10 -right-10 w-40 h-40 bg-brand-500/10 rounded-full blur-3xl -z-10 animate-pulse"></div>
-          <div className="absolute -bottom-10 -left-10 w-40 h-40 bg-blue-500/10 rounded-full blur-3xl -z-10 animate-pulse delay-700"></div>
+          <div className="absolute -bottom-10 -left-10 w-40 h-40 bg-brand-500/10 rounded-full blur-3xl -z-10 animate-pulse delay-700"></div>
         </div>
       </div>
     </section>

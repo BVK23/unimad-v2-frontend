@@ -11,10 +11,13 @@ const DRAFT_INTRO_PATTERNS = [
 ];
 
 export const CONTENT_GEN_DRAFT_REVIEW_USER_MESSAGE =
-  "I've updated your LinkedIn post draft. Please review the edit in Studio, then accept or discard below.";
+  "I've updated your LinkedIn post draft. Please review the edit in Studio, then accept or improve below.";
 
 export const CONTENT_GEN_NEW_TOPIC_DRAFT_REVIEW_USER_MESSAGE =
-  "I've drafted a LinkedIn post for a new topic. Please review it in Studio, then accept or discard below.";
+  "I've drafted a LinkedIn post for a new topic. Please review it in Studio, then accept or improve below.";
+
+export const CONTENT_GEN_IMPROVE_KICKOFF_USER_MESSAGE =
+  "I'd like to improve this draft. What would you like to know about how I want it changed?";
 
 export const messageHasContentGenDraft = (botMessage: string): boolean => {
   if (isApplicationAssetBotMessage(botMessage)) {
