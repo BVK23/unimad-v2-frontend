@@ -40,6 +40,7 @@ export interface GeneratorContext {
   recipientName?: string; // For cold emails
   /** Existing asset id when opening studio (cover letter, cold email, etc.). */
   assetId?: string;
+  fromInterviewVpd?: boolean;
 }
 
 // Mock Data for Discovery

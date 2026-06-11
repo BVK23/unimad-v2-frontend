@@ -1,9 +1,16 @@
 "use client";
 
-import React, { useMemo, useState } from "react";
+import React, { useEffect, useMemo, useState } from "react";
 import { useApplications } from "@/features/application-tracker/hooks/useApplications";
 import { createApplication, updateApplication } from "@/features/application-tracker/server-actions/application-actions";
 import type { Application, ApplicationStatus, CreateApplicationInput } from "@/features/application-tracker/types";
+import {
+  activateInterviewVpdPrompt,
+  buildInterviewVpdStudioContext,
+  dismissInterviewVpdPrompt,
+  shouldShowInterviewVpdPrompt,
+  syncInterviewVpdPrompts,
+} from "@/lib/jobs/interview-vpd-prompt";
 import type { StartInterviewFromJobPayload } from "@/src/features/interview-prep/types";
 import type { GeneratorContext, Job } from "@/types/jobs";
 import { useQueryClient } from "@tanstack/react-query";
@@ -58,6 +65,8 @@ interface TrackerColumnProps {
   onPrepareJob: (job: Job) => void;
   onDragStart: () => void;
   onDragEnd: () => void;
+  showVpdPromptForJob?: (job: Job) => boolean;
+  onVpdPromptClick?: (job: Job) => void;
 }
 
 function TrackerColumn({
@@ -73,6 +82,8 @@ function TrackerColumn({
   onPrepareJob,
   onDragStart,
   onDragEnd,
+  showVpdPromptForJob,
+  onVpdPromptClick,
 }: TrackerColumnProps) {
   return (
     <div
@@ -120,9 +131,11 @@ function TrackerColumn({
                 job={job}
                 hideDescription
                 hideButtons
+                showVpdPrompt={status === "interviewing" && (showVpdPromptForJob?.(job) ?? false)}
                 onClick={() => onViewApplication(app)}
                 onPrepare={() => onPrepareJob(job)}
                 onApply={() => {}}
+                onVpdPromptClick={onVpdPromptClick}
               />
             </div>
           );
@@ -160,6 +173,24 @@ const ApplicationTracker: React.FC<ApplicationTrackerProps> = ({
   const [showRejectedModal, setShowRejectedModal] = useState(false);
   const [draftsCollapsed, setDraftsCollapsed] = useState(false);
   const [interviewingPromptJob, setInterviewingPromptJob] = useState<Job | null>(null);
+  const [vpdPromptTick, setVpdPromptTick] = useState(0);
+
+  const trackerJobs = useMemo(() => applications.map(applicationToJob), [applications]);
+
+  useEffect(() => {
+    syncInterviewVpdPrompts(trackerJobs);
+    setVpdPromptTick(t => t + 1);
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- sync persisted prompts once on mount
+  }, []);
+
+  const showVpdPromptForJob = (job: Job) => {
+    void vpdPromptTick;
+    return shouldShowInterviewVpdPrompt(job);
+  };
+
+  const handleOpenInterviewVpd = (job: Job) => {
+    onNavigateToStudio(buildInterviewVpdStudioContext(job));
+  };
 
   const moveApplicationToStatus = async (applicationId: string, newStatus: ApplicationStatus, dropEvent?: React.DragEvent) => {
     const app = applications.find(a => a.application_id === applicationId);
@@ -176,7 +207,14 @@ const ApplicationTracker: React.FC<ApplicationTrackerProps> = ({
       await queryClient.invalidateQueries({ queryKey: ["applications"] });
 
       if (newStatus === "interviewing" && app.status !== "interviewing") {
+        activateInterviewVpdPrompt(applicationId);
+        setVpdPromptTick(t => t + 1);
         setInterviewingPromptJob(applicationToJob({ ...app, status: newStatus }));
+      }
+
+      if (app.status === "interviewing" && newStatus === "applied") {
+        dismissInterviewVpdPrompt(applicationId);
+        setVpdPromptTick(t => t + 1);
       }
 
       if (newStatus === "offered" && dropEvent) {
@@ -272,6 +310,8 @@ const ApplicationTracker: React.FC<ApplicationTrackerProps> = ({
     onPrepareJob: setPreparingJob,
     onDragStart: () => setIsDragging(true),
     onDragEnd: () => setIsDragging(false),
+    showVpdPromptForJob,
+    onVpdPromptClick: handleOpenInterviewVpd,
   };
 
   if (isLoading) {
@@ -315,7 +355,7 @@ const ApplicationTracker: React.FC<ApplicationTrackerProps> = ({
           >
             <ChevronRight size={18} className="mb-3 text-slate-500" />
             <span
-              className="text-[10px] font-semibold uppercase tracking-widest text-slate-500 dark:text-slate-400"
+              className="text-[10px] font-semibold text-slate-500 dark:text-slate-400"
               style={{ writingMode: "vertical-rl", transform: "rotate(180deg)" }}
             >
               Drafts
@@ -399,12 +439,7 @@ const ApplicationTracker: React.FC<ApplicationTrackerProps> = ({
           job={interviewingPromptJob}
           onClose={() => setInterviewingPromptJob(null)}
           onBuildVpd={() => {
-            onNavigateToStudio({
-              type: "vpd",
-              jobId: interviewingPromptJob.id,
-              company: interviewingPromptJob.company,
-              role: interviewingPromptJob.role,
-            });
+            onNavigateToStudio(buildInterviewVpdStudioContext(interviewingPromptJob));
             setInterviewingPromptJob(null);
           }}
           onStartInterviewPrep={() => {

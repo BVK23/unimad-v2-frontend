@@ -17,6 +17,7 @@ export default function StudioPageClient() {
           role: searchParams.get("role") ?? undefined,
           description: searchParams.get("description") ?? undefined,
           recipientName: searchParams.get("recipientName") ?? undefined,
+          fromInterviewVpd: searchParams.get("interviewVpd") === "1",
         }
       : null;
 

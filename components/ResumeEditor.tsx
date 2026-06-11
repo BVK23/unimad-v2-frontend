@@ -1,5 +1,6 @@
 import React, { useState, useRef, useMemo, useEffect, useCallback } from "react";
 import ResumeKnowledgeBaseModal from "@/components/resume/ResumeKnowledgeBaseModal";
+import { PanelResizeHandle } from "@/components/ui/PanelResizeHandle";
 import { EMPTY_PDF_HIGHLIGHT_MAP } from "@/features/adk-chat/adkResumeHighlightDiff";
 import { useAdkResumeReviewStore } from "@/features/adk-chat/stores/useAdkResumeReviewStore";
 import { mapAtsScoreToViewModel } from "@/features/resume/api/mapAtsScoreToViewModel";
@@ -89,8 +90,6 @@ interface ResumeEditorProps {
   onImprove: (text: string) => void;
   showTemplateModal: boolean;
   setShowTemplateModal: (show: boolean) => void;
-  showExportModal: boolean;
-  setShowExportModal: (show: boolean) => void;
 }
 
 const AUTOSAVE_DELAY_MS = 5000;
@@ -409,8 +408,6 @@ const ResumeEditor: React.FC<ResumeEditorProps> = ({
   onImprove,
   showTemplateModal,
   setShowTemplateModal,
-  showExportModal,
-  setShowExportModal,
 }) => {
   // Deduplicate section order by id (used for hydrate and in handleDragOver)
   const deduplicateSectionOrder = (order: ResumeData["sectionOrder"]) => {
@@ -491,6 +488,8 @@ const ResumeEditor: React.FC<ResumeEditorProps> = ({
   const [publishError, setPublishError] = useState<string | null>(null);
   /** After successful publish, primary button shows "Published" for at least this long */
   const [publishShowPublished, setPublishShowPublished] = useState(false);
+  const [isExportDropdownOpen, setIsExportDropdownOpen] = useState(false);
+  const exportDropdownRef = useRef<HTMLDivElement>(null);
   const publishPublishedTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   useEffect(() => {
@@ -502,21 +501,31 @@ const ResumeEditor: React.FC<ResumeEditorProps> = ({
   }, []);
 
   useEffect(() => {
-    if (!showExportModal) {
+    if (!isExportDropdownOpen) {
       setPublishSubmitting(false);
       setPublishShowPublished(false);
       if (publishPublishedTimerRef.current) {
         clearTimeout(publishPublishedTimerRef.current);
         publishPublishedTimerRef.current = null;
       }
+      setPublishError(null);
+      setInlinePublishStep("cta");
+      setSlugInput("");
       return;
     }
-    setPublishError(null);
-    // Always start collapsed: user must click "Publish Your Resume" to expand.
-    // Existing slug is pre-filled when they click (see handleEnterPublishMode).
-    setInlinePublishStep("cta");
-    setSlugInput("");
-  }, [showExportModal]);
+  }, [isExportDropdownOpen]);
+
+  useEffect(() => {
+    const handleClickOutside = (event: MouseEvent) => {
+      if (exportDropdownRef.current && !exportDropdownRef.current.contains(event.target as Node)) {
+        setIsExportDropdownOpen(false);
+      }
+    };
+    if (isExportDropdownOpen) {
+      document.addEventListener("mousedown", handleClickOutside);
+    }
+    return () => document.removeEventListener("mousedown", handleClickOutside);
+  }, [isExportDropdownOpen]);
 
   const setResumeData = useResumeStore(s => s.setResumeData);
   const updateResume = useCallback(
@@ -557,7 +566,7 @@ const ResumeEditor: React.FC<ResumeEditorProps> = ({
   const [lastAcknowledgedSnapshot, setLastAcknowledgedSnapshot] = useState<string>(() => JSON.stringify(getInitialResume()));
   const [activeSaveSource, setActiveSaveSource] = useState<"auto" | "manual" | null>(null);
   const [savedConfirmationVisible, setSavedConfirmationVisible] = useState(false);
-  const savedConfirmationTimerRef = useRef<ReturnType<typeof window.setTimeout> | null>(null);
+  const savedConfirmationTimerRef = useRef<number | null>(null);
   const saveInFlightRef = useRef(false);
   const queuedSaveRef = useRef(false);
   const runSaveRef = useRef<((source: "auto" | "manual") => Promise<void>) | null>(null);
@@ -878,7 +887,7 @@ const ResumeEditor: React.FC<ResumeEditorProps> = ({
       showToast("Please fill in all required fields before exporting.", "error");
       return;
     }
-    setShowExportModal(true);
+    setIsExportDropdownOpen(prev => !prev);
   };
 
   // -- Handlers --
@@ -1566,13 +1575,147 @@ const ResumeEditor: React.FC<ResumeEditorProps> = ({
             </span>
           </button>
 
-          <button
-            onClick={handleExportClick}
-            title={validationErrors.length > 0 ? "Please fill in all required fields" : "Export Resume"}
-            className={`flex items-center gap-2 px-4 py-2 text-white rounded-lg font-medium text-sm transition-all shadow-md ${validationErrors.length > 0 ? "bg-slate-400 hover:bg-slate-500" : "bg-slate-900 hover:bg-slate-800 hover:shadow-lg hover:-translate-y-0.5"}`}
-          >
-            <Share2 size={16} /> Share & Download
-          </button>
+          <div className="relative" ref={exportDropdownRef}>
+            <button
+              type="button"
+              onClick={handleExportClick}
+              title={validationErrors.length > 0 ? "Please fill in all required fields" : "Export Resume"}
+              className={`flex items-center gap-2 px-4 py-2 text-white rounded-lg font-medium text-sm transition-all shadow-md ${validationErrors.length > 0 ? "bg-slate-400 hover:bg-slate-500" : "bg-slate-900 hover:bg-slate-800 hover:shadow-lg hover:-translate-y-0.5"}`}
+            >
+              <Share2 size={16} /> Share & Download
+            </button>
+
+            {isExportDropdownOpen && (
+              <div
+                className={`absolute right-0 mt-2 rounded-md border border-slate-200 bg-white shadow-lg z-50 dark:border-slate-700 dark:bg-slate-900 ${
+                  inlinePublishStep === "form" ? "w-80 p-3" : "w-56 py-1"
+                }`}
+              >
+                {inlinePublishStep === "cta" ? (
+                  <>
+                    <div
+                      className="w-full"
+                      onClick={() => {
+                        if (resumeId) recordResumeDownload(resumeId).catch(() => {});
+                        setIsExportDropdownOpen(false);
+                      }}
+                    >
+                      <PDFDownloadLink
+                        document={<ResumePDF data={resume} />}
+                        fileName={`${(resume.profile.fullName ?? "Resume").replace(/\s+/g, "_")}_Resume.pdf`}
+                        className="flex w-full items-center gap-3 px-4 py-2.5 text-sm text-slate-700 transition-colors hover:bg-slate-50 dark:text-slate-200 dark:hover:bg-slate-800"
+                      >
+                        {({ loading }) => (
+                          <>
+                            <Download size={16} className="text-slate-500" />
+                            <span className="font-medium">{loading ? "Preparing PDF…" : "Download PDF"}</span>
+                            {loading && (
+                              <div className="ml-auto h-4 w-4 animate-spin rounded-full border-2 border-brand-500 border-t-transparent" />
+                            )}
+                          </>
+                        )}
+                      </PDFDownloadLink>
+                    </div>
+                    <button
+                      type="button"
+                      onClick={handleEnterPublishMode}
+                      disabled={!resumeId?.trim()}
+                      className="flex w-full items-center gap-3 px-4 py-2.5 text-sm text-slate-700 transition-colors hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-50 dark:text-slate-200 dark:hover:bg-slate-800"
+                    >
+                      <Share2 size={16} className="text-slate-500" />
+                      <span className="font-medium">Share Public Link</span>
+                    </button>
+                  </>
+                ) : (
+                  <div className="space-y-3 text-left">
+                    <button
+                      type="button"
+                      onClick={() => setInlinePublishStep("cta")}
+                      className="flex items-center gap-1.5 text-xs font-medium text-slate-500 transition-colors hover:text-slate-700 dark:hover:text-slate-300"
+                    >
+                      <ArrowLeft size={14} />
+                      Back
+                    </button>
+
+                    <div>
+                      <p className="text-sm font-semibold text-slate-900 dark:text-white">Publish your resume</p>
+                      <p className="mt-0.5 text-xs text-slate-500 dark:text-slate-400">Choose a public link name, then share</p>
+                    </div>
+
+                    <div className="space-y-2">
+                      <label htmlFor="resume-public-slug" className="block text-xs font-medium text-slate-600 dark:text-slate-300">
+                        Public link name
+                      </label>
+                      <p id="resume-public-slug-hint" className="text-xs text-slate-500 dark:text-slate-400">
+                        Use letters, numbers, or hyphens.
+                      </p>
+                      <div className="flex items-center gap-2 rounded-lg border border-slate-200 bg-white px-3 py-2 dark:border-slate-700 dark:bg-slate-900">
+                        <span className="shrink-0 truncate font-mono text-xs text-slate-500" aria-hidden>
+                          {typeof window !== "undefined" ? `${window.location.origin}/resume/` : "/resume/"}
+                        </span>
+                        <input
+                          id="resume-public-slug"
+                          type="text"
+                          autoComplete="off"
+                          placeholder="your-name"
+                          value={slugInput}
+                          onChange={e => {
+                            setSlugInput(e.target.value);
+                            if (publishError) setPublishError(null);
+                            if (publishShowPublished) setPublishShowPublished(false);
+                          }}
+                          onKeyDown={handlePublishSlugKeyDown}
+                          disabled={publishSubmitting || publishShowPublished}
+                          aria-describedby="resume-public-slug-hint"
+                          aria-invalid={Boolean(publishError)}
+                          className="min-w-0 flex-1 bg-transparent text-sm text-slate-900 outline-none placeholder:text-slate-400 disabled:opacity-60 dark:text-white"
+                        />
+                      </div>
+                      {publishError ? (
+                        <p className="flex items-center gap-1 text-xs text-red-600 dark:text-red-400" role="alert">
+                          <AlertCircle size={14} className="shrink-0" />
+                          {publishError}
+                        </p>
+                      ) : null}
+                    </div>
+
+                    <button
+                      type="button"
+                      onClick={() => void handleSharePublicLinkSubmit()}
+                      disabled={publishSubmitting || publishShowPublished || !slugInput.trim()}
+                      aria-busy={publishSubmitting}
+                      className={`flex w-full items-center justify-center gap-2 rounded-lg px-4 py-2.5 text-sm font-semibold transition-colors ${
+                        publishShowPublished
+                          ? "cursor-default bg-emerald-600 text-white"
+                          : publishSubmitting
+                            ? "cursor-wait bg-brand-600 text-white"
+                            : !slugInput.trim()
+                              ? "cursor-not-allowed bg-slate-300 text-slate-600 dark:bg-slate-600 dark:text-slate-300"
+                              : "bg-brand-600 text-white hover:bg-brand-700"
+                      }`}
+                    >
+                      {publishSubmitting ? (
+                        <>
+                          <span>Publishing…</span>
+                          <div
+                            className="h-4 w-4 shrink-0 animate-spin rounded-full border-2 border-white border-t-transparent"
+                            aria-hidden
+                          />
+                        </>
+                      ) : publishShowPublished ? (
+                        <>
+                          <Check size={18} className="shrink-0" aria-hidden />
+                          <span>Published</span>
+                        </>
+                      ) : (
+                        "Publish"
+                      )}
+                    </button>
+                  </div>
+                )}
+              </div>
+            )}
+          </div>
         </div>
       </div>
 
@@ -1638,897 +1781,155 @@ const ResumeEditor: React.FC<ResumeEditorProps> = ({
           </div>
         </div>
         {/* 2. Forms Panel */}
-        <div
-          className={`bg-white dark:bg-slate-900 border-r border-slate-200 dark:border-slate-700 flex flex-col h-full overflow-hidden shadow-[4px_0_24px_rgba(0,0,0,0.02)] flex-shrink-0 z-0 relative ${isFormsPanelResizing ? "select-none" : ""}`}
-          style={{ width: formsPanelWidth }}
-        >
-          <div className="flex-1 overflow-y-auto p-6 bg-white dark:bg-slate-900 scrollbar-on-hover">
-            {activeSection === "profile" && (
-              <div className="space-y-5 animate-in fade-in slide-in-from-left-2 duration-200">
-                <h2 className="text-lg font-medium text-slate-900 dark:text-white flex items-center gap-2">Personal Details</h2>
-                <div className="space-y-4">
-                  <div>
-                    <input
-                      placeholder="Full Name"
-                      value={resume.profile.fullName ?? ""}
-                      onChange={e => handleProfileChange("fullName", e.target.value)}
-                      className={`w-full p-3 bg-white dark:bg-slate-800 border rounded-lg text-sm font-medium focus:border-brand-500 focus:ring-1 focus:ring-brand-500 outline-none transition-all dark:text-white dark:placeholder:text-slate-500 ${getError("profile", "fullName") ? "border-red-500" : "border-slate-200 dark:border-slate-700"}`}
-                    />
-                    <ResumeFieldError errors={validationErrors} section="profile" field="fullName" visible={showFieldValidation} />
-                  </div>
-                  <input
-                    placeholder="Job Title"
-                    value={resume.profile.title ?? ""}
-                    onChange={e => handleProfileChange("title", e.target.value)}
-                    className="w-full p-3 bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-lg text-sm focus:border-brand-500 focus:ring-1 focus:ring-brand-500 outline-none transition-all dark:text-white dark:placeholder:text-slate-500"
-                  />
-                  <div className="grid grid-cols-2 gap-4">
+        <div className={`flex h-full shrink-0 ${isFormsPanelResizing ? "select-none" : ""}`}>
+          <div
+            className="flex h-full min-h-0 min-w-0 flex-col overflow-hidden border-r border-slate-200/60 bg-white dark:border-slate-700/60 dark:bg-slate-900"
+            style={{ width: formsPanelWidth }}
+          >
+            <div className="scrollbar-on-hover flex-1 overflow-y-auto bg-white p-6 dark:bg-slate-900">
+              {activeSection === "profile" && (
+                <div className="space-y-5 animate-in fade-in slide-in-from-left-2 duration-200">
+                  <h2 className="text-lg font-medium text-slate-900 dark:text-white flex items-center gap-2">Personal Details</h2>
+                  <div className="space-y-4">
                     <div>
                       <input
-                        placeholder="Email"
-                        value={resume.profile.email ?? ""}
-                        onChange={e => handleProfileChange("email", e.target.value)}
-                        className={`w-full p-3 bg-white dark:bg-slate-800 border rounded-lg text-sm focus:border-brand-500 focus:ring-1 focus:ring-brand-500 outline-none transition-all dark:text-white dark:placeholder:text-slate-500 ${getError("profile", "email") ? "border-red-500" : "border-slate-200 dark:border-slate-700"}`}
+                        placeholder="Full Name"
+                        value={resume.profile.fullName ?? ""}
+                        onChange={e => handleProfileChange("fullName", e.target.value)}
+                        className={`w-full p-3 bg-white dark:bg-slate-800 border rounded-lg text-sm font-medium focus:border-brand-500 focus:ring-1 focus:ring-brand-500 outline-none transition-all dark:text-white dark:placeholder:text-slate-500 ${getError("profile", "fullName") ? "border-red-500" : "border-slate-200 dark:border-slate-700"}`}
                       />
-                      <ResumeFieldError errors={validationErrors} section="profile" field="email" visible={showFieldValidation} />
+                      <ResumeFieldError errors={validationErrors} section="profile" field="fullName" visible={showFieldValidation} />
                     </div>
-                    <div>
-                      <input
-                        placeholder="Phone"
-                        value={resume.profile.phone ?? ""}
-                        onChange={e => handleProfileChange("phone", e.target.value)}
-                        className={`w-full p-3 bg-white dark:bg-slate-800 border rounded-lg text-sm focus:border-brand-500 focus:ring-1 focus:ring-brand-500 outline-none transition-all dark:text-white dark:placeholder:text-slate-500 ${getError("profile", "phone") ? "border-red-500" : "border-slate-200 dark:border-slate-700"}`}
-                      />
-                      <ResumeFieldError errors={validationErrors} section="profile" field="phone" visible={showFieldValidation} />
-                    </div>
-                  </div>
-                  <div className="grid grid-cols-2 gap-3">
                     <input
-                      placeholder="City"
-                      value={resume.profile.city ?? ""}
-                      onChange={e => handleProfileChange("city", e.target.value)}
+                      placeholder="Job Title"
+                      value={resume.profile.title ?? ""}
+                      onChange={e => handleProfileChange("title", e.target.value)}
                       className="w-full p-3 bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-lg text-sm focus:border-brand-500 focus:ring-1 focus:ring-brand-500 outline-none transition-all dark:text-white dark:placeholder:text-slate-500"
                     />
-                    <input
-                      placeholder="Country"
-                      value={resume.profile.country ?? ""}
-                      onChange={e => handleProfileChange("country", e.target.value)}
-                      className="w-full p-3 bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-lg text-sm focus:border-brand-500 focus:ring-1 focus:ring-brand-500 outline-none transition-all dark:text-white dark:placeholder:text-slate-500"
-                    />
-                  </div>
-                  <input
-                    placeholder="LinkedIn (username or URL)"
-                    value={resume.profile.linkedin || ""}
-                    onChange={e => handleProfileChange("linkedin", e.target.value)}
-                    className="w-full p-3 bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-lg text-sm focus:border-brand-500 focus:ring-1 focus:ring-brand-500 outline-none transition-all dark:text-white dark:placeholder:text-slate-500"
-                  />
-                  <input
-                    placeholder="GitHub (username or URL)"
-                    value={resume.profile.github || ""}
-                    onChange={e => handleProfileChange("github", e.target.value)}
-                    className="w-full p-3 bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-lg text-sm focus:border-brand-500 focus:ring-1 focus:ring-brand-500 outline-none transition-all dark:text-white dark:placeholder:text-slate-500"
-                  />
-                  <input
-                    placeholder="Portfolio (URL)"
-                    value={resume.profile.portfolio || ""}
-                    onChange={e => handleProfileChange("portfolio", e.target.value)}
-                    className="w-full p-3 bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-lg text-sm focus:border-brand-500 focus:ring-1 focus:ring-brand-500 outline-none transition-all dark:text-white dark:placeholder:text-slate-500"
-                  />
-                  <div className="pt-2">
-                    <label className="text-xs font-medium text-slate-500 dark:text-slate-400 block mb-2 uppercase tracking-wide">
-                      Professional Summary
-                    </label>
-                    <TiptapEditor
-                      placeholder="Write a short professional summary..."
-                      value={resume.profile.summary ?? ""}
-                      onChange={val => handleProfileChange("summary", val)}
-                      onImprove={onImprove}
-                      unibotImproveTarget={{ section: "summary", resumeId }}
-                    />
-                  </div>
-                </div>
-              </div>
-            )}
-
-            {activeSection === "experience" && (
-              <div className="space-y-6 animate-in fade-in slide-in-from-left-2 duration-200">
-                <div className="flex justify-between items-center">
-                  <h2 className="text-lg font-medium text-slate-900 dark:text-white flex items-center gap-2">Experience</h2>
-                  <div className="flex items-center gap-2">
-                    <button
-                      onClick={() => toggleSectionVisibility("experience")}
-                      className={`p-1.5 rounded-full transition-colors ${resume.sectionOrder.find(s => s.id === "experience")?.hidden ? "text-amber-400 hover:text-amber-500 bg-amber-50" : "text-slate-400 hover:text-slate-600 hover:bg-slate-100"}`}
-                      title={
-                        resume.sectionOrder.find(s => s.id === "experience")?.hidden
-                          ? "Show section in preview"
-                          : "Hide section from preview"
-                      }
-                    >
-                      {resume.sectionOrder.find(s => s.id === "experience")?.hidden ? <EyeOff size={14} /> : <Eye size={14} />}
-                    </button>
-                    <button
-                      onClick={addExperience}
-                      className="text-xs font-medium text-brand-600 hover:text-brand-700 bg-brand-50 px-3 py-1.5 rounded-full flex items-center gap-1 transition-colors"
-                    >
-                      <Plus size={14} /> Add
-                    </button>
-                  </div>
-                </div>
-
-                {resume.experience.map((exp, index) => (
-                  <div
-                    key={exp.id}
-                    className={`py-3 px-4 bg-slate-50 dark:bg-slate-800 rounded-xl border relative group transition-all hover:border-brand-200 ${draggedItemId === exp.id ? "opacity-50 border-brand-400 border-dashed" : "border-slate-200 dark:border-slate-700"}`}
-                    draggable
-                    onDragStart={e => handleItemDragStart(e, "experience", exp.id)}
-                    onDragOver={e => handleItemDragOver(e, "experience", exp.id)}
-                    onDragEnd={handleItemDragEnd}
-                  >
-                    <div className="flex justify-between items-center mb-2">
-                      <div
-                        className="flex items-center gap-2 cursor-pointer select-none flex-1 min-w-0"
-                        onClick={() => toggleItemExpand(exp.id)}
-                      >
-                        <h3 className="text-sm font-medium text-slate-700 dark:text-slate-200 truncate pr-4">
-                          {exp.role || "New Role"} <span className="text-slate-400 font-normal">at</span> {exp.company || "Company"}
-                        </h3>
-                      </div>
-                      <div className="flex items-center gap-1 shrink-0">
-                        <button
-                          onClick={e => {
-                            e.stopPropagation();
-                            toggleItemVisibility("experience", exp.id);
-                          }}
-                          className={`p-1 rounded transition-colors ${exp.hidden ? "text-amber-400 hover:text-amber-500" : "text-slate-400 hover:text-slate-600"}`}
-                          title={exp.hidden ? "Show item" : "Hide item"}
-                        >
-                          {exp.hidden ? <EyeOff size={16} /> : <Eye size={16} />}
-                        </button>
-                        <button
-                          onClick={() => requestRemoveEntry("experience", exp.id)}
-                          className="text-slate-400 hover:text-red-500 p-1 hover:bg-red-50 dark:hover:bg-red-900/20 rounded transition-colors"
-                        >
-                          <Trash2 size={16} />
-                        </button>
-                      </div>
-                    </div>
-
-                    {expandedItems[exp.id] && (
-                      <div className="space-y-3 pt-2 border-t border-slate-200 dark:border-slate-700 mt-2">
-                        <div className="grid grid-cols-2 gap-3">
-                          <div>
-                            <input
-                              placeholder="Role"
-                              value={exp.role}
-                              onChange={e => updateExperience(exp.id, "role", e.target.value)}
-                              className={`w-full p-3 bg-white dark:bg-slate-700 border rounded-lg text-sm font-medium text-slate-900 dark:text-white focus:border-brand-500 focus:ring-1 focus:ring-brand-500 outline-none transition-all dark:placeholder:text-slate-400 ${getError("experience", "role", exp.id) ? "border-red-500" : "border-slate-200 dark:border-slate-600"}`}
-                            />
-                            <ResumeFieldError
-                              errors={validationErrors}
-                              section="experience"
-                              field="role"
-                              id={exp.id}
-                              visible={showFieldValidation}
-                            />
-                          </div>
-                          <div>
-                            <input
-                              placeholder="Company"
-                              value={exp.company}
-                              onChange={e => updateExperience(exp.id, "company", e.target.value)}
-                              className={`w-full p-3 bg-white dark:bg-slate-700 border rounded-lg text-sm focus:border-brand-500 focus:ring-1 focus:ring-brand-500 outline-none transition-all dark:text-white dark:placeholder:text-slate-400 ${getError("experience", "company", exp.id) ? "border-red-500" : "border-slate-200 dark:border-slate-600"}`}
-                            />
-                            <ResumeFieldError
-                              errors={validationErrors}
-                              section="experience"
-                              field="company"
-                              id={exp.id}
-                              visible={showFieldValidation}
-                            />
-                          </div>
-                        </div>
-                        <div className="grid grid-cols-2 gap-3">
-                          <div>
-                            <MonthYearPicker
-                              placeholder="Start Date"
-                              value={exp.startDate}
-                              onChange={val => updateExperience(exp.id, "startDate", val)}
-                              className={`${getError("experience", "startDate", exp.id) ? "border-red-500" : "border-slate-200 dark:border-slate-600"}`}
-                            />
-                            <ResumeFieldError
-                              errors={validationErrors}
-                              section="experience"
-                              field="startDate"
-                              id={exp.id}
-                              visible={showFieldValidation}
-                            />
-                          </div>
-                          <div>
-                            <MonthYearPicker
-                              disabled={exp.current}
-                              min={exp.startDate}
-                              placeholder={exp.current ? "Ongoing" : "End Date"}
-                              value={exp.current ? "Present" : exp.endDate}
-                              onChange={val => {
-                                if (val === "Present") {
-                                  updateExperience(exp.id, "current", true);
-                                  updateExperience(exp.id, "endDate", "");
-                                  return;
-                                }
-                                updateExperience(exp.id, "current", false);
-                                updateExperience(exp.id, "endDate", val);
-                              }}
-                              align="right"
-                              allowPresent
-                              className={`${getError("experience", "endDate", exp.id) ? "border-red-500" : "border-slate-200 dark:border-slate-600"}`}
-                            />
-                            <ResumeFieldError
-                              errors={validationErrors}
-                              section="experience"
-                              field="endDate"
-                              id={exp.id}
-                              visible={showFieldValidation}
-                            />
-                          </div>
-                        </div>
-                        <div className="flex items-center gap-2 mb-2">
-                          <input
-                            type="checkbox"
-                            id={`current-exp-${exp.id}`}
-                            checked={exp.current || false}
-                            onChange={e => {
-                              updateExperience(exp.id, "current", e.target.checked);
-                              if (e.target.checked) updateExperience(exp.id, "endDate", "");
-                            }}
-                            className="rounded text-brand-600 focus:ring-brand-500 border-slate-300"
-                          />
-                          <label
-                            htmlFor={`current-exp-${exp.id}`}
-                            className="text-xs text-slate-600 dark:text-slate-400 cursor-pointer select-none"
-                          >
-                            Currently working here
-                          </label>
-                        </div>
+                    <div className="grid grid-cols-2 gap-4">
+                      <div>
                         <input
-                          placeholder="Location (City, Country)"
-                          value={exp.location || ""}
-                          onChange={e => updateExperience(exp.id, "location", e.target.value)}
-                          className="w-full p-3 bg-white dark:bg-slate-700 border border-slate-200 dark:border-slate-600 rounded-lg text-xs focus:border-brand-500 focus:ring-1 focus:ring-brand-500 outline-none transition-all dark:text-white dark:placeholder:text-slate-400"
+                          placeholder="Email"
+                          value={resume.profile.email ?? ""}
+                          onChange={e => handleProfileChange("email", e.target.value)}
+                          className={`w-full p-3 bg-white dark:bg-slate-800 border rounded-lg text-sm focus:border-brand-500 focus:ring-1 focus:ring-brand-500 outline-none transition-all dark:text-white dark:placeholder:text-slate-500 ${getError("profile", "email") ? "border-red-500" : "border-slate-200 dark:border-slate-700"}`}
                         />
-                        <TiptapEditor
-                          placeholder="Description of your role (achievements, responsibilities)..."
-                          value={exp.description}
-                          onChange={val => updateExperience(exp.id, "description", val)}
-                          onImprove={onImprove}
-                          unibotImproveTarget={{ section: "experience", resumeId, entryId: exp.id }}
-                        />
+                        <ResumeFieldError errors={validationErrors} section="profile" field="email" visible={showFieldValidation} />
                       </div>
-                    )}
-                  </div>
-                ))}
-              </div>
-            )}
-
-            {activeSection === "education" && (
-              <div className="space-y-6 animate-in fade-in slide-in-from-left-2 duration-200">
-                <div className="flex justify-between items-center">
-                  <h2 className="text-lg font-medium text-slate-900 dark:text-white flex items-center gap-2">Education</h2>
-                  <div className="flex items-center gap-2">
-                    <button
-                      onClick={() => toggleSectionVisibility("education")}
-                      className={`p-1.5 rounded-full transition-colors ${resume.sectionOrder.find(s => s.id === "education")?.hidden ? "text-amber-400 hover:text-amber-500 bg-amber-50" : "text-slate-400 hover:text-slate-600 hover:bg-slate-100"}`}
-                      title={
-                        resume.sectionOrder.find(s => s.id === "education")?.hidden
-                          ? "Show section in preview"
-                          : "Hide section from preview"
-                      }
-                    >
-                      {resume.sectionOrder.find(s => s.id === "education")?.hidden ? <EyeOff size={14} /> : <Eye size={14} />}
-                    </button>
-                    <button
-                      onClick={addEducation}
-                      className="text-xs font-medium text-brand-600 hover:text-brand-700 bg-brand-50 px-3 py-1.5 rounded-full flex items-center gap-1 transition-colors"
-                    >
-                      <Plus size={14} /> Add
-                    </button>
-                  </div>
-                </div>
-
-                {resume.education.map((edu, index) => (
-                  <div
-                    key={edu.id}
-                    className={`py-3 px-4 bg-slate-50 dark:bg-slate-800 rounded-xl border relative group transition-all hover:border-brand-200 ${draggedItemId === edu.id ? "opacity-50 border-brand-400 border-dashed" : "border-slate-200 dark:border-slate-700"}`}
-                    draggable
-                    onDragStart={e => handleItemDragStart(e, "education", edu.id)}
-                    onDragOver={e => handleItemDragOver(e, "education", edu.id)}
-                    onDragEnd={handleItemDragEnd}
-                  >
-                    <div className="flex justify-between items-center mb-2">
-                      <div
-                        className="flex items-center gap-2 cursor-pointer select-none flex-1 min-w-0"
-                        onClick={() => toggleItemExpand(edu.id)}
-                      >
-                        <h3 className="text-sm font-medium text-slate-700 dark:text-slate-200 truncate pr-4">
-                          {edu.school || "University"}
-                        </h3>
-                      </div>
-                      <div className="flex items-center gap-1 shrink-0">
-                        <button
-                          onClick={e => {
-                            e.stopPropagation();
-                            toggleItemVisibility("education", edu.id);
-                          }}
-                          className={`p-1 rounded transition-colors ${edu.hidden ? "text-amber-400 hover:text-amber-500" : "text-slate-400 hover:text-slate-600"}`}
-                          title={edu.hidden ? "Show item" : "Hide item"}
-                        >
-                          {edu.hidden ? <EyeOff size={16} /> : <Eye size={16} />}
-                        </button>
-                        <button
-                          onClick={() => requestRemoveEntry("education", edu.id)}
-                          className="text-slate-400 hover:text-red-500 p-1 hover:bg-red-50 dark:hover:bg-red-900/20 rounded transition-colors"
-                        >
-                          <Trash2 size={16} />
-                        </button>
-                      </div>
-                    </div>
-
-                    {expandedItems[edu.id] && (
-                      <div className="space-y-3 pt-2 border-t border-slate-200 dark:border-slate-700 mt-2">
-                        <div className="grid grid-cols-2 gap-3">
-                          <div>
-                            <input
-                              placeholder="School/University"
-                              value={edu.school}
-                              onChange={e => updateEducation(edu.id, "school", e.target.value)}
-                              className={`w-full p-3 bg-white dark:bg-slate-700 border rounded-lg text-sm font-medium text-slate-900 dark:text-white focus:border-brand-500 focus:ring-1 focus:ring-brand-500 outline-none transition-all dark:placeholder:text-slate-400 ${getError("education", "school", edu.id) ? "border-red-500" : "border-slate-200 dark:border-slate-600"}`}
-                            />
-                            <ResumeFieldError
-                              errors={validationErrors}
-                              section="education"
-                              field="school"
-                              id={edu.id}
-                              visible={showFieldValidation}
-                            />
-                          </div>
-                          <div>
-                            <input
-                              placeholder="Degree/Major"
-                              value={edu.degree}
-                              onChange={e => updateEducation(edu.id, "degree", e.target.value)}
-                              className={`w-full p-3 bg-white dark:bg-slate-700 border rounded-lg text-sm focus:border-brand-500 focus:ring-1 focus:ring-brand-500 outline-none transition-all dark:text-white dark:placeholder:text-slate-400 ${getError("education", "degree", edu.id) ? "border-red-500" : "border-slate-200 dark:border-slate-600"}`}
-                            />
-                            <ResumeFieldError
-                              errors={validationErrors}
-                              section="education"
-                              field="degree"
-                              id={edu.id}
-                              visible={showFieldValidation}
-                            />
-                          </div>
-                        </div>
-                        <div className="grid grid-cols-2 gap-3">
-                          <div>
-                            <MonthYearPicker
-                              placeholder="Start Date"
-                              value={edu.startDate}
-                              onChange={val => updateEducation(edu.id, "startDate", val)}
-                              className={`${getError("education", "startDate", edu.id) ? "border-red-500" : "border-slate-200 dark:border-slate-600"}`}
-                            />
-                            <ResumeFieldError
-                              errors={validationErrors}
-                              section="education"
-                              field="startDate"
-                              id={edu.id}
-                              visible={showFieldValidation}
-                            />
-                          </div>
-                          <div>
-                            <MonthYearPicker
-                              disabled={edu.current}
-                              min={edu.startDate}
-                              placeholder={edu.current ? "Ongoing" : "End Date"}
-                              value={edu.current ? "Present" : edu.endDate}
-                              onChange={val => {
-                                if (val === "Present") {
-                                  updateEducation(edu.id, "current", true);
-                                  updateEducation(edu.id, "endDate", "");
-                                  return;
-                                }
-                                updateEducation(edu.id, "current", false);
-                                updateEducation(edu.id, "endDate", val);
-                              }}
-                              align="right"
-                              allowPresent
-                              className={`${getError("education", "endDate", edu.id) ? "border-red-500" : "border-slate-200 dark:border-slate-600"}`}
-                            />
-                            <ResumeFieldError
-                              errors={validationErrors}
-                              section="education"
-                              field="endDate"
-                              id={edu.id}
-                              visible={showFieldValidation}
-                            />
-                          </div>
-                        </div>
-                        <div className="flex items-center gap-2 mb-2">
-                          <input
-                            type="checkbox"
-                            id={`current-edu-${edu.id}`}
-                            checked={edu.current || false}
-                            onChange={e => {
-                              updateEducation(edu.id, "current", e.target.checked);
-                              if (e.target.checked) updateEducation(edu.id, "endDate", "");
-                            }}
-                            className="rounded text-brand-600 focus:ring-brand-500 border-slate-300"
-                          />
-                          <label
-                            htmlFor={`current-edu-${edu.id}`}
-                            className="text-xs text-slate-600 dark:text-slate-400 cursor-pointer select-none"
-                          >
-                            Currently studying here
-                          </label>
-                        </div>
+                      <div>
                         <input
-                          placeholder="Location"
-                          value={edu.location || ""}
-                          onChange={e => updateEducation(edu.id, "location", e.target.value)}
-                          className="w-full p-3 bg-white dark:bg-slate-700 border border-slate-200 dark:border-slate-600 rounded-lg text-xs focus:border-brand-500 focus:ring-1 focus:ring-brand-500 outline-none transition-all dark:text-white dark:placeholder:text-slate-400"
+                          placeholder="Phone"
+                          value={resume.profile.phone ?? ""}
+                          onChange={e => handleProfileChange("phone", e.target.value)}
+                          className={`w-full p-3 bg-white dark:bg-slate-800 border rounded-lg text-sm focus:border-brand-500 focus:ring-1 focus:ring-brand-500 outline-none transition-all dark:text-white dark:placeholder:text-slate-500 ${getError("profile", "phone") ? "border-red-500" : "border-slate-200 dark:border-slate-700"}`}
                         />
-                        <TiptapEditor
-                          placeholder="Description (Optional)"
-                          value={edu.description || ""}
-                          onChange={val => updateEducation(edu.id, "description", val)}
-                          onImprove={onImprove}
-                          unibotImproveTarget={{ section: "education", resumeId, entryId: edu.id }}
-                        />
+                        <ResumeFieldError errors={validationErrors} section="profile" field="phone" visible={showFieldValidation} />
                       </div>
-                    )}
-                  </div>
-                ))}
-              </div>
-            )}
-
-            {activeSection === "skills" && (
-              <div className="space-y-6 animate-in fade-in slide-in-from-left-2 duration-200">
-                <div className="flex justify-between items-center">
-                  <div className="flex items-center gap-2">
-                    <h2 className="text-lg font-medium text-slate-900 dark:text-white flex items-center gap-2">Skills</h2>
-                    <button
-                      onClick={() => toggleSectionVisibility("skills")}
-                      className={`p-1.5 rounded-full transition-colors ${
-                        resume.sectionOrder.find(s => s.id === "skills")?.hidden
-                          ? "text-amber-400 hover:text-amber-500 bg-amber-50"
-                          : "text-slate-400 hover:text-slate-600 hover:bg-slate-100"
-                      }`}
-                      title={
-                        resume.sectionOrder.find(s => s.id === "skills")?.hidden ? "Show section in preview" : "Hide section from preview"
-                      }
-                    >
-                      {resume.sectionOrder.find(s => s.id === "skills")?.hidden ? <EyeOff size={14} /> : <Eye size={14} />}
-                    </button>
-                  </div>
-                  <button
-                    onClick={addSkillCategory}
-                    className="text-xs font-medium text-brand-600 hover:text-brand-700 bg-brand-50 px-3 py-1.5 rounded-full flex items-center gap-1 transition-colors"
-                  >
-                    <Plus size={14} /> Add Category
-                  </button>
-                </div>
-
-                {!(resume.skillCategories && resume.skillCategories.length > 0) && (
-                  <div className="text-sm text-slate-500 italic pb-2">No categories yet. Add a category to start organizing skills.</div>
-                )}
-
-                {(resume.skillCategories || []).map(cat => (
-                  <div
-                    key={cat.id}
-                    className="py-3 px-4 bg-slate-50 dark:bg-slate-800 rounded-xl border border-slate-200 dark:border-slate-700 mb-4"
-                  >
-                    <div className="flex justify-between items-center mb-3">
-                      <input
-                        value={cat.name}
-                        onChange={e => updateSkillCategory(cat.id, e.target.value)}
-                        placeholder="Category Name (e.g. Languages)"
-                        className="font-medium text-slate-900 dark:text-white bg-transparent outline-none flex-1 focus:border-b border-brand-500 pb-1"
-                      />
-                      <button
-                        onClick={() => requestRemoveSkillCategory(cat.id)}
-                        className="text-slate-400 hover:text-red-500 p-1 rounded hover:bg-red-50 transition-colors"
-                      >
-                        <Trash2 size={14} />
-                      </button>
-                    </div>
-
-                    <div className="flex flex-wrap gap-2">
-                      {resume.skills
-                        .filter(skill => skill.categoryId === cat.id)
-                        .map(skill => (
-                          <div
-                            key={skill.id}
-                            className="flex min-w-0 max-w-full items-center gap-2 px-3 py-1.5 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-full hover:border-brand-300 hover:bg-brand-50/10 transition-all group/skill"
-                          >
-                            <input
-                              value={skill.name}
-                              onChange={e => updateSkill(skill.id, e.target.value)}
-                              placeholder="Skill name"
-                              className="min-w-0 bg-transparent text-sm focus:outline-none dark:text-white dark:placeholder:text-slate-400"
-                              style={{
-                                width: `${Math.min(28, Math.max(2, skill.name.length))}ch`,
-                                maxWidth: "100%",
-                              }}
-                            />
-                            <button
-                              onClick={() => removeSkill(skill.id)}
-                              className="shrink-0 text-slate-300 hover:text-red-500 hover:bg-red-50 dark:hover:bg-red-900/20 rounded-full p-0.5 transition-colors"
-                            >
-                              <X size={12} />
-                            </button>
-                          </div>
-                        ))}
-
-                      <div className="flex items-center gap-2 px-3 py-1.5 bg-slate-100/50 dark:bg-slate-800/50 border border-dashed border-slate-300 dark:border-slate-700 rounded-full focus-within:border-brand-400 transition-all">
-                        <Plus size={12} className="text-slate-400" />
-                        <input
-                          placeholder="Add Skill..."
-                          className="bg-transparent text-sm focus:outline-none dark:text-white dark:placeholder:text-slate-500 w-24"
-                          onKeyDown={e => {
-                            if (e.key !== "Enter") return;
-                            const value = e.currentTarget.value.trim();
-                            if (!value) return;
-                            addSkill(cat.id, value);
-                            e.currentTarget.value = "";
-                          }}
-                        />
-                      </div>
-                    </div>
-                  </div>
-                ))}
-
-                {resume.skills.filter(skill => !skill.categoryId).length > 0 && (
-                  <div className="p-4 bg-orange-50 dark:bg-orange-900/10 rounded-xl border border-orange-200 dark:border-orange-800/30 mb-4">
-                    <div className="flex items-center justify-between gap-2 mb-3">
-                      <input
-                        defaultValue="Uncategorized Skills"
-                        onBlur={e => renameUncategorizedSkills(e.target.value)}
-                        onKeyDown={e => {
-                          if (e.key !== "Enter") return;
-                          renameUncategorizedSkills(e.currentTarget.value);
-                          e.currentTarget.blur();
-                        }}
-                        className="min-w-0 flex-1 bg-transparent text-sm font-medium text-orange-800 dark:text-orange-400 outline-none border-b border-transparent focus:border-orange-300"
-                        aria-label="Rename uncategorized skills group"
-                      />
                     </div>
                     <div className="grid grid-cols-2 gap-3">
-                      {resume.skills
-                        .filter(skill => !skill.categoryId)
-                        .map(skill => (
-                          <div
-                            key={skill.id}
-                            className="flex items-center gap-2 p-2 bg-white dark:bg-slate-800 border border-orange-200 dark:border-orange-800/30 rounded-lg"
-                          >
-                            <input
-                              value={skill.name}
-                              onChange={e => updateSkill(skill.id, e.target.value)}
-                              className="flex-1 min-w-0 bg-transparent text-sm focus:outline-none dark:text-white dark:placeholder:text-slate-400"
-                            />
-                            <button
-                              onClick={() => removeSkill(skill.id)}
-                              className="flex-shrink-0 text-slate-300 hover:text-red-500 hover:bg-red-50 dark:hover:bg-red-900/20 rounded-full p-0.5 transition-colors"
-                            >
-                              <X size={14} />
-                            </button>
-                          </div>
-                        ))}
-                      <div className="flex items-center gap-2 px-3 py-1.5 bg-slate-100/50 dark:bg-slate-800/50 border border-dashed border-slate-300 dark:border-slate-700 rounded-lg focus-within:border-brand-400 transition-all">
-                        <Plus size={12} className="text-slate-400" />
-                        <input
-                          placeholder="Add Skill..."
-                          className="bg-transparent text-sm focus:outline-none dark:text-white dark:placeholder:text-slate-500 w-full"
-                          onKeyDown={e => {
-                            if (e.key !== "Enter") return;
-                            const value = e.currentTarget.value.trim();
-                            if (!value) return;
-                            addSkill(undefined, value);
-                            e.currentTarget.value = "";
-                          }}
-                        />
-                      </div>
+                      <input
+                        placeholder="City"
+                        value={resume.profile.city ?? ""}
+                        onChange={e => handleProfileChange("city", e.target.value)}
+                        className="w-full p-3 bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-lg text-sm focus:border-brand-500 focus:ring-1 focus:ring-brand-500 outline-none transition-all dark:text-white dark:placeholder:text-slate-500"
+                      />
+                      <input
+                        placeholder="Country"
+                        value={resume.profile.country ?? ""}
+                        onChange={e => handleProfileChange("country", e.target.value)}
+                        className="w-full p-3 bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-lg text-sm focus:border-brand-500 focus:ring-1 focus:ring-brand-500 outline-none transition-all dark:text-white dark:placeholder:text-slate-500"
+                      />
                     </div>
-                  </div>
-                )}
-              </div>
-            )}
-
-            {activeSection === "projects" && (
-              <div className="space-y-6 animate-in fade-in slide-in-from-left-2 duration-200">
-                <div className="flex justify-between items-center">
-                  <h2 className="text-lg font-medium text-slate-900 dark:text-white flex items-center gap-2">Projects</h2>
-                  <div className="flex items-center gap-2">
-                    <button
-                      onClick={() => toggleSectionVisibility("projects")}
-                      className={`p-1.5 rounded-full transition-colors ${resume.sectionOrder.find(s => s.id === "projects")?.hidden ? "text-amber-400 hover:text-amber-500 bg-amber-50" : "text-slate-400 hover:text-slate-600 hover:bg-slate-100"}`}
-                      title={
-                        resume.sectionOrder.find(s => s.id === "projects")?.hidden ? "Show section in preview" : "Hide section from preview"
-                      }
-                    >
-                      {resume.sectionOrder.find(s => s.id === "projects")?.hidden ? <EyeOff size={14} /> : <Eye size={14} />}
-                    </button>
-                    <button
-                      onClick={addProject}
-                      className="text-xs font-medium text-brand-600 hover:text-brand-700 bg-brand-50 px-3 py-1.5 rounded-full flex items-center gap-1 transition-colors"
-                    >
-                      <Plus size={14} /> Add
-                    </button>
+                    <input
+                      placeholder="LinkedIn (username or URL)"
+                      value={resume.profile.linkedin || ""}
+                      onChange={e => handleProfileChange("linkedin", e.target.value)}
+                      className="w-full p-3 bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-lg text-sm focus:border-brand-500 focus:ring-1 focus:ring-brand-500 outline-none transition-all dark:text-white dark:placeholder:text-slate-500"
+                    />
+                    <input
+                      placeholder="GitHub (username or URL)"
+                      value={resume.profile.github || ""}
+                      onChange={e => handleProfileChange("github", e.target.value)}
+                      className="w-full p-3 bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-lg text-sm focus:border-brand-500 focus:ring-1 focus:ring-brand-500 outline-none transition-all dark:text-white dark:placeholder:text-slate-500"
+                    />
+                    <input
+                      placeholder="Portfolio (URL)"
+                      value={resume.profile.portfolio || ""}
+                      onChange={e => handleProfileChange("portfolio", e.target.value)}
+                      className="w-full p-3 bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-lg text-sm focus:border-brand-500 focus:ring-1 focus:ring-brand-500 outline-none transition-all dark:text-white dark:placeholder:text-slate-500"
+                    />
+                    <div className="pt-2">
+                      <label className="text-xs font-medium text-slate-500 dark:text-slate-400 block mb-2 uppercase tracking-wide">
+                        Professional Summary
+                      </label>
+                      <TiptapEditor
+                        placeholder="Write a short professional summary..."
+                        value={resume.profile.summary ?? ""}
+                        onChange={val => handleProfileChange("summary", val)}
+                        onImprove={onImprove}
+                        unibotImproveTarget={{ section: "summary", resumeId }}
+                      />
+                    </div>
                   </div>
                 </div>
+              )}
 
-                {resume.projects.map(proj => (
-                  <div
-                    key={proj.id}
-                    className={`py-3 px-4 bg-slate-50 dark:bg-slate-800 rounded-xl border relative group transition-all hover:border-brand-200 ${proj.hidden ? "opacity-60" : ""} ${draggedItemId === proj.id ? "opacity-50 border-brand-400 border-dashed" : "border-slate-200 dark:border-slate-700"}`}
-                    draggable
-                    onDragStart={e => handleItemDragStart(e, "projects", proj.id)}
-                    onDragOver={e => handleItemDragOver(e, "projects", proj.id)}
-                    onDragEnd={handleItemDragEnd}
-                  >
-                    <div className="flex justify-between items-center mb-2">
-                      <div
-                        className="flex items-center gap-2 cursor-pointer select-none flex-1 min-w-0"
-                        onClick={() => toggleItemExpand(proj.id)}
+              {activeSection === "experience" && (
+                <div className="space-y-6 animate-in fade-in slide-in-from-left-2 duration-200">
+                  <div className="flex justify-between items-center">
+                    <h2 className="text-lg font-medium text-slate-900 dark:text-white flex items-center gap-2">Experience</h2>
+                    <div className="flex items-center gap-2">
+                      <button
+                        onClick={() => toggleSectionVisibility("experience")}
+                        className={`p-1.5 rounded-full transition-colors ${resume.sectionOrder.find(s => s.id === "experience")?.hidden ? "text-amber-400 hover:text-amber-500 bg-amber-50" : "text-slate-400 hover:text-slate-600 hover:bg-slate-100"}`}
+                        title={
+                          resume.sectionOrder.find(s => s.id === "experience")?.hidden
+                            ? "Show section in preview"
+                            : "Hide section from preview"
+                        }
                       >
-                        <h3 className="text-sm font-medium text-slate-700 dark:text-slate-200 truncate pr-4">
-                          {proj.title || "New Project"}
-                        </h3>
-                      </div>
-                      <div className="flex items-center gap-1 shrink-0">
-                        <button
-                          onClick={e => {
-                            e.stopPropagation();
-                            updateProject(proj.id, "hidden", !proj.hidden);
-                          }}
-                          className={`p-1 rounded transition-colors ${proj.hidden ? "text-amber-400 hover:text-amber-500" : "text-slate-400 hover:text-slate-600"}`}
-                          title={proj.hidden ? "Show item" : "Hide item"}
-                        >
-                          {proj.hidden ? <EyeOff size={16} /> : <Eye size={16} />}
-                        </button>
-                        <button
-                          onClick={() => requestRemoveEntry("projects", proj.id)}
-                          className="text-slate-400 hover:text-red-500 p-1 hover:bg-red-50 dark:hover:bg-red-900/20 rounded transition-colors"
-                        >
-                          <Trash2 size={16} />
-                        </button>
-                      </div>
-                    </div>
-
-                    {expandedItems[proj.id] && (
-                      <div className="space-y-3 pt-2 border-t border-slate-200 dark:border-slate-700 mt-2">
-                        <div className="grid grid-cols-2 gap-3">
-                          <div>
-                            <input
-                              placeholder="Project Title"
-                              value={proj.title}
-                              onChange={e => updateProject(proj.id, "title", e.target.value)}
-                              className="w-full p-3 bg-white dark:bg-slate-700 border border-slate-200 dark:border-slate-600 rounded-lg text-sm font-medium text-slate-900 dark:text-white focus:border-brand-500 focus:ring-1 focus:ring-brand-500 outline-none transition-all dark:placeholder:text-slate-400"
-                            />
-                          </div>
-                          <div>
-                            <input
-                              placeholder="Project URL"
-                              value={proj.url || ""}
-                              onChange={e => updateProject(proj.id, "url", e.target.value)}
-                              className="w-full p-3 bg-white dark:bg-slate-700 border border-slate-200 dark:border-slate-600 rounded-lg text-sm text-slate-900 dark:text-white focus:border-brand-500 focus:ring-1 focus:ring-brand-500 outline-none transition-all dark:placeholder:text-slate-400"
-                            />
-                          </div>
-                        </div>
-                        <TiptapEditor
-                          value={proj.description}
-                          onChange={html => updateProject(proj.id, "description", html)}
-                          onImprove={onImprove}
-                          unibotImproveTarget={{ section: "projects", resumeId, entryId: proj.id }}
-                          placeholder="Description of the Project..."
-                        />
-                      </div>
-                    )}
-                  </div>
-                ))}
-              </div>
-            )}
-
-            {activeSection === "certifications" && (
-              <div className="space-y-6 animate-in fade-in slide-in-from-left-2 duration-200">
-                <div className="flex justify-between items-center">
-                  <h2 className="text-lg font-medium text-slate-900 dark:text-white flex items-center gap-2">Certifications</h2>
-                  <div className="flex items-center gap-2">
-                    <button
-                      onClick={() => toggleSectionVisibility("certifications")}
-                      className={`p-1.5 rounded-full transition-colors ${resume.sectionOrder.find(s => s.id === "certifications")?.hidden ? "text-amber-400 hover:text-amber-500 bg-amber-50" : "text-slate-400 hover:text-slate-600 hover:bg-slate-100"}`}
-                      title={
-                        resume.sectionOrder.find(s => s.id === "certifications")?.hidden
-                          ? "Show section in preview"
-                          : "Hide section from preview"
-                      }
-                    >
-                      {resume.sectionOrder.find(s => s.id === "certifications")?.hidden ? <EyeOff size={14} /> : <Eye size={14} />}
-                    </button>
-                    <button
-                      onClick={addCertification}
-                      className="text-xs font-medium text-brand-600 hover:text-brand-700 bg-brand-50 px-3 py-1.5 rounded-full flex items-center gap-1 transition-colors"
-                    >
-                      <Plus size={14} /> Add
-                    </button>
-                  </div>
-                </div>
-
-                {resume.certifications.map(cert => (
-                  <div
-                    key={cert.id}
-                    className={`py-3 px-4 bg-slate-50 dark:bg-slate-800 rounded-xl border relative group transition-all hover:border-brand-200 ${draggedItemId === cert.id ? "opacity-50 border-brand-400 border-dashed" : "border-slate-200 dark:border-slate-700"} ${cert.hidden && draggedItemId !== cert.id ? "opacity-60" : ""}`}
-                    draggable
-                    onDragStart={e => handleItemDragStart(e, "certifications", cert.id)}
-                    onDragOver={e => handleItemDragOver(e, "certifications", cert.id)}
-                    onDragEnd={handleItemDragEnd}
-                  >
-                    <div className="flex justify-between items-center mb-2">
-                      <div
-                        className="flex items-center gap-2 cursor-pointer select-none flex-1 min-w-0"
-                        onClick={() => toggleItemExpand(cert.id)}
+                        {resume.sectionOrder.find(s => s.id === "experience")?.hidden ? <EyeOff size={14} /> : <Eye size={14} />}
+                      </button>
+                      <button
+                        onClick={addExperience}
+                        className="text-xs font-medium text-brand-600 hover:text-brand-700 bg-brand-50 px-3 py-1.5 rounded-full flex items-center gap-1 transition-colors"
                       >
-                        <h3 className="text-sm font-medium text-slate-700 dark:text-slate-200 truncate pr-4">
-                          {cert.title || "New Certification"}
-                        </h3>
-                      </div>
-                      <div className="flex items-center gap-1 shrink-0">
-                        <button
-                          onClick={e => {
-                            e.stopPropagation();
-                            updateCertification(cert.id, "hidden", !cert.hidden);
-                          }}
-                          className={`p-1 rounded transition-colors ${cert.hidden ? "text-amber-400 hover:text-amber-500" : "text-slate-400 hover:text-slate-600"}`}
-                          title={cert.hidden ? "Show item" : "Hide item"}
-                        >
-                          {cert.hidden ? <EyeOff size={16} /> : <Eye size={16} />}
-                        </button>
-                        <button
-                          onClick={() => requestRemoveEntry("certifications", cert.id)}
-                          className="text-slate-400 hover:text-red-500 p-1 hover:bg-red-50 dark:hover:bg-red-900/20 rounded transition-colors"
-                        >
-                          <Trash2 size={16} />
-                        </button>
-                      </div>
-                    </div>
-
-                    {expandedItems[cert.id] && (
-                      <div className="space-y-3 pt-2 border-t border-slate-200 dark:border-slate-700 mt-2">
-                        <div>
-                          <input
-                            placeholder="Certification Title"
-                            value={cert.title}
-                            onChange={e => updateCertification(cert.id, "title", e.target.value)}
-                            className="w-full p-3 bg-white dark:bg-slate-700 border border-slate-200 dark:border-slate-600 rounded-lg text-sm font-medium text-slate-900 dark:text-white focus:border-brand-500 focus:ring-1 focus:ring-brand-500 outline-none transition-all dark:placeholder:text-slate-400"
-                          />
-                        </div>
-                        <div className="grid grid-cols-2 gap-3">
-                          <div>
-                            <input
-                              placeholder="Issuer"
-                              value={cert.issuer || ""}
-                              onChange={e => updateCertification(cert.id, "issuer", e.target.value)}
-                              className="w-full p-3 bg-white dark:bg-slate-700 border border-slate-200 dark:border-slate-600 rounded-lg text-sm text-slate-900 dark:text-white focus:border-brand-500 focus:ring-1 focus:ring-brand-500 outline-none transition-all dark:placeholder:text-slate-400"
-                            />
-                          </div>
-                          <div>
-                            <MonthYearPicker
-                              placeholder="Date"
-                              value={cert.date || ""}
-                              max={new Date().toISOString().slice(0, 7)}
-                              onChange={val => updateCertification(cert.id, "date", val)}
-                              className="border-slate-200 dark:border-slate-600"
-                            />
-                          </div>
-                        </div>
-                        <div>
-                          <input
-                            placeholder="Credential URL"
-                            value={cert.credentialUrl || ""}
-                            onChange={e => updateCertification(cert.id, "credentialUrl", e.target.value)}
-                            className="w-full p-3 bg-white dark:bg-slate-700 border border-slate-200 dark:border-slate-600 rounded-lg text-sm text-slate-900 dark:text-white focus:border-brand-500 focus:ring-1 focus:ring-brand-500 outline-none transition-all dark:placeholder:text-slate-400"
-                          />
-                        </div>
-                        <TiptapEditor
-                          value={cert.description || ""}
-                          onChange={html => updateCertification(cert.id, "description", html)}
-                          onImprove={onImprove}
-                          unibotImproveTarget={{ section: "certifications", resumeId, entryId: cert.id }}
-                          placeholder="Description (optional)..."
-                        />
-                      </div>
-                    )}
-                  </div>
-                ))}
-              </div>
-            )}
-
-            {resume.customSections.map(sec => {
-              if (activeSection !== sec.id) return null;
-              return (
-                <div key={sec.id} className="space-y-6 animate-in fade-in slide-in-from-left-2 duration-200">
-                  <div className="flex flex-col gap-4 mb-4">
-                    <div className="flex justify-between items-start gap-4">
-                      <div className="flex-1">
-                        <label className="text-xs font-medium text-slate-500 dark:text-slate-400 uppercase tracking-wider mb-1 block">
-                          Section Title
-                        </label>
-                        <input
-                          value={sec.title}
-                          onChange={e => updateCustomSectionTitle(sec.id, e.target.value)}
-                          className={`text-xl font-medium text-slate-900 dark:text-white bg-transparent border-b hover:border-slate-300 dark:hover:border-slate-600 focus:border-brand-500 focus:ring-0 px-0 w-full transition-all dark:placeholder:text-slate-500 ${getError("custom", "title", sec.id) ? "border-red-500" : "border-transparent"}`}
-                          placeholder="e.g. Projects, Volunteer, Awards"
-                        />
-                        <ResumeFieldError
-                          errors={validationErrors}
-                          section="custom"
-                          field="title"
-                          id={sec.id}
-                          visible={showFieldValidation}
-                        />
-                      </div>
-                      <div className="flex gap-2 items-center pt-5">
-                        <button
-                          onClick={() => toggleSectionVisibility(sec.id)}
-                          className={`p-1.5 rounded-full transition-colors ${
-                            resume.sectionOrder.find(s => s.id === sec.id)?.hidden
-                              ? "text-amber-400 hover:text-amber-500 bg-amber-50"
-                              : "text-slate-400 hover:text-slate-600 hover:bg-slate-100"
-                          }`}
-                          title={
-                            resume.sectionOrder.find(s => s.id === sec.id)?.hidden ? "Show section in preview" : "Hide section from preview"
-                          }
-                        >
-                          {resume.sectionOrder.find(s => s.id === sec.id)?.hidden ? <EyeOff size={14} /> : <Eye size={14} />}
-                        </button>
-                        <button
-                          onClick={() => removeCustomSection(sec.id)}
-                          className="text-slate-400 hover:text-red-500 p-2 rounded-full hover:bg-red-50 transition-colors"
-                          title="Delete Section"
-                        >
-                          <Trash2 size={18} />
-                        </button>
-                      </div>
+                        <Plus size={14} /> Add
+                      </button>
                     </div>
                   </div>
 
-                  {sec.items.map((item, index) => (
+                  {resume.experience.map((exp, index) => (
                     <div
-                      key={item.id}
-                      className={`py-3 px-4 bg-slate-50 dark:bg-slate-800 rounded-xl border relative group transition-all hover:border-brand-200 ${draggedItemId === item.id ? "opacity-50 border-brand-400 border-dashed" : "border-slate-200 dark:border-slate-700"} ${item.hidden && draggedItemId !== item.id ? "opacity-60" : ""}`}
+                      key={exp.id}
+                      className={`py-3 px-4 bg-slate-50 dark:bg-slate-800 rounded-xl border relative group transition-all hover:border-brand-200 ${draggedItemId === exp.id ? "opacity-50 border-brand-400 border-dashed" : "border-slate-200 dark:border-slate-700"}`}
                       draggable
-                      onDragStart={e => handleItemDragStart(e, sec.id, item.id)}
-                      onDragOver={e => handleItemDragOver(e, sec.id, item.id)}
+                      onDragStart={e => handleItemDragStart(e, "experience", exp.id)}
+                      onDragOver={e => handleItemDragOver(e, "experience", exp.id)}
                       onDragEnd={handleItemDragEnd}
                     >
                       <div className="flex justify-between items-center mb-2">
                         <div
                           className="flex items-center gap-2 cursor-pointer select-none flex-1 min-w-0"
-                          onClick={() => toggleItemExpand(item.id)}
+                          onClick={() => toggleItemExpand(exp.id)}
                         >
                           <h3 className="text-sm font-medium text-slate-700 dark:text-slate-200 truncate pr-4">
-                            {item.title || "Untitled Item"}
+                            {exp.role || "New Role"} <span className="text-slate-400 font-normal">at</span> {exp.company || "Company"}
                           </h3>
                         </div>
                         <div className="flex items-center gap-1 shrink-0">
                           <button
                             onClick={e => {
                               e.stopPropagation();
-                              updateCustomSectionItem(sec.id, item.id, "hidden", !item.hidden);
+                              toggleItemVisibility("experience", exp.id);
                             }}
-                            className={`p-1 rounded transition-colors ${item.hidden ? "text-amber-400 hover:text-amber-500" : "text-slate-400 hover:text-slate-600"}`}
-                            title={item.hidden ? "Show item" : "Hide item"}
+                            className={`p-1 rounded transition-colors ${exp.hidden ? "text-amber-400 hover:text-amber-500" : "text-slate-400 hover:text-slate-600"}`}
+                            title={exp.hidden ? "Show item" : "Hide item"}
                           >
-                            {item.hidden ? <EyeOff size={16} /> : <Eye size={16} />}
+                            {exp.hidden ? <EyeOff size={16} /> : <Eye size={16} />}
                           </button>
                           <button
-                            onClick={() => requestRemoveEntry("customItem", item.id, sec.id)}
+                            onClick={() => requestRemoveEntry("experience", exp.id)}
                             className="text-slate-400 hover:text-red-500 p-1 hover:bg-red-50 dark:hover:bg-red-900/20 rounded transition-colors"
                           >
                             <Trash2 size={16} />
@@ -2536,136 +1937,878 @@ const ResumeEditor: React.FC<ResumeEditorProps> = ({
                         </div>
                       </div>
 
-                      {expandedItems[item.id] && (
+                      {expandedItems[exp.id] && (
                         <div className="space-y-3 pt-2 border-t border-slate-200 dark:border-slate-700 mt-2">
-                          <div className="grid grid-cols-1 gap-3">
-                            <div className="flex-1">
+                          <div className="grid grid-cols-2 gap-3">
+                            <div>
                               <input
-                                value={item.title}
-                                onChange={e => updateCustomSectionItem(sec.id, item.id, "title", e.target.value)}
-                                className={`w-full p-2 bg-transparent text-sm font-medium border-b hover:border-slate-300 dark:hover:border-slate-600 outline-none transition-all dark:text-white dark:placeholder:text-slate-400 ${getError("custom", "title", item.id) ? "border-red-500" : "border-transparent"}`}
-                                placeholder="Activity / Project Name"
+                                placeholder="Role"
+                                value={exp.role}
+                                onChange={e => updateExperience(exp.id, "role", e.target.value)}
+                                className={`w-full p-3 bg-white dark:bg-slate-700 border rounded-lg text-sm font-medium text-slate-900 dark:text-white focus:border-brand-500 focus:ring-1 focus:ring-brand-500 outline-none transition-all dark:placeholder:text-slate-400 ${getError("experience", "role", exp.id) ? "border-red-500" : "border-slate-200 dark:border-slate-600"}`}
                               />
                               <ResumeFieldError
                                 errors={validationErrors}
-                                section="custom"
-                                field="title"
-                                id={item.id}
+                                section="experience"
+                                field="role"
+                                id={exp.id}
                                 visible={showFieldValidation}
                               />
+                            </div>
+                            <div>
                               <input
-                                value={item.subtitle}
-                                onChange={e => updateCustomSectionItem(sec.id, item.id, "subtitle", e.target.value)}
-                                className="w-full p-2 bg-transparent text-xs text-slate-500 border-b border-transparent hover:border-slate-300 dark:hover:border-slate-600 outline-none transition-all dark:placeholder:text-slate-500"
-                                placeholder="Subtitle / Role (Optional)"
+                                placeholder="Company"
+                                value={exp.company}
+                                onChange={e => updateExperience(exp.id, "company", e.target.value)}
+                                className={`w-full p-3 bg-white dark:bg-slate-700 border rounded-lg text-sm focus:border-brand-500 focus:ring-1 focus:ring-brand-500 outline-none transition-all dark:text-white dark:placeholder:text-slate-400 ${getError("experience", "company", exp.id) ? "border-red-500" : "border-slate-200 dark:border-slate-600"}`}
+                              />
+                              <ResumeFieldError
+                                errors={validationErrors}
+                                section="experience"
+                                field="company"
+                                id={exp.id}
+                                visible={showFieldValidation}
                               />
                             </div>
                           </div>
-
-                          <div className="flex items-center gap-2 mb-3">
-                            <button
-                              onClick={() => updateCustomSectionItem(sec.id, item.id, "hasDates", !item.hasDates)}
-                              className={`p-1.5 rounded-md transition-all border ${item.hasDates ? "bg-brand-50 border-brand-200 text-brand-600" : "bg-white border-slate-200 text-slate-400 hover:text-slate-600"}`}
-                              title="Toggle Dates"
-                            >
-                              <Calendar size={16} />
-                            </button>
-                            <button
-                              onClick={() => updateCustomSectionItem(sec.id, item.id, "hasLocation", !item.hasLocation)}
-                              className={`p-1.5 rounded-md transition-all border ${item.hasLocation ? "bg-brand-50 border-brand-200 text-brand-600" : "bg-white border-slate-200 text-slate-400 hover:text-slate-600"}`}
-                              title="Toggle Location"
-                            >
-                              <MapPin size={16} />
-                            </button>
+                          <div className="grid grid-cols-2 gap-3">
+                            <div>
+                              <MonthYearPicker
+                                placeholder="Start Date"
+                                value={exp.startDate}
+                                onChange={val => updateExperience(exp.id, "startDate", val)}
+                                className={`${getError("experience", "startDate", exp.id) ? "border-red-500" : "border-slate-200 dark:border-slate-600"}`}
+                              />
+                              <ResumeFieldError
+                                errors={validationErrors}
+                                section="experience"
+                                field="startDate"
+                                id={exp.id}
+                                visible={showFieldValidation}
+                              />
+                            </div>
+                            <div>
+                              <MonthYearPicker
+                                disabled={exp.current}
+                                min={exp.startDate}
+                                placeholder={exp.current ? "Ongoing" : "End Date"}
+                                value={exp.current ? "Present" : exp.endDate}
+                                onChange={val => {
+                                  if (val === "Present") {
+                                    updateExperience(exp.id, "current", true);
+                                    updateExperience(exp.id, "endDate", "");
+                                    return;
+                                  }
+                                  updateExperience(exp.id, "current", false);
+                                  updateExperience(exp.id, "endDate", val);
+                                }}
+                                align="right"
+                                allowPresent
+                                className={`${getError("experience", "endDate", exp.id) ? "border-red-500" : "border-slate-200 dark:border-slate-600"}`}
+                              />
+                              <ResumeFieldError
+                                errors={validationErrors}
+                                section="experience"
+                                field="endDate"
+                                id={exp.id}
+                                visible={showFieldValidation}
+                              />
+                            </div>
                           </div>
-
-                          {item.hasDates && (
-                            <>
-                              <div className="grid grid-cols-2 gap-3">
-                                <MonthYearPicker
-                                  placeholder="Start Date"
-                                  value={item.startDate || ""}
-                                  onChange={val => updateCustomSectionItem(sec.id, item.id, "startDate", val)}
-                                  className="border-slate-200 dark:border-slate-600"
-                                />
-                                <MonthYearPicker
-                                  disabled={item.current}
-                                  min={item.startDate}
-                                  placeholder={item.current ? "Ongoing" : "End Date"}
-                                  value={item.current ? "Present" : item.endDate || ""}
-                                  onChange={val => {
-                                    if (val === "Present") {
-                                      updateCustomSectionItem(sec.id, item.id, "current", true);
-                                      updateCustomSectionItem(sec.id, item.id, "endDate", "");
-                                      return;
-                                    }
-                                    updateCustomSectionItem(sec.id, item.id, "current", false);
-                                    updateCustomSectionItem(sec.id, item.id, "endDate", val);
-                                  }}
-                                  align="right"
-                                  allowPresent
-                                  className="border-slate-200 dark:border-slate-600"
-                                />
-                              </div>
-                              <div className="flex items-center gap-2 mt-2">
-                                <input
-                                  type="checkbox"
-                                  id={`current-cust-${item.id}`}
-                                  checked={item.current || false}
-                                  onChange={e => {
-                                    updateCustomSectionItem(sec.id, item.id, "current", e.target.checked);
-                                    if (e.target.checked) updateCustomSectionItem(sec.id, item.id, "endDate", "");
-                                  }}
-                                  className="rounded text-brand-600 focus:ring-brand-500 border-slate-300"
-                                />
-                                <label
-                                  htmlFor={`current-cust-${item.id}`}
-                                  className="text-xs text-slate-600 dark:text-slate-400 cursor-pointer select-none"
-                                >
-                                  Ongoing / Present
-                                </label>
-                              </div>
-                            </>
-                          )}
-
-                          {item.hasLocation && (
+                          <div className="flex items-center gap-2 mb-2">
                             <input
-                              placeholder="Location"
-                              value={item.location || ""}
-                              onChange={e => updateCustomSectionItem(sec.id, item.id, "location", e.target.value)}
-                              className="w-full p-3 bg-white dark:bg-slate-700 border border-slate-200 dark:border-slate-600 rounded-lg text-xs focus:border-brand-500 focus:ring-1 focus:ring-brand-500 outline-none transition-all dark:text-white dark:placeholder:text-slate-400"
+                              type="checkbox"
+                              id={`current-exp-${exp.id}`}
+                              checked={exp.current || false}
+                              onChange={e => {
+                                updateExperience(exp.id, "current", e.target.checked);
+                                if (e.target.checked) updateExperience(exp.id, "endDate", "");
+                              }}
+                              className="rounded text-brand-600 focus:ring-brand-500 border-slate-300"
                             />
-                          )}
-
+                            <label
+                              htmlFor={`current-exp-${exp.id}`}
+                              className="text-xs text-slate-600 dark:text-slate-400 cursor-pointer select-none"
+                            >
+                              Currently working here
+                            </label>
+                          </div>
+                          <input
+                            placeholder="Location (City, Country)"
+                            value={exp.location || ""}
+                            onChange={e => updateExperience(exp.id, "location", e.target.value)}
+                            className="w-full p-3 bg-white dark:bg-slate-700 border border-slate-200 dark:border-slate-600 rounded-lg text-xs focus:border-brand-500 focus:ring-1 focus:ring-brand-500 outline-none transition-all dark:text-white dark:placeholder:text-slate-400"
+                          />
                           <TiptapEditor
-                            placeholder="Description / Bullet Points..."
-                            value={item.description}
-                            onChange={val => updateCustomSectionItem(sec.id, item.id, "description", val)}
+                            placeholder="Description of your role (achievements, responsibilities)..."
+                            value={exp.description}
+                            onChange={val => updateExperience(exp.id, "description", val)}
                             onImprove={onImprove}
-                            unibotImproveTarget={{ section: "custom", resumeId, entryId: item.id }}
+                            unibotImproveTarget={{ section: "experience", resumeId, entryId: exp.id }}
                           />
                         </div>
                       )}
                     </div>
                   ))}
-
-                  <button
-                    onClick={() => addCustomSectionItem(sec.id)}
-                    className="w-full py-3 rounded-xl border-2 border-dashed border-slate-200 dark:border-slate-700 hover:border-brand-300 text-slate-500 dark:text-slate-400 hover:text-brand-600 font-medium flex items-center justify-center gap-2 transition-all"
-                  >
-                    <Plus size={18} /> Add Item
-                  </button>
                 </div>
-              );
-            })}
+              )}
+
+              {activeSection === "education" && (
+                <div className="space-y-6 animate-in fade-in slide-in-from-left-2 duration-200">
+                  <div className="flex justify-between items-center">
+                    <h2 className="text-lg font-medium text-slate-900 dark:text-white flex items-center gap-2">Education</h2>
+                    <div className="flex items-center gap-2">
+                      <button
+                        onClick={() => toggleSectionVisibility("education")}
+                        className={`p-1.5 rounded-full transition-colors ${resume.sectionOrder.find(s => s.id === "education")?.hidden ? "text-amber-400 hover:text-amber-500 bg-amber-50" : "text-slate-400 hover:text-slate-600 hover:bg-slate-100"}`}
+                        title={
+                          resume.sectionOrder.find(s => s.id === "education")?.hidden
+                            ? "Show section in preview"
+                            : "Hide section from preview"
+                        }
+                      >
+                        {resume.sectionOrder.find(s => s.id === "education")?.hidden ? <EyeOff size={14} /> : <Eye size={14} />}
+                      </button>
+                      <button
+                        onClick={addEducation}
+                        className="text-xs font-medium text-brand-600 hover:text-brand-700 bg-brand-50 px-3 py-1.5 rounded-full flex items-center gap-1 transition-colors"
+                      >
+                        <Plus size={14} /> Add
+                      </button>
+                    </div>
+                  </div>
+
+                  {resume.education.map((edu, index) => (
+                    <div
+                      key={edu.id}
+                      className={`py-3 px-4 bg-slate-50 dark:bg-slate-800 rounded-xl border relative group transition-all hover:border-brand-200 ${draggedItemId === edu.id ? "opacity-50 border-brand-400 border-dashed" : "border-slate-200 dark:border-slate-700"}`}
+                      draggable
+                      onDragStart={e => handleItemDragStart(e, "education", edu.id)}
+                      onDragOver={e => handleItemDragOver(e, "education", edu.id)}
+                      onDragEnd={handleItemDragEnd}
+                    >
+                      <div className="flex justify-between items-center mb-2">
+                        <div
+                          className="flex items-center gap-2 cursor-pointer select-none flex-1 min-w-0"
+                          onClick={() => toggleItemExpand(edu.id)}
+                        >
+                          <h3 className="text-sm font-medium text-slate-700 dark:text-slate-200 truncate pr-4">
+                            {edu.school || "University"}
+                          </h3>
+                        </div>
+                        <div className="flex items-center gap-1 shrink-0">
+                          <button
+                            onClick={e => {
+                              e.stopPropagation();
+                              toggleItemVisibility("education", edu.id);
+                            }}
+                            className={`p-1 rounded transition-colors ${edu.hidden ? "text-amber-400 hover:text-amber-500" : "text-slate-400 hover:text-slate-600"}`}
+                            title={edu.hidden ? "Show item" : "Hide item"}
+                          >
+                            {edu.hidden ? <EyeOff size={16} /> : <Eye size={16} />}
+                          </button>
+                          <button
+                            onClick={() => requestRemoveEntry("education", edu.id)}
+                            className="text-slate-400 hover:text-red-500 p-1 hover:bg-red-50 dark:hover:bg-red-900/20 rounded transition-colors"
+                          >
+                            <Trash2 size={16} />
+                          </button>
+                        </div>
+                      </div>
+
+                      {expandedItems[edu.id] && (
+                        <div className="space-y-3 pt-2 border-t border-slate-200 dark:border-slate-700 mt-2">
+                          <div className="grid grid-cols-2 gap-3">
+                            <div>
+                              <input
+                                placeholder="School/University"
+                                value={edu.school}
+                                onChange={e => updateEducation(edu.id, "school", e.target.value)}
+                                className={`w-full p-3 bg-white dark:bg-slate-700 border rounded-lg text-sm font-medium text-slate-900 dark:text-white focus:border-brand-500 focus:ring-1 focus:ring-brand-500 outline-none transition-all dark:placeholder:text-slate-400 ${getError("education", "school", edu.id) ? "border-red-500" : "border-slate-200 dark:border-slate-600"}`}
+                              />
+                              <ResumeFieldError
+                                errors={validationErrors}
+                                section="education"
+                                field="school"
+                                id={edu.id}
+                                visible={showFieldValidation}
+                              />
+                            </div>
+                            <div>
+                              <input
+                                placeholder="Degree/Major"
+                                value={edu.degree}
+                                onChange={e => updateEducation(edu.id, "degree", e.target.value)}
+                                className={`w-full p-3 bg-white dark:bg-slate-700 border rounded-lg text-sm focus:border-brand-500 focus:ring-1 focus:ring-brand-500 outline-none transition-all dark:text-white dark:placeholder:text-slate-400 ${getError("education", "degree", edu.id) ? "border-red-500" : "border-slate-200 dark:border-slate-600"}`}
+                              />
+                              <ResumeFieldError
+                                errors={validationErrors}
+                                section="education"
+                                field="degree"
+                                id={edu.id}
+                                visible={showFieldValidation}
+                              />
+                            </div>
+                          </div>
+                          <div className="grid grid-cols-2 gap-3">
+                            <div>
+                              <MonthYearPicker
+                                placeholder="Start Date"
+                                value={edu.startDate}
+                                onChange={val => updateEducation(edu.id, "startDate", val)}
+                                className={`${getError("education", "startDate", edu.id) ? "border-red-500" : "border-slate-200 dark:border-slate-600"}`}
+                              />
+                              <ResumeFieldError
+                                errors={validationErrors}
+                                section="education"
+                                field="startDate"
+                                id={edu.id}
+                                visible={showFieldValidation}
+                              />
+                            </div>
+                            <div>
+                              <MonthYearPicker
+                                disabled={edu.current}
+                                min={edu.startDate}
+                                placeholder={edu.current ? "Ongoing" : "End Date"}
+                                value={edu.current ? "Present" : edu.endDate}
+                                onChange={val => {
+                                  if (val === "Present") {
+                                    updateEducation(edu.id, "current", true);
+                                    updateEducation(edu.id, "endDate", "");
+                                    return;
+                                  }
+                                  updateEducation(edu.id, "current", false);
+                                  updateEducation(edu.id, "endDate", val);
+                                }}
+                                align="right"
+                                allowPresent
+                                className={`${getError("education", "endDate", edu.id) ? "border-red-500" : "border-slate-200 dark:border-slate-600"}`}
+                              />
+                              <ResumeFieldError
+                                errors={validationErrors}
+                                section="education"
+                                field="endDate"
+                                id={edu.id}
+                                visible={showFieldValidation}
+                              />
+                            </div>
+                          </div>
+                          <div className="flex items-center gap-2 mb-2">
+                            <input
+                              type="checkbox"
+                              id={`current-edu-${edu.id}`}
+                              checked={edu.current || false}
+                              onChange={e => {
+                                updateEducation(edu.id, "current", e.target.checked);
+                                if (e.target.checked) updateEducation(edu.id, "endDate", "");
+                              }}
+                              className="rounded text-brand-600 focus:ring-brand-500 border-slate-300"
+                            />
+                            <label
+                              htmlFor={`current-edu-${edu.id}`}
+                              className="text-xs text-slate-600 dark:text-slate-400 cursor-pointer select-none"
+                            >
+                              Currently studying here
+                            </label>
+                          </div>
+                          <input
+                            placeholder="Location"
+                            value={edu.location || ""}
+                            onChange={e => updateEducation(edu.id, "location", e.target.value)}
+                            className="w-full p-3 bg-white dark:bg-slate-700 border border-slate-200 dark:border-slate-600 rounded-lg text-xs focus:border-brand-500 focus:ring-1 focus:ring-brand-500 outline-none transition-all dark:text-white dark:placeholder:text-slate-400"
+                          />
+                          <TiptapEditor
+                            placeholder="Description (Optional)"
+                            value={edu.description || ""}
+                            onChange={val => updateEducation(edu.id, "description", val)}
+                            onImprove={onImprove}
+                            unibotImproveTarget={{ section: "education", resumeId, entryId: edu.id }}
+                          />
+                        </div>
+                      )}
+                    </div>
+                  ))}
+                </div>
+              )}
+
+              {activeSection === "skills" && (
+                <div className="space-y-6 animate-in fade-in slide-in-from-left-2 duration-200">
+                  <div className="flex justify-between items-center">
+                    <div className="flex items-center gap-2">
+                      <h2 className="text-lg font-medium text-slate-900 dark:text-white flex items-center gap-2">Skills</h2>
+                      <button
+                        onClick={() => toggleSectionVisibility("skills")}
+                        className={`p-1.5 rounded-full transition-colors ${
+                          resume.sectionOrder.find(s => s.id === "skills")?.hidden
+                            ? "text-amber-400 hover:text-amber-500 bg-amber-50"
+                            : "text-slate-400 hover:text-slate-600 hover:bg-slate-100"
+                        }`}
+                        title={
+                          resume.sectionOrder.find(s => s.id === "skills")?.hidden ? "Show section in preview" : "Hide section from preview"
+                        }
+                      >
+                        {resume.sectionOrder.find(s => s.id === "skills")?.hidden ? <EyeOff size={14} /> : <Eye size={14} />}
+                      </button>
+                    </div>
+                    <button
+                      onClick={addSkillCategory}
+                      className="text-xs font-medium text-brand-600 hover:text-brand-700 bg-brand-50 px-3 py-1.5 rounded-full flex items-center gap-1 transition-colors"
+                    >
+                      <Plus size={14} /> Add Category
+                    </button>
+                  </div>
+
+                  {!(resume.skillCategories && resume.skillCategories.length > 0) && (
+                    <div className="text-sm text-slate-500 italic pb-2">No categories yet. Add a category to start organizing skills.</div>
+                  )}
+
+                  {(resume.skillCategories || []).map(cat => (
+                    <div
+                      key={cat.id}
+                      className="py-3 px-4 bg-slate-50 dark:bg-slate-800 rounded-xl border border-slate-200 dark:border-slate-700 mb-4"
+                    >
+                      <div className="flex justify-between items-center mb-3">
+                        <input
+                          value={cat.name}
+                          onChange={e => updateSkillCategory(cat.id, e.target.value)}
+                          placeholder="Category Name (e.g. Languages)"
+                          className="font-medium text-slate-900 dark:text-white bg-transparent outline-none flex-1 focus:border-b border-brand-500 pb-1"
+                        />
+                        <button
+                          onClick={() => requestRemoveSkillCategory(cat.id)}
+                          className="text-slate-400 hover:text-red-500 p-1 rounded hover:bg-red-50 transition-colors"
+                        >
+                          <Trash2 size={14} />
+                        </button>
+                      </div>
+
+                      <div className="flex flex-wrap gap-2">
+                        {resume.skills
+                          .filter(skill => skill.categoryId === cat.id)
+                          .map(skill => (
+                            <div
+                              key={skill.id}
+                              className="flex min-w-0 max-w-full items-center gap-2 px-3 py-1.5 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-full hover:border-brand-300 hover:bg-brand-50/10 transition-all group/skill"
+                            >
+                              <input
+                                value={skill.name}
+                                onChange={e => updateSkill(skill.id, e.target.value)}
+                                placeholder="Skill name"
+                                className="min-w-0 bg-transparent text-sm focus:outline-none dark:text-white dark:placeholder:text-slate-400"
+                                style={{
+                                  width: `${Math.min(28, Math.max(2, skill.name.length))}ch`,
+                                  maxWidth: "100%",
+                                }}
+                              />
+                              <button
+                                onClick={() => removeSkill(skill.id)}
+                                className="shrink-0 text-slate-300 hover:text-red-500 hover:bg-red-50 dark:hover:bg-red-900/20 rounded-full p-0.5 transition-colors"
+                              >
+                                <X size={12} />
+                              </button>
+                            </div>
+                          ))}
+
+                        <div className="flex items-center gap-2 px-3 py-1.5 bg-slate-100/50 dark:bg-slate-800/50 border border-dashed border-slate-300 dark:border-slate-700 rounded-full focus-within:border-brand-400 transition-all">
+                          <Plus size={12} className="text-slate-400" />
+                          <input
+                            placeholder="Add Skill..."
+                            className="bg-transparent text-sm focus:outline-none dark:text-white dark:placeholder:text-slate-500 w-24"
+                            onKeyDown={e => {
+                              if (e.key !== "Enter") return;
+                              const value = e.currentTarget.value.trim();
+                              if (!value) return;
+                              addSkill(cat.id, value);
+                              e.currentTarget.value = "";
+                            }}
+                          />
+                        </div>
+                      </div>
+                    </div>
+                  ))}
+
+                  {resume.skills.filter(skill => !skill.categoryId).length > 0 && (
+                    <div className="p-4 bg-orange-50 dark:bg-orange-900/10 rounded-xl border border-orange-200 dark:border-orange-800/30 mb-4">
+                      <div className="flex items-center justify-between gap-2 mb-3">
+                        <input
+                          defaultValue="Uncategorized Skills"
+                          onBlur={e => renameUncategorizedSkills(e.target.value)}
+                          onKeyDown={e => {
+                            if (e.key !== "Enter") return;
+                            renameUncategorizedSkills(e.currentTarget.value);
+                            e.currentTarget.blur();
+                          }}
+                          className="min-w-0 flex-1 bg-transparent text-sm font-medium text-orange-800 dark:text-orange-400 outline-none border-b border-transparent focus:border-orange-300"
+                          aria-label="Rename uncategorized skills group"
+                        />
+                      </div>
+                      <div className="grid grid-cols-2 gap-3">
+                        {resume.skills
+                          .filter(skill => !skill.categoryId)
+                          .map(skill => (
+                            <div
+                              key={skill.id}
+                              className="flex items-center gap-2 p-2 bg-white dark:bg-slate-800 border border-orange-200 dark:border-orange-800/30 rounded-lg"
+                            >
+                              <input
+                                value={skill.name}
+                                onChange={e => updateSkill(skill.id, e.target.value)}
+                                className="flex-1 min-w-0 bg-transparent text-sm focus:outline-none dark:text-white dark:placeholder:text-slate-400"
+                              />
+                              <button
+                                onClick={() => removeSkill(skill.id)}
+                                className="flex-shrink-0 text-slate-300 hover:text-red-500 hover:bg-red-50 dark:hover:bg-red-900/20 rounded-full p-0.5 transition-colors"
+                              >
+                                <X size={14} />
+                              </button>
+                            </div>
+                          ))}
+                        <div className="flex items-center gap-2 px-3 py-1.5 bg-slate-100/50 dark:bg-slate-800/50 border border-dashed border-slate-300 dark:border-slate-700 rounded-lg focus-within:border-brand-400 transition-all">
+                          <Plus size={12} className="text-slate-400" />
+                          <input
+                            placeholder="Add Skill..."
+                            className="bg-transparent text-sm focus:outline-none dark:text-white dark:placeholder:text-slate-500 w-full"
+                            onKeyDown={e => {
+                              if (e.key !== "Enter") return;
+                              const value = e.currentTarget.value.trim();
+                              if (!value) return;
+                              addSkill(undefined, value);
+                              e.currentTarget.value = "";
+                            }}
+                          />
+                        </div>
+                      </div>
+                    </div>
+                  )}
+                </div>
+              )}
+
+              {activeSection === "projects" && (
+                <div className="space-y-6 animate-in fade-in slide-in-from-left-2 duration-200">
+                  <div className="flex justify-between items-center">
+                    <h2 className="text-lg font-medium text-slate-900 dark:text-white flex items-center gap-2">Projects</h2>
+                    <div className="flex items-center gap-2">
+                      <button
+                        onClick={() => toggleSectionVisibility("projects")}
+                        className={`p-1.5 rounded-full transition-colors ${resume.sectionOrder.find(s => s.id === "projects")?.hidden ? "text-amber-400 hover:text-amber-500 bg-amber-50" : "text-slate-400 hover:text-slate-600 hover:bg-slate-100"}`}
+                        title={
+                          resume.sectionOrder.find(s => s.id === "projects")?.hidden
+                            ? "Show section in preview"
+                            : "Hide section from preview"
+                        }
+                      >
+                        {resume.sectionOrder.find(s => s.id === "projects")?.hidden ? <EyeOff size={14} /> : <Eye size={14} />}
+                      </button>
+                      <button
+                        onClick={addProject}
+                        className="text-xs font-medium text-brand-600 hover:text-brand-700 bg-brand-50 px-3 py-1.5 rounded-full flex items-center gap-1 transition-colors"
+                      >
+                        <Plus size={14} /> Add
+                      </button>
+                    </div>
+                  </div>
+
+                  {resume.projects.map(proj => (
+                    <div
+                      key={proj.id}
+                      className={`py-3 px-4 bg-slate-50 dark:bg-slate-800 rounded-xl border relative group transition-all hover:border-brand-200 ${proj.hidden ? "opacity-60" : ""} ${draggedItemId === proj.id ? "opacity-50 border-brand-400 border-dashed" : "border-slate-200 dark:border-slate-700"}`}
+                      draggable
+                      onDragStart={e => handleItemDragStart(e, "projects", proj.id)}
+                      onDragOver={e => handleItemDragOver(e, "projects", proj.id)}
+                      onDragEnd={handleItemDragEnd}
+                    >
+                      <div className="flex justify-between items-center mb-2">
+                        <div
+                          className="flex items-center gap-2 cursor-pointer select-none flex-1 min-w-0"
+                          onClick={() => toggleItemExpand(proj.id)}
+                        >
+                          <h3 className="text-sm font-medium text-slate-700 dark:text-slate-200 truncate pr-4">
+                            {proj.title || "New Project"}
+                          </h3>
+                        </div>
+                        <div className="flex items-center gap-1 shrink-0">
+                          <button
+                            onClick={e => {
+                              e.stopPropagation();
+                              updateProject(proj.id, "hidden", !proj.hidden);
+                            }}
+                            className={`p-1 rounded transition-colors ${proj.hidden ? "text-amber-400 hover:text-amber-500" : "text-slate-400 hover:text-slate-600"}`}
+                            title={proj.hidden ? "Show item" : "Hide item"}
+                          >
+                            {proj.hidden ? <EyeOff size={16} /> : <Eye size={16} />}
+                          </button>
+                          <button
+                            onClick={() => requestRemoveEntry("projects", proj.id)}
+                            className="text-slate-400 hover:text-red-500 p-1 hover:bg-red-50 dark:hover:bg-red-900/20 rounded transition-colors"
+                          >
+                            <Trash2 size={16} />
+                          </button>
+                        </div>
+                      </div>
+
+                      {expandedItems[proj.id] && (
+                        <div className="space-y-3 pt-2 border-t border-slate-200 dark:border-slate-700 mt-2">
+                          <div className="grid grid-cols-2 gap-3">
+                            <div>
+                              <input
+                                placeholder="Project Title"
+                                value={proj.title}
+                                onChange={e => updateProject(proj.id, "title", e.target.value)}
+                                className="w-full p-3 bg-white dark:bg-slate-700 border border-slate-200 dark:border-slate-600 rounded-lg text-sm font-medium text-slate-900 dark:text-white focus:border-brand-500 focus:ring-1 focus:ring-brand-500 outline-none transition-all dark:placeholder:text-slate-400"
+                              />
+                            </div>
+                            <div>
+                              <input
+                                placeholder="Project URL"
+                                value={proj.url || ""}
+                                onChange={e => updateProject(proj.id, "url", e.target.value)}
+                                className="w-full p-3 bg-white dark:bg-slate-700 border border-slate-200 dark:border-slate-600 rounded-lg text-sm text-slate-900 dark:text-white focus:border-brand-500 focus:ring-1 focus:ring-brand-500 outline-none transition-all dark:placeholder:text-slate-400"
+                              />
+                            </div>
+                          </div>
+                          <TiptapEditor
+                            value={proj.description}
+                            onChange={html => updateProject(proj.id, "description", html)}
+                            onImprove={onImprove}
+                            unibotImproveTarget={{ section: "projects", resumeId, entryId: proj.id }}
+                            placeholder="Description of the Project..."
+                          />
+                        </div>
+                      )}
+                    </div>
+                  ))}
+                </div>
+              )}
+
+              {activeSection === "certifications" && (
+                <div className="space-y-6 animate-in fade-in slide-in-from-left-2 duration-200">
+                  <div className="flex justify-between items-center">
+                    <h2 className="text-lg font-medium text-slate-900 dark:text-white flex items-center gap-2">Certifications</h2>
+                    <div className="flex items-center gap-2">
+                      <button
+                        onClick={() => toggleSectionVisibility("certifications")}
+                        className={`p-1.5 rounded-full transition-colors ${resume.sectionOrder.find(s => s.id === "certifications")?.hidden ? "text-amber-400 hover:text-amber-500 bg-amber-50" : "text-slate-400 hover:text-slate-600 hover:bg-slate-100"}`}
+                        title={
+                          resume.sectionOrder.find(s => s.id === "certifications")?.hidden
+                            ? "Show section in preview"
+                            : "Hide section from preview"
+                        }
+                      >
+                        {resume.sectionOrder.find(s => s.id === "certifications")?.hidden ? <EyeOff size={14} /> : <Eye size={14} />}
+                      </button>
+                      <button
+                        onClick={addCertification}
+                        className="text-xs font-medium text-brand-600 hover:text-brand-700 bg-brand-50 px-3 py-1.5 rounded-full flex items-center gap-1 transition-colors"
+                      >
+                        <Plus size={14} /> Add
+                      </button>
+                    </div>
+                  </div>
+
+                  {resume.certifications.map(cert => (
+                    <div
+                      key={cert.id}
+                      className={`py-3 px-4 bg-slate-50 dark:bg-slate-800 rounded-xl border relative group transition-all hover:border-brand-200 ${draggedItemId === cert.id ? "opacity-50 border-brand-400 border-dashed" : "border-slate-200 dark:border-slate-700"} ${cert.hidden && draggedItemId !== cert.id ? "opacity-60" : ""}`}
+                      draggable
+                      onDragStart={e => handleItemDragStart(e, "certifications", cert.id)}
+                      onDragOver={e => handleItemDragOver(e, "certifications", cert.id)}
+                      onDragEnd={handleItemDragEnd}
+                    >
+                      <div className="flex justify-between items-center mb-2">
+                        <div
+                          className="flex items-center gap-2 cursor-pointer select-none flex-1 min-w-0"
+                          onClick={() => toggleItemExpand(cert.id)}
+                        >
+                          <h3 className="text-sm font-medium text-slate-700 dark:text-slate-200 truncate pr-4">
+                            {cert.title || "New Certification"}
+                          </h3>
+                        </div>
+                        <div className="flex items-center gap-1 shrink-0">
+                          <button
+                            onClick={e => {
+                              e.stopPropagation();
+                              updateCertification(cert.id, "hidden", !cert.hidden);
+                            }}
+                            className={`p-1 rounded transition-colors ${cert.hidden ? "text-amber-400 hover:text-amber-500" : "text-slate-400 hover:text-slate-600"}`}
+                            title={cert.hidden ? "Show item" : "Hide item"}
+                          >
+                            {cert.hidden ? <EyeOff size={16} /> : <Eye size={16} />}
+                          </button>
+                          <button
+                            onClick={() => requestRemoveEntry("certifications", cert.id)}
+                            className="text-slate-400 hover:text-red-500 p-1 hover:bg-red-50 dark:hover:bg-red-900/20 rounded transition-colors"
+                          >
+                            <Trash2 size={16} />
+                          </button>
+                        </div>
+                      </div>
+
+                      {expandedItems[cert.id] && (
+                        <div className="space-y-3 pt-2 border-t border-slate-200 dark:border-slate-700 mt-2">
+                          <div>
+                            <input
+                              placeholder="Certification Title"
+                              value={cert.title}
+                              onChange={e => updateCertification(cert.id, "title", e.target.value)}
+                              className="w-full p-3 bg-white dark:bg-slate-700 border border-slate-200 dark:border-slate-600 rounded-lg text-sm font-medium text-slate-900 dark:text-white focus:border-brand-500 focus:ring-1 focus:ring-brand-500 outline-none transition-all dark:placeholder:text-slate-400"
+                            />
+                          </div>
+                          <div className="grid grid-cols-2 gap-3">
+                            <div>
+                              <input
+                                placeholder="Issuer"
+                                value={cert.issuer || ""}
+                                onChange={e => updateCertification(cert.id, "issuer", e.target.value)}
+                                className="w-full p-3 bg-white dark:bg-slate-700 border border-slate-200 dark:border-slate-600 rounded-lg text-sm text-slate-900 dark:text-white focus:border-brand-500 focus:ring-1 focus:ring-brand-500 outline-none transition-all dark:placeholder:text-slate-400"
+                              />
+                            </div>
+                            <div>
+                              <MonthYearPicker
+                                placeholder="Date"
+                                value={cert.date || ""}
+                                max={new Date().toISOString().slice(0, 7)}
+                                onChange={val => updateCertification(cert.id, "date", val)}
+                                className="border-slate-200 dark:border-slate-600"
+                              />
+                            </div>
+                          </div>
+                          <div>
+                            <input
+                              placeholder="Credential URL"
+                              value={cert.credentialUrl || ""}
+                              onChange={e => updateCertification(cert.id, "credentialUrl", e.target.value)}
+                              className="w-full p-3 bg-white dark:bg-slate-700 border border-slate-200 dark:border-slate-600 rounded-lg text-sm text-slate-900 dark:text-white focus:border-brand-500 focus:ring-1 focus:ring-brand-500 outline-none transition-all dark:placeholder:text-slate-400"
+                            />
+                          </div>
+                          <TiptapEditor
+                            value={cert.description || ""}
+                            onChange={html => updateCertification(cert.id, "description", html)}
+                            onImprove={onImprove}
+                            unibotImproveTarget={{ section: "certifications", resumeId, entryId: cert.id }}
+                            placeholder="Description (optional)..."
+                          />
+                        </div>
+                      )}
+                    </div>
+                  ))}
+                </div>
+              )}
+
+              {resume.customSections.map(sec => {
+                if (activeSection !== sec.id) return null;
+                return (
+                  <div key={sec.id} className="space-y-6 animate-in fade-in slide-in-from-left-2 duration-200">
+                    <div className="flex flex-col gap-4 mb-4">
+                      <div className="flex justify-between items-start gap-4">
+                        <div className="flex-1">
+                          <label className="text-xs font-medium text-slate-500 dark:text-slate-400 uppercase tracking-wider mb-1 block">
+                            Section Title
+                          </label>
+                          <input
+                            value={sec.title}
+                            onChange={e => updateCustomSectionTitle(sec.id, e.target.value)}
+                            className={`text-xl font-medium text-slate-900 dark:text-white bg-transparent border-b hover:border-slate-300 dark:hover:border-slate-600 focus:border-brand-500 focus:ring-0 px-0 w-full transition-all dark:placeholder:text-slate-500 ${getError("custom", "title", sec.id) ? "border-red-500" : "border-transparent"}`}
+                            placeholder="e.g. Projects, Volunteer, Awards"
+                          />
+                          <ResumeFieldError
+                            errors={validationErrors}
+                            section="custom"
+                            field="title"
+                            id={sec.id}
+                            visible={showFieldValidation}
+                          />
+                        </div>
+                        <div className="flex gap-2 items-center pt-5">
+                          <button
+                            onClick={() => toggleSectionVisibility(sec.id)}
+                            className={`p-1.5 rounded-full transition-colors ${
+                              resume.sectionOrder.find(s => s.id === sec.id)?.hidden
+                                ? "text-amber-400 hover:text-amber-500 bg-amber-50"
+                                : "text-slate-400 hover:text-slate-600 hover:bg-slate-100"
+                            }`}
+                            title={
+                              resume.sectionOrder.find(s => s.id === sec.id)?.hidden
+                                ? "Show section in preview"
+                                : "Hide section from preview"
+                            }
+                          >
+                            {resume.sectionOrder.find(s => s.id === sec.id)?.hidden ? <EyeOff size={14} /> : <Eye size={14} />}
+                          </button>
+                          <button
+                            onClick={() => removeCustomSection(sec.id)}
+                            className="text-slate-400 hover:text-red-500 p-2 rounded-full hover:bg-red-50 transition-colors"
+                            title="Delete Section"
+                          >
+                            <Trash2 size={18} />
+                          </button>
+                        </div>
+                      </div>
+                    </div>
+
+                    {sec.items.map((item, index) => (
+                      <div
+                        key={item.id}
+                        className={`py-3 px-4 bg-slate-50 dark:bg-slate-800 rounded-xl border relative group transition-all hover:border-brand-200 ${draggedItemId === item.id ? "opacity-50 border-brand-400 border-dashed" : "border-slate-200 dark:border-slate-700"} ${item.hidden && draggedItemId !== item.id ? "opacity-60" : ""}`}
+                        draggable
+                        onDragStart={e => handleItemDragStart(e, sec.id, item.id)}
+                        onDragOver={e => handleItemDragOver(e, sec.id, item.id)}
+                        onDragEnd={handleItemDragEnd}
+                      >
+                        <div className="flex justify-between items-center mb-2">
+                          <div
+                            className="flex items-center gap-2 cursor-pointer select-none flex-1 min-w-0"
+                            onClick={() => toggleItemExpand(item.id)}
+                          >
+                            <h3 className="text-sm font-medium text-slate-700 dark:text-slate-200 truncate pr-4">
+                              {item.title || "Untitled Item"}
+                            </h3>
+                          </div>
+                          <div className="flex items-center gap-1 shrink-0">
+                            <button
+                              onClick={e => {
+                                e.stopPropagation();
+                                updateCustomSectionItem(sec.id, item.id, "hidden", !item.hidden);
+                              }}
+                              className={`p-1 rounded transition-colors ${item.hidden ? "text-amber-400 hover:text-amber-500" : "text-slate-400 hover:text-slate-600"}`}
+                              title={item.hidden ? "Show item" : "Hide item"}
+                            >
+                              {item.hidden ? <EyeOff size={16} /> : <Eye size={16} />}
+                            </button>
+                            <button
+                              onClick={() => requestRemoveEntry("customItem", item.id, sec.id)}
+                              className="text-slate-400 hover:text-red-500 p-1 hover:bg-red-50 dark:hover:bg-red-900/20 rounded transition-colors"
+                            >
+                              <Trash2 size={16} />
+                            </button>
+                          </div>
+                        </div>
+
+                        {expandedItems[item.id] && (
+                          <div className="space-y-3 pt-2 border-t border-slate-200 dark:border-slate-700 mt-2">
+                            <div className="grid grid-cols-1 gap-3">
+                              <div className="flex-1">
+                                <input
+                                  value={item.title}
+                                  onChange={e => updateCustomSectionItem(sec.id, item.id, "title", e.target.value)}
+                                  className={`w-full p-2 bg-transparent text-sm font-medium border-b hover:border-slate-300 dark:hover:border-slate-600 outline-none transition-all dark:text-white dark:placeholder:text-slate-400 ${getError("custom", "title", item.id) ? "border-red-500" : "border-transparent"}`}
+                                  placeholder="Activity / Project Name"
+                                />
+                                <ResumeFieldError
+                                  errors={validationErrors}
+                                  section="custom"
+                                  field="title"
+                                  id={item.id}
+                                  visible={showFieldValidation}
+                                />
+                                <input
+                                  value={item.subtitle}
+                                  onChange={e => updateCustomSectionItem(sec.id, item.id, "subtitle", e.target.value)}
+                                  className="w-full p-2 bg-transparent text-xs text-slate-500 border-b border-transparent hover:border-slate-300 dark:hover:border-slate-600 outline-none transition-all dark:placeholder:text-slate-500"
+                                  placeholder="Subtitle / Role (Optional)"
+                                />
+                              </div>
+                            </div>
+
+                            <div className="flex items-center gap-2 mb-3">
+                              <button
+                                onClick={() => updateCustomSectionItem(sec.id, item.id, "hasDates", !item.hasDates)}
+                                className={`p-1.5 rounded-md transition-all border ${item.hasDates ? "bg-brand-50 border-brand-200 text-brand-600" : "bg-white border-slate-200 text-slate-400 hover:text-slate-600"}`}
+                                title="Toggle Dates"
+                              >
+                                <Calendar size={16} />
+                              </button>
+                              <button
+                                onClick={() => updateCustomSectionItem(sec.id, item.id, "hasLocation", !item.hasLocation)}
+                                className={`p-1.5 rounded-md transition-all border ${item.hasLocation ? "bg-brand-50 border-brand-200 text-brand-600" : "bg-white border-slate-200 text-slate-400 hover:text-slate-600"}`}
+                                title="Toggle Location"
+                              >
+                                <MapPin size={16} />
+                              </button>
+                            </div>
+
+                            {item.hasDates && (
+                              <>
+                                <div className="grid grid-cols-2 gap-3">
+                                  <MonthYearPicker
+                                    placeholder="Start Date"
+                                    value={item.startDate || ""}
+                                    onChange={val => updateCustomSectionItem(sec.id, item.id, "startDate", val)}
+                                    className="border-slate-200 dark:border-slate-600"
+                                  />
+                                  <MonthYearPicker
+                                    disabled={item.current}
+                                    min={item.startDate}
+                                    placeholder={item.current ? "Ongoing" : "End Date"}
+                                    value={item.current ? "Present" : item.endDate || ""}
+                                    onChange={val => {
+                                      if (val === "Present") {
+                                        updateCustomSectionItem(sec.id, item.id, "current", true);
+                                        updateCustomSectionItem(sec.id, item.id, "endDate", "");
+                                        return;
+                                      }
+                                      updateCustomSectionItem(sec.id, item.id, "current", false);
+                                      updateCustomSectionItem(sec.id, item.id, "endDate", val);
+                                    }}
+                                    align="right"
+                                    allowPresent
+                                    className="border-slate-200 dark:border-slate-600"
+                                  />
+                                </div>
+                                <div className="flex items-center gap-2 mt-2">
+                                  <input
+                                    type="checkbox"
+                                    id={`current-cust-${item.id}`}
+                                    checked={item.current || false}
+                                    onChange={e => {
+                                      updateCustomSectionItem(sec.id, item.id, "current", e.target.checked);
+                                      if (e.target.checked) updateCustomSectionItem(sec.id, item.id, "endDate", "");
+                                    }}
+                                    className="rounded text-brand-600 focus:ring-brand-500 border-slate-300"
+                                  />
+                                  <label
+                                    htmlFor={`current-cust-${item.id}`}
+                                    className="text-xs text-slate-600 dark:text-slate-400 cursor-pointer select-none"
+                                  >
+                                    Ongoing / Present
+                                  </label>
+                                </div>
+                              </>
+                            )}
+
+                            {item.hasLocation && (
+                              <input
+                                placeholder="Location"
+                                value={item.location || ""}
+                                onChange={e => updateCustomSectionItem(sec.id, item.id, "location", e.target.value)}
+                                className="w-full p-3 bg-white dark:bg-slate-700 border border-slate-200 dark:border-slate-600 rounded-lg text-xs focus:border-brand-500 focus:ring-1 focus:ring-brand-500 outline-none transition-all dark:text-white dark:placeholder:text-slate-400"
+                              />
+                            )}
+
+                            <TiptapEditor
+                              placeholder="Description / Bullet Points..."
+                              value={item.description}
+                              onChange={val => updateCustomSectionItem(sec.id, item.id, "description", val)}
+                              onImprove={onImprove}
+                              unibotImproveTarget={{ section: "custom", resumeId, entryId: item.id }}
+                            />
+                          </div>
+                        )}
+                      </div>
+                    ))}
+
+                    <button
+                      onClick={() => addCustomSectionItem(sec.id)}
+                      className="w-full py-3 rounded-xl border-2 border-dashed border-slate-200 dark:border-slate-700 hover:border-brand-300 text-slate-500 dark:text-slate-400 hover:text-brand-600 font-medium flex items-center justify-center gap-2 transition-all"
+                    >
+                      <Plus size={18} /> Add Item
+                    </button>
+                  </div>
+                );
+              })}
+            </div>
           </div>
-          <div
-            role="separator"
-            aria-orientation="vertical"
-            aria-label="Resize section editor"
-            onPointerDown={startFormsPanelResize}
-            className="absolute right-0 top-0 z-30 flex h-full w-3 cursor-col-resize select-none touch-none justify-end hover:bg-slate-200/40 dark:hover:bg-white/5"
-          />
+          <PanelResizeHandle variant="inline" onPointerDown={startFormsPanelResize} label="Resize section editor" />
         </div>
         {/* 3. Preview Area */}
         <div className="flex-1 min-w-0 bg-slate-100 dark:bg-slate-950 overflow-hidden relative flex flex-col items-center">
@@ -2784,167 +2927,6 @@ const ResumeEditor: React.FC<ResumeEditorProps> = ({
                   </div>
                 ))}
               </div>
-            </div>
-          </div>
-        </div>
-      )}
-
-      {/* Export Modal */}
-      {showExportModal && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/50 backdrop-blur-sm animate-in fade-in duration-200">
-          <div className="bg-white dark:bg-slate-900 w-full max-w-md rounded-2xl shadow-2xl p-6 border border-slate-100 dark:border-slate-800 relative">
-            <div className="flex justify-between items-center mb-6">
-              <h2 className="text-xl font-medium text-slate-900 dark:text-white">Export & Share</h2>
-              <button
-                onClick={() => setShowExportModal(false)}
-                className="p-1 hover:bg-slate-100 dark:hover:bg-slate-800 rounded-full text-slate-400 hover:text-slate-600 dark:hover:text-slate-200 transition-colors"
-              >
-                <X size={20} />
-              </button>
-            </div>
-
-            <div className="space-y-4">
-              <div
-                className="w-full"
-                onClick={() => {
-                  if (resumeId) recordResumeDownload(resumeId).catch(() => {});
-                }}
-              >
-                <PDFDownloadLink
-                  document={<ResumePDF data={resume} />}
-                  fileName={`${(resume.profile.fullName ?? "Resume").replace(/\s+/g, "_")}_Resume.pdf`}
-                  className="w-full flex items-center justify-between p-4 bg-slate-50 dark:bg-slate-800 hover:bg-brand-50 dark:hover:bg-slate-700 border border-slate-200 dark:border-slate-700 hover:border-brand-200 rounded-xl transition-all group"
-                >
-                  {({ blob, url, loading, error }) => (
-                    <>
-                      <div className="flex items-center gap-3">
-                        <div className="p-2 bg-white dark:bg-slate-900 rounded-lg text-slate-700 dark:text-slate-300 shadow-sm">
-                          <Download size={20} />
-                        </div>
-                        <div className="text-left">
-                          <div className="font-medium text-slate-900 dark:text-white group-hover:text-brand-700 dark:group-hover:text-brand-400">
-                            {loading ? "Preparing PDF..." : "Download PDF"}
-                          </div>
-                          <div className="text-xs text-slate-500 dark:text-slate-400">High quality print-ready format</div>
-                        </div>
-                      </div>
-                      {loading && <div className="w-4 h-4 border-2 border-brand-500 border-t-transparent rounded-full animate-spin"></div>}
-                    </>
-                  )}
-                </PDFDownloadLink>
-              </div>
-
-              {inlinePublishStep === "cta" ? (
-                <button
-                  type="button"
-                  onClick={handleEnterPublishMode}
-                  disabled={!resumeId?.trim()}
-                  title={!resumeId?.trim() ? "Save your resume before publishing" : undefined}
-                  aria-label="Publish your resume"
-                  className={`w-full flex items-center justify-between p-4 rounded-xl border transition-all group ${
-                    !resumeId?.trim()
-                      ? "bg-slate-50 dark:bg-slate-800 border-slate-200 dark:border-slate-700 opacity-50 cursor-not-allowed"
-                      : "bg-slate-50 dark:bg-slate-800 hover:bg-brand-50 dark:hover:bg-slate-700 border border-slate-200 dark:border-slate-700 hover:border-brand-200"
-                  }`}
-                >
-                  <div className="flex items-center gap-3">
-                    <div className="p-2 bg-white dark:bg-slate-900 rounded-lg text-slate-700 dark:text-slate-300 shadow-sm">
-                      <Share2 size={20} />
-                    </div>
-                    <div className="text-left">
-                      <div className="font-medium text-slate-900 dark:text-white group-hover:text-brand-700 dark:group-hover:text-brand-400">
-                        Publish Your Resume
-                      </div>
-                      <div className="text-xs text-slate-500 dark:text-slate-400">Get a unique URL for your resume</div>
-                    </div>
-                  </div>
-                </button>
-              ) : (
-                <div className="w-full rounded-xl border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-800 p-4 space-y-4 text-left">
-                  <div className="flex items-center justify-between gap-3">
-                    <div className="flex items-center gap-3 min-w-0">
-                      <div className="p-2 bg-white dark:bg-slate-900 rounded-lg text-slate-700 dark:text-slate-300 shadow-sm shrink-0">
-                        <Share2 size={20} />
-                      </div>
-                      <div className="min-w-0">
-                        <div className="font-medium text-slate-900 dark:text-white">Publish your resume</div>
-                        <div className="text-xs text-slate-500 dark:text-slate-400">Choose a public link name, then share</div>
-                      </div>
-                    </div>
-                  </div>
-
-                  <div className="space-y-2">
-                    <label htmlFor="resume-public-slug" className="block text-xs font-medium text-slate-600 dark:text-slate-300">
-                      Public link name
-                    </label>
-                    <p id="resume-public-slug-hint" className="text-xs text-slate-500 dark:text-slate-400">
-                      Use letters, numbers, or hyphens. Example:{" "}
-                      <span className="font-mono text-slate-600 dark:text-slate-300">yoursite.com/resume/</span>
-                      <span className="font-mono text-slate-800 dark:text-slate-200">alex-chen</span>
-                    </p>
-                    <div className="flex flex-col sm:flex-row sm:items-center gap-2 rounded-lg bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 px-3 py-2">
-                      <span className="text-xs text-slate-500 font-mono truncate shrink-0" aria-hidden>
-                        {typeof window !== "undefined" ? `${window.location.origin}/resume/` : "/resume/"}
-                      </span>
-                      <input
-                        id="resume-public-slug"
-                        type="text"
-                        autoComplete="off"
-                        placeholder="your-name"
-                        value={slugInput}
-                        onChange={e => {
-                          setSlugInput(e.target.value);
-                          if (publishError) setPublishError(null);
-                        }}
-                        onKeyDown={handlePublishSlugKeyDown}
-                        disabled={publishSubmitting || publishShowPublished}
-                        aria-describedby="resume-public-slug-hint"
-                        aria-invalid={Boolean(publishError)}
-                        className="flex-1 min-w-0 bg-transparent text-sm text-slate-900 dark:text-white outline-none placeholder:text-slate-400 disabled:opacity-60"
-                      />
-                    </div>
-                    {publishError ? (
-                      <p className="text-xs text-red-600 dark:text-red-400 flex items-center gap-1" role="alert">
-                        <AlertCircle size={14} className="shrink-0" />
-                        {publishError}
-                      </p>
-                    ) : null}
-                  </div>
-
-                  <button
-                    type="button"
-                    onClick={() => void handleSharePublicLinkSubmit()}
-                    disabled={publishSubmitting || publishShowPublished || !slugInput.trim()}
-                    aria-busy={publishSubmitting}
-                    className={`w-full flex items-center justify-center gap-2 py-2.5 px-4 rounded-lg text-sm font-semibold transition-colors ${
-                      publishShowPublished
-                        ? "bg-emerald-600 text-white cursor-default"
-                        : publishSubmitting
-                          ? "bg-brand-600 text-white cursor-wait"
-                          : !slugInput.trim()
-                            ? "bg-slate-300 text-slate-600 cursor-not-allowed dark:bg-slate-600 dark:text-slate-300"
-                            : "bg-brand-600 hover:bg-brand-700 text-white"
-                    }`}
-                  >
-                    {publishSubmitting ? (
-                      <>
-                        <span>Publishing…</span>
-                        <div
-                          className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin shrink-0"
-                          aria-hidden
-                        />
-                      </>
-                    ) : publishShowPublished ? (
-                      <>
-                        <Check size={18} className="shrink-0" aria-hidden />
-                        <span>Published</span>
-                      </>
-                    ) : (
-                      "Share Public Link"
-                    )}
-                  </button>
-                </div>
-              )}
             </div>
           </div>
         </div>

@@ -1,6 +1,7 @@
 "use client";
 
 import React, { useCallback, useEffect, useRef, useState } from "react";
+import { ApplicationAssetDownloadMenu } from "@/components/application-assets/ApplicationAssetDownloadMenu";
 import InterviewLaunchOverlay from "@/components/interview-prep/InterviewLaunchOverlay";
 import { APPLICATION_ASSET_EVENTS } from "@/features/application-assets/api/application-asset-events";
 import { checkApplicationAssetAvailability } from "@/features/application-assets/server-actions/application-asset-actions";
@@ -12,6 +13,9 @@ import { startInterviewSession } from "@/src/features/interview-prep/server-acti
 import type { StartInterviewFromJobPayload } from "@/src/features/interview-prep/types";
 import { usePrepareApplicationContext } from "@/src/features/jobs/hooks/usePrepareApplicationContext";
 import { generateResume } from "@/src/features/resume/server-actions/resume-actions";
+import { exportApplicationAssetAsDocx, exportApplicationAssetAsPdf } from "@/utils/export-application-asset-file";
+import { htmlToPlainText } from "@/utils/html-to-text";
+import { normalizeContentToHtml } from "@/utils/normalize-content-to-html";
 import {
   X,
   FileText,
@@ -71,7 +75,8 @@ const PREPARE_TABS: { id: PrepareTabId; label: string; icon: React.ElementType }
   { id: "resume", label: "Resume", icon: UserSquare2 },
   { id: "cover-letter", label: "Cover Letter", icon: FileText },
   { id: "cold-email", label: "Cold Email", icon: Mail },
-  { id: "vpd", label: "Value Prop Doc", icon: Briefcase },
+  // VPD tab hidden until prepare-application VPD flow is ready
+  // { id: "vpd", label: "Value Prop Doc", icon: Briefcase },
   { id: "interview", label: "Interview Prep", icon: Mic2 },
 ];
 
@@ -96,6 +101,7 @@ const PrepareApplicationModal: React.FC<PrepareApplicationModalProps> = ({
   const [isStartingInterview, setIsStartingInterview] = useState(false);
   const [interviewLaunchError, setInterviewLaunchError] = useState<string | null>(null);
   const [copied, setCopied] = useState(false);
+  const [isDownloading, setIsDownloading] = useState(false);
   const applicationIdRef = useRef<string | null>(null);
 
   const {
@@ -329,6 +335,10 @@ const PrepareApplicationModal: React.FC<PrepareApplicationModalProps> = ({
     }
   };
 
+  useEffect(() => {
+    setActiveTab(initialTab);
+  }, [initialTab, job.id]);
+
   const handleContentChange = (value: string) => {
     if (isInterviewTab || activeTab === "resume" || activeTab === "vpd") return;
     const tab = activeTab as "cover-letter" | "cold-email";
@@ -350,23 +360,55 @@ const PrepareApplicationModal: React.FC<PrepareApplicationModalProps> = ({
   };
 
   const handleCopy = () => {
-    const text = activeAsset?.content ?? "";
-    if (!text) return;
+    const raw = activeAsset?.content ?? "";
+    if (!raw) return;
+    const text = htmlToPlainText(normalizeContentToHtml(raw));
+    if (!text.trim()) return;
     navigator.clipboard.writeText(text);
     setCopied(true);
     window.setTimeout(() => setCopied(false), 2000);
   };
 
-  const handleDownload = () => {
+  const handleDownloadPdf = () => {
+    const raw = activeAsset?.content ?? "";
+    if (!raw.trim()) return;
+    if (activeTab !== "cover-letter" && activeTab !== "cold-email") return;
+
+    void (async () => {
+      setIsDownloading(true);
+      try {
+        await exportApplicationAssetAsPdf(raw, activeTab, job.company, job.role);
+      } finally {
+        setIsDownloading(false);
+      }
+    })();
+  };
+
+  const handleDownloadVpdText = () => {
     const text = activeAsset?.content ?? "";
     if (!text) return;
     const element = document.createElement("a");
     const file = new Blob([text], { type: "text/plain" });
     element.href = URL.createObjectURL(file);
-    element.download = `${activeTab}-${job.company.replace(/\s+/g, "-").toLowerCase()}.txt`;
+    element.download = `vpd-${job.company.replace(/\s+/g, "-").toLowerCase()}.txt`;
     document.body.appendChild(element);
     element.click();
     document.body.removeChild(element);
+  };
+
+  const handleDownloadDocx = () => {
+    const raw = activeAsset?.content ?? "";
+    if (!raw.trim()) return;
+    if (activeTab !== "cover-letter" && activeTab !== "cold-email") return;
+
+    void (async () => {
+      setIsDownloading(true);
+      try {
+        await exportApplicationAssetAsDocx(raw, activeTab, job.company, job.role);
+      } finally {
+        setIsDownloading(false);
+      }
+    })();
   };
 
   const handleStartInterview = async (payload: {
@@ -453,6 +495,13 @@ const PrepareApplicationModal: React.FC<PrepareApplicationModalProps> = ({
     activeTab === "cover-letter" || activeTab === "cold-email"
       ? (tabStates[activeTab].assetId ?? (activeTab === "cover-letter" ? linkedCoverLetterId : linkedColdEmailId))
       : null;
+
+  const showTextAssetActions =
+    !isInterviewTab &&
+    (activeTab === "cover-letter" || activeTab === "cold-email") &&
+    Boolean(activeTextAssetId) &&
+    activeAsset?.status !== "loading" &&
+    activeAsset?.status !== "error";
 
   const activeResumeId = activeTab === "resume" ? (tabStates.resume.assetId ?? linkedResumeId) : null;
 
@@ -571,7 +620,7 @@ const PrepareApplicationModal: React.FC<PrepareApplicationModalProps> = ({
         )}
         <div className="flex h-full w-64 shrink-0 flex-col border-r border-slate-200 bg-slate-50 p-5 dark:border-slate-800 dark:bg-slate-900">
           <div className="mb-6">
-            <h2 className="mb-3 text-xs font-medium uppercase tracking-widest text-slate-400">Prepare Application</h2>
+            <h2 className="mb-3 text-xs font-medium text-slate-400">Prepare Application</h2>
             <h3 className="mb-1 line-clamp-1 text-lg font-medium text-slate-900 dark:text-white">{job.role}</h3>
             <p className="text-sm text-slate-500 dark:text-slate-400">{job.company}</p>
             {source === "discovery" && applicationId && (
@@ -594,7 +643,7 @@ const PrepareApplicationModal: React.FC<PrepareApplicationModalProps> = ({
                   key={tab.id}
                   type="button"
                   onClick={() => setActiveTab(tab.id)}
-                  className={`flex w-full items-center gap-3 rounded-xl px-3 py-2.5 text-left text-sm font-medium transition-all ${
+                  className={`relative flex w-full items-center gap-3 rounded-xl px-3 py-2.5 text-left text-sm font-medium transition-all ${
                     isActive
                       ? "bg-white text-brand-600 shadow-sm ring-1 ring-slate-200 dark:bg-slate-800 dark:text-brand-400 dark:ring-slate-700"
                       : "text-slate-600 hover:bg-slate-100 dark:text-slate-400 dark:hover:bg-slate-800/50"
@@ -628,9 +677,9 @@ const PrepareApplicationModal: React.FC<PrepareApplicationModalProps> = ({
           </button>
         </div>
 
-        <div className="flex flex-1 flex-col bg-white dark:bg-slate-900">
-          <div className="flex h-16 items-center justify-between border-b border-slate-100 px-6 dark:border-slate-800">
-            <h2 className="flex items-center gap-2 font-medium text-slate-900 dark:text-white">
+        <div className="flex min-w-0 flex-1 flex-col bg-white dark:bg-slate-900">
+          <div className="flex h-16 shrink-0 items-center justify-between gap-3 border-b border-slate-100 px-6 dark:border-slate-800">
+            <h2 className="flex min-w-0 items-center gap-2 truncate font-medium text-slate-900 dark:text-white">
               {isInterviewTab ? (
                 <>
                   <Mic2 size={16} className="text-brand-500" /> Interview Prep
@@ -643,7 +692,7 @@ const PrepareApplicationModal: React.FC<PrepareApplicationModalProps> = ({
                 </>
               )}
             </h2>
-            <div className="flex items-center gap-2">
+            <div className="flex shrink-0 items-center gap-2">
               {activeTab === "resume" && resumeEditHref && (
                 <>
                   <Link
@@ -660,22 +709,22 @@ const PrepareApplicationModal: React.FC<PrepareApplicationModalProps> = ({
                   </Link>
                 </>
               )}
-              {!isInterviewTab && activeAsset?.status === "ready" && (activeTab === "cover-letter" || activeTab === "cold-email") && (
+              {showTextAssetActions && (
                 <>
                   <button
                     type="button"
                     onClick={handleCopy}
-                    className="flex items-center gap-1.5 rounded-lg border border-slate-200 bg-slate-50 px-3 py-1.5 text-xs font-medium text-slate-600 transition-colors hover:bg-slate-100 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-300"
+                    title={copied ? "Copied" : "Copy"}
+                    aria-label={copied ? "Copied" : "Copy to clipboard"}
+                    className="inline-flex h-8 w-8 items-center justify-center rounded-lg border border-slate-200 bg-slate-50 text-slate-600 transition-colors hover:bg-slate-100 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-300 dark:hover:bg-slate-700"
                   >
-                    <Copy size={12} /> {copied ? "Copied" : "Copy"}
+                    <Copy size={14} />
                   </button>
-                  <button
-                    type="button"
-                    onClick={handleDownload}
-                    className="flex items-center gap-1.5 rounded-lg border border-slate-200 bg-slate-50 px-3 py-1.5 text-xs font-medium text-slate-600 transition-colors hover:bg-slate-100 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-300"
-                  >
-                    <Download size={12} /> Download
-                  </button>
+                  <ApplicationAssetDownloadMenu
+                    isBusy={isDownloading}
+                    onDownloadPdf={handleDownloadPdf}
+                    onDownloadDocx={handleDownloadDocx}
+                  />
                 </>
               )}
               {!isInterviewTab && activeAsset?.status === "ready" && activeTab === "vpd" && (
@@ -689,7 +738,7 @@ const PrepareApplicationModal: React.FC<PrepareApplicationModalProps> = ({
                   </button>
                   <button
                     type="button"
-                    onClick={handleDownload}
+                    onClick={handleDownloadVpdText}
                     className="flex items-center gap-1.5 rounded-lg border border-slate-200 bg-slate-50 px-3 py-1.5 text-xs font-medium text-slate-600 transition-colors hover:bg-slate-100 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-300"
                   >
                     <Download size={12} /> Download
@@ -708,31 +757,27 @@ const PrepareApplicationModal: React.FC<PrepareApplicationModalProps> = ({
           </div>
 
           <div
-            className={`flex min-h-0 flex-1 flex-col overflow-hidden ${
+            className={`flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden ${
               (activeTab === "resume" && activeResumeId) ||
               ((activeTab === "cover-letter" || activeTab === "cold-email") && activeTextAssetId)
                 ? "p-4"
                 : "p-8"
             }`}
           >
-            <div className="flex min-h-0 flex-1 flex-col">{renderMainPanel()}</div>
+            <div className="flex min-h-0 min-w-0 flex-1 flex-col">{renderMainPanel()}</div>
           </div>
 
-          {!isInterviewTab &&
-            activeAsset?.status === "ready" &&
-            (activeTab === "cover-letter" || activeTab === "cold-email") &&
-            activeTextAssetId &&
-            onNavigateToStudio && (
-              <div className="flex shrink-0 justify-end border-t border-slate-100 px-6 py-3 dark:border-slate-800">
-                <button
-                  type="button"
-                  onClick={() => handleImproveWithUnibot(activeTextAssetId, activeTab === "cold-email" ? "cold-email" : "cover-letter")}
-                  className="flex items-center gap-2 rounded-xl border border-brand-200 bg-brand-50 px-4 py-2 text-sm font-medium text-brand-700 transition-colors hover:bg-brand-100 dark:border-brand-800 dark:bg-brand-900/40 dark:text-brand-300 dark:hover:bg-brand-900/60"
-                >
-                  <Wand2 size={16} /> Improve with Unibot
-                </button>
-              </div>
-            )}
+          {!isInterviewTab && showTextAssetActions && activeTextAssetId && onNavigateToStudio && (
+            <div className="flex shrink-0 justify-end border-t border-slate-100 px-6 py-3 dark:border-slate-800">
+              <button
+                type="button"
+                onClick={() => handleImproveWithUnibot(activeTextAssetId, activeTab === "cold-email" ? "cold-email" : "cover-letter")}
+                className="flex items-center gap-2 rounded-xl border border-brand-200 bg-brand-50 px-4 py-2 text-sm font-medium text-brand-700 transition-colors hover:bg-brand-100 dark:border-brand-800 dark:bg-brand-900/40 dark:text-brand-300 dark:hover:bg-brand-900/60"
+              >
+                <Wand2 size={16} /> Improve with Unibot
+              </button>
+            </div>
+          )}
         </div>
       </div>
     </div>

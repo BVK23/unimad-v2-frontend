@@ -1,6 +1,12 @@
 /** @type {import('tailwindcss').Config} */
 export default {
-  content: ["./index.html", "./*.{js,ts,jsx,tsx}", "./components/**/*.{js,ts,jsx,tsx}", "./src/**/*.{js,ts,jsx,tsx}"],
+  content: [
+    "./index.html",
+    "./*.{js,ts,jsx,tsx}",
+    "./components/**/*.{js,ts,jsx,tsx}",
+    "./constants/**/*.{js,ts}",
+    "./src/**/*.{js,ts,jsx,tsx}",
+  ],
   darkMode: "class",
   theme: {
     extend: {
@@ -20,6 +26,19 @@ export default {
       },
       fontFamily: {
         sans: ["Onest", "sans-serif"],
+      },
+      keyframes: {
+        "cta-glow": {
+          "0%, 100%": {
+            boxShadow: "0 0 20px rgba(37, 83, 208, 0.45), 0 4px 14px rgba(37, 83, 208, 0.3)",
+          },
+          "50%": {
+            boxShadow: "0 0 36px rgba(37, 83, 208, 0.75), 0 4px 22px rgba(37, 83, 208, 0.45)",
+          },
+        },
+      },
+      animation: {
+        "cta-glow": "cta-glow 2s ease-in-out infinite",
       },
     },
   },

@@ -2,16 +2,18 @@
 
 import { useCallback, useEffect, useRef, useState } from "react";
 import RichTextEditor, { type RichTextEditorSelectionInfo } from "@/components/RichTextEditor";
+import { ApplicationDocumentPageFrame } from "@/components/application-assets/ApplicationDocumentPageFrame";
 import AssetPreviewLoadingOverlay from "@/components/studio/AssetPreviewLoadingOverlay";
 import DocumentDiffPreview from "@/components/studio/DocumentDiffPreview";
 import DocumentPendingRevisionBar from "@/components/studio/DocumentPendingRevisionBar";
 import SelectionQuickActions from "@/components/studio/SelectionQuickActions";
+import { APPLICATION_DOCUMENT_BODY_CLASS } from "@/constants/applicationDocumentPreview";
 import { APPLICATION_ASSET_MIN_SELECTION_CHARS } from "@/features/application-assets/config/selection-presets";
 import { useApplicationAssetStudioStore } from "@/features/application-assets/store/useApplicationAssetStudioStore";
 import type { ApplicationAssetApiType } from "@/features/application-assets/types";
 import { htmlToPlainText } from "@/utils/html-to-text";
 import { normalizeContentToHtml } from "@/utils/normalize-content-to-html";
-import { Copy, Download } from "lucide-react";
+import { Copy, Download, FileText } from "lucide-react";
 
 export type DocumentSaveStatus = "idle" | "unsaved" | "saving" | "saved" | "error";
 
@@ -40,7 +42,8 @@ interface StudioDocumentPreviewProps {
   onCopy: () => void;
   onContentChange?: (content: string) => void;
   onDownloadPdf?: () => Promise<void>;
-  showPdfDownload?: boolean;
+  onDownloadDocx?: () => Promise<void>;
+  showDocumentDownload?: boolean;
   assetType?: ApplicationAssetApiType | null;
   isAdkLoading?: boolean;
   hasPendingRevision?: boolean;
@@ -57,17 +60,12 @@ interface StudioDocumentPreviewProps {
   reviewSessionKey?: string;
 }
 
-/** Typography on the preview body — matches pre–diff-review Studio preview (commit 3fe2028). */
-export const documentPreviewBodyTypography = "font-serif text-base leading-relaxed text-slate-900 dark:text-slate-100";
+/** Typography on the preview body — matches `utils/pdf-export.tsx` (A4 Helvetica). */
+export const documentPreviewBodyTypography = "font-sans text-[11pt] leading-[1.6] text-[#333] dark:text-[#333]";
 
 export const documentPreviewEditorClass =
-  "max-w-none min-h-full w-full border-none bg-transparent font-serif text-base leading-relaxed text-slate-900 outline-none dark:text-slate-100 " +
-  "[&_p]:mb-4 [&_p:last-child]:mb-0 [&_p]:font-serif " +
-  "[&_strong]:font-semibold [&_b]:font-semibold " +
-  "[&_ul]:my-3 [&_ul]:list-disc [&_ul]:pl-6 [&_ul]:font-serif " +
-  "[&_ol]:my-3 [&_ol]:list-decimal [&_ol]:pl-6 [&_ol]:font-serif " +
-  "[&_li]:mb-2 [&_li:last-child]:mb-0 [&_li]:font-serif " +
-  "[&_.diff-region-block]:font-serif";
+  `${APPLICATION_DOCUMENT_BODY_CLASS} [&_.diff-region-block]:font-sans ` +
+  "[&_ul]:list-disc [&_ul]:my-2 [&_ul]:ml-5 [&_ul]:pl-0 [&_ol]:list-decimal [&_ol]:my-2 [&_ol]:ml-5 [&_ol]:pl-0 [&_li]:mb-1";
 
 const StudioDocumentPreview = ({
   content,
@@ -79,7 +77,8 @@ const StudioDocumentPreview = ({
   onCopy,
   onContentChange,
   onDownloadPdf,
-  showPdfDownload = false,
+  onDownloadDocx,
+  showDocumentDownload = false,
   assetType = null,
   isAdkLoading = false,
   hasPendingRevision = false,
@@ -91,7 +90,8 @@ const StudioDocumentPreview = ({
   onApplyReconciled,
   reviewSessionKey = "review",
 }: StudioDocumentPreviewProps) => {
-  const [isDownloading, setIsDownloading] = useState(false);
+  const [isDownloadingPdf, setIsDownloadingPdf] = useState(false);
+  const [isDownloadingDocx, setIsDownloadingDocx] = useState(false);
   const [localContent, setLocalContent] = useState(() => normalizeContentToHtml(content));
   const lastExternalContent = useRef(content);
 
@@ -159,13 +159,23 @@ const StudioDocumentPreview = ({
     navigator.clipboard.writeText(text).then(() => onCopy());
   };
 
-  const handleDownload = async () => {
-    if (!onDownloadPdf || isDownloading) return;
-    setIsDownloading(true);
+  const handleDownloadPdf = async () => {
+    if (!onDownloadPdf || isDownloadingPdf) return;
+    setIsDownloadingPdf(true);
     try {
       await onDownloadPdf();
     } finally {
-      setIsDownloading(false);
+      setIsDownloadingPdf(false);
+    }
+  };
+
+  const handleDownloadDocx = async () => {
+    if (!onDownloadDocx || isDownloadingDocx) return;
+    setIsDownloadingDocx(true);
+    try {
+      await onDownloadDocx();
+    } finally {
+      setIsDownloadingDocx(false);
     }
   };
 
@@ -174,44 +184,59 @@ const StudioDocumentPreview = ({
     onContentChange?.(val);
   };
 
-  return (
-    <div className="mx-auto flex min-h-[min(68vh,580px)] w-full max-w-xl flex-col rounded-xl border border-slate-200 bg-white shadow-lg dark:border-slate-800 dark:bg-slate-900">
-      <div className="flex min-h-[52px] items-center justify-between gap-2 border-b border-slate-100 p-4 dark:border-slate-800">
-        {saveStatusLabel ? (
-          <span className="text-xs text-slate-500 tabular-nums dark:text-slate-400" aria-live="polite">
-            {saveStatusLabel}
-          </span>
-        ) : (
-          <span className="flex-1" aria-hidden />
-        )}
-        {showActions && (
-          <div className="flex shrink-0 justify-end gap-2">
+  const toolbar = (
+    <div className="flex min-h-[52px] items-center justify-between gap-2 p-4">
+      {saveStatusLabel ? (
+        <span className="text-xs text-slate-500 tabular-nums dark:text-slate-400" aria-live="polite">
+          {saveStatusLabel}
+        </span>
+      ) : (
+        <span className="flex-1" aria-hidden />
+      )}
+      {showActions && (
+        <div className="flex shrink-0 justify-end gap-2">
+          <button
+            type="button"
+            onClick={handleCopy}
+            aria-label="Copy to clipboard"
+            className="flex items-center gap-2 rounded-lg bg-slate-100 px-4 py-2 text-xs font-medium text-slate-600 transition-all hover:bg-slate-200 dark:bg-slate-800 dark:text-slate-300 dark:hover:bg-slate-700"
+          >
+            <Copy size={14} />
+            {copyFeedback ? "Copied!" : "Copy"}
+          </button>
+          {showDocumentDownload && onDownloadPdf ? (
             <button
               type="button"
-              onClick={handleCopy}
-              aria-label="Copy to clipboard"
-              className="flex items-center gap-2 rounded-lg bg-slate-100 px-4 py-2 text-xs font-medium text-slate-600 transition-all hover:bg-slate-200 dark:bg-slate-800 dark:text-slate-300 dark:hover:bg-slate-700"
+              onClick={() => void handleDownloadPdf()}
+              disabled={isDownloadingPdf}
+              aria-label="Download as PDF"
+              className="flex items-center gap-2 rounded-lg bg-slate-100 px-4 py-2 text-xs font-medium text-slate-600 transition-all hover:bg-slate-200 disabled:cursor-not-allowed disabled:opacity-50 dark:bg-slate-800 dark:text-slate-300 dark:hover:bg-slate-700"
             >
-              <Copy size={14} />
-              {copyFeedback ? "Copied!" : "Copy"}
+              <Download size={14} />
+              {isDownloadingPdf ? "Preparing..." : "Download PDF"}
             </button>
-            {showPdfDownload && onDownloadPdf && (
-              <button
-                type="button"
-                onClick={() => void handleDownload()}
-                disabled={isDownloading}
-                aria-label="Download as PDF"
-                className="flex items-center gap-2 rounded-lg bg-slate-100 px-4 py-2 text-xs font-medium text-slate-600 transition-all hover:bg-slate-200 disabled:cursor-not-allowed disabled:opacity-50 dark:bg-slate-800 dark:text-slate-300 dark:hover:bg-slate-700"
-              >
-                <Download size={14} />
-                {isDownloading ? "Preparing..." : "Download as PDF"}
-              </button>
-            )}
-          </div>
-        )}
-      </div>
+          ) : null}
+          {showDocumentDownload && onDownloadDocx ? (
+            <button
+              type="button"
+              onClick={() => void handleDownloadDocx()}
+              disabled={isDownloadingDocx}
+              aria-label="Download as Word"
+              className="flex items-center gap-2 rounded-lg bg-slate-100 px-4 py-2 text-xs font-medium text-slate-600 transition-all hover:bg-slate-200 disabled:cursor-not-allowed disabled:opacity-50 dark:bg-slate-800 dark:text-slate-300 dark:hover:bg-slate-700"
+            >
+              <FileText size={14} />
+              {isDownloadingDocx ? "Preparing..." : "Download Word"}
+            </button>
+          ) : null}
+        </div>
+      )}
+    </div>
+  );
+
+  return (
+    <ApplicationDocumentPageFrame variant="studio" header={toolbar} className="min-h-[min(68vh,580px)]">
       {showDiffView ? (
-        <div className="relative flex-1 overflow-hidden">
+        <div className="relative overflow-hidden">
           <DocumentDiffPreview
             key={reviewSessionKey}
             baselineDraft={baselineDraft}
@@ -224,7 +249,7 @@ const StudioDocumentPreview = ({
           />
         </div>
       ) : (
-        <div className={`relative flex-1 overflow-y-auto ${documentPreviewBodyTypography} ${isGenerating ? "min-h-[320px]" : "p-12"}`}>
+        <div className={`relative ${documentPreviewBodyTypography} ${isGenerating ? "min-h-[320px]" : ""}`}>
           {hasPendingRevision && !showDiffView && assetType && onAcceptRevision && onRevertRevision ? (
             <DocumentPendingRevisionBar
               assetType={assetType}
@@ -257,11 +282,11 @@ const StudioDocumentPreview = ({
               ) : null}
             </>
           ) : (
-            <p className="font-serif text-slate-400 dark:text-slate-600">{placeholder}</p>
+            <p className="font-sans text-[11pt] text-slate-400">{placeholder}</p>
           )}
         </div>
       )}
-    </div>
+    </ApplicationDocumentPageFrame>
   );
 };
 

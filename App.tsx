@@ -87,7 +87,6 @@ const App: React.FC = () => {
 
   // Global Modal State (Lifted for Console Access)
   const [showTemplateModal, setShowTemplateModal] = useState(false);
-  const [showExportModal, setShowExportModal] = useState(false);
   const [showOnboardingModal, setShowOnboardingModal] = useState(false);
 
   // Dark Mode State
@@ -115,7 +114,6 @@ const App: React.FC = () => {
       return [
         ...commonActions,
         { id: "templates", label: "Template Gallery", onClick: () => setShowTemplateModal(true) },
-        { id: "export", label: "Export / Share Modal", onClick: () => setShowExportModal(true) },
         { id: "onboarding", label: "Trigger Onboarding", onClick: () => setShowOnboardingModal(true) },
       ];
     }
@@ -243,8 +241,6 @@ const App: React.FC = () => {
                 onImprove={handleImproveWithAI}
                 showTemplateModal={showTemplateModal}
                 setShowTemplateModal={setShowTemplateModal}
-                showExportModal={showExportModal}
-                setShowExportModal={setShowExportModal}
               />
             )
           ))}

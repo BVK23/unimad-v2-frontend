@@ -1,4 +1,5 @@
 import React from "react";
+import { normalizeContentToHtml } from "@/utils/normalize-content-to-html";
 import { Document, Page, Text, View, StyleSheet, pdf } from "@react-pdf/renderer";
 
 // Basic shape of Tiptap JSON we care about
@@ -605,11 +606,7 @@ export const exportContentAsPDF = (
   return new Promise((resolve, reject) => {
     try {
       const contentStr = typeof content === "string" ? content : (content?.markdown ?? "");
-      const pageContent = jsonContent
-        ? parseTiptapJsonToPDF(jsonContent)
-        : isHtmlLikeString(contentStr)
-          ? parseHtmlToPDF(contentStr)
-          : parseMarkdownToPDF(content);
+      const pageContent = jsonContent ? parseTiptapJsonToPDF(jsonContent) : parseHtmlToPDF(normalizeContentToHtml(contentStr));
 
       const pdfContent = (
         <Document>

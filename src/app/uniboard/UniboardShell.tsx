@@ -5,13 +5,15 @@ import ChatSidebar from "@/components/ChatSidebar";
 import DebugConsole from "@/components/DebugConsole";
 import OnboardingModal from "@/components/OnboardingModal";
 import ProfileMenu from "@/components/ProfileMenu";
+import UnicoachPricingModal, { OPEN_UNICOACH_PRICING_EVENT } from "@/components/UnicoachPricingModal";
 import { AdkChatProvider } from "@/components/chat/AdkChatProvider";
 import type { UnibotIncomingRequest, UnibotResumeSection } from "@/components/chat/unibot-incoming-request";
 import { useUnicoachInit } from "@/features/unicoach/hooks/use-uniboard-unicoach";
 import { computeAdkUserId } from "@/utils/adkUserId";
+import { useQueryClient } from "@tanstack/react-query";
 import { Bell } from "lucide-react";
 import Link from "next/link";
-import { usePathname } from "next/navigation";
+import { usePathname, useRouter } from "next/navigation";
 
 type UserData = {
   username?: string;
@@ -35,11 +37,14 @@ const UNICOACH_NAV = { href: "/uniboard/unicoach", label: "Unicoach" } as const;
 export default function UniboardShell({ children, userData }: { children: React.ReactNode; userData: UserData | null }) {
   const adkUserId = computeAdkUserId(userData);
   const pathname = usePathname();
+  const router = useRouter();
+  const queryClient = useQueryClient();
   const { data: unicoachInit } = useUnicoachInit();
   const showUnicoachNav = Boolean(unicoachInit?.coach_data) || unicoachInit?.subscribed === true;
   const navItems = useMemo(() => (showUnicoachNav ? [...NAV_ITEMS, UNICOACH_NAV] : [...NAV_ITEMS]), [showUnicoachNav]);
   const [pendingAIRequest, setPendingAIRequest] = useState<UnibotIncomingRequest | null>(null);
   const [showOnboardingModal, setShowOnboardingModal] = useState(false);
+  const [showUnicoachPricing, setShowUnicoachPricing] = useState(false);
   const [isDarkMode, setIsDarkMode] = useState(false);
 
   useEffect(() => {
@@ -115,6 +120,19 @@ export default function UniboardShell({ children, userData }: { children: React.
     };
   }, []);
 
+  useEffect(() => {
+    const openPricing = () => setShowUnicoachPricing(true);
+    window.addEventListener(OPEN_UNICOACH_PRICING_EVENT, openPricing);
+    return () => window.removeEventListener(OPEN_UNICOACH_PRICING_EVENT, openPricing);
+  }, []);
+
+  const handleUnicoachPaymentSuccess = () => {
+    void queryClient.invalidateQueries({ queryKey: ["unicoach", "init"] });
+    void queryClient.invalidateQueries({ queryKey: ["unicoach", "journey-state"] });
+    void queryClient.invalidateQueries({ queryKey: ["unicoach", "profile-info"] });
+    router.push("/uniboard/unicoach");
+  };
+
   const toggleDarkMode = () => setIsDarkMode(prev => !prev);
 
   const getAvailablePopups = () => [
@@ -183,6 +201,10 @@ export default function UniboardShell({ children, userData }: { children: React.
       <DebugConsole context={pathname} popups={getAvailablePopups()} onAddPopup={() => alert(`Add new popup for ${pathname}`)} />
 
       {showOnboardingModal && <OnboardingModal onComplete={() => setShowOnboardingModal(false)} />}
+
+      {showUnicoachPricing ? (
+        <UnicoachPricingModal onClose={() => setShowUnicoachPricing(false)} onPaymentSuccess={handleUnicoachPaymentSuccess} />
+      ) : null}
     </div>
   );
 }

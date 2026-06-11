@@ -2,6 +2,7 @@
 
 import React, { useState, useEffect, useRef, useCallback, useMemo } from "react";
 import { createPortal } from "react-dom";
+import { PanelResizeHandle } from "@/components/ui/PanelResizeHandle";
 import { syncSessionStateAction } from "@/features/adk-chat/actions";
 import { formatUnibotStreamError, type FormattedUnibotStreamError } from "@/features/adk-chat/format-stream-error";
 import { generateMainSessionTitleIfNeeded } from "@/features/adk-chat/generate-main-session-title";
@@ -2047,15 +2048,7 @@ const ChatSidebar: React.FC<ChatSidebarProps> = ({ incomingRequest, onRequestHan
         >
           <Maximize2 size={20} />
         </button>
-        <div
-          role="separator"
-          aria-orientation="vertical"
-          aria-label="Drag to resize Unibot"
-          onPointerDown={startResizeFromCollapsed}
-          className="absolute right-0 top-0 z-30 flex h-full w-3 cursor-col-resize select-none justify-end touch-none hover:bg-slate-200/40 dark:hover:bg-white/5"
-        >
-          <span className="pointer-events-none h-full w-px shrink-0 bg-slate-200 dark:bg-white/15" />
-        </div>
+        <PanelResizeHandle onPointerDown={startResizeFromCollapsed} label="Drag to resize Unibot" />
       </div>
     );
   }
@@ -2686,15 +2679,7 @@ const ChatSidebar: React.FC<ChatSidebarProps> = ({ incomingRequest, onRequestHan
         </p>
       </div>
 
-      <div
-        role="separator"
-        aria-orientation="vertical"
-        aria-label="Resize Unibot panel"
-        onPointerDown={startResize}
-        className="absolute right-0 top-0 z-30 flex h-full w-3 cursor-col-resize select-none justify-end touch-none hover:bg-slate-200/40 dark:hover:bg-white/5"
-      >
-        <span className="pointer-events-none h-full w-px shrink-0 bg-slate-200 dark:bg-white/15" />
-      </div>
+      <PanelResizeHandle onPointerDown={startResize} label="Resize Unibot panel" />
 
       {pendingDeleteSession &&
         typeof document !== "undefined" &&

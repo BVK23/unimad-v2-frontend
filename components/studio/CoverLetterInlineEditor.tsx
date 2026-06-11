@@ -1,7 +1,8 @@
 "use client";
 
 import React from "react";
-import { markdownToHtml } from "@/utils/markdown-to-html";
+import { APPLICATION_DOCUMENT_BODY_CLASS } from "@/constants/applicationDocumentPreview";
+import { normalizeContentToHtml } from "@/utils/normalize-content-to-html";
 import Link from "@tiptap/extension-link";
 import Underline from "@tiptap/extension-underline";
 import { useEditor, EditorContent } from "@tiptap/react";
@@ -44,11 +45,10 @@ const CoverLetterInlineEditor: React.FC<CoverLetterInlineEditorProps> = ({ value
         openOnClick: false,
       }),
     ],
-    content: markdownToHtml(value),
+    content: normalizeContentToHtml(value),
     editorProps: {
       attributes: {
-        class:
-          "cover-letter-editor ProseMirror min-h-[400px] font-serif text-base font-normal leading-relaxed text-slate-900 dark:text-slate-100 focus:outline-none [&_p]:my-2 [&_strong]:font-bold [&_b]:font-bold [&_ul]:list-disc [&_ul]:pl-6 [&_ul]:my-2 [&_ol]:list-decimal [&_ol]:pl-6 [&_ol]:my-2 [&_li]:my-1 [&_li]:pl-0 [&_li>p]:my-0",
+        class: `cover-letter-editor ProseMirror min-h-[400px] focus:outline-none ${APPLICATION_DOCUMENT_BODY_CLASS} [&_ul]:list-disc [&_ul]:my-2 [&_ul]:ml-5 [&_ul]:pl-0 [&_ol]:list-decimal [&_ol]:my-2 [&_ol]:ml-5 [&_ol]:pl-0 [&_li]:mb-1`,
       },
     },
     onUpdate: ({ editor }) => {
@@ -82,7 +82,7 @@ const CoverLetterInlineEditor: React.FC<CoverLetterInlineEditorProps> = ({ value
   React.useEffect(() => {
     if (!editor || editor.isFocused) return;
     const current = editor.getHTML();
-    const incoming = markdownToHtml(value);
+    const incoming = normalizeContentToHtml(value);
     if (incoming !== current) {
       editor.commands.setContent(incoming, { emitUpdate: false });
     }

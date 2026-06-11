@@ -76,7 +76,6 @@ function ResumePageContent({ initialResumeId }: ResumePageClientProps) {
   const [resumeView, setResumeView] = useState<"list" | "editor">("list");
   const [currentResume, setCurrentResume] = useState<ResumeData | null>(null);
   const [showTemplateModal, setShowTemplateModal] = useState(false);
-  const [showExportModal, setShowExportModal] = useState(false);
   const [showOnboardingModal, setShowOnboardingModal] = useState(false);
   const [resumeLoadError, setResumeLoadError] = useState<string | null>(null);
 
@@ -269,8 +268,6 @@ function ResumePageContent({ initialResumeId }: ResumePageClientProps) {
           onImprove={handleImproveWithAI}
           showTemplateModal={showTemplateModal}
           setShowTemplateModal={setShowTemplateModal}
-          showExportModal={showExportModal}
-          setShowExportModal={setShowExportModal}
         />
       </>
     );

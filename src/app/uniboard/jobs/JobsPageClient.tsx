@@ -20,6 +20,7 @@ function JobsPageContent() {
     if (context.assetId) params.set("id", context.assetId);
     if (context.description) params.set("description", context.description);
     if (context.recipientName) params.set("recipientName", context.recipientName);
+    if (context.fromInterviewVpd) params.set("interviewVpd", "1");
     router.push(`/uniboard/studio?${params.toString()}`);
   };
 

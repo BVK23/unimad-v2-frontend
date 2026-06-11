@@ -198,11 +198,10 @@ const RichTextEditor: React.FC<RichTextEditorProps> = ({
   const buttonClass = (isActive: boolean) =>
     `p-1.5 rounded transition-colors ${isActive ? "bg-slate-700 text-white" : "hover:bg-slate-700"}`;
 
-  const editorSurfaceClass =
-    "outline-none min-h-[1em] cursor-text empty:before:content-[attr(data-placeholder)] empty:before:text-slate-400";
+  const editorSurfaceClass = `outline-none min-h-[1em] cursor-text empty:before:content-[attr(data-placeholder)] empty:before:text-slate-400 ${className ?? ""}`;
 
   return (
-    <div className={`relative group ${className ?? ""}`}>
+    <div className="relative group">
       {showToolbar && (
         <div
           className="fixed z-50 flex items-center gap-1 p-1 bg-slate-900 text-white rounded-lg shadow-xl animate-in fade-in zoom-in-95 duration-200"
@@ -320,7 +319,7 @@ const RichTextEditor: React.FC<RichTextEditorProps> = ({
             onChange("");
           }
         }}
-        className={editorSurfaceClass}
+        className={editorSurfaceClass.trim()}
         data-placeholder={placeholder}
         suppressContentEditableWarning={true}
       />

@@ -1,5 +1,5 @@
 import React, { useState } from "react";
-import { Building2, MapPin, Clock, ExternalLink, FileText, CheckCircle2 } from "lucide-react";
+import { Building2, MapPin, Clock, ExternalLink, CheckCircle2 } from "lucide-react";
 import Image from "next/image";
 import { Job, GeneratorContext } from "../../types/jobs";
 
@@ -8,9 +8,11 @@ interface JobCardProps {
   isHero?: boolean;
   hideDescription?: boolean;
   hideButtons?: boolean;
+  showVpdPrompt?: boolean;
   onPrepare: (job: Job) => void;
   onApply?: (job: Job) => void;
   onClick: (job: Job) => void;
+  onVpdPromptClick?: (job: Job) => void;
 }
 
 const JobCard: React.FC<JobCardProps> = ({
@@ -18,9 +20,11 @@ const JobCard: React.FC<JobCardProps> = ({
   isHero = false,
   hideDescription = false,
   hideButtons = false,
+  showVpdPrompt = false,
   onPrepare,
   onApply,
   onClick,
+  onVpdPromptClick,
 }) => {
   const [logoError, setLogoError] = useState(false);
 
@@ -39,8 +43,23 @@ const JobCard: React.FC<JobCardProps> = ({
   return (
     <div
       onClick={() => onClick(job)}
-      className={`group bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-2xl p-4 hover:border-brand-200/60 dark:hover:border-brand-500/30 transition-all duration-300 shadow-[0_2px_8px_rgba(0,0,0,0.02)] hover:shadow-[0_8px_24px_rgba(0,0,0,0.04)] cursor-pointer flex flex-col h-full relative`}
+      className="group relative flex h-full cursor-pointer flex-col rounded-2xl border border-slate-200 bg-white p-4 shadow-[0_2px_8px_rgba(0,0,0,0.02)] transition-all duration-300 hover:border-brand-200/60 hover:shadow-[0_8px_24px_rgba(0,0,0,0.04)] dark:border-slate-800 dark:bg-slate-900 dark:hover:border-brand-500/30"
     >
+      {showVpdPrompt && (
+        <button
+          type="button"
+          onClick={e => {
+            e.stopPropagation();
+            onVpdPromptClick?.(job);
+          }}
+          className="absolute right-2.5 top-2.5 z-20 flex h-3.5 w-3.5 items-center justify-center"
+          title="Build your Value Proposition Document"
+          aria-label="Build Value Proposition Document for this interview"
+        >
+          <span className="h-2 w-2 animate-pulse rounded-full bg-red-500 ring-2 ring-white dark:ring-slate-900" />
+        </button>
+      )}
+
       <div className={`flex gap-4 ${hideButtons ? "mb-0" : "mb-4"}`}>
         {/* Logo - Left */}
         <div className="relative w-12 h-12 rounded-xl bg-slate-50 dark:bg-slate-900 border border-slate-100 dark:border-slate-800 flex items-center justify-center p-2 overflow-hidden shrink-0">
@@ -94,15 +113,18 @@ const JobCard: React.FC<JobCardProps> = ({
 
       {/* Buttons - Conditional Render */}
       {!hideButtons && (
-        <div className="flex items-center gap-2 mt-auto">
+        <div className="mt-auto flex shrink-0 items-center gap-2 pt-3">
           <button
             onClick={e => {
               e.stopPropagation();
               onPrepare(job);
             }}
-            className="flex-1 py-2 px-2 rounded-lg text-xs font-medium transition-all active:scale-95 border border-slate-200 dark:border-slate-700 hover:bg-slate-50 dark:hover:bg-slate-800 text-slate-700 dark:text-slate-200 flex items-center justify-center gap-1.5"
+            className="relative flex flex-1 items-center justify-center rounded-lg border border-slate-200 px-2 py-2 text-xs font-medium text-slate-700 transition-all hover:bg-slate-50 active:scale-95 dark:border-slate-700 dark:text-slate-200 dark:hover:bg-slate-800"
           >
-            <FileText size={12} className="text-brand-500" /> Prepare
+            Prepare
+            {showVpdPrompt && (
+              <span className="absolute right-2 top-2 h-2 w-2 animate-pulse rounded-full bg-red-500 ring-2 ring-white dark:ring-slate-900" />
+            )}
           </button>
           <button
             onClick={e => {

@@ -1,4 +1,5 @@
 import React, { useState, useEffect, useRef, useCallback, useMemo } from "react";
+import { PanelResizeHandle } from "@/components/ui/PanelResizeHandle";
 import { useAdkApplicationAssetReviewStore } from "@/features/adk-chat/stores/useAdkApplicationAssetReviewStore";
 import {
   APPLICATION_ASSET_EVENTS,
@@ -57,6 +58,8 @@ import { deleteReferral, fetchReferralById, updateReferral } from "@/features/re
 import type { ReferralAsset } from "@/features/referral/types";
 import { useProfileData } from "@/features/user-profile/hooks/use-profile-data";
 import { resolveLinkedInPostAuthorDisplay } from "@/features/user-profile/utils/resolve-linkedin-post-author";
+import { useResizablePanelWidth } from "@/hooks/useResizablePanelWidth";
+import { exportApplicationAssetAsDocx } from "@/utils/export-application-asset-file";
 import { normalizeContentToHtml } from "@/utils/normalize-content-to-html";
 import { exportContentAsPDF } from "@/utils/pdf-export";
 import { useQueryClient } from "@tanstack/react-query";
@@ -1343,6 +1346,25 @@ const StudioMainV2: React.FC<StudioMainProps> = ({ initialContext, initialAssetI
   }, [resetDocumentSaveStatus, searchParams, selectedTopic]);
 
   useEffect(() => {
+    if (!initialContext) return;
+
+    if (initialContext.fromInterviewVpd && initialContext.type === "vpd") {
+      const roleLabel = initialContext.role || "";
+      const companyLabel = initialContext.company || "";
+      setSelectedTopic("vpd");
+      setRole(roleLabel);
+      setCompany(companyLabel);
+      setVpdProject({
+        ...createDefaultVpdProject(),
+        title: roleLabel && companyLabel ? `${roleLabel} @ ${companyLabel}` : "Value Proposition Document",
+        description: roleLabel && companyLabel ? `Interview VPD for ${roleLabel} at ${companyLabel}` : "",
+      });
+      setGeneratedContent("");
+      setShowVpdEditor(true);
+    }
+  }, [initialContext]);
+
+  useEffect(() => {
     if (!initialContext) {
       return;
     }
@@ -2283,6 +2305,18 @@ const StudioMainV2: React.FC<StudioMainProps> = ({ initialContext, initialAssetI
   const isVpdTopic = selectedTopic === "vpd";
   const showLinkedInOptimizeBanner = selectedTopic === "linkedin-post" || selectedTopic === "referral";
 
+  const {
+    width: editorPanelWidth,
+    isResizing: isEditorResizing,
+    startResize: startEditorResize,
+  } = useResizablePanelWidth({
+    storageKey: "studio-editor-panel-width",
+    defaultWidth: 420,
+    minWidth: 300,
+    maxWidthPx: 720,
+    maxViewportFraction: 0.52,
+  });
+
   /** Preview body for document tabs — persisted draft content, or pending ADK draft before Accept. */
   const getDocumentPreviewContent = () => {
     if (selectedTopic === "cover-letter") {
@@ -2371,24 +2405,32 @@ const StudioMainV2: React.FC<StudioMainProps> = ({ initialContext, initialAssetI
 
   return (
     <div className="flex-1 bg-white dark:bg-slate-950 h-full overflow-hidden font-sans flex flex-col">
-      <div className="flex-1 flex flex-col lg:flex-row overflow-hidden">
-        {/* LEFT: Input / Generator */}
-        <div className="w-full lg:w-[45%] h-1/2 lg:h-full bg-white dark:bg-slate-900 border-b lg:border-b-0 lg:border-r border-slate-100 dark:border-slate-800 p-8 overflow-y-auto">
-          <div className="mb-8">
-            <h1 className="mb-2 font-['Onest'] text-2xl font-medium text-slate-900 transition-colors dark:text-white">
-              {getTopicMeta(selectedTopic).label}
-            </h1>
-            <p className="text-[14px] text-slate-500 transition-colors dark:text-slate-400">{getTopicDescription(selectedTopic)}</p>
-          </div>
+      <div className="flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden lg:flex-row">
+        {/* LEFT: Input / Generator — drag right edge to resize */}
+        <div className={`flex h-1/2 w-full shrink-0 lg:h-full lg:w-auto ${isEditorResizing ? "select-none" : ""}`}>
+          <div
+            className="h-full min-w-0 overflow-hidden border-b border-slate-100 bg-white dark:border-slate-800 dark:bg-slate-900 lg:border-b-0 lg:border-r lg:border-slate-200/60 dark:lg:border-slate-700/60"
+            style={{ width: editorPanelWidth }}
+          >
+            <div className="scrollbar-on-hover h-full overflow-y-auto p-8">
+              <div className="mb-8">
+                <h1 className="mb-2 font-['Onest'] text-2xl font-medium text-slate-900 transition-colors dark:text-white">
+                  {getTopicMeta(selectedTopic).label}
+                </h1>
+                <p className="text-[14px] text-slate-500 transition-colors dark:text-slate-400">{getTopicDescription(selectedTopic)}</p>
+              </div>
 
-          {renderInputs()}
+              {renderInputs()}
+            </div>
+          </div>
+          <PanelResizeHandle variant="inline" onPointerDown={startEditorResize} label="Resize studio editor panel" />
         </div>
 
         {/* RIGHT: Preview + Tabs */}
-        <div className="flex-1 bg-slate-100 dark:bg-slate-950 flex flex-col relative">
+        <div className="flex min-h-0 min-w-0 flex-1 flex-col relative bg-slate-100 dark:bg-slate-950">
           {/* Top Bar for Tabs - Sticky */}
           <div className="w-full px-8 py-6 border-b border-slate-200/50 dark:border-slate-800/50 bg-slate-100/50 dark:bg-slate-950 backdrop-blur-sm sticky top-0 z-20">
-            <div className="flex flex-wrap items-center gap-3">
+            <div className="flex flex-wrap items-center justify-center gap-3">
               {TOPIC_GROUPS.map((group, gi) => (
                 <div
                   key={gi}
@@ -2415,10 +2457,12 @@ const StudioMainV2: React.FC<StudioMainProps> = ({ initialContext, initialAssetI
             </div>
           </div>
 
-          <div className={`relative flex min-h-0 flex-1 flex-col ${showLinkedInOptimizeBanner ? "" : "overflow-y-auto"}`}>
+          <div
+            className={`relative flex min-h-0 flex-1 flex-col ${showLinkedInOptimizeBanner ? "" : "overflow-y-auto scrollbar-on-hover"}`}
+          >
             <div
               className={`flex flex-1 items-start justify-center p-8 ${
-                showLinkedInOptimizeBanner ? "min-h-0 overflow-y-auto pb-28" : "overflow-y-auto"
+                showLinkedInOptimizeBanner ? "min-h-0 overflow-y-auto pb-28 scrollbar-on-hover" : "overflow-y-auto scrollbar-on-hover"
               }`}
             >
               {isVpdTopic ? (
@@ -2426,7 +2470,7 @@ const StudioMainV2: React.FC<StudioMainProps> = ({ initialContext, initialAssetI
                   <VpdPreview project={vpdProject} onOpenEditor={() => setShowVpdEditor(true)} variant="panel" />
                 </div>
               ) : (
-                <div className="relative w-full max-w-2xl group/preview">
+                <div className="relative w-full max-w-[210mm] group/preview">
                   {selectedTopic === "linkedin-post" ? (
                     <div className="flex min-h-[min(68vh,580px)] w-full flex-col rounded-2xl border border-slate-200 bg-white p-5 shadow-sm dark:border-slate-800 dark:bg-slate-900">
                       <div className="mb-3 flex shrink-0 items-start justify-between">
@@ -2577,7 +2621,7 @@ const StudioMainV2: React.FC<StudioMainProps> = ({ initialContext, initialAssetI
                         }
                       }}
                       onContentChange={handleDocumentContentChange}
-                      showPdfDownload={selectedTopic === "cover-letter" || selectedTopic === "cold-email"}
+                      showDocumentDownload={selectedTopic === "cover-letter" || selectedTopic === "cold-email"}
                       onDownloadPdf={async () => {
                         const content = getDocumentPreviewContent();
                         if (selectedTopic === "cover-letter" && currentCoverLetterDraft) {
@@ -2589,6 +2633,26 @@ const StudioMainV2: React.FC<StudioMainProps> = ({ initialContext, initialAssetI
                           const companySlug = (currentColdEmailDraft.company || "").toLowerCase().replace(/\s+/g, "-");
                           const filename = `cold-email-${roleSlug}${companySlug ? `-${companySlug}` : ""}.pdf`;
                           await exportContentAsPDF(content, filename);
+                        }
+                      }}
+                      onDownloadDocx={async () => {
+                        const content = getDocumentPreviewContent();
+                        if (selectedTopic === "cover-letter" && currentCoverLetterDraft) {
+                          await exportApplicationAssetAsDocx(
+                            content,
+                            "cover-letter",
+                            currentCoverLetterDraft.company,
+                            currentCoverLetterDraft.role
+                          );
+                          return;
+                        }
+                        if (selectedTopic === "cold-email" && currentColdEmailDraft) {
+                          await exportApplicationAssetAsDocx(
+                            content,
+                            "cold-email",
+                            currentColdEmailDraft.company,
+                            currentColdEmailDraft.role
+                          );
                         }
                       }}
                     />

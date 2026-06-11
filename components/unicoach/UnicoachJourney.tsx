@@ -49,7 +49,7 @@ import { UnicoachExecutionCalendar } from "./UnicoachExecutionCalendar";
 import { UnicoachExecutionDashboard } from "./UnicoachExecutionDashboard";
 import { UnicoachPartialPaymentCta } from "./UnicoachPartialPaymentCta";
 import { UnicoachStageTasksCard } from "./UnicoachStageTasksCard";
-import { UnicoachSubscriptionPage } from "./UnicoachSubscriptionPage";
+import { UnicoachUpgradeGate } from "./UnicoachUpgradeGate";
 import { UNICOACH_STAGES, videoUrlToEmbedSrc, type ContentTab, type UnicoachCurriculumStage } from "./curriculum";
 import { UnicoachStage1NichePanel } from "./stage-content/UnicoachStage1NichePanel";
 import { UnicoachStage1ResourcesPanel } from "./stage-content/UnicoachStage1ResourcesPanel";
@@ -529,7 +529,7 @@ const UnicoachJourney: React.FC = () => {
   }
 
   if (!isCoachAccount && !isSubscribedStudent) {
-    return <UnicoachSubscriptionPage onPaymentSuccess={handleSubscribeSuccess} />;
+    return <UnicoachUpgradeGate onPaymentSuccess={handleSubscribeSuccess} />;
   }
 
   if (journeyQuery.isLoading) {
