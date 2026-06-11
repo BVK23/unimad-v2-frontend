@@ -30,13 +30,13 @@ const effectiveNextgenColumn = (sectionId: string, explicit?: SectionOrderItem["
 
 export const buildNextgenColumns = (data: ResumeData) => {
   const visibleOrdered = deduplicateSectionOrder(data.sectionOrder).filter(s => !s.hidden);
-  const visibleSet = new Set(visibleOrdered.map(s => s.id));
+  const orderedSectionIds = new Set(deduplicateSectionOrder(data.sectionOrder).map(s => s.id));
 
   const leftFromOrder = visibleOrdered.filter(s => effectiveNextgenColumn(s.id, s.column) === "left").map(s => s.id);
   const rightFromOrder = visibleOrdered.filter(s => effectiveNextgenColumn(s.id, s.column) === "right").map(s => s.id);
 
-  const orphanLeft = data.customSections.filter(cs => !visibleSet.has(cs.id) && cs.column !== "right").map(cs => cs.id);
-  const orphanRight = data.customSections.filter(cs => !visibleSet.has(cs.id) && cs.column === "right").map(cs => cs.id);
+  const orphanLeft = data.customSections.filter(cs => !orderedSectionIds.has(cs.id) && cs.column !== "right").map(cs => cs.id);
+  const orphanRight = data.customSections.filter(cs => !orderedSectionIds.has(cs.id) && cs.column === "right").map(cs => cs.id);
 
   return {
     leftColumnIds: [...leftFromOrder, ...orphanLeft],

@@ -14,6 +14,8 @@ interface MinimalPreviewProps {
 
 const MinimalPreview: React.FC<MinimalPreviewProps> = ({ data, previewScale, isModal = false }) => {
   const { profile, experience, education, skills, projects, certifications, customSections, sectionOrder } = data;
+  const isEducationSectionVisible = !sectionOrder.find(s => s.id === "education")?.hidden;
+  const isSkillsSectionVisible = !sectionOrder.find(s => s.id === "skills")?.hidden;
   const mainSectionTitleClass =
     "font-bold text-slate-900 mb-[8px] text-[10pt] uppercase tracking-[0.8pt] border-b border-slate-200 pb-[3px]";
   const sidebarSectionTitleClass = "font-bold text-slate-900 mb-[6px] text-[10pt]";
@@ -196,31 +198,35 @@ const MinimalPreview: React.FC<MinimalPreviewProps> = ({ data, previewScale, isM
       <div className="flex">
         <div className="w-[30%] text-right border-r border-slate-200 pr-[15px] space-y-[12px]">
           {/* Fixed Sidebar: Education & Skills */}
-          <section className="mb-[12px] last:mb-0">
-            <h3 className={sidebarSectionTitleClass}>Education</h3>
-            {education
-              .filter(e => !e.hidden)
-              .map(edu => (
-                <div key={edu.id} className="mb-[8px]">
-                  <p className="font-semibold text-[10pt] text-slate-900">{edu.school}</p>
-                  <p className="text-[9pt] text-slate-500 italic">{edu.degree}</p>
-                  <p className="text-[8pt] text-slate-500">{edu.endDate}</p>
-                  {edu.location && <p className="text-[8pt] text-slate-400">{edu.location}</p>}
-                </div>
-              ))}
-          </section>
-          <section className="mb-[12px] last:mb-0">
-            <h3 className={sidebarSectionTitleClass}>Skills</h3>
-            <div className="flex flex-col items-end">
-              {skills
-                .filter(s => !s.hidden)
-                .map(skill => (
-                  <span key={skill.id} className="text-[9pt] text-slate-600 mb-[2px]">
-                    {skill.name}
-                  </span>
+          {isEducationSectionVisible && (
+            <section className="mb-[12px] last:mb-0">
+              <h3 className={sidebarSectionTitleClass}>Education</h3>
+              {education
+                .filter(e => !e.hidden)
+                .map(edu => (
+                  <div key={edu.id} className="mb-[8px]">
+                    <p className="font-semibold text-[10pt] text-slate-900">{edu.school}</p>
+                    <p className="text-[9pt] text-slate-500 italic">{edu.degree}</p>
+                    <p className="text-[8pt] text-slate-500">{edu.endDate}</p>
+                    {edu.location && <p className="text-[8pt] text-slate-400">{edu.location}</p>}
+                  </div>
                 ))}
-            </div>
-          </section>
+            </section>
+          )}
+          {isSkillsSectionVisible && (
+            <section className="mb-[12px] last:mb-0">
+              <h3 className={sidebarSectionTitleClass}>Skills</h3>
+              <div className="flex flex-col items-end">
+                {skills
+                  .filter(s => !s.hidden)
+                  .map(skill => (
+                    <span key={skill.id} className="text-[9pt] text-slate-600 mb-[2px]">
+                      {skill.name}
+                    </span>
+                  ))}
+              </div>
+            </section>
+          )}
         </div>
         <div className="w-[70%] pl-[15px] space-y-[12px]">
           {/* Reorderable Main Content */}

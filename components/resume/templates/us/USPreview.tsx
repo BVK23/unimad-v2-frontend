@@ -331,7 +331,11 @@ const USPreview: React.FC<USPreviewProps> = ({ data, previewScale, isModal = fal
       </h1>
       {buildContactRow()}
 
-      <div className="w-full h-full">{deduplicateSectionOrder(orderedSections).map(s => renderSection(s.id))}</div>
+      <div className="w-full h-full">
+        {deduplicateSectionOrder(orderedSections)
+          .filter(s => !s.hidden)
+          .map(s => renderSection(s.id))}
+      </div>
     </ScaledA4PreviewShell>
   );
 };

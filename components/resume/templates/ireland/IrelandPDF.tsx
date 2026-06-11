@@ -431,29 +431,31 @@ const IrelandPDF: React.FC<IrelandPDFProps> = ({ data }) => {
       <Text style={styles.name}>{profile.fullName || "Your Name"}</Text>
       {generateContactRow()}
 
-      {deduplicateSectionOrder(sortedSections).map((section, idx) => {
-        const sectionId = section.id;
-        const isFirst = idx === 0;
+      {deduplicateSectionOrder(sortedSections)
+        .filter(s => !s.hidden)
+        .map((section, idx) => {
+          const sectionId = section.id;
+          const isFirst = idx === 0;
 
-        if (isCustomSection(sectionId)) return renderCustomSection(sectionId, isFirst);
+          if (isCustomSection(sectionId)) return renderCustomSection(sectionId, isFirst);
 
-        switch (sectionId) {
-          case SECTIONS.PROFILE:
-            return <React.Fragment key={sectionId}>{renderSummary(isFirst)}</React.Fragment>;
-          case SECTIONS.EXPERIENCE:
-            return <React.Fragment key={sectionId}>{renderExperiences(data.experience, isFirst)}</React.Fragment>;
-          case SECTIONS.EDUCATION:
-            return <React.Fragment key={sectionId}>{renderEducations(data.education, isFirst)}</React.Fragment>;
-          case SECTIONS.SKILLS:
-            return <React.Fragment key={sectionId}>{renderSkills(data.skills, isFirst)}</React.Fragment>;
-          case SECTIONS.PROJECTS:
-            return <React.Fragment key={sectionId}>{renderProjects(data.projects, isFirst)}</React.Fragment>;
-          case SECTIONS.CERTIFICATIONS:
-            return <React.Fragment key={sectionId}>{renderCertifications(data.certifications, isFirst)}</React.Fragment>;
-          default:
-            return null;
-        }
-      })}
+          switch (sectionId) {
+            case SECTIONS.PROFILE:
+              return <React.Fragment key={sectionId}>{renderSummary(isFirst)}</React.Fragment>;
+            case SECTIONS.EXPERIENCE:
+              return <React.Fragment key={sectionId}>{renderExperiences(data.experience, isFirst)}</React.Fragment>;
+            case SECTIONS.EDUCATION:
+              return <React.Fragment key={sectionId}>{renderEducations(data.education, isFirst)}</React.Fragment>;
+            case SECTIONS.SKILLS:
+              return <React.Fragment key={sectionId}>{renderSkills(data.skills, isFirst)}</React.Fragment>;
+            case SECTIONS.PROJECTS:
+              return <React.Fragment key={sectionId}>{renderProjects(data.projects, isFirst)}</React.Fragment>;
+            case SECTIONS.CERTIFICATIONS:
+              return <React.Fragment key={sectionId}>{renderCertifications(data.certifications, isFirst)}</React.Fragment>;
+            default:
+              return null;
+          }
+        })}
     </Page>
   );
 };

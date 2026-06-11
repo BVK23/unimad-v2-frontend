@@ -62,7 +62,7 @@ const AllDocumentsModal: React.FC<AllDocumentsModalProps> = ({
               <DocumentListCard
                 key={doc.id}
                 doc={doc}
-                isSelected={selectedDocumentId === doc.id}
+                isSelected={selectedDocumentId != null && String(selectedDocumentId) === String(doc.id)}
                 onClick={() => onDocumentClick(doc)}
                 onDelete={onDeleteDocument}
               />

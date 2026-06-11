@@ -50,12 +50,16 @@ export function applyImageCrop(
   zoom: number,
   pan: { x: number; y: number },
   onResult: (croppedDataUrl: string) => void,
-  maxOutputPx?: number
+  maxOutputPx?: number,
+  onError?: (message: string) => void
 ): void {
   const img = new Image();
   if (source.startsWith("http")) {
     img.crossOrigin = "anonymous";
   }
+  img.onerror = () => {
+    onError?.("Could not load this image for cropping. Try uploading again.");
+  };
   img.onload = () => {
     const { cropWidth, cropHeight, offsetX, offsetY } = getImageCropGeometry(img.naturalWidth, img.naturalHeight, ratio, zoom, pan);
 
@@ -74,10 +78,17 @@ export function applyImageCrop(
     canvas.width = outWidth;
     canvas.height = outHeight;
     const ctx = canvas.getContext("2d");
-    if (!ctx) return;
+    if (!ctx) {
+      onError?.("Could not process this image. Please try again.");
+      return;
+    }
 
-    ctx.drawImage(img, offsetX, offsetY, cropWidth, cropHeight, 0, 0, outWidth, outHeight);
-    onResult(canvas.toDataURL("image/jpeg", 0.92));
+    try {
+      ctx.drawImage(img, offsetX, offsetY, cropWidth, cropHeight, 0, 0, outWidth, outHeight);
+      onResult(canvas.toDataURL("image/jpeg", 0.92));
+    } catch {
+      onError?.("Could not save the cropped image. Try a different photo or upload again.");
+    }
   };
   img.src = source;
 }

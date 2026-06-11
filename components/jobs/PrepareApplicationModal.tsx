@@ -3,7 +3,7 @@
 import React, { useCallback, useEffect, useRef, useState } from "react";
 import { ApplicationAssetDownloadMenu } from "@/components/application-assets/ApplicationAssetDownloadMenu";
 import InterviewLaunchOverlay from "@/components/interview-prep/InterviewLaunchOverlay";
-import { APPLICATION_ASSET_EVENTS } from "@/features/application-assets/api/application-asset-events";
+import { runApplicationAssetDraftGeneration } from "@/features/application-assets/api/runApplicationAssetDraftGeneration";
 import { checkApplicationAssetAvailability } from "@/features/application-assets/server-actions/application-asset-actions";
 import { getLinkedAssetId } from "@/features/application-tracker/application-assets";
 import { fetchColdEmailById, updateColdEmail } from "@/src/features/cold-email/server-actions/cold-email-actions";
@@ -15,6 +15,7 @@ import { usePrepareApplicationContext } from "@/src/features/jobs/hooks/usePrepa
 import { generateResume } from "@/src/features/resume/server-actions/resume-actions";
 import { exportApplicationAssetAsDocx, exportApplicationAssetAsPdf } from "@/utils/export-application-asset-file";
 import { htmlToPlainText } from "@/utils/html-to-text";
+import { sanitizeUserFacingError } from "@/utils/message-from-failed-response";
 import { normalizeContentToHtml } from "@/utils/normalize-content-to-html";
 import {
   X,
@@ -261,76 +262,53 @@ const PrepareApplicationModal: React.FC<PrepareApplicationModalProps> = ({
         return;
       }
 
-      if (tab === "cover-letter") {
-        const result = await checkApplicationAssetAvailability({
-          type: "coverletter",
+      if (tab === "cover-letter" || tab === "cold-email") {
+        const assetType = tab === "cover-letter" ? "coverletter" : "coldemail";
+        const contactName = tab === "cold-email" ? "Hiring Manager" : undefined;
+        const availability = await checkApplicationAssetAvailability({
+          type: assetType,
           ...baseParams,
+          ...(tab === "cold-email" ? { hirname: contactName } : {}),
         });
-        if ("error_code" in result) {
-          throw new Error("Plus membership required to generate cover letters");
+        if ("error_code" in availability) {
+          throw new Error(
+            tab === "cover-letter"
+              ? "Plus membership required to generate cover letters"
+              : "Plus membership required to generate cold emails"
+          );
         }
-        if ("error" in result) {
-          await applySyncedAsset(tab, String(result.error.data.existing_asset_id));
+        if ("error" in availability) {
+          await applySyncedAsset(tab, String(availability.error.data.existing_asset_id));
           return;
         }
-        onNavigateToStudio?.({
-          type: "cover-letter",
-          jobId: job.id,
-          company: job.company,
-          role: job.role,
-          description: job.description,
-        });
-        onClose();
-        window.dispatchEvent(
-          new CustomEvent(APPLICATION_ASSET_EVENTS.requestDraft, {
-            detail: {
-              assetType: "coverletter",
-              role: job.role,
-              company: job.company,
-              jobDescription: jd,
-            },
-          })
-        );
-        return;
-      }
 
-      if (tab === "cold-email") {
-        const result = await checkApplicationAssetAvailability({
-          type: "coldemail",
-          ...baseParams,
-          hirname: "Hiring Manager",
+        const genResult = await runApplicationAssetDraftGeneration({
+          assetType,
+          role: job.role,
+          company: job.company,
+          jobDescription: jd,
+          contactName,
+          applicationId: applicationIdResolved,
         });
-        if ("error_code" in result) {
-          throw new Error("Plus membership required to generate cold emails");
-        }
-        if ("error" in result) {
-          await applySyncedAsset(tab, String(result.error.data.existing_asset_id));
+
+        const assetId = genResult.assetId;
+        if (!assetId) {
+          await applySyncedAsset(tab);
           return;
         }
-        onNavigateToStudio?.({
-          type: "cold-email",
-          jobId: job.id,
-          company: job.company,
-          role: job.role,
-          description: job.description,
+
+        setTabState(tab, {
+          status: "ready",
+          assetId,
+          content: genResult.draft,
+          error: null,
         });
-        onClose();
-        window.dispatchEvent(
-          new CustomEvent(APPLICATION_ASSET_EVENTS.requestDraft, {
-            detail: {
-              assetType: "coldemail",
-              role: job.role,
-              company: job.company,
-              jobDescription: jd,
-              contactName: "Hiring Manager",
-            },
-          })
-        );
+        await syncApplicationAssets();
       }
     } catch (e) {
       setTabState(tab, {
         status: "error",
-        error: e instanceof Error ? e.message : "Generation failed",
+        error: sanitizeUserFacingError(e instanceof Error ? e.message : "Generation failed", "Generation failed. Please try again."),
       });
     }
   };

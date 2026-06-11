@@ -22,12 +22,7 @@ interface LinkedInCalculateScorePreviewProps {
   onCalculate: () => void;
 }
 
-const LinkedInCalculateScorePreview: React.FC<LinkedInCalculateScorePreviewProps> = ({
-  isAnalyzing,
-  error,
-  errorCode,
-  onCalculate,
-}) => {
+const LinkedInCalculateScorePreview: React.FC<LinkedInCalculateScorePreviewProps> = ({ isAnalyzing, error, errorCode, onCalculate }) => {
   return (
     <div className="relative flex-1 min-h-full overflow-hidden bg-slate-50 dark:bg-[#0a0a0a]">
       <div className="pointer-events-none select-none blur-[3px] opacity-70" aria-hidden>
@@ -72,7 +67,9 @@ const LinkedInCalculateScorePreview: React.FC<LinkedInCalculateScorePreviewProps
                         <p className="mb-2 text-sm leading-relaxed text-slate-600 dark:text-slate-400">
                           Personalized feedback for your {section.name.toLowerCase()} will appear here after analysis.
                         </p>
-                        <p className="text-xs italic text-slate-400 dark:text-slate-500">Tip: Actionable suggestions show up once your score is ready.</p>
+                        <p className="text-xs italic text-slate-400 dark:text-slate-500">
+                          Tip: Actionable suggestions show up once your score is ready.
+                        </p>
                       </div>
                     </div>
                   ))}
@@ -108,8 +105,7 @@ const LinkedInCalculateScorePreview: React.FC<LinkedInCalculateScorePreviewProps
           </div>
           <h2 className="mb-3 text-2xl font-normal text-slate-900 dark:text-white">Calculate your LinkedIn score</h2>
           <p className="mb-8 text-sm leading-relaxed text-slate-500 dark:text-slate-400">
-            We&apos;ll use the LinkedIn URL you provided during onboarding to fetch your public profile data and score each
-            section.
+            We&apos;ll use the LinkedIn URL you provided during onboarding to fetch your public profile data and score each section.
           </p>
 
           <button

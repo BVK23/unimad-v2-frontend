@@ -30,13 +30,13 @@ export const buildPrimeslateColumns = (data: ResumeData) => {
     .filter(s => !s.hidden)
     .filter(s => s.id !== SECTIONS.PROFILE);
 
-  const visibleSet = new Set(visibleOrdered.map(s => s.id));
+  const orderedSectionIds = new Set(deduplicateSectionOrder(data.sectionOrder).map(s => s.id));
 
   const leftFromOrder = visibleOrdered.filter(s => effectivePrimeslateColumn(s.id, s.column) === "left").map(s => s.id);
   const rightFromOrder = visibleOrdered.filter(s => effectivePrimeslateColumn(s.id, s.column) === "right").map(s => s.id);
 
-  const orphanLeft = data.customSections.filter(cs => !visibleSet.has(cs.id) && cs.column !== "right").map(cs => cs.id);
-  const orphanRight = data.customSections.filter(cs => !visibleSet.has(cs.id) && cs.column === "right").map(cs => cs.id);
+  const orphanLeft = data.customSections.filter(cs => !orderedSectionIds.has(cs.id) && cs.column !== "right").map(cs => cs.id);
+  const orphanRight = data.customSections.filter(cs => !orderedSectionIds.has(cs.id) && cs.column === "right").map(cs => cs.id);
 
   return {
     leftColumnIds: [...leftFromOrder, ...orphanLeft],

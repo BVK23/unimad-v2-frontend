@@ -492,9 +492,11 @@ const USPDF = ({ data }: { data: ResumeData }) => {
     <Page size="A4" style={styles.page}>
       <Text style={styles.name}>{profile.fullName || "Your Name"}</Text>
       {contactRow}
-      {deduplicateSectionOrder(sectionOrder).map(section => (
-        <SectionRenderer key={section.id} resume={data} type={section.id} />
-      ))}
+      {deduplicateSectionOrder(sectionOrder)
+        .filter(s => !s.hidden)
+        .map(section => (
+          <SectionRenderer key={section.id} resume={data} type={section.id} />
+        ))}
     </Page>
   );
 };

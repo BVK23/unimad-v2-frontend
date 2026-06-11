@@ -356,32 +356,34 @@ const IrelandPreview: React.FC<IrelandPreviewProps> = ({ data, previewScale = 1,
       {generateContactRow()}
 
       <div className="flex-1">
-        {deduplicateSectionOrder(sortedSections).map((section, idx) => {
-          const sectionId = section.id;
-          const isFirstSection = idx === 0;
-          if (isCustomSection(sectionId)) {
-            const customSectionData = data.customSections?.find(s => s.id === sectionId);
-            if (!customSectionData) return null;
-            return <CustomSectionRenderer key={sectionId} customSection={customSectionData} isFirstSection={isFirstSection} />;
-          }
+        {deduplicateSectionOrder(sortedSections)
+          .filter(s => !s.hidden)
+          .map((section, idx) => {
+            const sectionId = section.id;
+            const isFirstSection = idx === 0;
+            if (isCustomSection(sectionId)) {
+              const customSectionData = data.customSections?.find(s => s.id === sectionId);
+              if (!customSectionData) return null;
+              return <CustomSectionRenderer key={sectionId} customSection={customSectionData} isFirstSection={isFirstSection} />;
+            }
 
-          switch (sectionId) {
-            case SECTIONS.PROFILE:
-              return <Summary key={sectionId} isFirstSection={isFirstSection} />;
-            case SECTIONS.EXPERIENCE:
-              return <Experiences key={sectionId} experiences={data.experience} isFirstSection={isFirstSection} />;
-            case SECTIONS.EDUCATION:
-              return <Educations key={sectionId} educations={data.education} isFirstSection={isFirstSection} />;
-            case SECTIONS.SKILLS:
-              return <Skills key={sectionId} skills={data.skills} isFirstSection={isFirstSection} />;
-            case SECTIONS.PROJECTS:
-              return <Projects key={sectionId} projects={data.projects} isFirstSection={isFirstSection} />;
-            case SECTIONS.CERTIFICATIONS:
-              return <Certifications key={sectionId} certifications={data.certifications} isFirstSection={isFirstSection} />;
-            default:
-              return null;
-          }
-        })}
+            switch (sectionId) {
+              case SECTIONS.PROFILE:
+                return <Summary key={sectionId} isFirstSection={isFirstSection} />;
+              case SECTIONS.EXPERIENCE:
+                return <Experiences key={sectionId} experiences={data.experience} isFirstSection={isFirstSection} />;
+              case SECTIONS.EDUCATION:
+                return <Educations key={sectionId} educations={data.education} isFirstSection={isFirstSection} />;
+              case SECTIONS.SKILLS:
+                return <Skills key={sectionId} skills={data.skills} isFirstSection={isFirstSection} />;
+              case SECTIONS.PROJECTS:
+                return <Projects key={sectionId} projects={data.projects} isFirstSection={isFirstSection} />;
+              case SECTIONS.CERTIFICATIONS:
+                return <Certifications key={sectionId} certifications={data.certifications} isFirstSection={isFirstSection} />;
+              default:
+                return null;
+            }
+          })}
       </div>
     </ScaledA4PreviewShell>
   );

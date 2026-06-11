@@ -11,6 +11,8 @@ interface PostSchedulerModalProps {
   onPost: (finalContent: string, isScheduled: boolean, scheduleDate?: Date) => void | Promise<void>;
   /** Opens content in the main preview (closes modal). */
   onEditToPreview?: (content: string) => void;
+  /** Close modal and start Unibot to improve the post draft. */
+  onImproveWithUnibot?: (content: string) => void;
   authorName?: string;
   authorPictureUrls?: string[];
   authorHeadline?: string;
@@ -28,6 +30,7 @@ const PostSchedulerModal: React.FC<PostSchedulerModalProps> = ({
   onClose,
   onPost,
   onEditToPreview,
+  onImproveWithUnibot,
   authorName = "You",
   authorHeadline = "Professional",
   authorPictureUrls = [],
@@ -186,7 +189,9 @@ const PostSchedulerModal: React.FC<PostSchedulerModalProps> = ({
               <div className="absolute bottom-4 right-4 flex items-center gap-2">
                 <button
                   type="button"
-                  className="flex items-center gap-2 rounded-lg bg-brand-100 px-3 py-1.5 text-xs font-medium text-brand-700 transition-colors hover:bg-brand-200 dark:bg-brand-900/30 dark:text-brand-300 dark:hover:bg-brand-900/50"
+                  onClick={() => onImproveWithUnibot?.(currentContent)}
+                  disabled={!onImproveWithUnibot || !currentContent.trim()}
+                  className="flex items-center gap-2 rounded-lg bg-brand-100 px-3 py-1.5 text-xs font-medium text-brand-700 transition-colors hover:bg-brand-200 disabled:pointer-events-none disabled:opacity-50 dark:bg-brand-900/30 dark:text-brand-300 dark:hover:bg-brand-900/50"
                 >
                   <Wand2 size={14} /> Improve with Unibot
                 </button>

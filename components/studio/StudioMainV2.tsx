@@ -60,6 +60,7 @@ import { useProfileData } from "@/features/user-profile/hooks/use-profile-data";
 import { resolveLinkedInPostAuthorDisplay } from "@/features/user-profile/utils/resolve-linkedin-post-author";
 import { useResizablePanelWidth } from "@/hooks/useResizablePanelWidth";
 import { exportApplicationAssetAsDocx } from "@/utils/export-application-asset-file";
+import { sanitizeUserFacingError } from "@/utils/message-from-failed-response";
 import { normalizeContentToHtml } from "@/utils/normalize-content-to-html";
 import { exportContentAsPDF } from "@/utils/pdf-export";
 import { useQueryClient } from "@tanstack/react-query";
@@ -129,6 +130,9 @@ const savedApplicationAssetIdForTopic = (
   }
   return undefined;
 };
+
+const isSameDocumentId = (a: string | number | null | undefined, b: string | number | null | undefined) =>
+  a != null && b != null && String(a) === String(b);
 
 // Mock Scheduled Posts
 const MOCK_SCHEDULED = [
@@ -206,6 +210,8 @@ const normalizeLinkedinPostError = (rawMessage: string): string => {
   return trimmed.length > 420 ? `${trimmed.slice(0, 420)}…` : trimmed;
 };
 
+const ASSET_DRAFT_ERROR_FALLBACK = "Draft generation failed. Please try again.";
+
 const StudioMainV2: React.FC<StudioMainProps> = ({ initialContext, initialAssetId }) => {
   const queryClient = useQueryClient();
   const router = useRouter();
@@ -222,6 +228,8 @@ const StudioMainV2: React.FC<StudioMainProps> = ({ initialContext, initialAssetI
   const clearApplicationAssetSelection = useApplicationAssetStudioStore(s => s.clearSelection);
   const isHydratingFromUrlRef = useRef(false);
   const hydratedAssetKeyRef = useRef<string | null>(null);
+  const improveDispatchedRef = useRef(false);
+  const syncedDocumentUrlIdRef = useRef<string | null>(null);
   /** Prevents URL→state sync from undoing an in-flight topic tab click before the router updates. */
   const pendingTopicRef = useRef<string | null>(null);
   /** Preserves LinkedIn draft when switching Studio tabs (`generatedContent` is LinkedIn-only while on that tab). */
@@ -300,6 +308,23 @@ const StudioMainV2: React.FC<StudioMainProps> = ({ initialContext, initialAssetI
       })
     );
   }, [topicIdea]);
+
+  const handlePostSchedulerImprove = useCallback((content: string) => {
+    const trimmed = content.trim();
+    if (!trimmed) return;
+    setGeneratedContent(trimmed);
+    setShowScheduler(false);
+    setPublishModalSeed(null);
+    setSelectedPostData(null);
+    window.dispatchEvent(
+      new CustomEvent("open-content-gen-topic", {
+        detail: {
+          followUpText: `Please improve this LinkedIn post draft:\n\n${trimmed}`,
+          requestKey: Date.now(),
+        },
+      })
+    );
+  }, []);
 
   // Specific Form States
   const [role, setRole] = useState(initialContext?.role ?? "");
@@ -464,16 +489,57 @@ const StudioMainV2: React.FC<StudioMainProps> = ({ initialContext, initialAssetI
     return [];
   }, [selectedTopic, coverLetterHistory, coldEmailHistory, referralHistory]);
 
+  const activeRecentDocumentId = useMemo((): string | number | null => {
+    if (!isDocumentTopic(selectedTopic)) return null;
+
+    const urlId = searchParams.get("id")?.trim() || null;
+    const draftId =
+      selectedTopic === "cover-letter"
+        ? currentCoverLetterDraft?.id
+        : selectedTopic === "cold-email"
+          ? currentColdEmailDraft?.id
+          : currentReferralDraft?.id;
+    const normalizedDraftId = draftId != null && String(draftId).trim() ? draftId : null;
+
+    if (normalizedDraftId && urlId) {
+      return isSameDocumentId(normalizedDraftId, urlId) ? normalizedDraftId : urlId;
+    }
+    if (normalizedDraftId) return normalizedDraftId;
+    if (urlId) return urlId;
+    return selectedDocumentId;
+  }, [selectedTopic, currentCoverLetterDraft?.id, currentColdEmailDraft?.id, currentReferralDraft?.id, searchParams, selectedDocumentId]);
+
+  useEffect(() => {
+    if (!isDocumentTopic(selectedTopic)) {
+      syncedDocumentUrlIdRef.current = null;
+      return;
+    }
+
+    const urlId = searchParams.get("id")?.trim() || null;
+    if (!urlId) {
+      syncedDocumentUrlIdRef.current = null;
+      return;
+    }
+
+    if (syncedDocumentUrlIdRef.current === urlId) {
+      return;
+    }
+
+    syncedDocumentUrlIdRef.current = urlId;
+    improveDispatchedRef.current = false;
+    setSelectedDocumentId(prev => (isSameDocumentId(prev, urlId) ? prev : urlId));
+  }, [searchParams, selectedTopic]);
+
   const handleApplicationAssetDraftStarted = useCallback(
     (result: GenerateCoverLetterResult | GenerateColdEmailResult | GenerateReferralResult, topic: ApplicationAssetStudioTopic) => {
       if ("error" in result && result.error) {
         setApplicationAssetDraftLoading(false);
         if (topic === "cover-letter") {
-          setCoverLetterFormError(result.error);
+          setCoverLetterFormError(sanitizeUserFacingError(result.error, ASSET_DRAFT_ERROR_FALLBACK));
         } else if (topic === "cold-email") {
-          setColdEmailFormError(result.error);
+          setColdEmailFormError(sanitizeUserFacingError(result.error, ASSET_DRAFT_ERROR_FALLBACK));
         } else {
-          setReferralFormError(result.error);
+          setReferralFormError(sanitizeUserFacingError(result.error, ASSET_DRAFT_ERROR_FALLBACK));
         }
         return;
       }
@@ -544,7 +610,7 @@ const StudioMainV2: React.FC<StudioMainProps> = ({ initialContext, initialAssetI
         setCoverLetterSubscriptionModal(true);
       }
     },
-    onError: (msg: string) => setCoverLetterFormError(msg),
+    onError: (msg: string) => setCoverLetterFormError(sanitizeUserFacingError(msg, ASSET_DRAFT_ERROR_FALLBACK)),
     onSettled: clearApplicationAssetDraftLoading,
   });
 
@@ -555,7 +621,7 @@ const StudioMainV2: React.FC<StudioMainProps> = ({ initialContext, initialAssetI
         setColdEmailSubscriptionModal(true);
       }
     },
-    onError: (msg: string) => setColdEmailFormError(msg),
+    onError: (msg: string) => setColdEmailFormError(sanitizeUserFacingError(msg, ASSET_DRAFT_ERROR_FALLBACK)),
     onSettled: clearApplicationAssetDraftLoading,
   });
 
@@ -572,7 +638,7 @@ const StudioMainV2: React.FC<StudioMainProps> = ({ initialContext, initialAssetI
         setReferralSubscriptionModal(true);
       }
     },
-    onError: (msg: string) => setReferralFormError(msg),
+    onError: (msg: string) => setReferralFormError(sanitizeUserFacingError(msg, ASSET_DRAFT_ERROR_FALLBACK)),
     onSettled: clearApplicationAssetDraftLoading,
   });
 
@@ -1097,7 +1163,10 @@ const StudioMainV2: React.FC<StudioMainProps> = ({ initialContext, initialAssetI
             applicationId: d.assetId,
           });
         } catch (err) {
-          const message = err instanceof Error ? err.message : "Draft generation failed. Please try again.";
+          const message = sanitizeUserFacingError(
+            err instanceof Error ? err.message : ASSET_DRAFT_ERROR_FALLBACK,
+            ASSET_DRAFT_ERROR_FALLBACK
+          );
           if (studioTopic === "cover-letter") {
             setCoverLetterFormError(message);
           } else if (studioTopic === "cold-email") {
@@ -1117,7 +1186,7 @@ const StudioMainV2: React.FC<StudioMainProps> = ({ initialContext, initialAssetI
     const onApplicationAssetDraftFailed = (e: Event) => {
       const d = (e as CustomEvent<ApplicationAssetDraftFailedDetail>).detail;
       setApplicationAssetDraftLoading(false);
-      const message = d?.message ?? "Draft generation failed. Please try again.";
+      const message = sanitizeUserFacingError(d?.message ?? ASSET_DRAFT_ERROR_FALLBACK, ASSET_DRAFT_ERROR_FALLBACK);
       if (selectedTopic === "cover-letter") {
         setCoverLetterFormError(message);
       } else if (selectedTopic === "cold-email") {
@@ -1945,7 +2014,7 @@ const StudioMainV2: React.FC<StudioMainProps> = ({ initialContext, initialAssetI
                 <DocumentListCard
                   key={doc.id}
                   doc={doc}
-                  isSelected={selectedDocumentId === doc.id}
+                  isSelected={isSameDocumentId(activeRecentDocumentId, doc.id)}
                   onClick={() => void handleSelectDocument(doc)}
                   onDelete={id => void handleDeleteDocument(id)}
                 />
@@ -2687,6 +2756,7 @@ const StudioMainV2: React.FC<StudioMainProps> = ({ initialContext, initialAssetI
             setPublishModalSeed(null);
           }}
           onPost={handlePost}
+          onImproveWithUnibot={handlePostSchedulerImprove}
           initialData={
             publishModalSeed ??
             (selectedPostData
@@ -2729,7 +2799,7 @@ const StudioMainV2: React.FC<StudioMainProps> = ({ initialContext, initialAssetI
         <AllDocumentsModal
           topicLabel={DOCUMENT_TOPIC_LABELS[selectedTopic]}
           documents={documentItemsForTopic}
-          selectedDocumentId={selectedDocumentId}
+          selectedDocumentId={activeRecentDocumentId}
           onClose={() => setShowAllDocumentsModal(false)}
           onDocumentClick={doc => {
             setShowAllDocumentsModal(false);

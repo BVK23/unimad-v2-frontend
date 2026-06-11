@@ -121,17 +121,25 @@ const HtmlRenderer: React.FC<HtmlRendererProps> = ({ html, style, listFontSize }
       const items = content.match(/<li.*?>(.*?)<\/li>/g);
       if (items) {
         const liSize = listFontSize ?? style?.fontSize ?? 10;
-        const bulletStyle = { fontWeight: 600 as const, marginRight: 4 };
+        const itemTextStyle = {
+          marginBottom: 2,
+          fontSize: liSize,
+          lineHeight: 1.4,
+          color: style?.color || "#334155",
+          ...style,
+        };
+        const markerStyle = { fontWeight: 600 as const };
         blocks.push(
           <View key={key} style={style}>
-            {items.map((item, i) => (
-              <View key={`${key}-${i}`} style={{ flexDirection: "row", marginBottom: 2, alignItems: "flex-start" }}>
-                <Text style={{ ...bulletStyle, fontSize: liSize, lineHeight: 1.4, flexShrink: 0, ...style }}>•</Text>
-                <Text style={{ flex: 1, fontSize: liSize, lineHeight: 1.4, color: style?.color || "#334155", ...style }}>
+            {items.map((item, i) => {
+              const marker = tag === "ol" ? `${i + 1}. ` : "• ";
+              return (
+                <Text key={`${key}-${i}`} style={itemTextStyle}>
+                  <Text style={markerStyle}>{marker}</Text>
                   {parseInline(item.replace(/<\/?li.*?>/g, ""))}
                 </Text>
-              </View>
-            ))}
+              );
+            })}
           </View>
         );
       }

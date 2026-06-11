@@ -8,7 +8,7 @@ import type {
   LinkedInAnalyzerResult,
 } from "@/features/linkedin/types";
 import { linkedInAnalyzerErrorMessage } from "@/features/linkedin/utils/linkedin-analyzer-errors";
-import { messageFromFailedResponse } from "@/utils/message-from-failed-response";
+import { messageFromFailedResponse, sanitizeUserFacingError } from "@/utils/message-from-failed-response";
 import { cookies } from "next/headers";
 
 type AuthResult = { token: string; scheme: "Token" | "Bearer" };
@@ -106,7 +106,10 @@ export async function analyzeLinkedInProfile(): Promise<LinkedInAnalyzerResult<L
       data: mapLinkedInAnalyzeResponse(rawPayload),
     };
   } catch (err) {
-    const message = err instanceof Error ? err.message : "Failed to analyze LinkedIn profile. Please try again.";
+    const message = sanitizeUserFacingError(
+      err instanceof Error ? err.message : "Failed to analyze LinkedIn profile. Please try again.",
+      "Failed to analyze LinkedIn profile. Please try again."
+    );
     return failure(message);
   }
 }
@@ -125,6 +128,9 @@ export async function fetchLinkedInAnalysis(): Promise<LinkedInAnalyzerResult<Li
     });
 
     const rawText = await response.text();
+    if (response.status === 404) {
+      return { success: true, data: null };
+    }
     if (!response.ok) {
       const parsed = parseErrorBody(rawText, response.status);
       return failure(parsed.message, parsed.code);

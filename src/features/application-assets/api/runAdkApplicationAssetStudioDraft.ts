@@ -12,6 +12,7 @@ import type { RunApplicationAssetDraftParams } from "@/features/application-asse
 import { createApplicationAssetOnAccept } from "@/features/application-assets/server-actions/application-asset-actions";
 import { useApplicationAssetStudioStore } from "@/features/application-assets/store/useApplicationAssetStudioStore";
 import type { ApplicationAssetApiType } from "@/features/application-assets/types";
+import { looksLikeTechnicalErrorMessage } from "@/utils/message-from-failed-response";
 
 export type RunAdkApplicationAssetStudioDraftResult = {
   draft: string;
@@ -154,6 +155,9 @@ export const runAdkApplicationAssetStudioDraft = async (
     }
 
     const botMessage = await runHeadlessAdkStream({ userId, sessionId, message: bootstrap });
+    if (looksLikeTechnicalErrorMessage(botMessage)) {
+      throw new Error("Could not generate your draft. Please try again.");
+    }
     const extracted = extractApplicationAssetDraftPayload(botMessage);
     const draft = extracted.draft.trim();
 

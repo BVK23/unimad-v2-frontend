@@ -30,12 +30,23 @@ function SquareImageCropEditor({ source, title, description, maxOutputPx, isSavi
   const [zoom, setZoom] = useState(1);
   const [pan, setPan] = useState({ x: 0, y: 0 });
   const [imageSize, setImageSize] = useState({ width: 0, height: 0 });
+  const [imageReady, setImageReady] = useState(false);
+  const [cropError, setCropError] = useState<string | null>(null);
   const previewRef = useRef<HTMLDivElement>(null);
   const dragStateRef = useRef<{ x: number; y: number } | null>(null);
 
   useEffect(() => {
     const img = new Image();
-    img.onload = () => setImageSize({ width: img.naturalWidth, height: img.naturalHeight });
+    if (source.startsWith("http")) {
+      img.crossOrigin = "anonymous";
+    }
+    img.onload = () => {
+      setImageSize({ width: img.naturalWidth, height: img.naturalHeight });
+      setImageReady(true);
+    };
+    img.onerror = () => {
+      setCropError("Could not load this image for cropping. Try uploading again.");
+    };
     img.src = source;
   }, [source]);
 
@@ -118,6 +129,12 @@ function SquareImageCropEditor({ source, title, description, maxOutputPx, isSavi
             />
           </div>
 
+          {cropError ? (
+            <p className="text-xs text-red-600 dark:text-red-400" role="alert">
+              {cropError}
+            </p>
+          ) : null}
+
           <div className="flex items-center justify-end gap-3">
             <button
               type="button"
@@ -129,13 +146,22 @@ function SquareImageCropEditor({ source, title, description, maxOutputPx, isSavi
             </button>
             <button
               type="button"
-              disabled={isSaving}
+              disabled={isSaving || !imageReady || Boolean(cropError)}
               onClick={() => {
-                applyImageCrop(source, "1:1", zoom, pan, croppedDataUrl => onSave(croppedDataUrl), maxOutputPx);
+                setCropError(null);
+                applyImageCrop(
+                  source,
+                  "1:1",
+                  zoom,
+                  pan,
+                  croppedDataUrl => onSave(croppedDataUrl),
+                  maxOutputPx,
+                  message => setCropError(message)
+                );
               }}
               className="rounded-full bg-brand-600 px-5 py-2 text-xs font-semibold text-white shadow-lg shadow-brand-500/25 transition-all hover:scale-105 active:scale-95 disabled:pointer-events-none disabled:opacity-60"
             >
-              {isSaving ? "Saving…" : "Save"}
+              {isSaving ? "Saving…" : imageReady ? "Save" : "Loading…"}
             </button>
           </div>
         </div>

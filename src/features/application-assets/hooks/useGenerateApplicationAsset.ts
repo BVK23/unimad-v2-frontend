@@ -9,6 +9,7 @@ import { checkApplicationAssetAvailability } from "@/features/application-assets
 import { useApplicationAssetStudioStore } from "@/features/application-assets/store/useApplicationAssetStudioStore";
 import type { ApplicationAssetApiType } from "@/features/application-assets/types";
 import { STUDIO_TOPIC_TO_API_TYPE, type ApplicationAssetStudioTopic } from "@/features/application-assets/types";
+import { sanitizeUserFacingError } from "@/utils/message-from-failed-response";
 import { useMutation, useQueryClient } from "@tanstack/react-query";
 
 export type GenerateApplicationAssetParams = {
@@ -143,9 +144,10 @@ export const useGenerateApplicationAsset = (options?: {
           assetId: result.assetId,
         };
       } catch (err) {
-        const message = err instanceof Error ? err.message : "Draft generation failed. Please try again.";
+        const rawMessage = err instanceof Error ? err.message : "Draft generation failed. Please try again.";
+        const message = sanitizeUserFacingError(rawMessage, "Draft generation failed. Please try again.");
 
-        if (message.toLowerCase().includes("plus membership")) {
+        if (rawMessage.toLowerCase().includes("plus membership") || message.toLowerCase().includes("plus membership")) {
           return { subscriptionRequired: true };
         }
 
@@ -188,7 +190,7 @@ export const useGenerateApplicationAsset = (options?: {
     },
 
     onError: (err: Error) => {
-      options?.onError?.(err.message);
+      options?.onError?.(sanitizeUserFacingError(err.message, "Draft generation failed. Please try again."));
     },
 
     onSettled: () => {

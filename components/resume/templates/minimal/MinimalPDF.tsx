@@ -147,6 +147,9 @@ interface MinimalPDFProps {
 
 const MinimalPDF: React.FC<MinimalPDFProps> = ({ data }) => {
   const { profile, experience, education, skills, projects, certifications, customSections, sectionOrder } = data;
+  const orderedSections = deduplicateSectionOrder(sectionOrder);
+  const isEducationSectionVisible = !orderedSections.find(s => s.id === "education")?.hidden;
+  const isSkillsSectionVisible = !orderedSections.find(s => s.id === "skills")?.hidden;
 
   const renderSection = (id: string) => {
     switch (id) {
@@ -315,32 +318,36 @@ const MinimalPDF: React.FC<MinimalPDFProps> = ({ data }) => {
       {/* Two-Column Layout */}
       <View style={styles.twoColumn}>
         <View style={styles.sidebar}>
-          <View style={styles.section}>
-            <Text style={styles.sidebarSectionTitle}>Education</Text>
-            {education
-              .filter(e => !e.hidden)
-              .map(edu => (
-                <View key={edu.id} style={styles.educationItem}>
-                  <Text style={styles.school}>{edu.school}</Text>
-                  <Text style={styles.degree}>{edu.degree}</Text>
-                  <Text style={{ ...styles.date, textAlign: "right" }}>{edu.endDate}</Text>
-                  {edu.location && <Text style={{ ...styles.location, textAlign: "right" }}>{edu.location}</Text>}
-                </View>
-              ))}
-          </View>
-          <View style={styles.section}>
-            <Text style={styles.sidebarSectionTitle}>Skills</Text>
-            {skills
-              .filter(s => !s.hidden)
-              .map(skill => (
-                <Text key={skill.id} style={styles.skillText}>
-                  {skill.name}
-                </Text>
-              ))}
-          </View>
+          {isEducationSectionVisible && (
+            <View style={styles.section}>
+              <Text style={styles.sidebarSectionTitle}>Education</Text>
+              {education
+                .filter(e => !e.hidden)
+                .map(edu => (
+                  <View key={edu.id} style={styles.educationItem}>
+                    <Text style={styles.school}>{edu.school}</Text>
+                    <Text style={styles.degree}>{edu.degree}</Text>
+                    <Text style={{ ...styles.date, textAlign: "right" }}>{edu.endDate}</Text>
+                    {edu.location && <Text style={{ ...styles.location, textAlign: "right" }}>{edu.location}</Text>}
+                  </View>
+                ))}
+            </View>
+          )}
+          {isSkillsSectionVisible && (
+            <View style={styles.section}>
+              <Text style={styles.sidebarSectionTitle}>Skills</Text>
+              {skills
+                .filter(s => !s.hidden)
+                .map(skill => (
+                  <Text key={skill.id} style={styles.skillText}>
+                    {skill.name}
+                  </Text>
+                ))}
+            </View>
+          )}
         </View>
         <View style={styles.main}>
-          {deduplicateSectionOrder(sectionOrder)
+          {orderedSections
             .filter(s => !s.hidden)
             .map(s => {
               if (s.id === "education" || s.id === "skills") return null;

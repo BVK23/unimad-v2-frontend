@@ -8,6 +8,7 @@ import type {
   ApplicationAssetStatus,
   CreateApplicationAssetShellParams,
 } from "@/features/application-assets/types";
+import { messageFromFailedResponse } from "@/utils/message-from-failed-response";
 import { cookies } from "next/headers";
 
 function getBackendUrl(): string {
@@ -146,12 +147,19 @@ export async function generateApplicationAssetDraft(
     method: "POST",
     body: JSON.stringify(buildRequestBody(params)),
   });
-  const data = await res.json().catch(() => ({}));
-  if (res.status === 403 || (data as { error_code?: string })?.error_code === "NOT_A_PLUS_MEMBER") {
+  const rawText = await res.text();
+  let data: Record<string, unknown> = {};
+  try {
+    data = rawText ? (JSON.parse(rawText) as Record<string, unknown>) : {};
+  } catch {
+    // non-JSON body handled below
+  }
+  if (res.status === 403 || data.error_code === "NOT_A_PLUS_MEMBER") {
     throw new Error("Plus membership required");
   }
   if (!res.ok) {
-    throw new Error((data as { error?: string })?.error ?? "Failed to generate draft");
+    const jsonError = typeof data.error === "string" ? data.error : typeof data.message === "string" ? data.message : undefined;
+    throw new Error(messageFromFailedResponse(res.status, rawText, jsonError));
   }
   return data as ApplicationAssetGenerateDraftResult;
 }
