@@ -6,20 +6,22 @@ import { getTemplate } from "@/components/resume/templates";
 import { useResume } from "@/features/resume/hooks/useResume";
 import { useResumesList } from "@/features/resume/hooks/useResumesList";
 import type { ResumeData } from "@/types";
-import { Loader2 } from "lucide-react";
+import { Loader2, Pencil } from "lucide-react";
+import Link from "next/link";
 
 const PREVIEW_PADDING_PX = 24;
 const MAX_SCALE = 0.92;
 
 interface PrepareApplicationResumePreviewProps {
   resumeId: string;
+  editHref?: string | null;
 }
 
 /**
  * Full-width resume preview for the Prepare Application modal.
  * Scales the A4 template to fit the available panel width (not the small dashboard thumbnail).
  */
-const PrepareApplicationResumePreview: React.FC<PrepareApplicationResumePreviewProps> = ({ resumeId }) => {
+const PrepareApplicationResumePreview: React.FC<PrepareApplicationResumePreviewProps> = ({ resumeId, editHref }) => {
   const containerRef = useRef<HTMLDivElement>(null);
   const [previewScale, setPreviewScale] = useState(0.55);
   const { data: resumesList = [] } = useResumesList();
@@ -52,7 +54,7 @@ const PrepareApplicationResumePreview: React.FC<PrepareApplicationResumePreviewP
   return (
     <div
       ref={containerRef}
-      className="scrollbar-on-hover flex h-full min-h-0 w-full flex-1 overflow-y-auto overflow-x-hidden rounded-xl border border-slate-200 bg-slate-100 dark:border-slate-800 dark:bg-slate-900/50"
+      className="group/resume-preview scrollbar-on-hover relative flex h-full min-h-0 w-full flex-1 overflow-y-auto overflow-x-hidden rounded-xl border border-slate-200 bg-slate-100 dark:border-slate-800 dark:bg-slate-900/50"
     >
       {resumeQuery.isLoading && !resume ? (
         <div className="flex flex-1 items-center justify-center">
@@ -61,7 +63,7 @@ const PrepareApplicationResumePreview: React.FC<PrepareApplicationResumePreviewP
       ) : !resume || !templateRenderer ? (
         <div className="flex flex-1 items-center justify-center text-sm text-slate-500">Preview unavailable</div>
       ) : (
-        <div className="flex w-full justify-center py-4">
+        <div className="relative flex w-full justify-center py-4 pb-16">
           <div
             className="relative shrink-0 overflow-hidden rounded-lg bg-white shadow-md ring-1 ring-slate-200/80 dark:ring-slate-700"
             style={{ width: scaledWidth, minHeight: scaledHeight }}
@@ -77,6 +79,18 @@ const PrepareApplicationResumePreview: React.FC<PrepareApplicationResumePreviewP
               {templateRenderer.renderPreview(resume, { previewScale: 1, isModal: false })}
             </div>
           </div>
+
+          {editHref ? (
+            <div className="pointer-events-none absolute inset-x-0 bottom-4 flex justify-center opacity-0 transition-opacity duration-200 group-hover/resume-preview:opacity-100">
+              <Link
+                href={editHref}
+                className="pointer-events-auto inline-flex translate-y-3 items-center gap-2 rounded-full bg-brand-600 px-5 py-2.5 text-sm font-medium text-white shadow-lg shadow-brand-500/25 transition-all hover:bg-brand-700 group-hover/resume-preview:translate-y-0"
+              >
+                <Pencil size={15} />
+                Edit Resume
+              </Link>
+            </div>
+          ) : null}
         </div>
       )}
     </div>

@@ -1,6 +1,10 @@
 import React, { useState, useRef, useMemo, useEffect, useCallback } from "react";
+import { createPortal } from "react-dom";
+import { PrepareApplicationReturnBar } from "@/components/jobs/PrepareApplicationReturnBar";
 import ResumeKnowledgeBaseModal from "@/components/resume/ResumeKnowledgeBaseModal";
+import { ModalPortalOverlay } from "@/components/ui/ModalPortalOverlay";
 import { PanelResizeHandle } from "@/components/ui/PanelResizeHandle";
+import { DOCUMENT_SAVED_CONFIRMATION_MS } from "@/constants/documentAutosave";
 import { EMPTY_PDF_HIGHLIGHT_MAP } from "@/features/adk-chat/adkResumeHighlightDiff";
 import { useAdkResumeReviewStore } from "@/features/adk-chat/stores/useAdkResumeReviewStore";
 import { mapAtsScoreToViewModel } from "@/features/resume/api/mapAtsScoreToViewModel";
@@ -12,9 +16,19 @@ import { resumeAtsQueryKey, useResumeAtsScore } from "@/features/resume/hooks/us
 import { useUpdateResume } from "@/features/resume/hooks/useUpdateResume";
 import { publishResumeAsset, recordResumeDownload } from "@/features/resume/server-actions/resume-actions";
 import { useResumeStore } from "@/features/resume/store/useResumeStore";
-import { ATS_COMPLETE_THRESHOLD, MAX_RECALCULATIONS } from "@/lib/resume/atsConstants";
+import {
+  clearPrepareReturnSession,
+  getPrepareReturnSession,
+  setPrepareReturnSession,
+  type PrepareApplicationReturnSession,
+} from "@/lib/jobs/prepare-application-return";
+import { buildJobsPrepareReopenHref, buildResumeAssetOnlyHref, parseResumePrepareSearchParams } from "@/lib/jobs/prepare-application-url";
+import { ATS_COMPLETE_THRESHOLD } from "@/lib/resume/atsConstants";
+import { getAtsRecalculateState } from "@/lib/resume/atsRecalculate";
 import { getAtsScoreQuote } from "@/lib/resume/atsScoreQuote";
 import { loadResumeAtsSession, saveResumeAtsSession } from "@/lib/resume/atsStorage";
+import { MODAL_OVERLAY_Z_CLASS } from "@/lib/ui/modal-overlay";
+import { getJob } from "@/src/features/jobs/server-actions/jobs-actions";
 import { useResumeFormsPanelResize } from "@/src/hooks/useResumeFormsPanelResize";
 import {
   ResumeData,
@@ -73,7 +87,9 @@ import {
   Info,
   RefreshCw,
   Wand2,
+  CheckCircle2,
 } from "lucide-react";
+import { useRouter, useSearchParams } from "next/navigation";
 import ResumePDF from "./ResumePDF";
 import ResumePDFPreview from "./ResumePDFPreview";
 import TiptapEditor from "./TiptapEditor";
@@ -81,6 +97,28 @@ import ResumeFieldError from "./resume/ResumeFieldError";
 import HtmlDisplay from "./resume/shared/HtmlDisplay";
 import { parseDate } from "./resume/shared/dateUtils";
 import { getTemplate } from "./resume/templates";
+
+const LEGACY_CUSTOM_SECTION_TITLE = "Untitled Section";
+const LEGACY_CUSTOM_ITEM_TITLES = new Set(["Activity Name", "New Item"]);
+
+function htmlToPlainText(html: string): string {
+  return html.replace(/<[^>]*>/g, "").trim();
+}
+
+function normalizeCustomSectionTitle(title: string): string {
+  return title === LEGACY_CUSTOM_SECTION_TITLE ? "" : title;
+}
+
+function normalizeCustomItemTitle(title: string | undefined): string {
+  if (!title) return "";
+  return LEGACY_CUSTOM_ITEM_TITLES.has(title) ? "" : title;
+}
+
+function normalizeCustomDescription(html: string | undefined): string {
+  if (!html) return "";
+  const plain = htmlToPlainText(html);
+  return plain === "" || plain === "Description..." ? "" : html;
+}
 
 interface ResumeEditorProps {
   resumeId: string;
@@ -92,7 +130,7 @@ interface ResumeEditorProps {
   setShowTemplateModal: (show: boolean) => void;
 }
 
-const AUTOSAVE_DELAY_MS = 5000;
+const AUTOSAVE_DELAY_MS = 12_000;
 
 const scoreTone = (score: number) => (score >= 80 ? "green" : score >= ATS_COMPLETE_THRESHOLD ? "yellow" : "red");
 
@@ -558,6 +596,9 @@ const ResumeEditor: React.FC<ResumeEditorProps> = ({
     });
   }, [availableTemplates, recommendedTemplate]);
 
+  const router = useRouter();
+  const searchParams = useSearchParams();
+  const [prepareReturn, setPrepareReturn] = useState<PrepareApplicationReturnSession | null>(null);
   const [activeSection, setActiveSection] = useState<string>("profile");
   const [showFieldValidation, setShowFieldValidation] = useState(false);
   const { panelWidth: formsPanelWidth, isResizing: isFormsPanelResizing, startResize: startFormsPanelResize } = useResumeFormsPanelResize();
@@ -710,7 +751,7 @@ const ResumeEditor: React.FC<ResumeEditorProps> = ({
   const addSkillCategory = () => {
     const newCategory = {
       id: Date.now().toString(),
-      name: "New Category",
+      name: "",
     };
     updateResume(prev => ({
       ...prev,
@@ -813,6 +854,9 @@ const ResumeEditor: React.FC<ResumeEditorProps> = ({
 
   const atsVm = atsMutationVm ?? cachedAtsVm;
   const atsCalcCount = atsMutationVm?.ats_calc_count ?? (atsCache?.ok ? atsCache.ats_calc_count : 0);
+  const atsScoredAt = atsMutationVm?.scored_at ?? (atsCache?.ok ? atsCache.scored_at : null);
+  const atsResumeUpdatedAt =
+    atsMutationVm?.resume_updated_at ?? (atsCache?.ok ? atsCache.resume_updated_at : null) ?? resume.lastModified.toISOString();
 
   useEffect(() => {
     if (!showAtsModal || !resumeId?.trim()) return;
@@ -827,18 +871,6 @@ const ResumeEditor: React.FC<ResumeEditorProps> = ({
   const atsScoreClass = atsTone === "green" ? "text-green-600" : atsTone === "yellow" ? "text-yellow-600" : "text-red-600";
   const atsBarClass = atsTone === "green" ? "bg-green-500" : atsTone === "yellow" ? "bg-yellow-500" : "bg-red-500";
   const atsHeaderBg = atsTone === "green" ? "bg-green-50/50" : atsTone === "yellow" ? "bg-yellow-50/50" : "bg-red-50/50";
-
-  const handleRecalculate = async () => {
-    if (!resumeId?.trim() || atsScorePending) return;
-    setRecalcError(null);
-    try {
-      await runAtsScore({ resumeId, force: true });
-      void queryClient.invalidateQueries({ queryKey: resumeAtsQueryKey(resumeId) });
-    } catch (err) {
-      const message = err instanceof Error ? err.message : "Something went wrong while recalculating. Please try again.";
-      setRecalcError(message);
-    }
-  };
 
   const handleFixWithUnibot = () => {
     if (fixAllUsed || !atsVm?.improvements.length) return;
@@ -861,12 +893,29 @@ const ResumeEditor: React.FC<ResumeEditorProps> = ({
   const adkReviewBlocksAutosave = useAdkResumeReviewStore(s => s.hasPendingReviewForResume(resumeId));
   const pdfHighlightRegions = useAdkResumeReviewStore(s => s.reviewStack.at(-1)?.highlights ?? EMPTY_PDF_HIGHLIGHT_MAP);
   const hasPendingUnsavedChanges = !adkReviewBlocksAutosave && currentSnapshot !== lastAcknowledgedSnapshot;
-  const saveStatusLabel = useMemo(() => {
-    if (isSavingRemote) return activeSaveSource === "manual" ? "Saving..." : "Autosaving...";
-    if (hasPendingUnsavedChanges) return "Unsaved changes";
-    if (savedConfirmationVisible) return "All changes saved";
-    return null;
-  }, [activeSaveSource, hasPendingUnsavedChanges, isSavingRemote, savedConfirmationVisible]);
+  const isSaving = isSavingRemote;
+  const atsRecalculateState = useMemo(
+    () =>
+      getAtsRecalculateState({
+        scoredAt: atsScoredAt,
+        resumeUpdatedAt: atsResumeUpdatedAt,
+        atsCalcCount,
+        hasUnsavedChanges: hasPendingUnsavedChanges,
+      }),
+    [atsCalcCount, atsResumeUpdatedAt, atsScoredAt, hasPendingUnsavedChanges]
+  );
+
+  const handleRecalculate = async () => {
+    if (!resumeId?.trim() || atsScorePending || !atsRecalculateState.allowed) return;
+    setRecalcError(null);
+    try {
+      await runAtsScore({ resumeId, force: true });
+      void queryClient.invalidateQueries({ queryKey: resumeAtsQueryKey(resumeId) });
+    } catch (err) {
+      const message = err instanceof Error ? err.message : "Something went wrong while recalculating. Please try again.";
+      setRecalcError(message);
+    }
+  };
 
   useEffect(() => {
     return () => {
@@ -902,17 +951,18 @@ const ResumeEditor: React.FC<ResumeEditorProps> = ({
   const addExperience = () => {
     const newExp: ResumeExperience = {
       id: Date.now().toString(),
-      company: "New Company",
-      role: "Role",
+      company: "",
+      role: "",
       startDate: "",
       endDate: "",
       current: false,
-      description: "Description of your role...",
+      description: "",
     };
     updateResume(prev => ({
       ...prev,
       experience: [...prev.experience, newExp],
     }));
+    setExpandedItems(prev => ({ ...prev, [newExp.id]: true }));
   };
 
   const updateExperience = (id: string, field: keyof ResumeExperience, value: string | boolean | undefined) => {
@@ -939,8 +989,8 @@ const ResumeEditor: React.FC<ResumeEditorProps> = ({
   const addEducation = () => {
     const newEdu: ResumeEducation = {
       id: Date.now().toString(),
-      school: "University",
-      degree: "Degree",
+      school: "",
+      degree: "",
       startDate: "",
       endDate: "",
       description: "",
@@ -950,6 +1000,7 @@ const ResumeEditor: React.FC<ResumeEditorProps> = ({
       ...prev,
       education: [...prev.education, newEdu],
     }));
+    setExpandedItems(prev => ({ ...prev, [newEdu.id]: true }));
   };
 
   const updateEducation = (id: string, field: keyof ResumeEducation, value: string | boolean | undefined) => {
@@ -1008,9 +1059,9 @@ const ResumeEditor: React.FC<ResumeEditorProps> = ({
   const addProject = () => {
     const newProject: ResumeProject = {
       id: Date.now().toString(),
-      title: "Project Title",
+      title: "",
       url: "",
-      description: "Description of the Project...",
+      description: "",
     };
     updateResume(prev => ({
       ...prev,
@@ -1063,14 +1114,15 @@ const ResumeEditor: React.FC<ResumeEditorProps> = ({
   };
 
   const addCustomSection = () => {
+    const itemId = Date.now().toString();
     const newSection: CustomSection = {
-      id: Date.now().toString(),
-      title: "Untitled Section",
+      id: (Date.now() + 1).toString(),
+      title: "",
       items: [
         {
-          id: Date.now().toString(),
-          title: "Activity Name",
-          description: "Description...",
+          id: itemId,
+          title: "",
+          description: "",
         },
       ],
     };
@@ -1079,6 +1131,7 @@ const ResumeEditor: React.FC<ResumeEditorProps> = ({
       customSections: [...prev.customSections, newSection],
       sectionOrder: [...prev.sectionOrder, { id: newSection.id }],
     }));
+    setExpandedItems(prev => ({ ...prev, [itemId]: true }));
     setActiveSection(newSection.id);
   };
 
@@ -1117,9 +1170,9 @@ const ResumeEditor: React.FC<ResumeEditorProps> = ({
   const addCustomSectionItem = (sectionId: string) => {
     const newItem = {
       id: Date.now().toString(),
-      title: "New Item",
+      title: "",
       subtitle: "",
-      description: "Description...",
+      description: "",
       hasDates: true,
       hasLocation: true,
     };
@@ -1133,6 +1186,7 @@ const ResumeEditor: React.FC<ResumeEditorProps> = ({
         };
       }),
     }));
+    setExpandedItems(prev => ({ ...prev, [newItem.id]: true }));
   };
 
   const removeCustomSectionItem = (sectionId: string, itemId: string) => {
@@ -1219,13 +1273,15 @@ const ResumeEditor: React.FC<ResumeEditorProps> = ({
         savedConfirmationTimerRef.current = window.setTimeout(() => {
           setSavedConfirmationVisible(false);
           savedConfirmationTimerRef.current = null;
-        }, 12_000);
+        }, DOCUMENT_SAVED_CONFIRMATION_MS);
 
         if (result.created && onSave) {
           onSave({ ...dataToSave, id: result.id });
         } else if (onSave) {
           onSave(dataToSave);
         }
+
+        void queryClient.invalidateQueries({ queryKey: resumeAtsQueryKey(resumeId) });
 
         if (latestSnapshotRef.current !== snapshotAtStart) {
           queuedSaveRef.current = true;
@@ -1247,6 +1303,60 @@ const ResumeEditor: React.FC<ResumeEditorProps> = ({
     },
     [onSave, resume, resumeId, showToast, updateResumeMutation]
   );
+
+  const syncPrepareReturnFromUrl = useCallback(async () => {
+    const parsed = parseResumePrepareSearchParams(searchParams);
+    if (!parsed.jobId) return;
+
+    const stored = getPrepareReturnSession();
+    const navigate = parsed.navigate ?? stored?.navigate ?? "tracker";
+    let company = stored?.company ?? "";
+    let role = stored?.role ?? "";
+
+    if (!company || !role || stored?.jobId !== parsed.jobId) {
+      try {
+        const job = await getJob(parsed.jobId);
+        if (job) {
+          company = job.company ?? company;
+          role = job.title ?? role;
+        }
+      } catch {
+        // Partial banner labels are acceptable.
+      }
+    }
+
+    const session: PrepareApplicationReturnSession = {
+      jobId: parsed.jobId,
+      tab: "resume",
+      company,
+      role,
+      navigate,
+    };
+    setPrepareReturn(session);
+    setPrepareReturnSession(session);
+  }, [searchParams]);
+
+  useEffect(() => {
+    void syncPrepareReturnFromUrl();
+  }, [syncPrepareReturnFromUrl]);
+
+  const handleSaveAndReturnToPrepare = async () => {
+    if (!prepareReturn) return;
+    await runSave("manual");
+    const { jobId, tab, navigate } = prepareReturn;
+    clearPrepareReturnSession();
+    setPrepareReturn(null);
+    router.push(buildJobsPrepareReopenHref(jobId, tab, navigate));
+  };
+
+  const handleDismissPrepareReturn = () => {
+    clearPrepareReturnSession();
+    setPrepareReturn(null);
+    const parsed = parseResumePrepareSearchParams(searchParams);
+    if (parsed.resumeId) {
+      router.replace(buildResumeAssetOnlyHref(parsed.resumeId), { scroll: false });
+    }
+  };
 
   useEffect(() => {
     useAdkResumeReviewStore.getState().registerSaveHandler(resumeId, async () => {
@@ -1507,6 +1617,63 @@ const ResumeEditor: React.FC<ResumeEditorProps> = ({
     return template.renderPreview(resume, { previewScale, isModal });
   };
 
+  const resumeToolbarSaveStatus = (
+    <div className="relative mx-1 flex h-8 w-56 items-center justify-end overflow-hidden text-sm transition-all duration-300">
+      <div
+        className={`absolute right-0 flex items-center transition-all duration-300 ${savedConfirmationVisible && !hasPendingUnsavedChanges && !isSaving ? "translate-y-0 opacity-100" : "pointer-events-none translate-y-4 opacity-0"}`}
+      >
+        <CheckCircle2 size={14} className="mr-1.5 text-emerald-500" />
+        <span className="whitespace-nowrap text-xs font-medium text-slate-500 dark:text-slate-400">All changes saved</span>
+      </div>
+      <div
+        className={`absolute right-0 flex items-center transition-all duration-300 ${isSaving ? "translate-y-0 opacity-100" : !hasPendingUnsavedChanges ? "pointer-events-none -translate-y-4 opacity-0" : "pointer-events-none translate-y-4 opacity-0"}`}
+      >
+        <RefreshCw size={14} className="mr-1.5 animate-spin text-slate-400" />
+        <span className="whitespace-nowrap text-xs font-medium text-slate-500 dark:text-slate-400">
+          {activeSaveSource === "manual" ? "Saving..." : "Autosaving..."}
+        </span>
+      </div>
+      <div
+        className={`absolute right-0 flex items-center transition-all duration-300 ${hasPendingUnsavedChanges && !isSaving ? "translate-y-0 opacity-100" : "pointer-events-none -translate-y-4 opacity-0"}`}
+      >
+        <span className="mr-2 whitespace-nowrap text-xs font-medium text-amber-600 dark:text-amber-400">Unsaved changes</span>
+        <button
+          type="button"
+          onClick={() => void runSave("manual")}
+          className="cursor-pointer whitespace-nowrap text-xs font-semibold text-brand-600 hover:text-brand-700 hover:underline dark:text-brand-400"
+        >
+          Save now
+        </button>
+      </div>
+    </div>
+  );
+
+  const resumeToolbarTemplateButton = (
+    <button
+      type="button"
+      onClick={() => setShowTemplateModal(true)}
+      className="flex items-center gap-2 rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm font-medium text-slate-700 transition-all hover:border-brand-300 hover:shadow-sm dark:border-slate-700 dark:bg-slate-800 dark:text-slate-200"
+    >
+      <LayoutTemplate size={16} />
+      <span className="capitalize">{TEMPLATES.find(t => t.id === resume.templateId)?.name || "Template"}</span>
+      <ChevronDown size={14} className="text-slate-400" />
+    </button>
+  );
+
+  const resumeToolbarAtsButton = (
+    <button
+      type="button"
+      onClick={() => setShowAtsModal(true)}
+      className="flex items-center gap-2 rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm font-medium text-slate-700 transition-all hover:border-brand-200 hover:shadow-md dark:border-slate-700 dark:bg-slate-800 dark:text-slate-200"
+    >
+      <TrendingUp size={16} className={atsPillScore == null ? "text-slate-400" : atsScoreClass} />
+      <span className="text-slate-600 dark:text-slate-400">
+        ATS Score:{" "}
+        <span className={atsPillScore == null ? "text-slate-400" : atsScoreClass}>{atsPillScore == null ? "—" : atsPillScore}</span>
+      </span>
+    </button>
+  );
+
   return (
     <div className="flex h-full bg-slate-50 dark:bg-slate-900 font-sans relative overflow-hidden">
       {/* Toast Notification */}
@@ -1523,201 +1690,199 @@ const ResumeEditor: React.FC<ResumeEditorProps> = ({
           </button>
         </div>
       )}
-      {/* Top Toolbar */}
-      <div className="absolute top-0 right-0 left-0 h-16 bg-white/80 dark:bg-slate-900/80 backdrop-blur-md border-b border-slate-200 dark:border-slate-700 z-20 flex items-center justify-between gap-4 px-6">
-        <div className="flex min-w-0 flex-1 items-center gap-4">
-          <button
-            onClick={onBack}
-            className="shrink-0 p-2 hover:bg-slate-100 dark:hover:bg-slate-800 rounded-full transition-colors text-slate-500 dark:text-slate-400"
-          >
-            <ArrowLeft size={20} />
-          </button>
-          <div className="min-w-0 flex-1 max-w-xl">
-            <input
-              value={resume.title}
-              onChange={e => updateResume(prev => ({ ...prev, title: e.target.value }))}
-              className="w-full truncate font-medium text-slate-900 dark:text-white bg-transparent border-b border-transparent hover:border-slate-300 dark:hover:border-slate-600 focus:border-brand-500 outline-none transition-all px-1 py-0.5"
-              placeholder="Untitled Resume"
-            />
-          </div>
+      {/* Top Toolbar — replaced by Prepare return bar when editing from application modal */}
+      {prepareReturn ? (
+        <div className="absolute top-0 right-0 left-0 z-20">
+          <PrepareApplicationReturnBar
+            session={prepareReturn}
+            onSaveAndReturn={() => void handleSaveAndReturnToPrepare()}
+            onDismiss={handleDismissPrepareReturn}
+            actions={
+              <>
+                {resumeToolbarSaveStatus}
+                {resumeToolbarTemplateButton}
+                {resumeToolbarAtsButton}
+              </>
+            }
+          />
         </div>
+      ) : (
+        <div className="absolute top-0 right-0 left-0 h-16 bg-white/80 dark:bg-slate-900/80 backdrop-blur-md border-b border-slate-200 dark:border-slate-700 z-20 flex items-center justify-between gap-4 px-6">
+          <div className="flex min-w-0 flex-1 items-center gap-4">
+            <button
+              onClick={onBack}
+              className="shrink-0 p-2 hover:bg-slate-100 dark:hover:bg-slate-800 rounded-full transition-colors text-slate-500 dark:text-slate-400"
+            >
+              <ArrowLeft size={20} />
+            </button>
+            <div className="min-w-0 flex-1 max-w-xl">
+              <input
+                value={resume.title}
+                onChange={e => updateResume(prev => ({ ...prev, title: e.target.value }))}
+                className="w-full truncate font-medium text-slate-900 dark:text-white bg-transparent border-b border-transparent hover:border-slate-300 dark:hover:border-slate-600 focus:border-brand-500 outline-none transition-all px-1 py-0.5"
+                placeholder="Untitled Resume"
+              />
+            </div>
+          </div>
 
-        <div className="flex shrink-0 items-center gap-3">
-          {saveStatusLabel ? <span className="text-xs text-slate-500 dark:text-slate-400 whitespace-nowrap">{saveStatusLabel}</span> : null}
-          <button
-            type="button"
-            onClick={() => setShowKnowledgeBaseModal(true)}
-            className="flex items-center justify-center p-2 rounded-lg border border-slate-200 dark:border-slate-700 hover:border-brand-300 text-slate-600 dark:text-slate-300 bg-white dark:bg-slate-800 transition-all hover:shadow-sm"
-            title="Resume knowledge base"
-            aria-label="Resume knowledge base"
-          >
-            <Info size={18} className="text-brand-600" />
-          </button>
-          {/* Template Button */}
-          <button
-            onClick={() => setShowTemplateModal(true)}
-            className="flex items-center gap-2 px-3 py-2 rounded-lg border border-slate-200 dark:border-slate-700 hover:border-brand-300 text-sm font-medium text-slate-700 dark:text-slate-200 bg-white dark:bg-slate-800 transition-all hover:shadow-sm"
-          >
-            <LayoutTemplate size={16} />
-            <span className="capitalize">{TEMPLATES.find(t => t.id === resume.templateId)?.name || "Template"}</span>
-            <ChevronDown size={14} className="text-slate-400" />
-          </button>
-
-          {/* ATS Score Pill */}
-          <button
-            onClick={() => setShowAtsModal(true)}
-            className="flex items-center gap-2 px-3 py-2 rounded-lg border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 text-sm font-medium text-slate-700 dark:text-slate-200 transition-all hover:shadow-md hover:border-brand-200"
-          >
-            <TrendingUp size={16} className={atsPillScore == null ? "text-slate-400" : atsScoreClass} />
-            <span className="text-slate-600 dark:text-slate-400">
-              ATS Score:{" "}
-              <span className={atsPillScore == null ? "text-slate-400" : atsScoreClass}>{atsPillScore == null ? "—" : atsPillScore}</span>
-            </span>
-          </button>
-
-          <div className="relative" ref={exportDropdownRef}>
+          <div className="flex shrink-0 items-center gap-3">
+            {resumeToolbarSaveStatus}
             <button
               type="button"
-              onClick={handleExportClick}
-              title={validationErrors.length > 0 ? "Please fill in all required fields" : "Export Resume"}
-              className={`flex items-center gap-2 px-4 py-2 text-white rounded-lg font-medium text-sm transition-all shadow-md ${validationErrors.length > 0 ? "bg-slate-400 hover:bg-slate-500" : "bg-slate-900 hover:bg-slate-800 hover:shadow-lg hover:-translate-y-0.5"}`}
+              onClick={() => setShowKnowledgeBaseModal(true)}
+              className="flex items-center justify-center p-2 rounded-lg border border-slate-200 dark:border-slate-700 hover:border-brand-300 text-slate-600 dark:text-slate-300 bg-white dark:bg-slate-800 transition-all hover:shadow-sm"
+              title="Resume knowledge base"
+              aria-label="Resume knowledge base"
             >
-              <Share2 size={16} /> Share & Download
+              <Info size={18} className="text-brand-600" />
             </button>
+            {resumeToolbarTemplateButton}
+            {resumeToolbarAtsButton}
 
-            {isExportDropdownOpen && (
-              <div
-                className={`absolute right-0 mt-2 rounded-md border border-slate-200 bg-white shadow-lg z-50 dark:border-slate-700 dark:bg-slate-900 ${
-                  inlinePublishStep === "form" ? "w-80 p-3" : "w-56 py-1"
-                }`}
+            <div className="relative" ref={exportDropdownRef}>
+              <button
+                type="button"
+                onClick={handleExportClick}
+                title={validationErrors.length > 0 ? "Please fill in all required fields" : "Export Resume"}
+                className={`flex items-center gap-2 px-4 py-2 text-white rounded-lg font-medium text-sm transition-all shadow-md ${validationErrors.length > 0 ? "bg-slate-400 hover:bg-slate-500" : "bg-slate-900 hover:bg-slate-800 hover:shadow-lg hover:-translate-y-0.5"}`}
               >
-                {inlinePublishStep === "cta" ? (
-                  <>
-                    <div
-                      className="w-full"
-                      onClick={() => {
-                        if (resumeId) recordResumeDownload(resumeId).catch(() => {});
-                        setIsExportDropdownOpen(false);
-                      }}
-                    >
-                      <PDFDownloadLink
-                        document={<ResumePDF data={resume} />}
-                        fileName={`${(resume.profile.fullName ?? "Resume").replace(/\s+/g, "_")}_Resume.pdf`}
-                        className="flex w-full items-center gap-3 px-4 py-2.5 text-sm text-slate-700 transition-colors hover:bg-slate-50 dark:text-slate-200 dark:hover:bg-slate-800"
+                <Share2 size={16} /> Share & Download
+              </button>
+
+              {isExportDropdownOpen && (
+                <div
+                  className={`absolute right-0 mt-2 rounded-md border border-slate-200 bg-white shadow-lg z-50 dark:border-slate-700 dark:bg-slate-900 ${
+                    inlinePublishStep === "form" ? "w-80 p-3" : "w-56 py-1"
+                  }`}
+                >
+                  {inlinePublishStep === "cta" ? (
+                    <>
+                      <div
+                        className="w-full"
+                        onClick={() => {
+                          if (resumeId) recordResumeDownload(resumeId).catch(() => {});
+                          setIsExportDropdownOpen(false);
+                        }}
                       >
-                        {({ loading }) => (
-                          <>
-                            <Download size={16} className="text-slate-500" />
-                            <span className="font-medium">{loading ? "Preparing PDF…" : "Download PDF"}</span>
-                            {loading && (
-                              <div className="ml-auto h-4 w-4 animate-spin rounded-full border-2 border-brand-500 border-t-transparent" />
-                            )}
-                          </>
-                        )}
-                      </PDFDownloadLink>
-                    </div>
-                    <button
-                      type="button"
-                      onClick={handleEnterPublishMode}
-                      disabled={!resumeId?.trim()}
-                      className="flex w-full items-center gap-3 px-4 py-2.5 text-sm text-slate-700 transition-colors hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-50 dark:text-slate-200 dark:hover:bg-slate-800"
-                    >
-                      <Share2 size={16} className="text-slate-500" />
-                      <span className="font-medium">Share Public Link</span>
-                    </button>
-                  </>
-                ) : (
-                  <div className="space-y-3 text-left">
-                    <button
-                      type="button"
-                      onClick={() => setInlinePublishStep("cta")}
-                      className="flex items-center gap-1.5 text-xs font-medium text-slate-500 transition-colors hover:text-slate-700 dark:hover:text-slate-300"
-                    >
-                      <ArrowLeft size={14} />
-                      Back
-                    </button>
-
-                    <div>
-                      <p className="text-sm font-semibold text-slate-900 dark:text-white">Publish your resume</p>
-                      <p className="mt-0.5 text-xs text-slate-500 dark:text-slate-400">Choose a public link name, then share</p>
-                    </div>
-
-                    <div className="space-y-2">
-                      <label htmlFor="resume-public-slug" className="block text-xs font-medium text-slate-600 dark:text-slate-300">
-                        Public link name
-                      </label>
-                      <p id="resume-public-slug-hint" className="text-xs text-slate-500 dark:text-slate-400">
-                        Use letters, numbers, or hyphens.
-                      </p>
-                      <div className="flex items-center gap-2 rounded-lg border border-slate-200 bg-white px-3 py-2 dark:border-slate-700 dark:bg-slate-900">
-                        <span className="shrink-0 truncate font-mono text-xs text-slate-500" aria-hidden>
-                          {typeof window !== "undefined" ? `${window.location.origin}/resume/` : "/resume/"}
-                        </span>
-                        <input
-                          id="resume-public-slug"
-                          type="text"
-                          autoComplete="off"
-                          placeholder="your-name"
-                          value={slugInput}
-                          onChange={e => {
-                            setSlugInput(e.target.value);
-                            if (publishError) setPublishError(null);
-                            if (publishShowPublished) setPublishShowPublished(false);
-                          }}
-                          onKeyDown={handlePublishSlugKeyDown}
-                          disabled={publishSubmitting || publishShowPublished}
-                          aria-describedby="resume-public-slug-hint"
-                          aria-invalid={Boolean(publishError)}
-                          className="min-w-0 flex-1 bg-transparent text-sm text-slate-900 outline-none placeholder:text-slate-400 disabled:opacity-60 dark:text-white"
-                        />
+                        <PDFDownloadLink
+                          document={<ResumePDF data={resume} />}
+                          fileName={`${(resume.profile.fullName ?? "Resume").replace(/\s+/g, "_")}_Resume.pdf`}
+                          className="flex w-full items-center gap-3 px-4 py-2.5 text-sm text-slate-700 transition-colors hover:bg-slate-50 dark:text-slate-200 dark:hover:bg-slate-800"
+                        >
+                          {({ loading }) => (
+                            <>
+                              <Download size={16} className="text-slate-500" />
+                              <span className="font-medium">{loading ? "Preparing PDF…" : "Download PDF"}</span>
+                              {loading && (
+                                <div className="ml-auto h-4 w-4 animate-spin rounded-full border-2 border-brand-500 border-t-transparent" />
+                              )}
+                            </>
+                          )}
+                        </PDFDownloadLink>
                       </div>
-                      {publishError ? (
-                        <p className="flex items-center gap-1 text-xs text-red-600 dark:text-red-400" role="alert">
-                          <AlertCircle size={14} className="shrink-0" />
-                          {publishError}
-                        </p>
-                      ) : null}
-                    </div>
+                      <button
+                        type="button"
+                        onClick={handleEnterPublishMode}
+                        disabled={!resumeId?.trim()}
+                        className="flex w-full items-center gap-3 px-4 py-2.5 text-sm text-slate-700 transition-colors hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-50 dark:text-slate-200 dark:hover:bg-slate-800"
+                      >
+                        <Share2 size={16} className="text-slate-500" />
+                        <span className="font-medium">Share Public Link</span>
+                      </button>
+                    </>
+                  ) : (
+                    <div className="space-y-3 text-left">
+                      <button
+                        type="button"
+                        onClick={() => setInlinePublishStep("cta")}
+                        className="flex items-center gap-1.5 text-xs font-medium text-slate-500 transition-colors hover:text-slate-700 dark:hover:text-slate-300"
+                      >
+                        <ArrowLeft size={14} />
+                        Back
+                      </button>
 
-                    <button
-                      type="button"
-                      onClick={() => void handleSharePublicLinkSubmit()}
-                      disabled={publishSubmitting || publishShowPublished || !slugInput.trim()}
-                      aria-busy={publishSubmitting}
-                      className={`flex w-full items-center justify-center gap-2 rounded-lg px-4 py-2.5 text-sm font-semibold transition-colors ${
-                        publishShowPublished
-                          ? "cursor-default bg-emerald-600 text-white"
-                          : publishSubmitting
-                            ? "cursor-wait bg-brand-600 text-white"
-                            : !slugInput.trim()
-                              ? "cursor-not-allowed bg-slate-300 text-slate-600 dark:bg-slate-600 dark:text-slate-300"
-                              : "bg-brand-600 text-white hover:bg-brand-700"
-                      }`}
-                    >
-                      {publishSubmitting ? (
-                        <>
-                          <span>Publishing…</span>
-                          <div
-                            className="h-4 w-4 shrink-0 animate-spin rounded-full border-2 border-white border-t-transparent"
-                            aria-hidden
+                      <div>
+                        <p className="text-sm font-semibold text-slate-900 dark:text-white">Publish your resume</p>
+                        <p className="mt-0.5 text-xs text-slate-500 dark:text-slate-400">Choose a public link name, then share</p>
+                      </div>
+
+                      <div className="space-y-2">
+                        <label htmlFor="resume-public-slug" className="block text-xs font-medium text-slate-600 dark:text-slate-300">
+                          Public link name
+                        </label>
+                        <p id="resume-public-slug-hint" className="text-xs text-slate-500 dark:text-slate-400">
+                          Use letters, numbers, or hyphens.
+                        </p>
+                        <div className="flex items-center gap-2 rounded-lg border border-slate-200 bg-white px-3 py-2 dark:border-slate-700 dark:bg-slate-900">
+                          <span className="shrink-0 truncate font-mono text-xs text-slate-500" aria-hidden>
+                            {typeof window !== "undefined" ? `${window.location.origin}/resume/` : "/resume/"}
+                          </span>
+                          <input
+                            id="resume-public-slug"
+                            type="text"
+                            autoComplete="off"
+                            placeholder="your-name"
+                            value={slugInput}
+                            onChange={e => {
+                              setSlugInput(e.target.value);
+                              if (publishError) setPublishError(null);
+                              if (publishShowPublished) setPublishShowPublished(false);
+                            }}
+                            onKeyDown={handlePublishSlugKeyDown}
+                            disabled={publishSubmitting || publishShowPublished}
+                            aria-describedby="resume-public-slug-hint"
+                            aria-invalid={Boolean(publishError)}
+                            className="min-w-0 flex-1 bg-transparent text-sm text-slate-900 outline-none placeholder:text-slate-400 disabled:opacity-60 dark:text-white"
                           />
-                        </>
-                      ) : publishShowPublished ? (
-                        <>
-                          <Check size={18} className="shrink-0" aria-hidden />
-                          <span>Published</span>
-                        </>
-                      ) : (
-                        "Publish"
-                      )}
-                    </button>
-                  </div>
-                )}
-              </div>
-            )}
+                        </div>
+                        {publishError ? (
+                          <p className="flex items-center gap-1 text-xs text-red-600 dark:text-red-400" role="alert">
+                            <AlertCircle size={14} className="shrink-0" />
+                            {publishError}
+                          </p>
+                        ) : null}
+                      </div>
+
+                      <button
+                        type="button"
+                        onClick={() => void handleSharePublicLinkSubmit()}
+                        disabled={publishSubmitting || publishShowPublished || !slugInput.trim()}
+                        aria-busy={publishSubmitting}
+                        className={`flex w-full items-center justify-center gap-2 rounded-lg px-4 py-2.5 text-sm font-semibold transition-colors ${
+                          publishShowPublished
+                            ? "cursor-default bg-emerald-600 text-white"
+                            : publishSubmitting
+                              ? "cursor-wait bg-brand-600 text-white"
+                              : !slugInput.trim()
+                                ? "cursor-not-allowed bg-slate-300 text-slate-600 dark:bg-slate-600 dark:text-slate-300"
+                                : "bg-brand-600 text-white hover:bg-brand-700"
+                        }`}
+                      >
+                        {publishSubmitting ? (
+                          <>
+                            <span>Publishing…</span>
+                            <div
+                              className="h-4 w-4 shrink-0 animate-spin rounded-full border-2 border-white border-t-transparent"
+                              aria-hidden
+                            />
+                          </>
+                        ) : publishShowPublished ? (
+                          <>
+                            <Check size={18} className="shrink-0" aria-hidden />
+                            <span>Published</span>
+                          </>
+                        ) : (
+                          "Publish"
+                        )}
+                      </button>
+                    </div>
+                  )}
+                </div>
+              )}
+            </div>
           </div>
         </div>
-      </div>
+      )}
 
       <div className="flex-1 flex overflow-hidden pt-16">
         {" "}
@@ -2050,6 +2215,14 @@ const ResumeEditor: React.FC<ResumeEditorProps> = ({
                       )}
                     </div>
                   ))}
+
+                  <button
+                    type="button"
+                    onClick={addExperience}
+                    className="w-full py-3 rounded-xl border-2 border-dashed border-slate-200 dark:border-slate-700 hover:border-brand-300 text-slate-500 dark:text-slate-400 hover:text-brand-600 font-medium flex items-center justify-center gap-2 transition-all"
+                  >
+                    <Plus size={18} /> Add Experience
+                  </button>
                 </div>
               )}
 
@@ -2229,6 +2402,14 @@ const ResumeEditor: React.FC<ResumeEditorProps> = ({
                       )}
                     </div>
                   ))}
+
+                  <button
+                    type="button"
+                    onClick={addEducation}
+                    className="w-full py-3 rounded-xl border-2 border-dashed border-slate-200 dark:border-slate-700 hover:border-brand-300 text-slate-500 dark:text-slate-400 hover:text-brand-600 font-medium flex items-center justify-center gap-2 transition-all"
+                  >
+                    <Plus size={18} /> Add Education
+                  </button>
                 </div>
               )}
 
@@ -2272,8 +2453,8 @@ const ResumeEditor: React.FC<ResumeEditorProps> = ({
                         <input
                           value={cat.name}
                           onChange={e => updateSkillCategory(cat.id, e.target.value)}
-                          placeholder="Category Name (e.g. Languages)"
-                          className="font-medium text-slate-900 dark:text-white bg-transparent outline-none flex-1 focus:border-b border-brand-500 pb-1"
+                          placeholder="Category name (e.g. Languages)"
+                          className="font-medium text-slate-900 dark:text-white bg-transparent outline-none flex-1 focus:border-b border-brand-500 pb-1 placeholder:text-slate-400 dark:placeholder:text-slate-500"
                         />
                         <button
                           onClick={() => requestRemoveSkillCategory(cat.id)}
@@ -2295,11 +2476,7 @@ const ResumeEditor: React.FC<ResumeEditorProps> = ({
                                 value={skill.name}
                                 onChange={e => updateSkill(skill.id, e.target.value)}
                                 placeholder="Skill name"
-                                className="min-w-0 bg-transparent text-sm focus:outline-none dark:text-white dark:placeholder:text-slate-400"
-                                style={{
-                                  width: `${Math.min(28, Math.max(2, skill.name.length))}ch`,
-                                  maxWidth: "100%",
-                                }}
+                                className="min-w-[4ch] max-w-full flex-1 bg-transparent text-sm focus:outline-none dark:text-white dark:placeholder:text-slate-400"
                               />
                               <button
                                 onClick={() => removeSkill(skill.id)}
@@ -2478,6 +2655,14 @@ const ResumeEditor: React.FC<ResumeEditorProps> = ({
                       )}
                     </div>
                   ))}
+
+                  <button
+                    type="button"
+                    onClick={addProject}
+                    className="w-full py-3 rounded-xl border-2 border-dashed border-slate-200 dark:border-slate-700 hover:border-brand-300 text-slate-500 dark:text-slate-400 hover:text-brand-600 font-medium flex items-center justify-center gap-2 transition-all"
+                  >
+                    <Plus size={18} /> Add Project
+                  </button>
                 </div>
               )}
 
@@ -2606,10 +2791,10 @@ const ResumeEditor: React.FC<ResumeEditorProps> = ({
                             Section Title
                           </label>
                           <input
-                            value={sec.title}
+                            value={normalizeCustomSectionTitle(sec.title)}
                             onChange={e => updateCustomSectionTitle(sec.id, e.target.value)}
-                            className={`text-xl font-medium text-slate-900 dark:text-white bg-transparent border-b hover:border-slate-300 dark:hover:border-slate-600 focus:border-brand-500 focus:ring-0 px-0 w-full transition-all dark:placeholder:text-slate-500 ${getError("custom", "title", sec.id) ? "border-red-500" : "border-transparent"}`}
-                            placeholder="e.g. Projects, Volunteer, Awards"
+                            className={`text-xl font-medium text-slate-900 dark:text-white bg-transparent border-b hover:border-slate-300 dark:hover:border-slate-600 focus:border-brand-500 focus:ring-0 px-0 w-full transition-all placeholder:text-slate-900/55 dark:placeholder:text-white/55 ${getError("custom", "title", sec.id) ? "border-red-500" : "border-transparent"}`}
+                            placeholder="Untitled Section"
                           />
                           <ResumeFieldError
                             errors={validationErrors}
@@ -2661,7 +2846,7 @@ const ResumeEditor: React.FC<ResumeEditorProps> = ({
                             onClick={() => toggleItemExpand(item.id)}
                           >
                             <h3 className="text-sm font-medium text-slate-700 dark:text-slate-200 truncate pr-4">
-                              {item.title || "Untitled Item"}
+                              {normalizeCustomItemTitle(item.title) || "Activity Name"}
                             </h3>
                           </div>
                           <div className="flex items-center gap-1 shrink-0">
@@ -2689,10 +2874,10 @@ const ResumeEditor: React.FC<ResumeEditorProps> = ({
                             <div className="grid grid-cols-1 gap-3">
                               <div className="flex-1">
                                 <input
-                                  value={item.title}
+                                  value={normalizeCustomItemTitle(item.title)}
                                   onChange={e => updateCustomSectionItem(sec.id, item.id, "title", e.target.value)}
-                                  className={`w-full p-2 bg-transparent text-sm font-medium border-b hover:border-slate-300 dark:hover:border-slate-600 outline-none transition-all dark:text-white dark:placeholder:text-slate-400 ${getError("custom", "title", item.id) ? "border-red-500" : "border-transparent"}`}
-                                  placeholder="Activity / Project Name"
+                                  className={`w-full p-2 bg-transparent text-sm font-medium border-b hover:border-slate-300 dark:hover:border-slate-600 outline-none transition-all dark:text-white placeholder:text-slate-800/60 dark:placeholder:text-slate-200/60 ${getError("custom", "title", item.id) ? "border-red-500" : "border-transparent"}`}
+                                  placeholder="Activity Name"
                                 />
                                 <ResumeFieldError
                                   errors={validationErrors}
@@ -2786,11 +2971,12 @@ const ResumeEditor: React.FC<ResumeEditorProps> = ({
                             )}
 
                             <TiptapEditor
-                              placeholder="Description / Bullet Points..."
-                              value={item.description}
+                              placeholder="Description..."
+                              value={normalizeCustomDescription(item.description)}
                               onChange={val => updateCustomSectionItem(sec.id, item.id, "description", val)}
                               onImprove={onImprove}
                               unibotImproveTarget={{ section: "custom", resumeId, entryId: item.id }}
+                              wrapperClassName="[&_.ProseMirror_p.is-empty:first-child::before]:text-slate-700/60 [&_.ProseMirror_p.is-editor-empty:first-child::before]:text-slate-700/60 dark:[&_.ProseMirror_p.is-empty:first-child::before]:text-slate-300/60 dark:[&_.ProseMirror_p.is-editor-empty:first-child::before]:text-slate-300/60"
                             />
                           </div>
                         )}
@@ -2859,135 +3045,145 @@ const ResumeEditor: React.FC<ResumeEditorProps> = ({
       </div>
 
       {/* Template Gallery Modal */}
-      {showTemplateModal && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/50 backdrop-blur-sm animate-in fade-in duration-200">
-          <div className="bg-slate-50 dark:bg-slate-900 w-full max-w-5xl h-[85vh] rounded-2xl shadow-2xl flex flex-col overflow-hidden border border-slate-200 dark:border-slate-800">
-            <div className="flex items-center justify-between p-6 bg-white dark:bg-slate-900 border-b border-slate-200 dark:border-slate-800">
-              <div>
-                <h2 className="text-2xl font-medium text-slate-900 dark:text-white mb-1">Choosing a Template</h2>
-                <p className="text-slate-500 dark:text-slate-400">Select a design that fits your personal brand.</p>
-              </div>
-              <button
-                onClick={() => setShowTemplateModal(false)}
-                className="p-2 hover:bg-slate-100 dark:hover:bg-slate-800 rounded-full transition-colors text-slate-500 dark:text-slate-400"
-              >
-                <X size={24} />
-              </button>
-            </div>
+      {showTemplateModal && typeof document !== "undefined"
+        ? createPortal(
+            <div
+              className={`fixed inset-0 ${MODAL_OVERLAY_Z_CLASS} flex items-center justify-center bg-slate-900/50 backdrop-blur-sm animate-in fade-in duration-200`}
+            >
+              <div className="bg-slate-50 dark:bg-slate-900 w-full max-w-5xl h-[85vh] rounded-2xl shadow-2xl flex flex-col overflow-hidden border border-slate-200 dark:border-slate-800">
+                <div className="flex items-center justify-between p-6 bg-white dark:bg-slate-900 border-b border-slate-200 dark:border-slate-800">
+                  <div>
+                    <h2 className="text-2xl font-medium text-slate-900 dark:text-white mb-1">Choosing a Template</h2>
+                    <p className="text-slate-500 dark:text-slate-400">Select a design that fits your personal brand.</p>
+                  </div>
+                  <button
+                    onClick={() => setShowTemplateModal(false)}
+                    className="p-2 hover:bg-slate-100 dark:hover:bg-slate-800 rounded-full transition-colors text-slate-500 dark:text-slate-400"
+                  >
+                    <X size={24} />
+                  </button>
+                </div>
 
-            <div className="flex-1 overflow-y-auto p-8 bg-slate-50 dark:bg-slate-950">
-              <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-8">
-                {templatePickerItems.map(t => (
-                  <div
-                    key={t.id}
-                    onClick={() => handleTemplateSelect(t.id)}
-                    className={`
+                <div className="flex-1 overflow-y-auto p-8 bg-slate-50 dark:bg-slate-950">
+                  <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-8">
+                    {templatePickerItems.map(t => (
+                      <div
+                        key={t.id}
+                        onClick={() => handleTemplateSelect(t.id)}
+                        className={`
                                             group relative rounded-xl border-2 transition-all duration-300 overflow-hidden bg-white dark:bg-slate-900 shadow-sm cursor-pointer
                                             ${resume.templateId === t.id ? "border-brand-500 ring-2 ring-brand-200 dark:ring-brand-900" : "border-transparent hover:border-brand-300 hover:shadow-lg hover:-translate-y-1"}
                                         `}
-                  >
-                    {/* Preview Thumbnail */}
-                    <div className={`h-48 ${t.color} relative overflow-hidden p-3`}>
-                      {TEMPLATE_THUMBNAILS[t.id] ? (
-                        <div className="relative h-full w-full overflow-hidden rounded-md bg-white shadow-[0_14px_34px_rgba(15,23,42,0.18)]">
-                          <img
-                            src={TEMPLATE_THUMBNAILS[t.id]}
-                            alt={`${t.name} template preview`}
-                            className="pointer-events-none block h-auto w-full max-w-none select-none"
-                            loading="lazy"
-                            draggable={false}
-                          />
+                      >
+                        {/* Preview Thumbnail */}
+                        <div className={`h-48 ${t.color} relative overflow-hidden p-3`}>
+                          {TEMPLATE_THUMBNAILS[t.id] ? (
+                            <div className="relative h-full w-full overflow-hidden rounded-md bg-white shadow-[0_14px_34px_rgba(15,23,42,0.18)]">
+                              <img
+                                src={TEMPLATE_THUMBNAILS[t.id]}
+                                alt={`${t.name} template preview`}
+                                className="pointer-events-none block h-auto w-full max-w-none select-none"
+                                loading="lazy"
+                                draggable={false}
+                              />
+                            </div>
+                          ) : (
+                            <div className="w-full h-full bg-white shadow-sm rounded-md opacity-80 flex flex-col gap-2 p-2 scale-90 origin-top">
+                              <div className="w-1/2 h-2 bg-slate-200 rounded"></div>
+                              <div className="w-3/4 h-2 bg-slate-100 rounded"></div>
+                              <div className="mt-4 space-y-1">
+                                <div className="w-full h-1 bg-slate-100 rounded"></div>
+                                <div className="w-full h-1 bg-slate-100 rounded"></div>
+                                <div className="w-2/3 h-1 bg-slate-100 rounded"></div>
+                              </div>
+                            </div>
+                          )}
+                          {recommendedTemplate === t.id && (
+                            <div className="absolute top-2 left-2 bg-amber-400 text-amber-900 text-[10px] font-semibold px-2 py-0.5 rounded-full shadow-sm flex items-center gap-1">
+                              <Star size={10} fill="currentColor" /> RECOMMENDED
+                            </div>
+                          )}
+                          {resume.templateId === t.id && (
+                            <div className="absolute top-2 right-2 bg-brand-500 text-white p-1 rounded-full shadow-lg">
+                              <Check size={16} />
+                            </div>
+                          )}
                         </div>
-                      ) : (
-                        <div className="w-full h-full bg-white shadow-sm rounded-md opacity-80 flex flex-col gap-2 p-2 scale-90 origin-top">
-                          <div className="w-1/2 h-2 bg-slate-200 rounded"></div>
-                          <div className="w-3/4 h-2 bg-slate-100 rounded"></div>
-                          <div className="mt-4 space-y-1">
-                            <div className="w-full h-1 bg-slate-100 rounded"></div>
-                            <div className="w-full h-1 bg-slate-100 rounded"></div>
-                            <div className="w-2/3 h-1 bg-slate-100 rounded"></div>
-                          </div>
+                        <div className="p-4 bg-white dark:bg-slate-900 border-t border-slate-100 dark:border-slate-800">
+                          <h3 className="font-medium text-slate-900 dark:text-white">{t.name}</h3>
+                          <p className="text-xs text-slate-500 dark:text-slate-400">{t.description}</p>
                         </div>
-                      )}
-                      {recommendedTemplate === t.id && (
-                        <div className="absolute top-2 left-2 bg-amber-400 text-amber-900 text-[10px] font-semibold px-2 py-0.5 rounded-full shadow-sm flex items-center gap-1">
-                          <Star size={10} fill="currentColor" /> RECOMMENDED
-                        </div>
-                      )}
-                      {resume.templateId === t.id && (
-                        <div className="absolute top-2 right-2 bg-brand-500 text-white p-1 rounded-full shadow-lg">
-                          <Check size={16} />
-                        </div>
-                      )}
-                    </div>
-                    <div className="p-4 bg-white dark:bg-slate-900 border-t border-slate-100 dark:border-slate-800">
-                      <h3 className="font-medium text-slate-900 dark:text-white">{t.name}</h3>
-                      <p className="text-xs text-slate-500 dark:text-slate-400">{t.description}</p>
-                    </div>
+                      </div>
+                    ))}
                   </div>
-                ))}
+                </div>
               </div>
-            </div>
-          </div>
-        </div>
-      )}
+            </div>,
+            document.body
+          )
+        : null}
 
       {/* Preview Modal */}
-      {showPreview && (
-        <div className="fixed inset-0 z-[60] bg-slate-900/95 flex flex-col items-center justify-center overflow-hidden animate-in fade-in duration-200">
-          <div className="absolute top-6 flex items-center gap-4 bg-slate-800/80 backdrop-blur rounded-full px-6 py-3 shadow-2xl z-50 border border-slate-700">
-            <button
-              onClick={() => setPreviewScale(s => Math.max(0.3, s - 0.1))}
-              className="p-2 text-slate-300 hover:text-white hover:bg-slate-700 rounded-full transition-colors"
-            >
-              <ZoomOut size={20} />
-            </button>
-            <span className="text-white font-mono text-sm min-w-[3ch] text-center select-none">{Math.round(previewScale * 100)}%</span>
-            <button
-              onClick={() => setPreviewScale(s => Math.min(2.5, s + 0.1))}
-              className="p-2 text-slate-300 hover:text-white hover:bg-slate-700 rounded-full transition-colors"
-            >
-              <ZoomIn size={20} />
-            </button>
-            <div className="w-px h-6 bg-slate-600 mx-2"></div>
-            <button
-              onClick={() => {
-                setPreviewScale(0.8);
-                setPreviewOffset({ x: 0, y: 0 });
-              }}
-              className="p-2 text-slate-300 hover:text-white hover:bg-slate-700 rounded-full transition-colors"
-            >
-              <RotateCcw size={20} />
-            </button>
-            <div className="w-px h-6 bg-slate-600 mx-2"></div>
-            <button
-              onClick={() => setShowPreview(false)}
-              className="p-2 text-red-400 hover:text-red-300 hover:bg-red-900/20 rounded-full transition-colors"
-            >
-              <X size={20} />
-            </button>
-          </div>
-
-          <div
-            className="w-full h-full flex items-center justify-center cursor-move overflow-hidden active:cursor-grabbing"
-            onMouseDown={handleMouseDown}
-            onMouseMove={handleMouseMove}
-            onMouseUp={handleMouseUp}
-            onMouseLeave={handleMouseUp}
-            onWheel={handleWheel}
-          >
+      {showPreview && typeof document !== "undefined"
+        ? createPortal(
             <div
-              style={{
-                transform: `translate(${previewOffset.x}px, ${previewOffset.y}px) scale(${previewScale})`,
-                transition: isDragging ? "none" : "transform 0.1s ease-out",
-              }}
-              className="origin-center shadow-2xl bg-white"
+              className={`fixed inset-0 ${MODAL_OVERLAY_Z_CLASS} bg-slate-900/95 flex flex-col items-center justify-center overflow-hidden animate-in fade-in duration-200`}
             >
-              <ResumePDFPreview data={resumeForPreview} highlights={pdfHighlightRegions} />
-            </div>
-          </div>
-        </div>
-      )}
+              <div className="absolute top-6 flex items-center gap-4 bg-slate-800/80 backdrop-blur rounded-full px-6 py-3 shadow-2xl z-50 border border-slate-700">
+                <button
+                  onClick={() => setPreviewScale(s => Math.max(0.3, s - 0.1))}
+                  className="p-2 text-slate-300 hover:text-white hover:bg-slate-700 rounded-full transition-colors"
+                >
+                  <ZoomOut size={20} />
+                </button>
+                <span className="text-white font-mono text-sm min-w-[3ch] text-center select-none">{Math.round(previewScale * 100)}%</span>
+                <button
+                  onClick={() => setPreviewScale(s => Math.min(2.5, s + 0.1))}
+                  className="p-2 text-slate-300 hover:text-white hover:bg-slate-700 rounded-full transition-colors"
+                >
+                  <ZoomIn size={20} />
+                </button>
+                <div className="w-px h-6 bg-slate-600 mx-2"></div>
+                <button
+                  onClick={() => {
+                    setPreviewScale(0.8);
+                    setPreviewOffset({ x: 0, y: 0 });
+                  }}
+                  className="p-2 text-slate-300 hover:text-white hover:bg-slate-700 rounded-full transition-colors"
+                >
+                  <RotateCcw size={20} />
+                </button>
+                <div className="w-px h-6 bg-slate-600 mx-2"></div>
+                <button
+                  onClick={() => setShowPreview(false)}
+                  className="p-2 text-red-400 hover:text-red-300 hover:bg-red-900/20 rounded-full transition-colors"
+                >
+                  <X size={20} />
+                </button>
+              </div>
+
+              <div
+                className="w-full h-full flex items-center justify-center cursor-move overflow-hidden active:cursor-grabbing"
+                onMouseDown={handleMouseDown}
+                onMouseMove={handleMouseMove}
+                onMouseUp={handleMouseUp}
+                onMouseLeave={handleMouseUp}
+                onWheel={handleWheel}
+              >
+                <div
+                  style={{
+                    transform: `translate(${previewOffset.x}px, ${previewOffset.y}px) scale(${previewScale})`,
+                    transition: isDragging ? "none" : "transform 0.1s ease-out",
+                  }}
+                  className="origin-center shadow-2xl bg-white"
+                >
+                  <ResumePDFPreview data={resumeForPreview} highlights={pdfHighlightRegions} />
+                </div>
+              </div>
+            </div>,
+            document.body
+          )
+        : null}
 
       {tooltip && (
         <div
@@ -3004,199 +3200,210 @@ const ResumeEditor: React.FC<ResumeEditorProps> = ({
       )}
 
       {/* ATS Score Modal */}
-      {showAtsModal && (
-        <div className="fixed inset-0 z-[70] flex items-center justify-center bg-slate-900/50 backdrop-blur-sm animate-in fade-in duration-200 p-4 sm:p-6">
-          <div className="bg-white dark:bg-slate-900 w-full max-w-3xl min-h-[min(640px,85vh)] max-h-[90vh] rounded-2xl shadow-2xl flex flex-col overflow-hidden border border-slate-200 dark:border-slate-800">
-            <div className="flex items-center justify-between px-8 py-6 border-b border-slate-100 dark:border-slate-800">
-              <h2 className="text-xl font-semibold text-slate-900 dark:text-white">ATS Score Report</h2>
-              <button
-                onClick={() => setShowAtsModal(false)}
-                className="p-2 hover:bg-slate-100 dark:hover:bg-slate-800 rounded-full transition-colors text-slate-500 dark:text-slate-400"
-              >
-                <X size={20} />
-              </button>
-            </div>
+      {showAtsModal && typeof document !== "undefined"
+        ? createPortal(
+            <div
+              className={`fixed inset-0 ${MODAL_OVERLAY_Z_CLASS} flex items-center justify-center bg-slate-900/50 backdrop-blur-sm animate-in fade-in duration-200 p-4 sm:p-6`}
+            >
+              <div className="bg-white dark:bg-slate-900 w-full max-w-3xl min-h-[min(640px,85vh)] max-h-[90vh] rounded-2xl shadow-2xl flex flex-col overflow-hidden border border-slate-200 dark:border-slate-800">
+                <div className="flex items-center justify-between px-8 py-6 border-b border-slate-100 dark:border-slate-800">
+                  <h2 className="text-xl font-semibold text-slate-900 dark:text-white">ATS Score Report</h2>
+                  <button
+                    onClick={() => setShowAtsModal(false)}
+                    className="p-2 hover:bg-slate-100 dark:hover:bg-slate-800 rounded-full transition-colors text-slate-500 dark:text-slate-400"
+                  >
+                    <X size={20} />
+                  </button>
+                </div>
 
-            <div className={`px-8 py-8 ${atsVm ? atsHeaderBg : "bg-slate-50/80 dark:bg-slate-800/50"}`}>
-              <div className="flex flex-col sm:flex-row sm:items-start sm:justify-between gap-6">
-                <div className="flex-1 min-w-0">
-                  <span className="text-sm font-medium uppercase tracking-wider opacity-70 text-slate-700 dark:text-slate-300">
-                    Resume Strength
-                  </span>
-                  <div className="mt-4 w-full h-3 bg-white/50 rounded-full overflow-hidden border border-black/5">
-                    <div
-                      className={`h-full rounded-full transition-all duration-1000 ease-out ${atsVm ? atsBarClass : "bg-slate-300"}`}
-                      style={{ width: `${atsVm?.score ?? 0}%` }}
-                    />
-                  </div>
-                  {atsVm && (
-                    <>
-                      {atsVm.scoringMode === "jd_blended" && atsVm.generalScore != null && atsVm.jdMatchScore != null ? (
-                        <p className="mt-3 text-xs text-slate-500 dark:text-slate-400">
-                          Resume quality {atsVm.generalScore}/100 · Job match {atsVm.jdMatchScore}/100
-                        </p>
-                      ) : atsVm.scoringMode === "general_only" ? (
-                        <p className="mt-3 text-xs text-slate-500 dark:text-slate-400">General resume quality score</p>
-                      ) : null}
-                      <p className="mt-4 flex gap-2 text-sm leading-relaxed text-slate-600 dark:text-slate-300">
-                        <Quote size={16} className="mt-0.5 flex-shrink-0 opacity-50" />
-                        <span className="italic">{atsScoreQuote}</span>
-                      </p>
-                      {atsVm.score >= ATS_COMPLETE_THRESHOLD && (
-                        <p className="mt-2 text-xs font-medium text-green-700 dark:text-green-400">
-                          Meets the {ATS_COMPLETE_THRESHOLD}% completion threshold.
-                        </p>
+                <div className={`px-8 py-8 ${atsVm ? atsHeaderBg : "bg-slate-50/80 dark:bg-slate-800/50"}`}>
+                  <div className="flex flex-col sm:flex-row sm:items-start sm:justify-between gap-6">
+                    <div className="flex-1 min-w-0">
+                      <span className="text-sm font-medium uppercase tracking-wider opacity-70 text-slate-700 dark:text-slate-300">
+                        Resume Strength
+                      </span>
+                      <div className="mt-4 w-full h-3 bg-white/50 rounded-full overflow-hidden border border-black/5">
+                        <div
+                          className={`h-full rounded-full transition-all duration-1000 ease-out ${atsVm ? atsBarClass : "bg-slate-300"}`}
+                          style={{ width: `${atsVm?.score ?? 0}%` }}
+                        />
+                      </div>
+                      {atsVm && (
+                        <>
+                          {atsVm.scoringMode === "jd_blended" && atsVm.generalScore != null && atsVm.jdMatchScore != null ? (
+                            <p className="mt-3 text-xs text-slate-500 dark:text-slate-400">
+                              Resume quality {atsVm.generalScore}/100 · Job match {atsVm.jdMatchScore}/100
+                            </p>
+                          ) : atsVm.scoringMode === "general_only" ? (
+                            <p className="mt-3 text-xs text-slate-500 dark:text-slate-400">General resume quality score</p>
+                          ) : null}
+                          <p className="mt-4 flex gap-2 text-sm leading-relaxed text-slate-600 dark:text-slate-300">
+                            <Quote size={16} className="mt-0.5 flex-shrink-0 opacity-50" />
+                            <span className="italic">{atsScoreQuote}</span>
+                          </p>
+                          {atsVm.score >= ATS_COMPLETE_THRESHOLD && (
+                            <p className="mt-2 text-xs font-medium text-green-700 dark:text-green-400">
+                              Meets the {ATS_COMPLETE_THRESHOLD}% completion threshold.
+                            </p>
+                          )}
+                        </>
                       )}
+                    </div>
+                    <div className="flex flex-col items-end gap-2 flex-shrink-0">
+                      <span className="font-semibold text-5xl text-slate-900 dark:text-white tabular-nums">
+                        {atsScorePending && !atsVm ? "—" : atsVm != null ? atsVm.score : "—"}
+                        {atsVm != null && <span className="text-2xl text-slate-500 dark:text-slate-400 font-medium">/100</span>}
+                      </span>
+                      <button
+                        type="button"
+                        onClick={() => void handleRecalculate()}
+                        disabled={atsScorePending || atsScoreError || !atsRecalculateState.allowed}
+                        title={atsRecalculateState.message ?? "Recalculate your ATS score"}
+                        className="inline-flex items-center justify-center gap-2 px-5 py-2.5 rounded-lg border text-sm font-medium shadow-sm transition-colors disabled:opacity-50 disabled:cursor-not-allowed border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 text-slate-800 dark:text-slate-100 hover:bg-slate-50 dark:hover:bg-slate-800"
+                      >
+                        {atsScorePending ? (
+                          <Loader2 size={16} className="animate-spin text-brand-600" />
+                        ) : (
+                          <RefreshCw size={16} className="text-slate-500" />
+                        )}
+                        {atsScorePending ? "Recalculating…" : "Recalculate"}
+                      </button>
+                      {atsRecalculateState.message && !atsScorePending ? (
+                        <p className="max-w-[220px] text-right text-xs text-slate-500 dark:text-slate-400">{atsRecalculateState.message}</p>
+                      ) : atsCalcCount > 0 ? (
+                        <p className="max-w-[220px] text-right text-xs text-slate-500 dark:text-slate-400">
+                          Calculated {atsCalcCount} {atsCalcCount === 1 ? "time" : "times"}
+                        </p>
+                      ) : null}
+                    </div>
+                  </div>
+                </div>
+
+                {recalcError && (
+                  <div className="mx-8 flex items-start gap-3 rounded-lg border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-800 dark:border-red-900/50 dark:bg-red-950/40 dark:text-red-200">
+                    <AlertCircle size={18} className="mt-0.5 flex-shrink-0" />
+                    <div>
+                      <p className="font-medium">Recalculation failed</p>
+                      <p className="mt-0.5 opacity-90">{recalcError}</p>
+                    </div>
+                  </div>
+                )}
+
+                <div className="flex-1 px-8 py-6 space-y-8 overflow-y-auto min-h-0 scrollbar-on-hover">
+                  {(atsScorePending || atsCacheLoading) && !atsVm && (
+                    <div className="flex flex-col items-center justify-center gap-3 py-12 text-slate-500">
+                      <Loader2 className="h-8 w-8 animate-spin text-brand-500" />
+                      <p className="text-sm">Analyzing your resume…</p>
+                    </div>
+                  )}
+
+                  {atsScoreError && !atsScorePending && (
+                    <div className="space-y-4">
+                      <div className="p-4 bg-red-50 dark:bg-red-900/20 rounded-lg border border-red-100 dark:border-red-900/40 text-sm text-red-800 dark:text-red-200">
+                        <p className="font-medium">Could not load ATS score</p>
+                        <p className="mt-1 text-red-700/90 dark:text-red-300/90">
+                          {atsScoreErr instanceof Error ? atsScoreErr.message : "Something went wrong."}
+                        </p>
+                        <p className="mt-2 text-xs text-red-600/80 dark:text-red-400/80">
+                          Check your connection and try again. Scores work for any resume; job-match blending runs when this resume is
+                          linked to an application with a job description.
+                        </p>
+                      </div>
+                      <button
+                        type="button"
+                        onClick={() => void runAtsScore({ resumeId, force: false }).catch(() => {})}
+                        className="w-full py-2.5 rounded-lg bg-slate-900 dark:bg-slate-100 text-white dark:text-slate-900 text-sm font-medium hover:opacity-90 transition-opacity"
+                      >
+                        Retry
+                      </button>
+                    </div>
+                  )}
+
+                  {!atsScorePending && !atsScoreError && atsVm && (
+                    <>
+                      <div>
+                        <h4 className="text-xs font-medium text-slate-400 uppercase tracking-wider mb-3">Improvements Needed</h4>
+                        {atsVm.improvements.length > 0 ? (
+                          <ul className="space-y-3">
+                            {atsVm.improvements.map((imp, i) => (
+                              <li
+                                key={i}
+                                className="flex items-start gap-3 text-sm text-slate-700 dark:text-slate-300 bg-slate-50 dark:bg-slate-800 p-3 rounded-lg"
+                              >
+                                <AlertCircle size={16} className="text-red-500 mt-0.5 flex-shrink-0" />
+                                <span>{imp}</span>
+                              </li>
+                            ))}
+                          </ul>
+                        ) : (
+                          <div className="p-4 bg-green-50 dark:bg-green-900/20 rounded-lg flex items-center gap-3 text-green-700 dark:text-green-400">
+                            <div className="p-1 bg-green-200 dark:bg-green-800 rounded-full">
+                              <Check size={14} />
+                            </div>
+                            <span className="font-medium text-sm">Great job! No critical issues found.</span>
+                          </div>
+                        )}
+                      </div>
+
+                      <div>
+                        <h4 className="text-xs font-medium text-slate-400 uppercase tracking-wider mb-3">Section Analysis</h4>
+                        <div className="space-y-2">
+                          {atsVm.sectionAnalysis.map((sec, i) => (
+                            <div
+                              key={i}
+                              className="flex items-center justify-between p-3 rounded-lg border border-slate-100 dark:border-slate-800 hover:bg-slate-50 dark:hover:bg-slate-800/50 transition-colors"
+                            >
+                              <span className="font-medium text-slate-700 dark:text-slate-300 text-sm">{sec.name}</span>
+                              <div className="flex items-center gap-2">
+                                <span className="text-xs text-slate-500">{sec.feedback}</span>
+                                {sec.status === "good" && (
+                                  <div className="w-2.5 h-2.5 rounded-full bg-green-500 shadow-sm shadow-green-200" />
+                                )}
+                                {sec.status === "warning" && (
+                                  <div className="w-2.5 h-2.5 rounded-full bg-yellow-500 shadow-sm shadow-yellow-200" />
+                                )}
+                                {sec.status === "critical" && (
+                                  <div className="w-2.5 h-2.5 rounded-full bg-red-500 shadow-sm shadow-red-200" />
+                                )}
+                              </div>
+                            </div>
+                          ))}
+                        </div>
+                      </div>
                     </>
                   )}
                 </div>
-                <div className="flex flex-col items-end gap-2 flex-shrink-0">
-                  <span className="font-semibold text-5xl text-slate-900 dark:text-white tabular-nums">
-                    {atsScorePending && !atsVm ? "—" : atsVm != null ? atsVm.score : "—"}
-                    {atsVm != null && <span className="text-2xl text-slate-500 dark:text-slate-400 font-medium">/100</span>}
-                  </span>
-                  <button
-                    type="button"
-                    onClick={() => void handleRecalculate()}
-                    disabled={atsScorePending || atsScoreError}
-                    title="Recalculate your ATS score"
-                    className="inline-flex items-center justify-center gap-2 px-5 py-2.5 rounded-lg border text-sm font-medium shadow-sm transition-colors disabled:opacity-50 disabled:cursor-not-allowed border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 text-slate-800 dark:text-slate-100 hover:bg-slate-50 dark:hover:bg-slate-800"
-                  >
-                    {atsScorePending ? (
-                      <Loader2 size={16} className="animate-spin text-brand-600" />
-                    ) : (
-                      <RefreshCw size={16} className="text-slate-500" />
-                    )}
-                    {atsScorePending ? "Recalculating…" : "Recalculate"}
-                  </button>
-                  {atsCalcCount > 0 ? (
-                    <p className="max-w-[220px] text-right text-xs text-slate-500 dark:text-slate-400">
-                      Calculated {atsCalcCount} {atsCalcCount === 1 ? "time" : "times"}
-                    </p>
-                  ) : null}
-                </div>
-              </div>
-            </div>
 
-            {recalcError && (
-              <div className="mx-8 flex items-start gap-3 rounded-lg border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-800 dark:border-red-900/50 dark:bg-red-950/40 dark:text-red-200">
-                <AlertCircle size={18} className="mt-0.5 flex-shrink-0" />
-                <div>
-                  <p className="font-medium">Recalculation failed</p>
-                  <p className="mt-0.5 opacity-90">{recalcError}</p>
-                </div>
-              </div>
-            )}
-
-            <div className="flex-1 px-8 py-6 space-y-8 overflow-y-auto min-h-0 scrollbar-on-hover">
-              {(atsScorePending || atsCacheLoading) && !atsVm && (
-                <div className="flex flex-col items-center justify-center gap-3 py-12 text-slate-500">
-                  <Loader2 className="h-8 w-8 animate-spin text-brand-500" />
-                  <p className="text-sm">Analyzing your resume…</p>
-                </div>
-              )}
-
-              {atsScoreError && !atsScorePending && (
-                <div className="space-y-4">
-                  <div className="p-4 bg-red-50 dark:bg-red-900/20 rounded-lg border border-red-100 dark:border-red-900/40 text-sm text-red-800 dark:text-red-200">
-                    <p className="font-medium">Could not load ATS score</p>
-                    <p className="mt-1 text-red-700/90 dark:text-red-300/90">
-                      {atsScoreErr instanceof Error ? atsScoreErr.message : "Something went wrong."}
-                    </p>
-                    <p className="mt-2 text-xs text-red-600/80 dark:text-red-400/80">
-                      Check your connection and try again. Scores work for any resume; job-match blending runs when this resume is linked to
-                      an application with a job description.
-                    </p>
+                {atsVm && !atsScoreError && (
+                  <div className="px-8 py-6 border-t border-slate-100 dark:border-slate-800 bg-slate-50/80 dark:bg-slate-900/80 flex flex-col sm:flex-row gap-4">
+                    <button
+                      type="button"
+                      onClick={handleFixWithUnibot}
+                      disabled={fixAllUsed || atsVm.improvements.length === 0}
+                      className="flex-1 px-5 py-3 rounded-xl bg-brand-600 hover:bg-brand-700 text-white text-sm font-medium transition-colors disabled:opacity-50 disabled:cursor-not-allowed inline-flex items-center justify-center gap-2"
+                    >
+                      <Wand2 size={18} />
+                      {fixAllUsed ? "Unibot fix applied" : "Fix once with Unibot"}
+                    </button>
+                    <button
+                      type="button"
+                      onClick={handleFixWithCareerCoach}
+                      className="flex-1 px-5 py-3 rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 text-slate-800 dark:text-slate-100 text-sm font-medium hover:bg-slate-50 dark:hover:bg-slate-800 transition-colors"
+                    >
+                      Fix with a career coach
+                    </button>
                   </div>
-                  <button
-                    type="button"
-                    onClick={() => void runAtsScore({ resumeId, force: false }).catch(() => {})}
-                    className="w-full py-2.5 rounded-lg bg-slate-900 dark:bg-slate-100 text-white dark:text-slate-900 text-sm font-medium hover:opacity-90 transition-opacity"
-                  >
-                    Retry
-                  </button>
-                </div>
-              )}
-
-              {!atsScorePending && !atsScoreError && atsVm && (
-                <>
-                  <div>
-                    <h4 className="text-xs font-medium text-slate-400 uppercase tracking-wider mb-3">Improvements Needed</h4>
-                    {atsVm.improvements.length > 0 ? (
-                      <ul className="space-y-3">
-                        {atsVm.improvements.map((imp, i) => (
-                          <li
-                            key={i}
-                            className="flex items-start gap-3 text-sm text-slate-700 dark:text-slate-300 bg-slate-50 dark:bg-slate-800 p-3 rounded-lg"
-                          >
-                            <AlertCircle size={16} className="text-red-500 mt-0.5 flex-shrink-0" />
-                            <span>{imp}</span>
-                          </li>
-                        ))}
-                      </ul>
-                    ) : (
-                      <div className="p-4 bg-green-50 dark:bg-green-900/20 rounded-lg flex items-center gap-3 text-green-700 dark:text-green-400">
-                        <div className="p-1 bg-green-200 dark:bg-green-800 rounded-full">
-                          <Check size={14} />
-                        </div>
-                        <span className="font-medium text-sm">Great job! No critical issues found.</span>
-                      </div>
-                    )}
-                  </div>
-
-                  <div>
-                    <h4 className="text-xs font-medium text-slate-400 uppercase tracking-wider mb-3">Section Analysis</h4>
-                    <div className="space-y-2">
-                      {atsVm.sectionAnalysis.map((sec, i) => (
-                        <div
-                          key={i}
-                          className="flex items-center justify-between p-3 rounded-lg border border-slate-100 dark:border-slate-800 hover:bg-slate-50 dark:hover:bg-slate-800/50 transition-colors"
-                        >
-                          <span className="font-medium text-slate-700 dark:text-slate-300 text-sm">{sec.name}</span>
-                          <div className="flex items-center gap-2">
-                            <span className="text-xs text-slate-500">{sec.feedback}</span>
-                            {sec.status === "good" && <div className="w-2.5 h-2.5 rounded-full bg-green-500 shadow-sm shadow-green-200" />}
-                            {sec.status === "warning" && (
-                              <div className="w-2.5 h-2.5 rounded-full bg-yellow-500 shadow-sm shadow-yellow-200" />
-                            )}
-                            {sec.status === "critical" && <div className="w-2.5 h-2.5 rounded-full bg-red-500 shadow-sm shadow-red-200" />}
-                          </div>
-                        </div>
-                      ))}
-                    </div>
-                  </div>
-                </>
-              )}
-            </div>
-
-            {atsVm && !atsScoreError && (
-              <div className="px-8 py-6 border-t border-slate-100 dark:border-slate-800 bg-slate-50/80 dark:bg-slate-900/80 flex flex-col sm:flex-row gap-4">
-                <button
-                  type="button"
-                  onClick={handleFixWithUnibot}
-                  disabled={fixAllUsed || atsVm.improvements.length === 0}
-                  className="flex-1 px-5 py-3 rounded-xl bg-brand-600 hover:bg-brand-700 text-white text-sm font-medium transition-colors disabled:opacity-50 disabled:cursor-not-allowed inline-flex items-center justify-center gap-2"
-                >
-                  <Wand2 size={18} />
-                  {fixAllUsed ? "Unibot fix applied" : "Fix once with Unibot"}
-                </button>
-                <button
-                  type="button"
-                  onClick={handleFixWithCareerCoach}
-                  className="flex-1 px-5 py-3 rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 text-slate-800 dark:text-slate-100 text-sm font-medium hover:bg-slate-50 dark:hover:bg-slate-800 transition-colors"
-                >
-                  Fix with a career coach
-                </button>
+                )}
               </div>
-            )}
-          </div>
-        </div>
-      )}
+            </div>,
+            document.body
+          )
+        : null}
 
       <ResumeKnowledgeBaseModal open={showKnowledgeBaseModal} onClose={() => setShowKnowledgeBaseModal(false)} />
 
       {pendingDeleteSkillCategoryId && (
-        <div className="fixed inset-0 z-[80] flex items-center justify-center bg-slate-900/50 backdrop-blur-sm animate-in fade-in duration-200">
+        <ModalPortalOverlay className="flex items-center justify-center bg-slate-900/50 backdrop-blur-sm animate-in fade-in duration-200">
           <div className="bg-white dark:bg-slate-900 w-full max-w-md rounded-2xl shadow-2xl p-6 border border-slate-200 dark:border-slate-800 relative">
             <div className="flex items-start gap-3 mb-4">
               <div className="mt-0.5 p-2 rounded-full bg-red-50 dark:bg-red-900/20 text-red-500">
@@ -3225,11 +3432,11 @@ const ResumeEditor: React.FC<ResumeEditorProps> = ({
               </button>
             </div>
           </div>
-        </div>
+        </ModalPortalOverlay>
       )}
 
       {pendingDeleteSectionId && (
-        <div className="fixed inset-0 z-[80] flex items-center justify-center bg-slate-900/50 backdrop-blur-sm animate-in fade-in duration-200">
+        <ModalPortalOverlay className="flex items-center justify-center bg-slate-900/50 backdrop-blur-sm animate-in fade-in duration-200">
           <div className="bg-white dark:bg-slate-900 w-full max-w-md rounded-2xl shadow-2xl p-6 border border-slate-200 dark:border-slate-800 relative">
             <div className="flex items-start gap-3 mb-4">
               <div className="mt-0.5 p-2 rounded-full bg-red-50 dark:bg-red-900/20 text-red-500">
@@ -3258,11 +3465,11 @@ const ResumeEditor: React.FC<ResumeEditorProps> = ({
               </button>
             </div>
           </div>
-        </div>
+        </ModalPortalOverlay>
       )}
 
       {pendingDeleteEntry && (
-        <div className="fixed inset-0 z-[80] flex items-center justify-center bg-slate-900/50 backdrop-blur-sm animate-in fade-in duration-200">
+        <ModalPortalOverlay className="flex items-center justify-center bg-slate-900/50 backdrop-blur-sm animate-in fade-in duration-200">
           <div className="bg-white dark:bg-slate-900 w-full max-w-md rounded-2xl shadow-2xl p-6 border border-slate-200 dark:border-slate-800 relative">
             <div className="flex items-start gap-3 mb-4">
               <div className="mt-0.5 p-2 rounded-full bg-red-50 dark:bg-red-900/20 text-red-500">
@@ -3289,7 +3496,7 @@ const ResumeEditor: React.FC<ResumeEditorProps> = ({
               </button>
             </div>
           </div>
-        </div>
+        </ModalPortalOverlay>
       )}
     </div>
   );

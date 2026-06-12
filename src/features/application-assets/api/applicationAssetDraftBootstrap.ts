@@ -34,3 +34,16 @@ export const applicationAssetTopicTitle = (assetType: ApplicationAssetApiType, c
   }
   return label;
 };
+
+export const applicationAssetImproveTopicTitle = (assetType: ApplicationAssetApiType): string => {
+  switch (assetType) {
+    case "coverletter":
+      return "Improve cover letter";
+    case "coldemail":
+      return "Improve cold email";
+    case "referral":
+      return "Improve referral request";
+    default:
+      return "Improve document";
+  }
+};

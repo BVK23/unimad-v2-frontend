@@ -279,9 +279,9 @@ export default function ExperienceForm({ onComplete }: ExperienceFormProps) {
           </PrimaryButton>
         ) : null}
         {showInputs ? <PrimaryButton type="submit">{isEditing ? "Save" : "Add"}</PrimaryButton> : null}
-        {!showInputs ? (
+        {!showInputs && items.length > 0 ? (
           <PrimaryButton type="button" onClick={handleNext} className="mt-3">
-            {items.length === 0 ? "Skip" : "Next"}
+            Next
           </PrimaryButton>
         ) : null}
       </div>

@@ -1,27 +1,41 @@
 "use client";
 
-import { Suspense } from "react";
+import { Suspense, useMemo } from "react";
 import JobsMain from "@/components/jobs/JobsMain";
+import type { PrepareApplicationTab } from "@/lib/jobs/prepare-application-return";
+import { buildStudioHref } from "@/lib/jobs/prepare-application-url";
 import { buildJobsSearchParams, parseJobsSearchParams, type InterviewView, type JobsTab } from "@/src/features/jobs/jobs-url";
 import type { GeneratorContext } from "@/types/jobs";
 import { useRouter, useSearchParams } from "next/navigation";
+
+function isPrepareTab(type: string): type is PrepareApplicationTab {
+  return type === "resume" || type === "cover-letter" || type === "cold-email" || type === "vpd";
+}
 
 function JobsPageContent() {
   const router = useRouter();
   const searchParams = useSearchParams();
   const urlState = parseJobsSearchParams(searchParams);
 
+  const reopenPrepare = useMemo(() => {
+    const jobId = urlState.prepareJob;
+    if (!jobId) return null;
+    const tabParam = urlState.prepareTab ?? "cover-letter";
+    const tab: PrepareApplicationTab = isPrepareTab(tabParam) ? tabParam : "cover-letter";
+    return { jobId, tab };
+  }, [urlState.prepareJob, urlState.prepareTab]);
+
   const handleNavigateToStudio = (context: GeneratorContext) => {
-    const params = new URLSearchParams();
-    if (context.jobId) params.set("jobId", context.jobId);
-    if (context.company) params.set("company", context.company);
-    if (context.role) params.set("role", context.role);
-    if (context.type) params.set("type", context.type);
-    if (context.assetId) params.set("id", context.assetId);
-    if (context.description) params.set("description", context.description);
-    if (context.recipientName) params.set("recipientName", context.recipientName);
-    if (context.fromInterviewVpd) params.set("interviewVpd", "1");
-    router.push(`/uniboard/studio?${params.toString()}`);
+    router.push(
+      buildStudioHref({
+        id: context.assetId,
+        type: context.type,
+        jobId: context.jobId,
+        navigate: context.navigate,
+        improve: context.openImproveMode,
+        interviewVpd: context.fromInterviewVpd,
+      })
+    );
   };
 
   const updateJobsUrl = (
@@ -31,10 +45,16 @@ function JobsPageContent() {
       view: InterviewView | null;
       round: string | null;
       setup: string | null;
+      prepareJob: string | null;
+      prepareTab: string | null;
     }>
   ) => {
     const href = `/uniboard/jobs${buildJobsSearchParams(searchParams, updates)}`;
     router.replace(href, { scroll: false });
+  };
+
+  const handlePrepareReopened = () => {
+    updateJobsUrl({ prepareJob: null, prepareTab: null });
   };
 
   const openSetupOnMount = searchParams.get("setup") === "1";
@@ -61,6 +81,8 @@ function JobsPageContent() {
       onInterviewUrlChange={updates => {
         updateJobsUrl({ tab: "interview", ...updates });
       }}
+      reopenPrepare={reopenPrepare}
+      onPrepareReopened={handlePrepareReopened}
     />
   );
 }

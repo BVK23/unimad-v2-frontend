@@ -1,4 +1,5 @@
 import React, { useMemo, useState } from "react";
+import { ModalPortalOverlay } from "@/components/ui/ModalPortalOverlay";
 import {
   Plus,
   Clock,
@@ -257,8 +258,8 @@ const PortfolioDashboard: React.FC<PortfolioDashboardProps> = ({ portfolios, onE
 
       {/* Create Modal */}
       {createModalState !== "closed" && (
-        <div
-          className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 backdrop-blur-sm p-4 animate-in fade-in duration-200"
+        <ModalPortalOverlay
+          className="flex items-center justify-center bg-black/50 backdrop-blur-sm p-4 animate-in fade-in duration-200"
           onClick={e => e.stopPropagation()}
         >
           <div className="bg-white rounded-2xl w-full max-w-2xl shadow-2xl overflow-hidden relative">
@@ -316,7 +317,7 @@ const PortfolioDashboard: React.FC<PortfolioDashboardProps> = ({ portfolios, onE
               </div>
             </div>
           </div>
-        </div>
+        </ModalPortalOverlay>
       )}
     </div>
   );

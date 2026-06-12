@@ -1,4 +1,5 @@
 import React, { useState } from "react";
+import { ModalPortalOverlay } from "@/components/ui/ModalPortalOverlay";
 import { X, Link, Building2, Globe, FileSearch } from "lucide-react";
 import Image from "next/image";
 import { Job } from "../../types/jobs";
@@ -49,7 +50,7 @@ const AddJobModal: React.FC<AddJobModalProps> = ({ onClose, onAdd }) => {
   };
 
   return (
-    <div className="fixed inset-0 bg-black/50 backdrop-blur-sm z-50 flex items-center justify-center p-4 animate-in fade-in duration-200">
+    <ModalPortalOverlay className="flex items-center justify-center bg-black/50 p-4 backdrop-blur-sm animate-in fade-in duration-200">
       <div className="bg-white dark:bg-slate-900 w-full max-w-lg rounded-3xl shadow-2xl p-6 border border-slate-200 dark:border-slate-800">
         {/* Header */}
         <div className="flex items-center justify-between mb-6">
@@ -147,7 +148,7 @@ const AddJobModal: React.FC<AddJobModalProps> = ({ onClose, onAdd }) => {
           </div>
         )}
       </div>
-    </div>
+    </ModalPortalOverlay>
   );
 };
 

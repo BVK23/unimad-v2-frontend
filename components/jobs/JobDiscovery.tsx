@@ -1,11 +1,14 @@
 import React, { useEffect, useMemo, useState } from "react";
+import { useApplications } from "@/features/application-tracker/hooks/useApplications";
+import { jobHasPreparedApplication } from "@/features/application-tracker/job-application-lookup";
 import { useSaveJob, useUnsaveJob } from "@/features/jobs/hooks/useJobMutations";
 import { useJobViewed } from "@/features/jobs/hooks/useJobViewed";
 import { useRecommendedJobs } from "@/features/jobs/hooks/useRecommendedJobs";
 import { useSavedJobs } from "@/features/jobs/hooks/useSavedJobs";
 import { useSearchJobs } from "@/features/jobs/hooks/useSearchJobs";
 import { getSavedJobs, importJobFromUrl } from "@/features/jobs/server-actions/jobs-actions";
-import type { BackendJob } from "@/features/jobs/types";
+import { mapBackendJobToUi } from "@/lib/jobs/job-ui-mappers";
+import type { OpenPrepareApplicationOptions } from "@/lib/jobs/open-prepare-application";
 import type { StartInterviewFromJobPayload } from "@/src/features/interview-prep/types";
 import { useQueryClient } from "@tanstack/react-query";
 import { ChevronLeft, ChevronRight, Search, Link as LinkIcon, Plus } from "lucide-react";
@@ -15,7 +18,6 @@ import JobCardSkeleton from "./JobCardSkeleton";
 import JobDetailsModal from "./JobDetailsModal";
 import JobUrlImportLoading from "./JobUrlImportLoading";
 import LinkedInRibbonBanner from "./LinkedInRibbonBanner";
-import PrepareApplicationModal from "./PrepareApplicationModal";
 import SearchSection from "./SearchSection";
 import ContentLabPanel from "./content-lab/ContentLabPanel";
 
@@ -23,10 +25,17 @@ interface JobDiscoveryProps {
   onNavigateToStudio: (context: GeneratorContext) => void;
   onGoToTracker?: () => void;
   onStartInterviewPrep?: (payload: StartInterviewFromJobPayload) => void;
+  onOpenPrepareApplication?: (job: Job, options: OpenPrepareApplicationOptions) => void;
 }
 
-const JobDiscovery: React.FC<JobDiscoveryProps> = ({ onNavigateToStudio, onGoToTracker, onStartInterviewPrep }) => {
+const JobDiscovery: React.FC<JobDiscoveryProps> = ({
+  onNavigateToStudio,
+  onGoToTracker,
+  onStartInterviewPrep,
+  onOpenPrepareApplication,
+}) => {
   const queryClient = useQueryClient();
+  const { data: applications = [] } = useApplications();
   const [appUrl, setAppUrl] = useState("");
   const [addFormError, setAddFormError] = useState<string | null>(null);
   const [addFormSuccessMessage, setAddFormSuccessMessage] = useState<string | null>(null);
@@ -35,7 +44,6 @@ const JobDiscovery: React.FC<JobDiscoveryProps> = ({ onNavigateToStudio, onGoToT
   const [locationTerm, setLocationTerm] = useState("");
   const [submittedSearch, setSubmittedSearch] = useState<{ q: string; location: string; activeFilters: string[] } | null>(null);
   const [selectedJob, setSelectedJob] = useState<Job | null>(null);
-  const [preparingJob, setPreparingJob] = useState<Job | null>(null);
   const [filterType, setFilterType] = useState<"Recommended" | "Saved">("Recommended");
   const [savedPage, setSavedPage] = useState(1);
   const [recommendedUIPage, setRecommendedUIPage] = useState(1);
@@ -87,31 +95,8 @@ const JobDiscovery: React.FC<JobDiscoveryProps> = ({ onNavigateToStudio, onGoToT
 
   const isMutatingSave = saveJobMutation.isPending || unsaveJobMutation.isPending;
 
-  const mapBackendToUi = (job: BackendJob): Job => {
-    const dateSource = job.posted_at ?? job.fetched_at;
-    const postedLabel = dateSource
-      ? new Intl.DateTimeFormat("en-US", { month: "short", day: "numeric" }).format(new Date(dateSource))
-      : "Recently posted";
-
-    return {
-      id: job.id,
-      role: job.title ?? "Untitled role",
-      company: job.company ?? "Company",
-      logo: job.company_logo_url ?? "",
-      location: job.location ?? "Location not specified",
-      postedDate: postedLabel,
-      matchScore: 95,
-      isRecommended: true,
-      isSponsoring: job.visa_sponsorship,
-      description: job.description ?? "",
-      requirements: job.requirements ?? [],
-      isSaved: job.is_saved,
-      applyUrl: job.apply_url ?? job.source_url ?? undefined,
-    };
-  };
-
   const recommendedJobs: Job[] = useMemo(() => {
-    const raw = (recommendedFlattenedJobs ?? []).map(mapBackendToUi);
+    const raw = (recommendedFlattenedJobs ?? []).map(mapBackendJobToUi);
     const seen = new Set<string>();
     return raw.filter(j => {
       if (seen.has(j.id)) return false;
@@ -120,7 +105,7 @@ const JobDiscovery: React.FC<JobDiscoveryProps> = ({ onNavigateToStudio, onGoToT
     });
   }, [recommendedFlattenedJobs]);
 
-  const savedJobs: Job[] = useMemo(() => (savedData?.jobs ?? []).map(mapBackendToUi), [savedData]);
+  const savedJobs: Job[] = useMemo(() => (savedData?.jobs ?? []).map(mapBackendJobToUi), [savedData]);
 
   const heroJobsOnCurrentPage = useMemo(
     () => recommendedJobs.slice((recommendedUIPage - 1) * TOP_JOBS_PER_PAGE, recommendedUIPage * TOP_JOBS_PER_PAGE),
@@ -137,7 +122,7 @@ const JobDiscovery: React.FC<JobDiscoveryProps> = ({ onNavigateToStudio, onGoToT
   const isOnLastSavedUIPage = savedUIPage >= savedTotalUIPages;
 
   const searchResultsJobs: Job[] = useMemo(() => {
-    const raw = (searchFlattenedJobs ?? []).map(mapBackendToUi);
+    const raw = (searchFlattenedJobs ?? []).map(mapBackendJobToUi);
     const seen = new Set<string>();
     return raw.filter(j => {
       if (seen.has(j.id)) return false;
@@ -236,8 +221,10 @@ const JobDiscovery: React.FC<JobDiscoveryProps> = ({ onNavigateToStudio, onGoToT
   };
 
   const handlePrepareApp = (job: Job) => {
-    setPreparingJob(job);
+    onOpenPrepareApplication?.(job, { source: "discovery" });
   };
+
+  const isJobPrepared = (jobId: string) => jobHasPreparedApplication(applications, jobId);
 
   const handleApply = (job: Job) => {
     if (job.applyUrl) {
@@ -273,6 +260,10 @@ const JobDiscovery: React.FC<JobDiscoveryProps> = ({ onNavigateToStudio, onGoToT
     setAddFormSuccessMessage(null);
     try {
       const result = await importJobFromUrl(trimmed);
+      if (!result.success) {
+        setAddFormError(result.error);
+        return;
+      }
       await queryClient.invalidateQueries({ queryKey: ["applications"] });
       setAppUrl("");
       setAddFormSuccessMessage(result.message);
@@ -328,7 +319,13 @@ const JobDiscovery: React.FC<JobDiscoveryProps> = ({ onNavigateToStudio, onGoToT
               <>
                 {heroJobsOnCurrentPage.map(job => (
                   <div key={job.id} className="relative w-full group">
-                    <JobCard job={job} onClick={checkJobDetails} onPrepare={handlePrepareApp} onApply={handleApply} />
+                    <JobCard
+                      job={job}
+                      onClick={checkJobDetails}
+                      onPrepare={handlePrepareApp}
+                      onApply={handleApply}
+                      hasPreparedApplication={isJobPrepared(job.id)}
+                    />
                   </div>
                 ))}
                 {isRecommendedFetchingNextPage &&
@@ -375,6 +372,12 @@ const JobDiscovery: React.FC<JobDiscoveryProps> = ({ onNavigateToStudio, onGoToT
                   className="w-full rounded-xl border border-slate-200 bg-slate-50 py-3 pl-10 pr-3 text-sm text-slate-900 placeholder:text-slate-400 outline-none focus:border-brand-300 focus:bg-white focus:ring-2 focus:ring-brand-500/20 dark:border-slate-700 dark:bg-slate-800 dark:text-white dark:placeholder:text-slate-500 dark:focus:border-brand-500/50 disabled:opacity-60"
                 />
               </div>
+              {/linkedin\.com/i.test(appUrl) && (
+                <p className="text-xs text-slate-500 dark:text-slate-400">
+                  Use the public URL (<span className="font-medium">linkedin.com/jobs/view/...</span>) from your browser. LinkedIn blocks
+                  automated access to feed and app-only links.
+                </p>
+              )}
               {addFormError && <p className="text-xs text-red-600 dark:text-red-400">{addFormError}</p>}
               {addFormSuccessMessage && (
                 <p className="text-xs text-emerald-600 dark:text-emerald-400">
@@ -568,16 +571,6 @@ const JobDiscovery: React.FC<JobDiscoveryProps> = ({ onNavigateToStudio, onGoToT
           onApply={handleApply}
           onToggleSave={handleToggleSave}
           isSaved={selectedJob.isSaved}
-          onNavigateToStudio={onNavigateToStudio}
-          onStartInterviewPrep={onStartInterviewPrep}
-        />
-      )}
-
-      {preparingJob && (
-        <PrepareApplicationModal
-          job={preparingJob}
-          source="discovery"
-          onClose={() => setPreparingJob(null)}
           onNavigateToStudio={onNavigateToStudio}
           onStartInterviewPrep={onStartInterviewPrep}
         />

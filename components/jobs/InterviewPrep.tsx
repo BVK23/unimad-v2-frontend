@@ -1,6 +1,7 @@
 "use client";
 
 import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { ModalPortalOverlay } from "@/components/ui/ModalPortalOverlay";
 import { consumeInterviewLaunch } from "@/src/features/interview-prep/interview-launch";
 import {
   analyzeVoiceInterview,
@@ -493,9 +494,9 @@ const InterviewPrep: React.FC<InterviewPrepProps> = ({
       )}
 
       {isAnalyzing && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40">
+        <ModalPortalOverlay className="flex items-center justify-center bg-black/40">
           <Loader2 className="h-10 w-10 animate-spin text-white" />
-        </div>
+        </ModalPortalOverlay>
       )}
     </div>
   );

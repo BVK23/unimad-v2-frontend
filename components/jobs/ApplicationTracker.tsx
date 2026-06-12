@@ -1,6 +1,7 @@
 "use client";
 
 import React, { useEffect, useMemo, useState } from "react";
+import { ModalPortalOverlay } from "@/components/ui/ModalPortalOverlay";
 import { useApplications } from "@/features/application-tracker/hooks/useApplications";
 import { createApplication, updateApplication } from "@/features/application-tracker/server-actions/application-actions";
 import type { Application, ApplicationStatus, CreateApplicationInput } from "@/features/application-tracker/types";
@@ -11,7 +12,8 @@ import {
   shouldShowInterviewVpdPrompt,
   syncInterviewVpdPrompts,
 } from "@/lib/jobs/interview-vpd-prompt";
-import type { StartInterviewFromJobPayload } from "@/src/features/interview-prep/types";
+import { applicationToJob } from "@/lib/jobs/job-ui-mappers";
+import type { OpenPrepareApplicationOptions } from "@/lib/jobs/open-prepare-application";
 import type { GeneratorContext, Job } from "@/types/jobs";
 import { useQueryClient } from "@tanstack/react-query";
 import confetti from "canvas-confetti";
@@ -19,38 +21,6 @@ import { ChevronLeft, ChevronRight, MoreHorizontal, Plus, Trash2 } from "lucide-
 import ApplicationManager from "./ApplicationManager";
 import InterviewingStageModal from "./InterviewingStageModal";
 import JobCard from "./JobCard";
-import PrepareApplicationModal from "./PrepareApplicationModal";
-
-function formatShortDate(iso: string | null | undefined): string | null {
-  if (!iso) return null;
-  try {
-    return new Intl.DateTimeFormat("en-US", { month: "short", day: "numeric" }).format(new Date(iso));
-  } catch {
-    return null;
-  }
-}
-
-/** Map backend Application to Job for the tracker JobCard UI */
-function applicationToJob(app: Application): Job {
-  const statusMap: ApplicationStatus | "offer" = app.status === "offered" ? "offer" : app.status;
-  const posted = formatShortDate(app.posted_at);
-  const created = formatShortDate(app.created_at);
-  const postedDate = app.applied_date || posted || created || "—";
-
-  return {
-    id: app.application_id,
-    role: app.role,
-    company: app.company,
-    logo: "",
-    location: app.location?.trim() || "—",
-    postedDate,
-    matchScore: 95,
-    description: app.job_description ?? "",
-    requirements: app.requirements?.length ? app.requirements : undefined,
-    applicationStatus: statusMap as Job["applicationStatus"],
-    applyUrl: app.apply_url ?? undefined,
-  };
-}
 
 interface TrackerColumnProps {
   title: string;
@@ -153,18 +123,13 @@ function TrackerColumn({
 interface ApplicationTrackerProps {
   onNavigateToStudio: (context: GeneratorContext) => void;
   onStartInterviewPrep?: (job: Job) => void;
-  onStartInterviewFromPrepare?: (payload: StartInterviewFromJobPayload) => void;
+  onOpenPrepareApplication?: (job: Job, options: OpenPrepareApplicationOptions) => void;
 }
 
-const ApplicationTracker: React.FC<ApplicationTrackerProps> = ({
-  onNavigateToStudio,
-  onStartInterviewPrep,
-  onStartInterviewFromPrepare,
-}) => {
+const ApplicationTracker: React.FC<ApplicationTrackerProps> = ({ onNavigateToStudio, onStartInterviewPrep, onOpenPrepareApplication }) => {
   const queryClient = useQueryClient();
   const { data: applications = [], isLoading } = useApplications();
 
-  const [preparingJob, setPreparingJob] = useState<Job | null>(null);
   const [addModalInitialStatus, setAddModalInitialStatus] = useState<ApplicationStatus>("applied");
   const [tabState, setTabState] = useState<"toAdd" | "toView" | "toEdit" | "">("");
   const [selectedApplication, setSelectedApplication] = useState<Application | null>(null);
@@ -174,8 +139,11 @@ const ApplicationTracker: React.FC<ApplicationTrackerProps> = ({
   const [draftsCollapsed, setDraftsCollapsed] = useState(false);
   const [interviewingPromptJob, setInterviewingPromptJob] = useState<Job | null>(null);
   const [vpdPromptTick, setVpdPromptTick] = useState(0);
-
   const trackerJobs = useMemo(() => applications.map(applicationToJob), [applications]);
+
+  const openPrepare = (job: Job, tab?: OpenPrepareApplicationOptions["tab"]) => {
+    onOpenPrepareApplication?.(job, { source: "tracker", tab });
+  };
 
   useEffect(() => {
     syncInterviewVpdPrompts(trackerJobs);
@@ -279,7 +247,7 @@ const ApplicationTracker: React.FC<ApplicationTrackerProps> = ({
   };
 
   const handlePrepareFromDetails = (app: Application) => {
-    setPreparingJob(applicationToJob(app));
+    openPrepare(applicationToJob(app));
   };
 
   const handleStatusChangeFromDetails = async (applicationId: string, newStatus: ApplicationStatus) => {
@@ -307,7 +275,7 @@ const ApplicationTracker: React.FC<ApplicationTrackerProps> = ({
     onDrop: handleDrop,
     onAddClick: handleAddClick,
     onViewApplication: handleViewApplication,
-    onPrepareJob: setPreparingJob,
+    onPrepareJob: (job: Job) => openPrepare(job),
     onDragStart: () => setIsDragging(true),
     onDragEnd: () => setIsDragging(false),
     showVpdPromptForJob,
@@ -424,16 +392,6 @@ const ApplicationTracker: React.FC<ApplicationTrackerProps> = ({
         onStatusChange={handleStatusChangeFromDetails}
       />
 
-      {preparingJob && (
-        <PrepareApplicationModal
-          job={preparingJob}
-          source="tracker"
-          onClose={() => setPreparingJob(null)}
-          onNavigateToStudio={onNavigateToStudio}
-          onStartInterviewPrep={onStartInterviewFromPrepare}
-        />
-      )}
-
       {interviewingPromptJob && (
         <InterviewingStageModal
           job={interviewingPromptJob}
@@ -451,7 +409,7 @@ const ApplicationTracker: React.FC<ApplicationTrackerProps> = ({
       )}
 
       {showRejectedModal && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4 backdrop-blur-sm">
+        <ModalPortalOverlay className="flex items-center justify-center bg-black/50 p-4 backdrop-blur-sm">
           <div className="flex max-h-[80vh] w-full max-w-2xl flex-col rounded-3xl border border-slate-200 bg-white p-8 shadow-2xl dark:border-slate-800 dark:bg-slate-900">
             <div className="mb-6 flex items-center justify-between">
               <h2 className="flex items-center gap-2 text-2xl font-semibold text-slate-900 dark:text-white">
@@ -479,7 +437,7 @@ const ApplicationTracker: React.FC<ApplicationTrackerProps> = ({
                         setShowRejectedModal(false);
                         handleViewApplication(app);
                       }}
-                      onPrepare={() => setPreparingJob(job)}
+                      onPrepare={() => openPrepare(job)}
                       onApply={() => {}}
                     />
                   );
@@ -498,7 +456,7 @@ const ApplicationTracker: React.FC<ApplicationTrackerProps> = ({
               </button>
             </div>
           </div>
-        </div>
+        </ModalPortalOverlay>
       )}
     </div>
   );

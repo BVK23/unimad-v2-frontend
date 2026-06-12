@@ -1,7 +1,9 @@
 "use client";
 
 import React from "react";
+import { createPortal } from "react-dom";
 import { ATS_COMPLETE_THRESHOLD } from "@/lib/resume/atsConstants";
+import { MODAL_OVERLAY_Z_CLASS } from "@/lib/ui/modal-overlay";
 import { X, BookOpen, Play, Lightbulb, ListChecks, FileText, Sparkles } from "lucide-react";
 
 interface ResumeKnowledgeBaseModalProps {
@@ -69,10 +71,12 @@ function MediaPlaceholder({ label, aspect = "video" }: { label: string; aspect?:
 }
 
 export default function ResumeKnowledgeBaseModal({ open, onClose }: ResumeKnowledgeBaseModalProps) {
-  if (!open) return null;
+  if (!open || typeof document === "undefined") return null;
 
-  return (
-    <div className="fixed inset-0 z-[80] flex items-center justify-center bg-slate-900/50 p-4 backdrop-blur-sm sm:p-6 animate-in fade-in duration-200">
+  return createPortal(
+    <div
+      className={`fixed inset-0 ${MODAL_OVERLAY_Z_CLASS} flex items-center justify-center bg-slate-900/50 p-4 backdrop-blur-sm sm:p-6 animate-in fade-in duration-200`}
+    >
       <div
         role="dialog"
         aria-modal="true"
@@ -184,6 +188,7 @@ export default function ResumeKnowledgeBaseModal({ open, onClose }: ResumeKnowle
           </button>
         </div>
       </div>
-    </div>
+    </div>,
+    document.body
   );
 }

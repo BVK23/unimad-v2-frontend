@@ -1,6 +1,7 @@
 "use client";
 
 import type { ReactNode } from "react";
+import { ModalPortalOverlay } from "@/components/ui/ModalPortalOverlay";
 import { btnGhost, btnPrimaryBrand } from "@/constants/ui/button-classes";
 import { X } from "lucide-react";
 
@@ -26,7 +27,7 @@ export function ProfileFormModal({
   if (!open) return null;
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center p-4" role="dialog" aria-modal="true">
+    <ModalPortalOverlay open={open} className="flex items-center justify-center p-4" role="dialog" aria-modal="true">
       <button type="button" className="absolute inset-0 bg-slate-900/50 backdrop-blur-sm" aria-label="Close" onClick={onClose} />
       <div className="relative max-h-[90vh] w-full max-w-2xl overflow-y-auto rounded-2xl border border-slate-200 bg-white p-6 shadow-xl dark:border-slate-800 dark:bg-[#111]">
         <div className="mb-5 flex items-center justify-between gap-3">
@@ -45,7 +46,7 @@ export function ProfileFormModal({
           </button>
         </div>
       </div>
-    </div>
+    </ModalPortalOverlay>
   );
 }
 

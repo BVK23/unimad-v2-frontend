@@ -2,6 +2,7 @@
 
 import React, { useEffect, useState } from "react";
 import JobUrlImportLoading from "@/components/jobs/JobUrlImportLoading";
+import { ModalPortalOverlay } from "@/components/ui/ModalPortalOverlay";
 import { importJobFromUrl } from "@/features/jobs/server-actions/jobs-actions";
 import type { InterviewPrepContext, InterviewRoundType, InterviewSessionMode } from "@/src/features/interview-prep/types";
 import { useQueryClient } from "@tanstack/react-query";
@@ -67,6 +68,10 @@ const InterviewSetupModal: React.FC<InterviewSetupModalProps> = ({ initialContex
     setImportError(null);
     try {
       const result = await importJobFromUrl(trimmed);
+      if (!result.success) {
+        setImportError(result.error);
+        return;
+      }
       await queryClient.invalidateQueries({ queryKey: ["applications"] });
       const app = result.application;
       const jd = app.job_description?.trim() || `${app.role} at ${app.company}`;
@@ -92,172 +97,176 @@ const InterviewSetupModal: React.FC<InterviewSetupModalProps> = ({ initialContex
   const showLinkedInHint = /linkedin\.com/i.test(jobUrl);
 
   return (
-    <div className="fixed inset-0 z-50 flex animate-in items-center justify-center bg-black/50 p-4 backdrop-blur-sm fade-in duration-200">
-      <div className="animate-in zoom-in-95 w-full max-w-2xl rounded-3xl border border-slate-200 bg-white p-8 shadow-2xl duration-200 dark:border-slate-800 dark:bg-[#1a1a1a]">
-        <div className="mb-6 flex items-center justify-between">
-          <div>
-            <h3 className="text-2xl font-medium text-slate-900 dark:text-white">Setup Interview</h3>
-            <p className="mt-1 text-slate-500">Import a job URL or enter details manually, then pick your round.</p>
+    <ModalPortalOverlay className="flex animate-in items-center justify-center overflow-y-auto bg-black/50 p-4 backdrop-blur-sm fade-in duration-200">
+      <div className="my-auto flex max-h-[min(90dvh,calc(100vh-2rem))] w-full max-w-2xl min-h-0 animate-in flex-col overflow-hidden rounded-3xl border border-slate-200 bg-white shadow-2xl duration-200 zoom-in-95 dark:border-slate-800 dark:bg-[#1a1a1a]">
+        <div className="shrink-0 border-b border-slate-100 px-8 pb-6 pt-8 dark:border-slate-800">
+          <div className="flex items-center justify-between">
+            <div>
+              <h3 className="text-2xl font-medium text-slate-900 dark:text-white">Setup Interview</h3>
+              <p className="mt-1 text-slate-500">Import a job URL or enter details manually, then pick your round.</p>
+            </div>
+            <button
+              type="button"
+              onClick={onClose}
+              disabled={busy}
+              className="rounded-full p-2 text-slate-400 transition-colors hover:bg-slate-100 dark:hover:bg-slate-800"
+              aria-label="Close"
+            >
+              <X size={24} />
+            </button>
           </div>
-          <button
-            type="button"
-            onClick={onClose}
-            disabled={busy}
-            className="rounded-full p-2 text-slate-400 transition-colors hover:bg-slate-100 dark:hover:bg-slate-800"
-            aria-label="Close"
-          >
-            <X size={24} />
-          </button>
+
+          {!initialContext?.applicationId && (
+            <div className="mt-6 flex gap-2 rounded-xl bg-slate-100 p-1 dark:bg-slate-900">
+              <button
+                type="button"
+                disabled={busy}
+                onClick={() => setSetupMode("url")}
+                className={`flex flex-1 items-center justify-center gap-2 rounded-lg py-2 text-sm font-medium transition-all ${
+                  setupMode === "url" ? "bg-white text-blue-600 shadow-sm dark:bg-slate-800 dark:text-blue-400" : "text-slate-500"
+                }`}
+              >
+                <LinkIcon size={16} /> Job URL
+              </button>
+              <button
+                type="button"
+                disabled={busy}
+                onClick={() => setSetupMode("manual")}
+                className={`flex flex-1 items-center justify-center gap-2 rounded-lg py-2 text-sm font-medium transition-all ${
+                  setupMode === "manual" ? "bg-white text-blue-600 shadow-sm dark:bg-slate-800 dark:text-blue-400" : "text-slate-500"
+                }`}
+              >
+                <FileText size={16} /> Manual entry
+              </button>
+            </div>
+          )}
         </div>
 
-        {!initialContext?.applicationId && (
-          <div className="mb-6 flex gap-2 rounded-xl bg-slate-100 p-1 dark:bg-slate-900">
-            <button
-              type="button"
-              disabled={busy}
-              onClick={() => setSetupMode("url")}
-              className={`flex flex-1 items-center justify-center gap-2 rounded-lg py-2 text-sm font-medium transition-all ${
-                setupMode === "url" ? "bg-white text-blue-600 shadow-sm dark:bg-slate-800 dark:text-blue-400" : "text-slate-500"
-              }`}
-            >
-              <LinkIcon size={16} /> Job URL
-            </button>
-            <button
-              type="button"
-              disabled={busy}
-              onClick={() => setSetupMode("manual")}
-              className={`flex flex-1 items-center justify-center gap-2 rounded-lg py-2 text-sm font-medium transition-all ${
-                setupMode === "manual" ? "bg-white text-blue-600 shadow-sm dark:bg-slate-800 dark:text-blue-400" : "text-slate-500"
-              }`}
-            >
-              <FileText size={16} /> Manual entry
-            </button>
-          </div>
-        )}
-
-        {isImporting ? (
-          <div className="mb-8 rounded-xl border border-slate-200 bg-slate-50 p-6 dark:border-slate-800 dark:bg-slate-900/50">
-            <JobUrlImportLoading compact />
-          </div>
-        ) : setupMode === "url" && !initialContext?.applicationId ? (
-          <div className="mb-8 space-y-4">
-            <div>
-              <label className="mb-2 block text-sm font-medium text-slate-700 dark:text-slate-300">Job posting URL</label>
-              <input
-                type="url"
-                value={jobUrl}
-                onChange={e => {
-                  setJobUrl(e.target.value);
-                  setImportError(null);
-                }}
-                className="w-full rounded-xl border border-slate-200 bg-slate-50 px-4 py-3 text-sm outline-none transition-all focus:border-blue-500 focus:ring-2 focus:ring-blue-500/20 dark:border-slate-700 dark:bg-slate-900"
-                placeholder="https://…"
-              />
-              {showLinkedInHint && (
-                <p className="mt-2 text-xs text-amber-600 dark:text-amber-400">LinkedIn URLs may take longer to process.</p>
-              )}
-              {importError && <p className="mt-2 text-sm text-red-600 dark:text-red-400">{importError}</p>}
+        <div className="scrollbar-on-hover min-h-0 flex-1 overflow-y-auto px-8 py-6">
+          {isImporting ? (
+            <div className="rounded-xl border border-slate-200 bg-slate-50 p-6 dark:border-slate-800 dark:bg-slate-900/50">
+              <JobUrlImportLoading compact />
             </div>
-          </div>
-        ) : (
-          <div className="mb-8 space-y-6">
-            <div>
-              <label className="mb-2 block text-sm font-medium text-slate-700 dark:text-slate-300">Target Company</label>
-              <div className="relative">
-                <span className="absolute left-4 top-3.5 text-slate-400">
-                  <Globe size={18} />
-                </span>
+          ) : setupMode === "url" && !initialContext?.applicationId ? (
+            <div className="space-y-4">
+              <div>
+                <label className="mb-2 block text-sm font-medium text-slate-700 dark:text-slate-300">Job posting URL</label>
+                <input
+                  type="url"
+                  value={jobUrl}
+                  onChange={e => {
+                    setJobUrl(e.target.value);
+                    setImportError(null);
+                  }}
+                  className="w-full rounded-xl border border-slate-200 bg-slate-50 px-4 py-3 text-sm outline-none transition-all focus:border-blue-500 focus:ring-2 focus:ring-blue-500/20 dark:border-slate-700 dark:bg-slate-900"
+                  placeholder="https://…"
+                />
+                {showLinkedInHint && (
+                  <p className="mt-2 text-xs text-amber-600 dark:text-amber-400">LinkedIn URLs may take longer to process.</p>
+                )}
+                {importError && <p className="mt-2 text-sm text-red-600 dark:text-red-400">{importError}</p>}
+              </div>
+            </div>
+          ) : (
+            <div className="space-y-6">
+              <div>
+                <label className="mb-2 block text-sm font-medium text-slate-700 dark:text-slate-300">Target Company</label>
+                <div className="relative">
+                  <span className="absolute left-4 top-3.5 text-slate-400">
+                    <Globe size={18} />
+                  </span>
+                  <input
+                    type="text"
+                    value={company}
+                    onChange={e => setCompany(e.target.value)}
+                    disabled={busy}
+                    className="w-full rounded-xl border border-slate-200 bg-slate-50 py-3 pl-11 pr-4 text-sm outline-none transition-all focus:border-blue-500 focus:ring-2 focus:ring-blue-500/20 dark:border-slate-700 dark:bg-slate-900"
+                    placeholder="e.g. Google, Airbnb, Stripe"
+                  />
+                </div>
+              </div>
+
+              <div>
+                <label className="mb-2 block text-sm font-medium text-slate-700 dark:text-slate-300">Role</label>
                 <input
                   type="text"
-                  value={company}
-                  onChange={e => setCompany(e.target.value)}
+                  value={role}
+                  onChange={e => setRole(e.target.value)}
                   disabled={busy}
-                  className="w-full rounded-xl border border-slate-200 bg-slate-50 py-3 pl-11 pr-4 text-sm outline-none transition-all focus:border-blue-500 focus:ring-2 focus:ring-blue-500/20 dark:border-slate-700 dark:bg-slate-900"
-                  placeholder="e.g. Google, Airbnb, Stripe"
+                  className="w-full rounded-xl border border-slate-200 bg-slate-50 px-4 py-3 text-sm outline-none transition-all focus:border-blue-500 focus:ring-2 focus:ring-blue-500/20 dark:border-slate-700 dark:bg-slate-900"
+                  placeholder="e.g. Senior Product Designer"
+                />
+              </div>
+
+              <div>
+                <label className="mb-2 block text-sm font-medium text-slate-700 dark:text-slate-300">Job Description</label>
+                <textarea
+                  value={jobDescription}
+                  onChange={e => setJobDescription(e.target.value)}
+                  disabled={busy}
+                  className="h-32 w-full resize-none rounded-xl border border-slate-200 bg-slate-50 px-4 py-3 text-sm outline-none transition-all focus:border-blue-500 focus:ring-2 focus:ring-blue-500/20 dark:border-slate-700 dark:bg-slate-900"
+                  placeholder="Paste the JD here for tailored questions..."
                 />
               </div>
             </div>
+          )}
 
-            <div>
-              <label className="mb-2 block text-sm font-medium text-slate-700 dark:text-slate-300">Role</label>
-              <input
-                type="text"
-                value={role}
-                onChange={e => setRole(e.target.value)}
-                disabled={busy}
-                className="w-full rounded-xl border border-slate-200 bg-slate-50 px-4 py-3 text-sm outline-none transition-all focus:border-blue-500 focus:ring-2 focus:ring-blue-500/20 dark:border-slate-700 dark:bg-slate-900"
-                placeholder="e.g. Senior Product Designer"
-              />
-            </div>
+          {!isImporting && (
+            <>
+              <div className="mt-6">
+                <label className="mb-3 block text-sm font-medium text-slate-700 dark:text-slate-300">Interview Round</label>
+                <div className="grid grid-cols-1 gap-2 sm:grid-cols-3">
+                  {ROUNDS.map(r => (
+                    <button
+                      key={r.id}
+                      type="button"
+                      disabled={busy}
+                      onClick={() => setRoundType(r.id)}
+                      className={`rounded-xl border px-4 py-3 text-left transition-all ${
+                        roundType === r.id
+                          ? "border-blue-500 bg-blue-50 dark:bg-blue-950/30"
+                          : "border-slate-200 hover:border-slate-300 dark:border-slate-700"
+                      } disabled:opacity-50`}
+                    >
+                      <span className="block text-sm font-semibold text-slate-900 dark:text-white">{r.label}</span>
+                      <span className="mt-0.5 block text-xs text-slate-500">{r.description}</span>
+                    </button>
+                  ))}
+                </div>
+              </div>
 
-            <div>
-              <label className="mb-2 block text-sm font-medium text-slate-700 dark:text-slate-300">Job Description</label>
-              <textarea
-                value={jobDescription}
-                onChange={e => setJobDescription(e.target.value)}
-                disabled={busy}
-                className="h-32 w-full resize-none rounded-xl border border-slate-200 bg-slate-50 px-4 py-3 text-sm outline-none transition-all focus:border-blue-500 focus:ring-2 focus:ring-blue-500/20 dark:border-slate-700 dark:bg-slate-900"
-                placeholder="Paste the JD here for tailored questions..."
-              />
-            </div>
-          </div>
-        )}
-
-        {!isImporting && (
-          <>
-            <div className="mb-6">
-              <label className="mb-3 block text-sm font-medium text-slate-700 dark:text-slate-300">Interview Round</label>
-              <div className="grid grid-cols-1 gap-2 sm:grid-cols-3">
-                {ROUNDS.map(r => (
+              <div className="mt-6">
+                <label className="mb-3 block text-sm font-medium text-slate-700 dark:text-slate-300">Session Style</label>
+                <div className="grid grid-cols-1 gap-2 sm:grid-cols-2">
                   <button
-                    key={r.id}
                     type="button"
                     disabled={busy}
-                    onClick={() => setRoundType(r.id)}
+                    onClick={() => setMode("questions")}
                     className={`rounded-xl border px-4 py-3 text-left transition-all ${
-                      roundType === r.id
-                        ? "border-blue-500 bg-blue-50 dark:bg-blue-950/30"
-                        : "border-slate-200 hover:border-slate-300 dark:border-slate-700"
+                      mode === "questions" ? "border-blue-500 bg-blue-50 dark:bg-blue-950/30" : "border-slate-200 dark:border-slate-700"
                     } disabled:opacity-50`}
                   >
-                    <span className="block text-sm font-semibold text-slate-900 dark:text-white">{r.label}</span>
-                    <span className="mt-0.5 block text-xs text-slate-500">{r.description}</span>
+                    <span className="block text-sm font-semibold text-slate-900 dark:text-white">Guided questions</span>
+                    <span className="mt-0.5 block text-xs text-slate-500">AI questions with live speech-to-text answers</span>
                   </button>
-                ))}
+                  <button
+                    type="button"
+                    disabled={busy}
+                    onClick={() => setMode("live")}
+                    className={`rounded-xl border px-4 py-3 text-left transition-all ${
+                      mode === "live" ? "border-blue-500 bg-blue-50 dark:bg-blue-950/30" : "border-slate-200 dark:border-slate-700"
+                    } disabled:opacity-50`}
+                  >
+                    <span className="block text-sm font-semibold text-slate-900 dark:text-white">Live voice mock</span>
+                    <span className="mt-0.5 block text-xs text-slate-500">Conversational AI interviewer (Gemini Live)</span>
+                  </button>
+                </div>
               </div>
-            </div>
+            </>
+          )}
+        </div>
 
-            <div className="mb-8">
-              <label className="mb-3 block text-sm font-medium text-slate-700 dark:text-slate-300">Session Style</label>
-              <div className="grid grid-cols-1 gap-2 sm:grid-cols-2">
-                <button
-                  type="button"
-                  disabled={busy}
-                  onClick={() => setMode("questions")}
-                  className={`rounded-xl border px-4 py-3 text-left transition-all ${
-                    mode === "questions" ? "border-blue-500 bg-blue-50 dark:bg-blue-950/30" : "border-slate-200 dark:border-slate-700"
-                  } disabled:opacity-50`}
-                >
-                  <span className="block text-sm font-semibold text-slate-900 dark:text-white">Guided questions</span>
-                  <span className="mt-0.5 block text-xs text-slate-500">AI questions with live speech-to-text answers</span>
-                </button>
-                <button
-                  type="button"
-                  disabled={busy}
-                  onClick={() => setMode("live")}
-                  className={`rounded-xl border px-4 py-3 text-left transition-all ${
-                    mode === "live" ? "border-blue-500 bg-blue-50 dark:bg-blue-950/30" : "border-slate-200 dark:border-slate-700"
-                  } disabled:opacity-50`}
-                >
-                  <span className="block text-sm font-semibold text-slate-900 dark:text-white">Live voice mock</span>
-                  <span className="mt-0.5 block text-xs text-slate-500">Conversational AI interviewer (Gemini Live)</span>
-                </button>
-              </div>
-            </div>
-          </>
-        )}
-
-        <div className="flex gap-4 border-t border-slate-100 pt-6 dark:border-slate-800">
+        <div className="flex shrink-0 gap-4 border-t border-slate-100 px-8 py-6 dark:border-slate-800">
           <button
             type="button"
             onClick={onClose}
@@ -312,7 +321,7 @@ const InterviewSetupModal: React.FC<InterviewSetupModalProps> = ({ initialContex
           )}
         </div>
       </div>
-    </div>
+    </ModalPortalOverlay>
   );
 };
 

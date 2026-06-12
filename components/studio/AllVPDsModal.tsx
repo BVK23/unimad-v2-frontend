@@ -1,4 +1,7 @@
+"use client";
+
 import React, { useState } from "react";
+import { ModalPortalOverlay } from "@/components/ui/ModalPortalOverlay";
 import { X, Search } from "lucide-react";
 import VpdLibraryCard, { VpdLibraryItem } from "./VpdLibraryCard";
 
@@ -20,7 +23,7 @@ const AllVPDsModal: React.FC<AllVPDsModalProps> = ({ onClose, vpds, onVPClick, i
   const filteredVPDs = activeList.filter(vpd => vpd.title.toLowerCase().includes(searchQuery.toLowerCase()));
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 p-4 backdrop-blur-sm animate-in fade-in duration-200">
+    <ModalPortalOverlay className="flex items-center justify-center bg-black/60 p-4 backdrop-blur-sm animate-in fade-in duration-200">
       <div className="flex h-[75vh] w-full max-w-4xl flex-col overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-2xl animate-in zoom-in-95 duration-200 dark:border-slate-800 dark:bg-slate-900">
         <div className="flex items-center justify-between gap-4 border-b border-slate-100 p-6 dark:border-slate-800">
           <div className="flex min-w-0 flex-wrap items-center gap-4">
@@ -91,7 +94,7 @@ const AllVPDsModal: React.FC<AllVPDsModalProps> = ({ onClose, vpds, onVPClick, i
           )}
         </div>
       </div>
-    </div>
+    </ModalPortalOverlay>
   );
 };
 

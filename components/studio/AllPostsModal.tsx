@@ -1,4 +1,8 @@
+"use client";
+
 import React, { useState } from "react";
+import { createPortal } from "react-dom";
+import { MODAL_OVERLAY_Z_CLASS } from "@/lib/ui/modal-overlay";
 import { X, Search, Filter } from "lucide-react";
 import LinkedInPostListCard, { LinkedInListItem } from "./LinkedInPostListCard";
 
@@ -26,8 +30,12 @@ const AllPostsModal: React.FC<AllPostsModalProps> = ({ onClose, initialTab, sche
     return matchesSearch && matchesStatus;
   });
 
-  return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 p-4 backdrop-blur-sm animate-in fade-in duration-200">
+  if (typeof document === "undefined") return null;
+
+  return createPortal(
+    <div
+      className={`fixed inset-0 ${MODAL_OVERLAY_Z_CLASS} flex items-center justify-center bg-black/60 p-4 backdrop-blur-sm animate-in fade-in duration-200`}
+    >
       <div className="flex h-[80vh] w-full max-w-3xl flex-col overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-2xl animate-in zoom-in-95 duration-200 dark:border-slate-800 dark:bg-slate-900">
         <div className="flex items-center justify-between border-b border-slate-100 p-6 dark:border-slate-800">
           <div className="flex min-w-0 flex-wrap items-center gap-3">
@@ -125,7 +133,8 @@ const AllPostsModal: React.FC<AllPostsModalProps> = ({ onClose, initialTab, sche
           )}
         </div>
       </div>
-    </div>
+    </div>,
+    document.body
   );
 };
 

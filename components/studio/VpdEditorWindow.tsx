@@ -1,4 +1,7 @@
+"use client";
+
 import React from "react";
+import { ModalPortalOverlay } from "@/components/ui/ModalPortalOverlay";
 import { X } from "lucide-react";
 import { PortfolioItem } from "../../types";
 import ProjectDetailView from "../ProjectDetailView";
@@ -12,7 +15,7 @@ interface VpdEditorWindowProps {
 
 const VpdEditorWindow: React.FC<VpdEditorWindowProps> = ({ project, onClose, onUpdateProject }) => {
   return (
-    <div className="fixed inset-0 z-[60] flex flex-col bg-slate-100 dark:bg-slate-950 animate-in fade-in duration-200">
+    <ModalPortalOverlay className="flex flex-col bg-slate-100 dark:bg-slate-950 animate-in fade-in duration-200">
       <div className="flex h-14 shrink-0 items-center justify-between gap-4 border-b border-slate-200 bg-white px-5 dark:border-slate-800 dark:bg-slate-950">
         <div className="min-w-0 flex-1">
           <p className="text-[11px] font-medium uppercase tracking-wide text-slate-400">Value Prop Doc</p>
@@ -45,7 +48,7 @@ const VpdEditorWindow: React.FC<VpdEditorWindowProps> = ({ project, onClose, onU
           />
         </div>
       </div>
-    </div>
+    </ModalPortalOverlay>
   );
 };
 

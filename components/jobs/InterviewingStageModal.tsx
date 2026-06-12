@@ -1,4 +1,5 @@
 import React from "react";
+import { ModalPortalOverlay } from "@/components/ui/ModalPortalOverlay";
 import { X, Sparkles, Mic2 } from "lucide-react";
 import { Job } from "../../types/jobs";
 
@@ -10,11 +11,7 @@ interface InterviewingStageModalProps {
 }
 
 const InterviewingStageModal: React.FC<InterviewingStageModalProps> = ({ job, onClose, onBuildVpd, onStartInterviewPrep }) => (
-  <div
-    className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4 backdrop-blur-sm"
-    onClick={onClose}
-    role="presentation"
-  >
+  <ModalPortalOverlay className="flex items-center justify-center bg-black/50 p-4 backdrop-blur-sm" onClick={onClose} role="presentation">
     <div
       className="w-full max-w-md rounded-3xl border border-slate-200 bg-white p-6 shadow-2xl dark:border-slate-800 dark:bg-slate-900"
       onClick={e => e.stopPropagation()}
@@ -70,7 +67,7 @@ const InterviewingStageModal: React.FC<InterviewingStageModalProps> = ({ job, on
         </button>
       </div>
     </div>
-  </div>
+  </ModalPortalOverlay>
 );
 
 export default InterviewingStageModal;

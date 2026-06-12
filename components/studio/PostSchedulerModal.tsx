@@ -1,5 +1,9 @@
+"use client";
+
 import React, { useEffect, useState } from "react";
+import { createPortal } from "react-dom";
 import ProfilePictureWithFallback from "@/components/user-profile/ProfilePictureWithFallback";
+import { MODAL_OVERLAY_Z_CLASS } from "@/lib/ui/modal-overlay";
 import { X, Send, CheckCircle2, Edit2, Wand2 } from "lucide-react";
 import StudioMediaPreviewImage from "./StudioMediaPreviewImage";
 
@@ -92,9 +96,13 @@ const PostSchedulerModal: React.FC<PostSchedulerModalProps> = ({
   const authorInitialsDisplay =
     authorInitials ?? (`${authorName.split(" ")[0]?.[0] ?? ""}${authorName.split(" ")[1]?.[0] ?? ""}`.toUpperCase() || "YO");
 
-  return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 p-4 backdrop-blur-sm animate-in fade-in duration-200">
-      <div className="relative flex w-full max-w-2xl flex-col overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-2xl animate-in zoom-in-95 duration-200 dark:border-slate-800 dark:bg-slate-900">
+  if (typeof document === "undefined") return null;
+
+  return createPortal(
+    <div
+      className={`fixed inset-0 ${MODAL_OVERLAY_Z_CLASS} flex items-center justify-center overflow-y-auto bg-black/60 p-4 backdrop-blur-sm animate-in fade-in duration-200`}
+    >
+      <div className="relative my-auto flex max-h-[min(90dvh,calc(100vh-2rem))] w-full max-w-2xl min-h-0 flex-col overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-2xl animate-in zoom-in-95 duration-200 dark:border-slate-800 dark:bg-slate-900">
         {errorToast ? (
           <div className="absolute right-4 top-4 z-30 animate-in slide-in-from-top-2 fade-in duration-200">
             <div
@@ -107,7 +115,7 @@ const PostSchedulerModal: React.FC<PostSchedulerModalProps> = ({
           </div>
         ) : null}
 
-        <div className="flex items-center justify-between border-b border-slate-100 bg-white p-6 dark:border-slate-800 dark:bg-slate-900">
+        <div className="flex shrink-0 items-center justify-between border-b border-slate-100 bg-white p-6 dark:border-slate-800 dark:bg-slate-900">
           <h2 className="font-sans text-xl font-semibold tracking-tight text-slate-900 dark:text-white">Review & Schedule</h2>
           <button
             type="button"
@@ -120,7 +128,7 @@ const PostSchedulerModal: React.FC<PostSchedulerModalProps> = ({
           </button>
         </div>
 
-        <div className="flex-1 overflow-y-auto p-6">
+        <div className="min-h-0 flex-1 overflow-y-auto p-6">
           {mode === "preview" ? (
             <div className="group relative">
               <div className="min-h-[16rem] rounded-xl border border-slate-200 bg-white p-6 shadow-sm dark:border-slate-800 dark:bg-slate-900">
@@ -298,7 +306,7 @@ const PostSchedulerModal: React.FC<PostSchedulerModalProps> = ({
           </div>
         </div>
 
-        <div className="flex justify-end gap-3 rounded-b-2xl border-t border-slate-100 bg-white p-6 dark:border-slate-800 dark:bg-slate-900">
+        <div className="flex shrink-0 justify-end gap-3 rounded-b-2xl border-t border-slate-100 bg-white p-6 dark:border-slate-800 dark:bg-slate-900">
           <button
             type="button"
             onClick={onClose}
@@ -331,7 +339,8 @@ const PostSchedulerModal: React.FC<PostSchedulerModalProps> = ({
           </div>
         ) : null}
       </div>
-    </div>
+    </div>,
+    document.body
   );
 };
 

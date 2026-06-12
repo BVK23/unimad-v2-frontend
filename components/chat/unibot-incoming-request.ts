@@ -21,7 +21,14 @@ export type UnibotIncomingRequest =
       requestKey?: number;
     }
   | { type: "section_review"; section: UnibotResumeSection; requestKey: number }
-  | { type: "content_gen_topic"; seedTopic?: string; followUpText?: string; requestKey: number };
+  | {
+      type: "content_gen_topic";
+      seedTopic?: string;
+      followUpText?: string;
+      topicTitle?: string;
+      reuseExistingTopic?: boolean;
+      requestKey: number;
+    };
 
 export interface UnibotImproveTarget {
   section: UnibotResumeSection;

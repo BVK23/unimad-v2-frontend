@@ -1,6 +1,7 @@
 "use client";
 
 import React, { useCallback, useEffect, useRef, useState } from "react";
+import { ModalPortalOverlay } from "@/components/ui/ModalPortalOverlay";
 import { saveInterviewAnswer } from "@/src/features/interview-prep/server-actions/interview-actions";
 import type { InterviewQuestion, InterviewRoundType } from "@/src/features/interview-prep/types";
 import { Mic, MicOff, SkipForward, Loader2 } from "lucide-react";
@@ -159,7 +160,7 @@ const InterviewActiveSession: React.FC<InterviewActiveSessionProps> = ({
   const displayTranscript = [transcript, interimTranscript].filter(Boolean).join(" ").trim();
 
   return (
-    <div className="fixed inset-0 z-50 flex flex-col bg-[#0B1121] text-white">
+    <ModalPortalOverlay className="flex flex-col bg-[#0B1121] text-white">
       <div className="pointer-events-none absolute inset-0 flex items-center justify-center opacity-30">
         <div
           className={`h-[600px] w-[600px] rounded-full bg-blue-600/20 blur-[120px] transition-all duration-300 ${isListening ? "scale-110 opacity-50" : "scale-100"}`}
@@ -245,7 +246,7 @@ const InterviewActiveSession: React.FC<InterviewActiveSessionProps> = ({
           {isListening ? "Listening..." : "Tap microphone to answer, then skip to continue"}
         </p>
       </div>
-    </div>
+    </ModalPortalOverlay>
   );
 };
 

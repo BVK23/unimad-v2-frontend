@@ -15,6 +15,8 @@ export type ApplicationAssetSelectionPreset = {
   label: string;
   icon: LucideIcon;
   instruction: string;
+  /** Full-document improve from Prepare → Studio (entire asset, not a selection). */
+  fullDocumentInstruction?: string;
 };
 
 const coverLetterPresets: ApplicationAssetSelectionPreset[] = [
@@ -24,6 +26,8 @@ const coverLetterPresets: ApplicationAssetSelectionPreset[] = [
     icon: BarChart3,
     instruction:
       "Rewrite ONLY this section of my cover letter to include specific metrics, numbers, or measurable outcomes that demonstrate impact. Keep the rest of the letter unchanged.",
+    fullDocumentInstruction:
+      "Rewrite the entire cover letter to include specific metrics, numbers, or measurable outcomes that demonstrate impact.",
   },
   {
     id: "align-to-role",
@@ -31,6 +35,8 @@ const coverLetterPresets: ApplicationAssetSelectionPreset[] = [
     icon: Crosshair,
     instruction:
       "Rewrite ONLY this section to better connect with the company's mission or specific requirements from the job description. Keep the rest of the letter unchanged.",
+    fullDocumentInstruction:
+      "Rewrite the entire cover letter to better connect with the company's mission and specific requirements from the job description.",
   },
   {
     id: "tighten",
@@ -38,6 +44,8 @@ const coverLetterPresets: ApplicationAssetSelectionPreset[] = [
     icon: Minus,
     instruction:
       "Make ONLY this section more concise. Target 10-15 word sentences, cut filler words, keep the core point. Do not change the rest of the letter.",
+    fullDocumentInstruction:
+      "Make the entire cover letter more concise. Target 10-15 word sentences, cut filler words, and keep the core points.",
   },
 ];
 
@@ -48,6 +56,8 @@ const coldEmailPresets: ApplicationAssetSelectionPreset[] = [
     icon: Megaphone,
     instruction:
       "Rewrite ONLY this section to be more attention-grabbing for a cold outreach to a recruiter. Make it direct and curiosity-inducing. Keep the rest of the email unchanged.",
+    fullDocumentInstruction:
+      "Rewrite the entire cold email to be more attention-grabbing for a recruiter. Make it direct and curiosity-inducing.",
   },
   {
     id: "stronger-cta",
@@ -55,6 +65,8 @@ const coldEmailPresets: ApplicationAssetSelectionPreset[] = [
     icon: MousePointerClick,
     instruction:
       "Rewrite ONLY this section with a clearer, more compelling call-to-action. Make it frictionless for them to respond. Keep the rest of the email unchanged.",
+    fullDocumentInstruction:
+      "Rewrite the entire cold email with a clearer, more compelling call-to-action. Make it frictionless for them to respond.",
   },
   {
     id: "cut-essentials",
@@ -62,6 +74,7 @@ const coldEmailPresets: ApplicationAssetSelectionPreset[] = [
     icon: Scissors,
     instruction:
       "This cold email must stay under 100 words total. Cut every unnecessary word from ONLY this section while keeping the core message. Do not change the rest.",
+    fullDocumentInstruction: "This cold email must stay under 100 words total. Cut every unnecessary word while keeping the core message.",
   },
 ];
 
@@ -141,4 +154,27 @@ export const assetTypeDisplayLabel = (assetType: ApplicationAssetApiType): strin
     default:
       return "document";
   }
+};
+
+export const buildFullDocumentRefineUserMessage = (assetType: ApplicationAssetApiType, instruction: string): string => {
+  const docLabel = DOCUMENT_LABELS[assetType];
+  return [
+    `Please improve my entire ${docLabel}.`,
+    "",
+    instruction.trim(),
+    "",
+    "IMPORTANT: Output the complete revised document. Keep the same structure unless the instruction says otherwise.",
+  ].join("\n");
+};
+
+export const buildFullDocumentFreeformUserMessage = (assetType: ApplicationAssetApiType, userInstruction: string): string => {
+  const docLabel = DOCUMENT_LABELS[assetType];
+  const instruction = userInstruction.trim();
+  return [
+    `Please improve my entire ${docLabel}.`,
+    "",
+    instruction,
+    "",
+    "IMPORTANT: Output the complete revised document. Keep the same structure unless my instruction says otherwise.",
+  ].join("\n");
 };

@@ -1,6 +1,7 @@
 "use client";
 
 import type { ReactNode } from "react";
+import { ModalPortalOverlay } from "@/components/ui/ModalPortalOverlay";
 import { btnGhost, btnPrimaryBrand } from "@/constants/ui/button-classes";
 
 type ProfileConfirmDialogProps = {
@@ -31,7 +32,7 @@ export function ProfileConfirmDialog({
   const confirmClass = confirmVariant === "danger" ? `${btnPrimaryBrand} !bg-red-600 hover:!bg-red-700` : btnPrimaryBrand;
 
   return (
-    <div className="fixed inset-0 z-[60] flex items-center justify-center p-4" role="dialog" aria-modal="true">
+    <ModalPortalOverlay open={open} className="flex items-center justify-center p-4" role="dialog" aria-modal="true">
       <button type="button" className="absolute inset-0 bg-slate-900/50 backdrop-blur-sm" aria-label="Close" onClick={onCancel} />
       <div className="relative w-full max-w-md rounded-2xl border border-slate-200 bg-white p-6 shadow-xl dark:border-slate-800 dark:bg-[#111]">
         <h2 className="text-base font-semibold text-slate-900 dark:text-white">{title}</h2>
@@ -45,6 +46,6 @@ export function ProfileConfirmDialog({
           </button>
         </div>
       </div>
-    </div>
+    </ModalPortalOverlay>
   );
 }

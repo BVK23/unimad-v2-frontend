@@ -1,4 +1,5 @@
 import type { CSSProperties } from "react";
+import { resolveMediaDisplayUrl } from "@/utils/resolve-media-url";
 
 export type CropAspectRatio = "1:1" | "3:4" | "4:5" | "16:9";
 
@@ -100,6 +101,25 @@ export function fileToDataUrl(file: File): Promise<string> {
     reader.onerror = () => reject(new Error("Failed to read file"));
     reader.readAsDataURL(file);
   });
+}
+
+/** Fetch a stored media URL into a data URL so canvas cropping works without CORS taint. */
+export async function resolveRemoteImageForCrop(source: string): Promise<string> {
+  const resolvedSource = resolveMediaDisplayUrl(source);
+  if (!resolvedSource) {
+    throw new Error("Could not load this image for cropping. Try uploading again.");
+  }
+  if (resolvedSource.startsWith("data:") || resolvedSource.startsWith("blob:")) {
+    return resolvedSource;
+  }
+
+  const response = await fetch(resolvedSource, { credentials: "include", mode: "cors" });
+  if (!response.ok) {
+    throw new Error("Could not load this image for cropping. Try uploading again.");
+  }
+
+  const blob = await response.blob();
+  return fileToDataUrl(new File([blob], "crop-source.jpg", { type: blob.type || "image/jpeg" }));
 }
 
 export function getCropPreviewBackgroundStyle(

@@ -11,6 +11,7 @@ const ONBOARDING_QUERY_KEY = ["onboardingSteps"] as const;
 type CachedSteps = {
   currentStepIndex: number;
   history: number[];
+  steps: unknown[];
 };
 
 /**
@@ -66,9 +67,39 @@ function SkipLink() {
     <Link
       href="/uniboard/resume"
       className="inline-flex items-center text-sm font-medium text-[#346DE0] hover:underline absolute top-4 right-4 md:top-6 md:right-8"
+      aria-label="Skip all onboarding steps and go to resume"
     >
-      Skip
+      Skip All
     </Link>
+  );
+}
+
+function OnboardingProgress() {
+  const queryClient = useQueryClient();
+  const data = useCachedQueryData<CachedSteps>(queryClient, ONBOARDING_QUERY_KEY);
+
+  if (!data?.steps?.length || data.currentStepIndex < 0) return null;
+
+  const currentStep = data.currentStepIndex + 1;
+  const totalSteps = data.steps.length;
+  const progressPercent = Math.round((currentStep / totalSteps) * 100);
+
+  return (
+    <div className="flex flex-col items-center gap-2 w-full max-w-[34rem]" role="status" aria-live="polite">
+      <p className="text-sm font-medium text-[#4A5568]">
+        Step {currentStep} of {totalSteps}
+      </p>
+      <div
+        className="w-full h-1.5 rounded-full bg-[#E2E8F0] overflow-hidden"
+        role="progressbar"
+        aria-valuenow={currentStep}
+        aria-valuemin={1}
+        aria-valuemax={totalSteps}
+        aria-label={`Onboarding progress: step ${currentStep} of ${totalSteps}`}
+      >
+        <div className="h-full rounded-full bg-[#346DE0] transition-all duration-300" style={{ width: `${progressPercent}%` }} />
+      </div>
+    </div>
   );
 }
 
@@ -99,6 +130,7 @@ export default function OnboardingChrome({ children }: { children: React.ReactNo
           <Link href="/" className="text-[20px] font-bold tracking-tight text-[#0C0F1A] mb-1" aria-label="Unimad home">
             uni<span className="text-[#346DE0]">mad</span>
           </Link>
+          <OnboardingProgress />
           {children}
         </div>
       </div>

@@ -20,6 +20,8 @@ export type JobsUrlState = {
   interviewId: string | null;
   view: InterviewView | null;
   round: string | null;
+  prepareJob: string | null;
+  prepareTab: string | null;
 };
 
 export function parseJobsSearchParams(searchParams: URLSearchParams): JobsUrlState {
@@ -28,6 +30,8 @@ export function parseJobsSearchParams(searchParams: URLSearchParams): JobsUrlSta
     interviewId: searchParams.get("interview_id"),
     view: parseInterviewView(searchParams.get("view")),
     round: searchParams.get("round"),
+    prepareJob: searchParams.get("prepareJob"),
+    prepareTab: searchParams.get("prepareTab"),
   };
 }
 
@@ -39,6 +43,8 @@ export function buildJobsSearchParams(
     view: InterviewView | null;
     round: string | null;
     setup: string | null;
+    prepareJob: string | null;
+    prepareTab: string | null;
   }>
 ): string {
   const next = new URLSearchParams(current.toString());
@@ -53,6 +59,8 @@ export function buildJobsSearchParams(
   if ("view" in updates) apply("view", updates.view ?? null);
   if ("round" in updates) apply("round", updates.round ?? null);
   if ("setup" in updates) apply("setup", updates.setup ?? null);
+  if ("prepareJob" in updates) apply("prepareJob", updates.prepareJob ?? null);
+  if ("prepareTab" in updates) apply("prepareTab", updates.prepareTab ?? null);
 
   const qs = next.toString();
   return qs ? `?${qs}` : "";

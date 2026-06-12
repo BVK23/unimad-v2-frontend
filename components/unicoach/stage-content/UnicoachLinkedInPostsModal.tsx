@@ -1,6 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useState } from "react";
+import { ModalPortalOverlay, MODAL_OVERLAY_ABOVE_MENU_Z_CLASS } from "@/components/ui/ModalPortalOverlay";
 import { UNICOACH_LINKEDIN_POSTS, type UnicoachLinkedInPost } from "@/constants/unicoach-linkedin-posts";
 import { Check, Copy, X } from "lucide-react";
 
@@ -23,7 +24,7 @@ function PostDetailModal({ post, onClose }: { post: UnicoachLinkedInPost; onClos
   }, [post.examplePost]);
 
   return (
-    <div className="fixed inset-0 z-[110] flex items-center justify-center p-4">
+    <ModalPortalOverlay zClass={MODAL_OVERLAY_ABOVE_MENU_Z_CLASS} className="flex items-center justify-center p-4">
       <button type="button" className="absolute inset-0 bg-black/50" aria-label="Close" onClick={onClose} />
       <div className="relative z-10 flex max-h-[85vh] w-full max-w-2xl flex-col overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-xl dark:border-slate-700 dark:bg-[#111]">
         <div className="flex items-start justify-between gap-3 border-b border-slate-100 px-4 py-3 dark:border-slate-800">
@@ -59,7 +60,7 @@ function PostDetailModal({ post, onClose }: { post: UnicoachLinkedInPost; onClos
           </div>
         </div>
       </div>
-    </div>
+    </ModalPortalOverlay>
   );
 }
 
@@ -84,7 +85,7 @@ function UnicoachLinkedInPostsModalContent({ onClose }: { onClose: () => void })
 
   return (
     <>
-      <div className="fixed inset-0 z-[100] flex items-center justify-center p-4">
+      <ModalPortalOverlay className="flex items-center justify-center p-4">
         <button type="button" className="absolute inset-0 bg-black/50" aria-label="Close" onClick={onClose} />
         <div className="relative z-10 flex max-h-[90vh] w-full max-w-3xl flex-col overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-xl dark:border-slate-700 dark:bg-[#111]">
           <div className="flex items-center justify-between border-b border-slate-100 px-4 py-3 dark:border-slate-800">
@@ -114,7 +115,7 @@ function UnicoachLinkedInPostsModalContent({ onClose }: { onClose: () => void })
             </div>
           </div>
         </div>
-      </div>
+      </ModalPortalOverlay>
       {selected ? <PostDetailModal post={selected} onClose={() => setSelected(null)} /> : null}
     </>
   );

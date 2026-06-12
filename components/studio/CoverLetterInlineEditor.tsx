@@ -3,6 +3,7 @@
 import React from "react";
 import { APPLICATION_DOCUMENT_BODY_CLASS } from "@/constants/applicationDocumentPreview";
 import { normalizeContentToHtml } from "@/utils/normalize-content-to-html";
+import { stripTrailingEmptyListItems } from "@/utils/strip-trailing-empty-list-items";
 import Link from "@tiptap/extension-link";
 import Underline from "@tiptap/extension-underline";
 import { useEditor, EditorContent } from "@tiptap/react";
@@ -23,14 +24,21 @@ interface CoverLetterInlineEditorProps {
   onDeactivate?: () => void;
 }
 
+const normalizeEditorHtml = (raw: string) => stripTrailingEmptyListItems(normalizeContentToHtml(raw));
+
 const CoverLetterInlineEditor: React.FC<CoverLetterInlineEditorProps> = ({ value, onChange, onActivate, onDeactivate }) => {
   const [isActivated, setIsActivated] = React.useState(false);
   const wrapperRef = React.useRef<HTMLDivElement | null>(null);
   const onDeactivateRef = React.useRef(onDeactivate);
+  const valueRef = React.useRef(value);
 
   React.useEffect(() => {
     onDeactivateRef.current = onDeactivate;
   }, [onDeactivate]);
+
+  React.useEffect(() => {
+    valueRef.current = value;
+  }, [value]);
 
   const editor = useEditor({
     immediatelyRender: false,
@@ -45,14 +53,18 @@ const CoverLetterInlineEditor: React.FC<CoverLetterInlineEditorProps> = ({ value
         openOnClick: false,
       }),
     ],
-    content: normalizeContentToHtml(value),
+    content: normalizeEditorHtml(value),
     editorProps: {
       attributes: {
         class: `cover-letter-editor ProseMirror min-h-[400px] focus:outline-none ${APPLICATION_DOCUMENT_BODY_CLASS} [&_ul]:list-disc [&_ul]:my-2 [&_ul]:ml-5 [&_ul]:pl-0 [&_ol]:list-decimal [&_ol]:my-2 [&_ol]:ml-5 [&_ol]:pl-0 [&_li]:mb-1`,
       },
     },
-    onUpdate: ({ editor }) => {
-      onChange(editor.getHTML());
+    onUpdate: ({ editor, transaction }) => {
+      if (!transaction.docChanged) return;
+      const html = normalizeEditorHtml(editor.getHTML());
+      const baseline = normalizeEditorHtml(valueRef.current);
+      if (html === baseline) return;
+      onChange(html);
     },
     onFocus: () => {
       setIsActivated(true);
@@ -81,8 +93,8 @@ const CoverLetterInlineEditor: React.FC<CoverLetterInlineEditorProps> = ({ value
 
   React.useEffect(() => {
     if (!editor || editor.isFocused) return;
-    const current = editor.getHTML();
-    const incoming = normalizeContentToHtml(value);
+    const current = normalizeEditorHtml(editor.getHTML());
+    const incoming = normalizeEditorHtml(value);
     if (incoming !== current) {
       editor.commands.setContent(incoming, { emitUpdate: false });
     }

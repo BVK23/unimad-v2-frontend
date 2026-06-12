@@ -36,9 +36,16 @@ export const useUpdateProfileMutation = () => {
   const qc = useQueryClient();
   return useMutation({
     mutationFn: (payload: Partial<ProfileData>) => updateProfileData(payload),
-    onSuccess: (_data, variables) => {
+    onSuccess: async (_data, variables) => {
       qc.setQueryData<ProfileData>(profileQk.profile, prev => (prev ? { ...prev, ...variables } : (variables as ProfileData)));
-      void qc.invalidateQueries({ queryKey: profileQk.profile });
+      try {
+        await qc.refetchQueries({ queryKey: profileQk.profile });
+      } catch {
+        // Optimistic cache update already applied; refetch failure should not fail the save.
+      }
+      if ("profilePictureUrl" in variables) {
+        void qc.invalidateQueries({ queryKey: profileQk.media("profile-picture") });
+      }
     },
   });
 };

@@ -5,6 +5,7 @@ import { btnGhost, btnPrimaryBrand } from "@/constants/ui/button-classes";
 import { useProfileData, useUpdateProfileMutation } from "@/features/user-profile/hooks/use-profile-data";
 import type { ProfileData } from "@/features/user-profile/types";
 import { resolveProfilePictureFromProfile } from "@/features/user-profile/utils/resolve-profile-picture";
+import { sanitizeUserFacingError } from "@/utils/message-from-failed-response";
 import { OAuthConnectionsPanel } from "./OAuthConnectionsPanel";
 import { ProfilePictureDialog } from "./ProfilePictureDialog";
 import { UserProfileAvatar } from "./UserProfileAvatar";
@@ -61,6 +62,8 @@ function UserProfileSettingsForm({ profile }: { profile: ProfileData }) {
     return fields.some(f => (draft[f] ?? "") !== (profile[f] ?? ""));
   }, [draft, profile]);
 
+  const avatarUrl = resolveProfilePictureFromProfile(profile);
+
   const handleSave = async () => {
     if (!draft) return;
     setSaveError(null);
@@ -75,18 +78,16 @@ function UserProfileSettingsForm({ profile }: { profile: ProfileData }) {
         role: draft.role?.[0] ? [draft.role[0]] : undefined,
       });
     } catch (e) {
-      setSaveError(e instanceof Error ? e.message : "Failed to save");
+      setSaveError(sanitizeUserFacingError(e instanceof Error ? e.message : "Failed to save", "Could not save profile. Please try again."));
     }
   };
-
-  const avatarUrl = resolveProfilePictureFromProfile(draft);
 
   return (
     <>
       <section className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm dark:border-slate-800 dark:bg-[#111]">
         <div className="flex flex-col gap-6 md:flex-row md:items-start">
           <div className="flex flex-col items-center gap-3 md:w-44 shrink-0">
-            <UserProfileAvatar profile={draft} size={128} onClick={() => setPictureOpen(true)} showHover />
+            <UserProfileAvatar profile={profile} size={128} onClick={() => setPictureOpen(true)} showHover />
             <button type="button" onClick={() => setPictureOpen(true)} className={btnGhost}>
               Change photo
             </button>
@@ -173,7 +174,12 @@ function UserProfileSettingsForm({ profile }: { profile: ProfileData }) {
         </div>
       </section>
 
-      <ProfilePictureDialog open={pictureOpen} onClose={() => setPictureOpen(false)} currentUrl={avatarUrl} />
+      <ProfilePictureDialog
+        open={pictureOpen}
+        onClose={() => setPictureOpen(false)}
+        currentUrl={avatarUrl}
+        croppableUrl={profile.profilePictureUrl}
+      />
     </>
   );
 }

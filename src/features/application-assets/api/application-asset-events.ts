@@ -18,6 +18,24 @@ export type RequestApplicationAssetDraftDetail = {
   assetId?: string;
 };
 
+export type ApplicationAssetOpenImproveDetail = {
+  assetType: ApplicationAssetApiType;
+  assetId: string;
+  applicationId?: string;
+  role: string;
+  company: string;
+  jobDescription: string;
+  contactName?: string;
+  content: string;
+  /** When set with `autoSend`, sends this prompt in the application-asset Unibot topic. */
+  initialPrompt?: string;
+  /** Opens or reuses the improve topic and sends `initialPrompt` immediately. */
+  autoSend?: boolean;
+};
+
+/** Default follow-up when continuing to refine a generated Studio draft in Unibot. */
+export const IMPROVE_INITIAL_DRAFT_PROMPT = "Improve this initial draft";
+
 export type ApplicationAssetDraftReadyDetail = {
   assetId: string;
   assetType: ApplicationAssetApiType;
@@ -69,4 +87,6 @@ export const APPLICATION_ASSET_EVENTS = {
   selectionRefine: "application-asset-selection-refine",
   /** Studio selection: open chat with quoted selection for freeform instruction. */
   selectionFreeform: "application-asset-selection-freeform",
+  /** Prepare → Studio Improve: open Unibot with full-document preset chips (no auto-send). */
+  openImprove: "application-asset-open-improve",
 } as const;

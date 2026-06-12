@@ -1,5 +1,6 @@
 "use server";
 
+import { messageFromFailedResponse } from "@/utils/message-from-failed-response";
 import { cookies } from "next/headers";
 import type { MediaItem, ProfileData, SubscriptionData } from "../types";
 
@@ -33,34 +34,64 @@ async function authedJsonFetch(path: string, options: RequestInit = {}): Promise
   });
 }
 
+async function errorFromResponse(res: Response, fallback: string): Promise<string> {
+  const bodyText = await res.text();
+  let jsonError: string | undefined;
+  try {
+    jsonError = (JSON.parse(bodyText) as { error?: string })?.error;
+  } catch {
+    // body is not JSON
+  }
+  return messageFromFailedResponse(res.status, bodyText, jsonError ?? fallback);
+}
+
+function normalizeOptionalUrl(value: string | null | undefined): string | null | undefined {
+  if (value === undefined) return undefined;
+  const trimmed = (value ?? "").trim();
+  return trimmed ? trimmed : null;
+}
+
+function normalizeProfileUpdatePayload(payload: Partial<ProfileData>): Partial<ProfileData> {
+  const next: Partial<ProfileData> = { ...payload };
+  if ("linkedin_url" in payload) {
+    next.linkedin_url = normalizeOptionalUrl(payload.linkedin_url);
+  }
+  if ("portfolio_url" in payload) {
+    next.portfolio_url = normalizeOptionalUrl(payload.portfolio_url);
+  }
+  if ("github_url" in payload) {
+    next.github_url = normalizeOptionalUrl(payload.github_url);
+  }
+  return next;
+}
+
 export async function fetchProfileData(): Promise<ProfileData> {
   const res = await authedJsonFetch("/api/profile-data/", { method: "GET" });
-  const data = await res.json().catch(() => ({}));
   if (!res.ok) {
-    throw new Error((data as { error?: string })?.error ?? "Failed to fetch profile");
+    throw new Error(await errorFromResponse(res, "Failed to fetch profile"));
   }
-  return data as ProfileData;
+  return (await res.json()) as ProfileData;
 }
 
 export async function updateProfileData(payload: Partial<ProfileData>): Promise<void> {
+  const data = normalizeProfileUpdatePayload(payload);
   const res = await authedJsonFetch("/api/profile-update/", {
     method: "POST",
-    body: JSON.stringify({ data: payload }),
+    body: JSON.stringify({ data }),
   });
   if (!res.ok) {
-    const data = await res.json().catch(() => ({}));
-    throw new Error((data as { error?: string })?.error ?? "Failed to update profile");
+    throw new Error(await errorFromResponse(res, "Failed to update profile"));
   }
 }
 
 export async function fetchProfileMedia(category: string): Promise<MediaItem[]> {
   const res = await authedJsonFetch(`/api/media-data/?category=${encodeURIComponent(category)}`, { method: "GET" });
   if (res.status === 404) return [];
-  const data = await res.json().catch(() => ({}));
   if (!res.ok) {
-    throw new Error((data as { error?: string })?.error ?? "Failed to fetch media");
+    throw new Error(await errorFromResponse(res, "Failed to fetch media"));
   }
-  return ((data as { media?: MediaItem[] }).media ?? []) as MediaItem[];
+  const data = (await res.json()) as { media?: MediaItem[] };
+  return (data.media ?? []) as MediaItem[];
 }
 
 export async function uploadProfileMedia(formData: FormData): Promise<{ url: string; blob_name: string }> {
@@ -71,11 +102,23 @@ export async function uploadProfileMedia(formData: FormData): Promise<{ url: str
     body: formData,
     cache: "no-store",
   });
-  const data = await res.json().catch(() => ({}));
+  const bodyText = await res.text();
   if (!res.ok) {
-    throw new Error((data as { error?: string })?.error ?? "Failed to upload media");
+    let jsonError: string | undefined;
+    try {
+      jsonError = (JSON.parse(bodyText) as { error?: string })?.error;
+    } catch {
+      // body is not JSON
+    }
+    throw new Error(messageFromFailedResponse(res.status, bodyText, jsonError ?? "Failed to upload media"));
   }
-  const content = (data as { content?: { url?: string; blob_name?: string } }).content;
+  let data: { content?: { url?: string; blob_name?: string } };
+  try {
+    data = JSON.parse(bodyText) as { content?: { url?: string; blob_name?: string } };
+  } catch {
+    throw new Error("Invalid upload response");
+  }
+  const content = data.content;
   if (!content?.url) throw new Error("Invalid upload response");
   return { url: content.url, blob_name: content.blob_name ?? "" };
 }
@@ -86,16 +129,14 @@ export async function clearProfileKnowledgeData(target: string): Promise<void> {
     body: JSON.stringify({ target }),
   });
   if (!res.ok) {
-    const data = await res.json().catch(() => ({}));
-    throw new Error((data as { error?: string })?.error ?? "Failed to clear data");
+    throw new Error(await errorFromResponse(res, "Failed to clear data"));
   }
 }
 
 export async function fetchSubscriptionData(): Promise<SubscriptionData> {
   const res = await authedJsonFetch("/api/user-subscription-data/", { method: "GET" });
-  const data = await res.json().catch(() => ({}));
   if (!res.ok) {
-    throw new Error((data as { error?: string })?.error ?? "Failed to fetch subscription");
+    throw new Error(await errorFromResponse(res, "Failed to fetch subscription"));
   }
-  return data as SubscriptionData;
+  return (await res.json()) as SubscriptionData;
 }

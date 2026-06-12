@@ -53,6 +53,7 @@ export interface AtsScoreViewModel {
 /** Metadata returned with cached or freshly calculated ATS scores. */
 export type AtsScoreMeta = {
   scored_at: string | null;
+  resume_updated_at: string | null;
   ats_calc_count: number;
   from_cache: boolean;
 };

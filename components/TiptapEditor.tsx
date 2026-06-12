@@ -15,9 +15,19 @@ interface TiptapEditorProps {
   unibotImproveTarget?: UnibotImproveTarget;
   placeholder?: string;
   className?: string;
+  /** Extra classes on the outer wrapper (e.g. custom placeholder color). */
+  wrapperClassName?: string;
 }
 
-const TiptapEditor: React.FC<TiptapEditorProps> = ({ value, onChange, onImprove, unibotImproveTarget, placeholder, className }) => {
+const TiptapEditor: React.FC<TiptapEditorProps> = ({
+  value,
+  onChange,
+  onImprove,
+  unibotImproveTarget,
+  placeholder,
+  className,
+  wrapperClassName,
+}) => {
   const editor = useEditor({
     extensions: [
       StarterKit,
@@ -60,7 +70,9 @@ const TiptapEditor: React.FC<TiptapEditorProps> = ({ value, onChange, onImprove,
   }
 
   return (
-    <div className="border border-slate-200 rounded-lg overflow-hidden focus-within:ring-1 focus-within:ring-brand-500 focus-within:border-brand-500 transition-all bg-white shadow-sm">
+    <div
+      className={`border border-slate-200 rounded-lg overflow-hidden focus-within:ring-1 focus-within:ring-brand-500 focus-within:border-brand-500 transition-all bg-white shadow-sm ${wrapperClassName ?? ""}`}
+    >
       {/* Toolbar */}
       <div className="flex items-center gap-1 bg-slate-50 border-b border-slate-200 px-2 py-1.5">
         <button

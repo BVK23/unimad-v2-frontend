@@ -2,13 +2,13 @@
 
 import { useCallback, useRef, useState } from "react";
 import { SquareImageCropModal } from "@/components/shared/SquareImageCropModal";
+import { ModalPortalOverlay } from "@/components/ui/ModalPortalOverlay";
 import { btnOutline, btnPrimaryBrand } from "@/constants/ui/button-classes";
 import { UploadError, uploadHeroImageFromDataUrl } from "@/features/portfolio/utils/upload";
-import { profileQk, useProfileMedia, useUpdateProfileMutation } from "@/features/user-profile/hooks/use-profile-data";
+import { useProfileMedia, useUpdateProfileMutation } from "@/features/user-profile/hooks/use-profile-data";
 import type { MediaItem } from "@/features/user-profile/types";
-import { fileToDataUrl } from "@/utils/image-crop";
+import { fileToDataUrl, resolveRemoteImageForCrop } from "@/utils/image-crop";
 import { resolveMediaDisplayUrl } from "@/utils/resolve-media-url";
-import { useQueryClient } from "@tanstack/react-query";
 import { ImageIcon, Upload, X } from "lucide-react";
 import Image from "next/image";
 
@@ -16,17 +16,19 @@ type ProfilePictureDialogProps = {
   open: boolean;
   onClose: () => void;
   currentUrl?: string | null;
+  /** Unimad-hosted picture URL — only this can be re-cropped (not LinkedIn/Google fallbacks). */
+  croppableUrl?: string | null;
 };
 
 type TabId = "upload" | "library";
 
-export function ProfilePictureDialog({ open, onClose, currentUrl }: ProfilePictureDialogProps) {
+export function ProfilePictureDialog({ open, onClose, currentUrl, croppableUrl }: ProfilePictureDialogProps) {
   const [tab, setTab] = useState<TabId>("upload");
   const [error, setError] = useState<string | null>(null);
   const [cropSource, setCropSource] = useState<string | null>(null);
   const [isSavingCrop, setIsSavingCrop] = useState(false);
+  const [isPreparingCrop, setIsPreparingCrop] = useState(false);
   const fileRef = useRef<HTMLInputElement>(null);
-  const queryClient = useQueryClient();
   const updateProfile = useUpdateProfileMutation();
   const { data: library = [], isLoading: libraryLoading } = useProfileMedia("profile-picture", open && tab === "library");
 
@@ -34,7 +36,8 @@ export function ProfilePictureDialog({ open, onClose, currentUrl }: ProfilePictu
     async (item: MediaItem) => {
       setError(null);
       try {
-        await updateProfile.mutateAsync({ profilePictureUrl: resolveMediaDisplayUrl(item.url) });
+        const url = resolveMediaDisplayUrl(item.url);
+        await updateProfile.mutateAsync({ profilePictureUrl: url });
         onClose();
       } catch (e) {
         setError(e instanceof Error ? e.message : "Failed to update profile picture");
@@ -49,8 +52,6 @@ export function ProfilePictureDialog({ open, onClose, currentUrl }: ProfilePictu
     try {
       const url = await uploadHeroImageFromDataUrl(croppedDataUrl, "profile-picture");
       await updateProfile.mutateAsync({ profilePictureUrl: url });
-      void queryClient.invalidateQueries({ queryKey: profileQk.media("profile-picture") });
-      void queryClient.invalidateQueries({ queryKey: profileQk.profile });
       setCropSource(null);
       onClose();
     } catch (e) {
@@ -73,18 +74,30 @@ export function ProfilePictureDialog({ open, onClose, currentUrl }: ProfilePictu
     }
   };
 
-  const openCropCurrent = () => {
-    const resolved = resolveMediaDisplayUrl(currentUrl);
-    if (!resolved) return;
-    setCropSource(resolved);
+  const openCropCurrent = async () => {
+    const source = croppableUrl?.trim();
+    if (!source) return;
+    setError(null);
+    setIsPreparingCrop(true);
+    try {
+      const dataUrl = await resolveRemoteImageForCrop(source);
+      setCropSource(dataUrl);
+    } catch {
+      setError("Could not load your current photo for cropping. Choose a new image instead.");
+    } finally {
+      setIsPreparingCrop(false);
+    }
   };
+
+  const canCropCurrent = Boolean(croppableUrl?.trim());
 
   if (!open) return null;
 
   return (
     <>
-      <div
-        className="fixed inset-0 z-50 flex items-center justify-center p-4"
+      <ModalPortalOverlay
+        open={open}
+        className="flex items-center justify-center p-4"
         role="dialog"
         aria-modal="true"
         aria-labelledby="profile-picture-title"
@@ -119,23 +132,21 @@ export function ProfilePictureDialog({ open, onClose, currentUrl }: ProfilePictu
 
           <div className="space-y-4 p-5">
             {currentUrl ? (
-              <div className="flex items-center gap-3">
-                <div className="relative h-14 w-14 overflow-hidden rounded-full border border-slate-200 dark:border-slate-700">
-                  <Image src={resolveMediaDisplayUrl(currentUrl)} alt="" fill sizes="56px" className="object-cover" unoptimized />
+              <div className="flex flex-col items-center gap-2 py-1 text-center">
+                <div className="relative h-24 w-24 overflow-hidden rounded-full border border-slate-200 dark:border-slate-700">
+                  <Image src={resolveMediaDisplayUrl(currentUrl)} alt="" fill sizes="96px" className="object-cover" unoptimized />
                 </div>
-                <div className="min-w-0 flex-1">
-                  <p className="text-xs text-slate-500 dark:text-slate-400">Current profile picture</p>
-                  {tab === "upload" ? (
-                    <div className="mt-2 flex flex-wrap gap-2">
-                      <button type="button" className={`${btnOutline} !px-3 !py-1.5 !text-xs`} onClick={() => fileRef.current?.click()}>
-                        Update
-                      </button>
-                      <button type="button" className={`${btnOutline} !px-3 !py-1.5 !text-xs`} onClick={openCropCurrent}>
-                        Crop
-                      </button>
-                    </div>
-                  ) : null}
-                </div>
+                <p className="text-xs text-slate-500 dark:text-slate-400">Current profile picture</p>
+                {tab === "upload" && canCropCurrent ? (
+                  <button
+                    type="button"
+                    disabled={isPreparingCrop || isSavingCrop || updateProfile.isPending}
+                    className={`${btnOutline} !px-3 !py-1.5 !text-xs`}
+                    onClick={() => void openCropCurrent()}
+                  >
+                    {isPreparingCrop ? "Loading photo…" : "Crop current photo"}
+                  </button>
+                ) : null}
               </div>
             ) : null}
 
@@ -150,14 +161,14 @@ export function ProfilePictureDialog({ open, onClose, currentUrl }: ProfilePictu
                 />
                 <button
                   type="button"
-                  disabled={isSavingCrop || updateProfile.isPending}
+                  disabled={isSavingCrop || isPreparingCrop || updateProfile.isPending}
                   onClick={() => fileRef.current?.click()}
                   className={`${btnPrimaryBrand} w-full`}
                 >
                   <Upload size={16} />
                   {isSavingCrop || updateProfile.isPending ? "Saving…" : "Choose image"}
                 </button>
-                <p className="text-xs text-slate-500 dark:text-slate-400">
+                <p className="text-center text-xs text-slate-500 dark:text-slate-400">
                   PNG or JPG. You can crop after choosing an image. Saved to your media library.
                 </p>
               </div>
@@ -195,7 +206,7 @@ export function ProfilePictureDialog({ open, onClose, currentUrl }: ProfilePictu
             {error ? <p className="text-xs text-red-600 dark:text-red-400">{error}</p> : null}
           </div>
         </div>
-      </div>
+      </ModalPortalOverlay>
 
       <SquareImageCropModal
         open={Boolean(cropSource)}

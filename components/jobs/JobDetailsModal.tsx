@@ -1,4 +1,10 @@
+"use client";
+
 import React, { useState } from "react";
+import { createPortal } from "react-dom";
+import { useApplications } from "@/features/application-tracker/hooks/useApplications";
+import { jobHasPreparedApplication } from "@/features/application-tracker/job-application-lookup";
+import { MODAL_OVERLAY_Z_CLASS } from "@/lib/ui/modal-overlay";
 import type { StartInterviewFromJobPayload } from "@/src/features/interview-prep/types";
 import { X, ExternalLink, FileText, CheckCircle2, DollarSign, ChevronDown } from "lucide-react";
 import Image from "next/image";
@@ -45,6 +51,8 @@ const JobDetailsModal: React.FC<JobDetailsModalProps> = ({
   const [isStatusDropdownOpen, setIsStatusDropdownOpen] = useState(false);
   const [showPrepareModal, setShowPrepareModal] = useState(false);
   const [logoError, setLogoError] = useState(false);
+  const { data: applications = [] } = useApplications();
+  const hasPreparedApplication = jobHasPreparedApplication(applications, job.id);
 
   const isValidUrl = (url: string | undefined) => {
     if (!url) return false;
@@ -70,13 +78,17 @@ const JobDetailsModal: React.FC<JobDetailsModalProps> = ({
     );
   }
 
-  return (
-    <div className="fixed inset-0 bg-black/50 backdrop-blur-sm z-40 flex items-center justify-center p-4 animate-in fade-in duration-200">
+  if (typeof document === "undefined") return null;
+
+  return createPortal(
+    <div
+      className={`fixed inset-0 ${MODAL_OVERLAY_Z_CLASS} flex items-center justify-center bg-black/50 p-4 backdrop-blur-sm animate-in fade-in duration-200`}
+    >
       <div className="bg-white dark:bg-slate-900 w-full max-w-3xl max-h-[90vh] rounded-3xl shadow-2xl overflow-hidden flex flex-col border border-slate-200 dark:border-slate-800 animate-in zoom-in-95 duration-200">
         {/* Header */}
         <div className="p-6 border-b border-slate-100 dark:border-slate-800 flex justify-between items-start bg-slate-50/50 dark:bg-slate-900/50">
           <div className="flex gap-4">
-            <div className="relative w-16 h-16 rounded-2xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 flex items-center justify-center p-3 shadow-sm overflow-hidden">
+            <div className="relative flex h-16 w-16 shrink-0 items-center justify-center overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-sm dark:border-slate-800 dark:bg-slate-900">
               {!showFallback ? (
                 <Image
                   src={job.logo as string}
@@ -87,8 +99,8 @@ const JobDetailsModal: React.FC<JobDetailsModalProps> = ({
                   onError={() => setLogoError(true)}
                 />
               ) : (
-                <div className="w-full h-full rounded-xl bg-gradient-to-br from-brand-500 via-purple-500 to-pink-500 flex items-center justify-center">
-                  <span className="text-white font-bold text-2xl">{job.company?.charAt(0)?.toUpperCase() || "?"}</span>
+                <div className="absolute inset-0 flex items-center justify-center bg-gradient-to-br from-brand-500 via-purple-500 to-pink-500">
+                  <span className="text-3xl font-bold text-white">{job.company?.charAt(0)?.toUpperCase() || "?"}</span>
                 </div>
               )}
             </div>
@@ -211,7 +223,7 @@ const JobDetailsModal: React.FC<JobDetailsModalProps> = ({
             onClick={() => setShowPrepareModal(true)}
             className="flex-1 py-3 bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 hover:bg-slate-50 dark:hover:bg-slate-700 text-slate-900 dark:text-white font-medium rounded-xl transition-all shadow-sm flex items-center justify-center gap-2 active:scale-95"
           >
-            <FileText size={18} className="text-brand-500" /> Prepare Application
+            <FileText size={18} className="text-brand-500" /> {hasPreparedApplication ? "Continue Application" : "Prepare Application"}
           </button>
           <button
             onClick={() => onApply && onApply(job)}
@@ -221,7 +233,8 @@ const JobDetailsModal: React.FC<JobDetailsModalProps> = ({
           </button>
         </div>
       </div>
-    </div>
+    </div>,
+    document.body
   );
 };
 

@@ -1,6 +1,7 @@
 "use client";
 
 import { createPortal } from "react-dom";
+import { MODAL_OVERLAY_Z_CLASS } from "@/lib/ui/modal-overlay";
 import { Loader2, Undo2, X } from "lucide-react";
 
 export interface AdkRewindConfirmDialogProps {
@@ -25,7 +26,7 @@ export function AdkRewindConfirmDialog({
 
   return createPortal(
     <div
-      className="fixed inset-0 z-[110] flex items-center justify-center bg-black/60 p-4 backdrop-blur-sm animate-in fade-in duration-200"
+      className={`fixed inset-0 ${MODAL_OVERLAY_Z_CLASS} flex items-center justify-center bg-black/60 p-4 backdrop-blur-sm animate-in fade-in duration-200`}
       role="presentation"
       onClick={isSubmitting ? undefined : onClose}
     >

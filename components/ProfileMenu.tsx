@@ -53,7 +53,7 @@ const ProfileMenu: React.FC<ProfileMenuProps> = ({ isDarkMode, toggleTheme, user
     }) ?? null;
 
   return (
-    <div className="relative" ref={menuRef}>
+    <div className="relative z-[300]" ref={menuRef}>
       {/* Avatar Trigger */}
       <button
         onClick={() => setIsOpen(!isOpen)}
@@ -77,7 +77,7 @@ const ProfileMenu: React.FC<ProfileMenuProps> = ({ isDarkMode, toggleTheme, user
 
       {/* Dropdown Menu */}
       {isOpen && (
-        <div className="absolute right-0 top-full mt-2 w-72 bg-white dark:bg-slate-900 rounded-2xl shadow-xl border border-slate-100 dark:border-white/5 overflow-hidden animate-in fade-in zoom-in-95 duration-200 z-50">
+        <div className="absolute right-0 top-full z-[300] mt-2 w-72 overflow-hidden rounded-2xl border border-slate-100 bg-white shadow-xl animate-in fade-in zoom-in-95 duration-200 dark:border-white/5 dark:bg-slate-900">
           {/* Header */}
           <div className="p-4 border-b border-slate-100 dark:border-white/5 bg-slate-50/50 dark:bg-white/5">
             <div className="flex items-center gap-3 mb-3">

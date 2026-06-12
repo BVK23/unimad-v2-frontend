@@ -1,6 +1,7 @@
 "use client";
 
 import React from "react";
+import { ModalPortalOverlay } from "@/components/ui/ModalPortalOverlay";
 import type { InterviewRoundType, InterviewSessionMode } from "@/src/features/interview-prep/types";
 import { AlertTriangle, Loader2, Mic2, X } from "lucide-react";
 
@@ -18,7 +19,7 @@ const InterviewRetakeModal: React.FC<InterviewRetakeModalProps> = ({ roundLabel,
   const isVoice = roundMode === "voice";
 
   return (
-    <div className="fixed inset-0 z-[60] flex items-center justify-center bg-black/50 p-4 backdrop-blur-sm">
+    <ModalPortalOverlay className="flex items-center justify-center bg-black/50 p-4 backdrop-blur-sm">
       <div className="w-full max-w-md rounded-2xl border border-slate-200 bg-white p-6 shadow-2xl dark:border-slate-800 dark:bg-[#1a1a1a]">
         <div className="mb-4 flex items-start justify-between gap-3">
           <div className="flex items-center gap-2">
@@ -85,7 +86,7 @@ const InterviewRetakeModal: React.FC<InterviewRetakeModalProps> = ({ roundLabel,
           </button>
         </div>
       </div>
-    </div>
+    </ModalPortalOverlay>
   );
 };
 

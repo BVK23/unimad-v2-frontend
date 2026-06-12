@@ -1,11 +1,17 @@
 "use client";
 
 import React, { useCallback, useEffect, useRef, useState } from "react";
+import { createPortal } from "react-dom";
 import { ApplicationAssetDownloadMenu } from "@/components/application-assets/ApplicationAssetDownloadMenu";
+import { DocumentSaveStatusBar } from "@/components/application-assets/DocumentSaveStatusBar";
 import InterviewLaunchOverlay from "@/components/interview-prep/InterviewLaunchOverlay";
 import { runApplicationAssetDraftGeneration } from "@/features/application-assets/api/runApplicationAssetDraftGeneration";
 import { checkApplicationAssetAvailability } from "@/features/application-assets/server-actions/application-asset-actions";
 import { getLinkedAssetId } from "@/features/application-tracker/application-assets";
+import { useDocumentAutosave } from "@/hooks/useDocumentAutosave";
+import { setPrepareReturnSession } from "@/lib/jobs/prepare-application-return";
+import { buildResumePrepareHref, type PrepareNavigateTarget } from "@/lib/jobs/prepare-application-url";
+import { MODAL_OVERLAY_Z_CLASS } from "@/lib/ui/modal-overlay";
 import { fetchColdEmailById, updateColdEmail } from "@/src/features/cold-email/server-actions/cold-email-actions";
 import { fetchCoverLetterById, updateCoverLetter } from "@/src/features/cover-letter/server-actions/cover-letter-actions";
 import { storeInterviewLaunch } from "@/src/features/interview-prep/interview-launch";
@@ -17,27 +23,12 @@ import { exportApplicationAssetAsDocx, exportApplicationAssetAsPdf } from "@/uti
 import { htmlToPlainText } from "@/utils/html-to-text";
 import { sanitizeUserFacingError } from "@/utils/message-from-failed-response";
 import { normalizeContentToHtml } from "@/utils/normalize-content-to-html";
-import {
-  X,
-  FileText,
-  Mail,
-  Briefcase,
-  Wand2,
-  Copy,
-  Download,
-  UserSquare2,
-  ChevronRight,
-  Mic2,
-  Loader2,
-  Check,
-  Pencil,
-  Share2,
-} from "lucide-react";
-import Link from "next/link";
+import { X, FileText, Mail, Briefcase, Wand2, Copy, Download, UserSquare2, ChevronRight, Mic2, Loader2, Check } from "lucide-react";
 import { useRouter } from "next/navigation";
 import { Job, ContentGeneratorType, GeneratorContext } from "../../types/jobs";
 import PrepareInterviewPanel from "./PrepareInterviewPanel";
 import PrepareApplicationResumePreview from "./prepare/PrepareApplicationResumePreview";
+import PrepareAssetGenerationLoading from "./prepare/PrepareAssetGenerationLoading";
 import PrepareTextAssetEditor from "./prepare/PrepareTextAssetEditor";
 
 export type PrepareModalSource = "tracker" | "discovery";
@@ -104,6 +95,7 @@ const PrepareApplicationModal: React.FC<PrepareApplicationModalProps> = ({
   const [copied, setCopied] = useState(false);
   const [isDownloading, setIsDownloading] = useState(false);
   const applicationIdRef = useRef<string | null>(null);
+  const activeTextContentRef = useRef("");
 
   const {
     applicationId,
@@ -317,26 +309,6 @@ const PrepareApplicationModal: React.FC<PrepareApplicationModalProps> = ({
     setActiveTab(initialTab);
   }, [initialTab, job.id]);
 
-  const handleContentChange = (value: string) => {
-    if (isInterviewTab || activeTab === "resume" || activeTab === "vpd") return;
-    const tab = activeTab as "cover-letter" | "cold-email";
-    setTabState(tab, { content: value });
-  };
-
-  const persistContentEdit = async () => {
-    if (!activeAsset?.assetId || activeTab === "resume" || activeTab === "vpd" || activeTab === "interview") return;
-    const tab = activeTab as "cover-letter" | "cold-email";
-    try {
-      if (tab === "cover-letter") {
-        await updateCoverLetter({ id: activeAsset.assetId, content: activeAsset.content });
-      } else {
-        await updateColdEmail({ id: activeAsset.assetId, content: activeAsset.content });
-      }
-    } catch {
-      // user can retry on next blur
-    }
-  };
-
   const handleCopy = () => {
     const raw = activeAsset?.content ?? "";
     if (!raw) return;
@@ -456,15 +428,25 @@ const PrepareApplicationModal: React.FC<PrepareApplicationModalProps> = ({
     onClose();
   };
 
+  const prepareNavigate: PrepareNavigateTarget = source === "tracker" ? "tracker" : "jobs";
+
   const handleImproveWithUnibot = (assetId: string, type: "cover-letter" | "cold-email") => {
     if (!onNavigateToStudio) return;
+    setPrepareReturnSession({
+      jobId: job.id,
+      tab: type,
+      company: job.company,
+      role: job.role,
+      navigate: prepareNavigate,
+    });
     onNavigateToStudio({
       type,
       assetId,
       jobId: job.id,
-      company: job.company,
-      role: job.role,
-      description: job.description,
+      fromPrepareApplication: true,
+      navigate: prepareNavigate,
+      openImproveMode: true,
+      recipientName: type === "cold-email" ? "Hiring Manager" : undefined,
     });
     onClose();
   };
@@ -481,9 +463,47 @@ const PrepareApplicationModal: React.FC<PrepareApplicationModalProps> = ({
     activeAsset?.status !== "loading" &&
     activeAsset?.status !== "error";
 
+  const persistContentEdit = useCallback(async () => {
+    if (!activeAsset?.assetId || activeTab === "resume" || activeTab === "vpd" || activeTab === "interview") return;
+    const tab = activeTab as "cover-letter" | "cold-email";
+    const content = activeTextContentRef.current;
+    if (tab === "cover-letter") {
+      await updateCoverLetter({ id: activeAsset.assetId, content });
+    } else {
+      await updateColdEmail({ id: activeAsset.assetId, content });
+    }
+  }, [activeAsset?.assetId, activeTab]);
+
+  const {
+    hasPendingUnsavedChanges: textAssetHasPendingUnsavedChanges,
+    isSaving: textAssetIsSaving,
+    savedConfirmationVisible: textAssetSavedConfirmationVisible,
+    markDirty: markTextAssetDirty,
+    runSave: runTextAssetSave,
+    reset: resetTextAssetSaveStatus,
+  } = useDocumentAutosave({
+    enabled: showTextAssetActions,
+    onSave: persistContentEdit,
+  });
+
+  useEffect(() => {
+    activeTextContentRef.current = activeAsset?.content ?? "";
+    resetTextAssetSaveStatus();
+  }, [activeAsset?.assetId, activeTab, resetTextAssetSaveStatus]);
+
+  const handleContentChange = (value: string, options?: { hydrate?: boolean }) => {
+    if (isInterviewTab || activeTab === "resume" || activeTab === "vpd") return;
+    const tab = activeTab as "cover-letter" | "cold-email";
+    activeTextContentRef.current = value;
+    setTabState(tab, { content: value });
+    if (!options?.hydrate) {
+      markTextAssetDirty();
+    }
+  };
+
   const activeResumeId = activeTab === "resume" ? (tabStates.resume.assetId ?? linkedResumeId) : null;
 
-  const resumeEditHref = activeResumeId ? `/uniboard/resume?id=${encodeURIComponent(activeResumeId)}` : null;
+  const resumeEditHref = activeResumeId && prepareNavigate ? buildResumePrepareHref(activeResumeId, job.id, prepareNavigate) : null;
 
   const handleClose = () => {
     resetResolved();
@@ -499,18 +519,16 @@ const PrepareApplicationModal: React.FC<PrepareApplicationModalProps> = ({
     const tabLabel = PREPARE_TABS.find(t => t.id === activeTab)?.label ?? "asset";
     const resumeId = state.assetId ?? linkedResumeId;
 
-    if (state.status === "loading" || ensuringApp) {
-      return (
-        <div className="flex flex-1 flex-col items-center justify-center rounded-2xl border border-slate-100 bg-slate-50 p-8 text-center dark:border-slate-800 dark:bg-slate-900/50">
-          <Loader2 className="mb-4 h-10 w-10 animate-spin text-brand-600" />
-          <h3 className="mb-2 font-medium text-slate-900 dark:text-white">Generating your {tabLabel.toLowerCase()}…</h3>
-          <p className="max-w-xs text-sm text-slate-500 dark:text-slate-400">
-            {ensuringApp
-              ? "Saving this job to your application tracker…"
-              : "Our AI is tailoring content from your profile and the job description."}
-          </p>
-        </div>
-      );
+    if (ensuringApp) {
+      return <PrepareAssetGenerationLoading kind="ensuring-app" />;
+    }
+
+    if (state.status === "loading") {
+      const loadingKind =
+        activeTab === "resume" || activeTab === "cover-letter" || activeTab === "cold-email" || activeTab === "vpd"
+          ? activeTab
+          : "cover-letter";
+      return <PrepareAssetGenerationLoading kind={loadingKind} />;
     }
 
     if (state.status === "error") {
@@ -529,7 +547,7 @@ const PrepareApplicationModal: React.FC<PrepareApplicationModalProps> = ({
     }
 
     if (activeTab === "resume" && resumeId) {
-      return <PrepareApplicationResumePreview resumeId={resumeId} />;
+      return <PrepareApplicationResumePreview resumeId={resumeId} editHref={resumeEditHref} />;
     }
 
     if (
@@ -543,7 +561,7 @@ const PrepareApplicationModal: React.FC<PrepareApplicationModalProps> = ({
           assetId={assetId}
           content={state.content}
           onContentChange={handleContentChange}
-          onSave={() => void persistContentEdit()}
+          onSave={() => void runTextAssetSave()}
         />
       );
     }
@@ -584,9 +602,19 @@ const PrepareApplicationModal: React.FC<PrepareApplicationModalProps> = ({
     );
   };
 
-  return (
-    <div className="fixed inset-0 z-50 flex animate-in items-center justify-center bg-black/50 p-4 backdrop-blur-sm fade-in duration-200">
-      <div className="relative flex h-[600px] w-full max-w-4xl overflow-hidden rounded-3xl border border-slate-200 bg-white shadow-2xl dark:border-slate-800 dark:bg-slate-900">
+  if (typeof document === "undefined") return null;
+
+  return createPortal(
+    <div
+      className={`fixed inset-0 ${MODAL_OVERLAY_Z_CLASS} flex animate-in items-center justify-center bg-black/50 p-4 backdrop-blur-sm fade-in duration-200`}
+      role="presentation"
+    >
+      <div
+        role="dialog"
+        aria-modal="true"
+        aria-labelledby="prepare-application-title"
+        className="relative flex h-[600px] w-full max-w-4xl overflow-hidden rounded-3xl border border-slate-200 bg-white shadow-2xl dark:border-slate-800 dark:bg-slate-900"
+      >
         {isStartingInterview && (
           <InterviewLaunchOverlay
             error={interviewLaunchError}
@@ -598,7 +626,9 @@ const PrepareApplicationModal: React.FC<PrepareApplicationModalProps> = ({
         )}
         <div className="flex h-full w-64 shrink-0 flex-col border-r border-slate-200 bg-slate-50 p-5 dark:border-slate-800 dark:bg-slate-900">
           <div className="mb-6">
-            <h2 className="mb-3 text-xs font-medium text-slate-400">Prepare Application</h2>
+            <h2 id="prepare-application-title" className="mb-3 text-xs font-medium text-slate-400">
+              Prepare Application
+            </h2>
             <h3 className="mb-1 line-clamp-1 text-lg font-medium text-slate-900 dark:text-white">{job.role}</h3>
             <p className="text-sm text-slate-500 dark:text-slate-400">{job.company}</p>
             {source === "discovery" && applicationId && (
@@ -671,21 +701,15 @@ const PrepareApplicationModal: React.FC<PrepareApplicationModalProps> = ({
               )}
             </h2>
             <div className="flex shrink-0 items-center gap-2">
-              {activeTab === "resume" && resumeEditHref && (
-                <>
-                  <Link
-                    href={resumeEditHref}
-                    className="flex items-center gap-1.5 rounded-lg border border-slate-200 bg-slate-50 px-3 py-1.5 text-xs font-medium text-slate-600 transition-colors hover:bg-slate-100 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-300"
-                  >
-                    <Pencil size={12} /> Edit Resume
-                  </Link>
-                  <Link
-                    href={resumeEditHref}
-                    className="flex items-center gap-1.5 rounded-lg border border-slate-200 bg-slate-50 px-3 py-1.5 text-xs font-medium text-slate-600 transition-colors hover:bg-slate-100 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-300"
-                  >
-                    <Share2 size={12} /> Share & Download
-                  </Link>
-                </>
+              {showTextAssetActions && (
+                <DocumentSaveStatusBar
+                  variant="modal"
+                  hasPendingUnsavedChanges={textAssetHasPendingUnsavedChanges}
+                  isSaving={textAssetIsSaving}
+                  savedConfirmationVisible={textAssetSavedConfirmationVisible}
+                  onSaveNow={() => void runTextAssetSave()}
+                  visible={textAssetHasPendingUnsavedChanges || textAssetIsSaving || textAssetSavedConfirmationVisible}
+                />
               )}
               {showTextAssetActions && (
                 <>
@@ -698,11 +722,21 @@ const PrepareApplicationModal: React.FC<PrepareApplicationModalProps> = ({
                   >
                     <Copy size={14} />
                   </button>
-                  <ApplicationAssetDownloadMenu
-                    isBusy={isDownloading}
-                    onDownloadPdf={handleDownloadPdf}
-                    onDownloadDocx={handleDownloadDocx}
-                  />
+                  {activeTab === "cover-letter" ? (
+                    <ApplicationAssetDownloadMenu
+                      isBusy={isDownloading}
+                      onDownloadPdf={handleDownloadPdf}
+                      onDownloadDocx={handleDownloadDocx}
+                    />
+                  ) : null}
+                  {/* Cold email is copy-only in prepare modal; restore download menu here if needed later. */}
+                  {/* {activeTab === "cold-email" ? (
+                    <ApplicationAssetDownloadMenu
+                      isBusy={isDownloading}
+                      onDownloadPdf={handleDownloadPdf}
+                      onDownloadDocx={handleDownloadDocx}
+                    />
+                  ) : null} */}
                 </>
               )}
               {!isInterviewTab && activeAsset?.status === "ready" && activeTab === "vpd" && (
@@ -758,7 +792,8 @@ const PrepareApplicationModal: React.FC<PrepareApplicationModalProps> = ({
           )}
         </div>
       </div>
-    </div>
+    </div>,
+    document.body
   );
 };
 

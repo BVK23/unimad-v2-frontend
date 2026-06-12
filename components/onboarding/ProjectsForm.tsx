@@ -252,9 +252,9 @@ export default function ProjectsForm({ isRequired, onComplete }: ProjectsFormPro
           </PrimaryButton>
         ) : null}
         {showInputs ? <PrimaryButton type="submit">{isEditing ? "Save" : "Add"}</PrimaryButton> : null}
-        {!showInputs ? (
+        {!showInputs && (items.length > 0 || isRequired) ? (
           <PrimaryButton type="button" onClick={handleNext} className="mt-3">
-            {items.length === 0 && !isRequired ? "Skip" : "Next"}
+            Next
           </PrimaryButton>
         ) : null}
       </div>

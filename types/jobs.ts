@@ -41,6 +41,12 @@ export interface GeneratorContext {
   /** Existing asset id when opening studio (cover letter, cold email, etc.). */
   assetId?: string;
   fromInterviewVpd?: boolean;
+  /** Opened from Prepare Application modal — show Save & return bar. */
+  fromPrepareApplication?: boolean;
+  /** Where Save & return should reopen Prepare Application (jobs discovery vs tracker). */
+  navigate?: "jobs" | "tracker";
+  /** Auto-open Unibot improve chips after asset hydrates (Prepare → Studio). */
+  openImproveMode?: boolean;
 }
 
 // Mock Data for Discovery

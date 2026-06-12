@@ -412,6 +412,7 @@ type AtsApiBody = {
   role?: string;
   company?: string;
   scored_at?: string | null;
+  resume_updated_at?: string | null;
   ats_calc_count?: number;
   from_cache?: boolean;
 };
@@ -419,6 +420,7 @@ type AtsApiBody = {
 function parseAtsMeta(data: AtsApiBody) {
   return {
     scored_at: typeof data.scored_at === "string" ? data.scored_at : null,
+    resume_updated_at: typeof data.resume_updated_at === "string" ? data.resume_updated_at : null,
     ats_calc_count: typeof data.ats_calc_count === "number" ? data.ats_calc_count : 0,
     from_cache: Boolean(data.from_cache),
   };

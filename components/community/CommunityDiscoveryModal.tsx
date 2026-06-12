@@ -1,4 +1,5 @@
 import React from "react";
+import { ModalPortalOverlay } from "@/components/ui/ModalPortalOverlay";
 import { X, Search } from "lucide-react";
 import { MY_COMMUNITIES, SUGGESTED_GROUPS } from "./Feed/FeedHelper";
 
@@ -10,8 +11,8 @@ const ALL_COMMUNITIES = [...MY_COMMUNITIES, ...SUGGESTED_GROUPS.map(g => ({ ...g
 
 const CommunityDiscoveryModal: React.FC<CommunityDiscoveryModalProps> = ({ onClose }) => {
   return (
-    <div className="fixed inset-0 z-[100] flex items-center justify-center p-4">
-      <div className="absolute inset-0 bg-black/60 backdrop-blur-sm" onClick={onClose}></div>
+    <ModalPortalOverlay className="flex items-center justify-center p-4">
+      <div className="absolute inset-0 bg-black/60 backdrop-blur-sm" onClick={onClose} />
 
       <div className="relative bg-white dark:bg-slate-950 w-full max-w-2xl rounded-2xl shadow-2xl border border-slate-200 dark:border-white/10 overflow-hidden flex flex-col max-h-[80vh]">
         {/* Header */}
@@ -73,7 +74,7 @@ const CommunityDiscoveryModal: React.FC<CommunityDiscoveryModalProps> = ({ onClo
           ))}
         </div>
       </div>
-    </div>
+    </ModalPortalOverlay>
   );
 };
 

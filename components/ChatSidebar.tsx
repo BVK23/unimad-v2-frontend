@@ -20,6 +20,7 @@ import { useAdkPortfolioReviewStore, type AdkPortfolioReviewCard } from "@/featu
 import { useAdkResumeReviewStore, type AdkReviewCard } from "@/features/adk-chat/stores/useAdkResumeReviewStore";
 import {
   APPLICATION_ASSET_EVENTS,
+  type ApplicationAssetOpenImproveDetail,
   type ApplicationAssetSelectionFreeformDetail,
   type ApplicationAssetSelectionRefineDetail,
 } from "@/features/application-assets/api/application-asset-events";
@@ -28,7 +29,14 @@ import {
   stripApplicationAssetDraftFromMessage,
 } from "@/features/application-assets/api/applicationAssetDraftDisplay";
 import { offerApplicationAssetDraftReview } from "@/features/application-assets/api/offerApplicationAssetDraftReview";
-import { buildFreeformSelectionUserMessage } from "@/features/application-assets/config/selection-presets";
+import {
+  APPLICATION_ASSET_SELECTION_PRESETS,
+  assetTypeDisplayLabel,
+  buildFreeformSelectionUserMessage,
+  buildFullDocumentFreeformUserMessage,
+  buildFullDocumentRefineUserMessage,
+  type ApplicationAssetSelectionPreset,
+} from "@/features/application-assets/config/selection-presets";
 import { useApplicationAssetReviewActions } from "@/features/application-assets/hooks/useApplicationAssetReviewActions";
 import { useApplicationAssetStudioStore } from "@/features/application-assets/store/useApplicationAssetStudioStore";
 import type { ApplicationAssetApiType } from "@/features/application-assets/types";
@@ -66,6 +74,7 @@ import { usePortfolioStore } from "@/features/portfolio/store/usePortfolioStore"
 import { buildAdkResumeDataMap } from "@/features/resume/api/mappers";
 import { resumeByIdQueryKey } from "@/features/resume/hooks/useResume";
 import { useResumeStore } from "@/features/resume/store/useResumeStore";
+import { MODAL_OVERLAY_Z_CLASS } from "@/lib/ui/modal-overlay";
 import { UNTITLED_THREAD_TITLE } from "@/src/features/adk-chat/constants";
 import { getRegistryRow, upsertRegistryRow } from "@/src/features/adk-chat/session-registry";
 import { registerUnibotAdkSessionAction } from "@/src/features/adk-chat/unibot-adk-session-actions";
@@ -96,7 +105,11 @@ import { ContentGenDraftReviewChips } from "./chat/ContentGenDraftReviewChips";
 import { ContentGenTopicChips } from "./chat/ContentGenTopicChips";
 import { FormattedAgentMessage } from "./chat/FormattedAgentMessage";
 import { UnibotErrorBubble } from "./chat/UnibotErrorBubble";
-import { applicationAssetTopicTitle, buildApplicationAssetDraftBootstrap } from "./chat/application-asset-topic";
+import {
+  applicationAssetImproveTopicTitle,
+  applicationAssetTopicTitle,
+  buildApplicationAssetDraftBootstrap,
+} from "./chat/application-asset-topic";
 import { buildContentGenDraftBootstrap, buildContentGenTopicBootstrap, contentGenTopicUserDisplayText } from "./chat/content-gen-topic";
 import { resetAssistantTurnForRetryInTree } from "./chat/set-chat-message-stream-error";
 import { type UnibotIncomingRequest, incomingRequestSignature, UNIBOT_SECTION_REVIEW_PROMPTS } from "./chat/unibot-incoming-request";
@@ -300,6 +313,12 @@ const ChatSidebar: React.FC<ChatSidebarProps> = ({ incomingRequest, onRequestHan
   const [selectionQuoteContext, setSelectionQuoteContext] = useState<{
     assetType: ApplicationAssetApiType;
     selectedText: string;
+  } | null>(null);
+  const [fullDocumentImproveContext, setFullDocumentImproveContext] = useState<{
+    assetType: ApplicationAssetApiType;
+    assetId: string;
+    role: string;
+    company: string;
   } | null>(null);
   const [selectionSentPill, setSelectionSentPill] = useState<string | null>(null);
   const selectionSentPillTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -877,6 +896,16 @@ const ChatSidebar: React.FC<ChatSidebarProps> = ({ incomingRequest, onRequestHan
     [messages, userId, setMessages, sendTopicMessage, handleStreamFailure]
   );
 
+  const findContentGenTopicId = useCallback((): string | null => {
+    for (let i = messages.length - 1; i >= 0; i--) {
+      const m = messages[i];
+      if (m?.isTopic && m.topicKind === "content_gen") {
+        return m.id;
+      }
+    }
+    return null;
+  }, [messages]);
+
   useEffect(() => {
     const req = incomingRequest;
     if (!req) {
@@ -916,6 +945,7 @@ const ChatSidebar: React.FC<ChatSidebarProps> = ({ incomingRequest, onRequestHan
 
     if (req.type === "content_gen_topic") {
       const followUp = req.followUpText?.trim();
+      const topicTitle = req.topicTitle?.trim() || (followUp ? "Improve LinkedIn Post" : "LinkedIn Topic");
 
       if (followUp) {
         const inferred = inferFunnelFromChipLabel(followUp);
@@ -926,8 +956,52 @@ const ChatSidebar: React.FC<ChatSidebarProps> = ({ incomingRequest, onRequestHan
         contentGenFunnelRef.current = null;
       }
 
-      const topicId = newId("topic");
       const initialText = followUp ?? buildContentGenTopicBootstrap(req.seedTopic);
+      const existingTopicId = req.reuseExistingTopic !== false && followUp ? findContentGenTopicId() : null;
+
+      if (existingTopicId) {
+        void (async () => {
+          try {
+            if (!userId || !sessionReady || isAgentLoading || isLoadingHistory) {
+              return;
+            }
+            const topicId = existingTopicId;
+            const userMsg: ChatMessage = {
+              id: newId("u"),
+              role: "user",
+              text: initialText,
+              timestamp: new Date(),
+            };
+            const botMsgId = typeof crypto !== "undefined" && crypto.randomUUID ? crypto.randomUUID() : newId("bot");
+            const placeholderMsg: ChatMessage = {
+              id: botMsgId,
+              role: "model",
+              text: "",
+              timestamp: new Date(),
+            };
+            setMessages(prev =>
+              prev.map(msg =>
+                msg.id === topicId && msg.isTopic
+                  ? {
+                      ...msg,
+                      topicTitle,
+                      isExpanded: true,
+                      messages: [...(msg.messages || []), userMsg, placeholderMsg],
+                    }
+                  : msg
+              )
+            );
+            pendingRetryRef.current = { text: initialText, topicId, botMsgId };
+            await sendTopicMessage(initialText, botMsgId);
+            pendingRetryRef.current = null;
+          } catch (err) {
+            handleStreamFailure(err, { text: initialText, topicId: existingTopicId });
+          }
+        })();
+        return;
+      }
+
+      const topicId = newId("topic");
       const initialUserMsg: ChatMessage = {
         id: newId("u"),
         role: "user",
@@ -948,7 +1022,7 @@ const ChatSidebar: React.FC<ChatSidebarProps> = ({ incomingRequest, onRequestHan
         timestamp: new Date(),
         isTopic: true,
         topicKind: "content_gen",
-        topicTitle: "LinkedIn Topic",
+        topicTitle,
         isExpanded: true,
         messages: [initialUserMsg, placeholderMsg],
       };
@@ -1028,6 +1102,7 @@ const ChatSidebar: React.FC<ChatSidebarProps> = ({ incomingRequest, onRequestHan
     isAgentLoading,
     isLoadingHistory,
     setMessages,
+    findContentGenTopicId,
   ]);
 
   useEffect(() => {
@@ -1376,7 +1451,7 @@ const ChatSidebar: React.FC<ChatSidebarProps> = ({ incomingRequest, onRequestHan
   }, [messages]);
 
   const sendApplicationAssetRefinement = useCallback(
-    async (message: string, assetType: ApplicationAssetApiType, actionMeta?: AssetActionMeta) => {
+    async (message: string, assetType: ApplicationAssetApiType, actionMeta?: AssetActionMeta, options?: { topicTitle?: string }) => {
       if (!userId || !sessionReady) {
         return;
       }
@@ -1412,7 +1487,7 @@ const ChatSidebar: React.FC<ChatSidebarProps> = ({ incomingRequest, onRequestHan
         timestamp: new Date(),
         isTopic: true,
         topicKind: "application_asset",
-        topicTitle: applicationAssetTopicTitle(assetType, studio.company, studio.role),
+        topicTitle: options?.topicTitle ?? applicationAssetTopicTitle(assetType, studio.company, studio.role),
         isExpanded: true,
         messages: [userMsg, placeholderMsg],
       };
@@ -1497,13 +1572,76 @@ const ChatSidebar: React.FC<ChatSidebarProps> = ({ incomingRequest, onRequestHan
       setSelectionQuoteContext({ assetType: d.assetType, selectedText: d.selectedText.trim() });
     };
 
+    const onOpenImprove = (e: Event) => {
+      const d = (e as CustomEvent<ApplicationAssetOpenImproveDetail>).detail;
+      if (!d?.assetType || !d.assetId) {
+        return;
+      }
+      setIsCollapsed(false);
+      setSelectionQuoteContext(null);
+
+      useApplicationAssetStudioStore.getState().syncFromStudio({
+        assetType: d.assetType,
+        assetId: d.assetId,
+        role: d.role,
+        company: d.company,
+        jobDescription: d.jobDescription,
+        contactName: d.contactName ?? "",
+        draftPreview: d.content,
+        acceptedContent: d.content,
+      });
+
+      if (d.autoSend && d.initialPrompt?.trim()) {
+        const message = buildFullDocumentFreeformUserMessage(d.assetType, d.initialPrompt.trim());
+        const meta: AssetActionMeta = {
+          kind: "freeform",
+          assetType: d.assetType,
+          selectedText: "",
+          prompt: message,
+        };
+        void sendApplicationAssetRefinement(message, d.assetType, meta, {
+          topicTitle: applicationAssetImproveTopicTitle(d.assetType),
+        });
+        return;
+      }
+
+      setFullDocumentImproveContext({
+        assetType: d.assetType,
+        assetId: d.assetId,
+        role: d.role,
+        company: d.company,
+      });
+    };
+
     window.addEventListener(APPLICATION_ASSET_EVENTS.selectionRefine, onSelectionRefine);
     window.addEventListener(APPLICATION_ASSET_EVENTS.selectionFreeform, onSelectionFreeform);
+    window.addEventListener(APPLICATION_ASSET_EVENTS.openImprove, onOpenImprove);
     return () => {
       window.removeEventListener(APPLICATION_ASSET_EVENTS.selectionRefine, onSelectionRefine);
       window.removeEventListener(APPLICATION_ASSET_EVENTS.selectionFreeform, onSelectionFreeform);
+      window.removeEventListener(APPLICATION_ASSET_EVENTS.openImprove, onOpenImprove);
     };
   }, [sendApplicationAssetRefinement, showSelectionSentPill]);
+
+  const handleFullDocumentPreset = useCallback(
+    (preset: ApplicationAssetSelectionPreset) => {
+      if (!fullDocumentImproveContext || !preset.fullDocumentInstruction) {
+        return;
+      }
+      const { assetType } = fullDocumentImproveContext;
+      const message = buildFullDocumentRefineUserMessage(assetType, preset.fullDocumentInstruction);
+      showSelectionSentPill(preset.label);
+      const meta: AssetActionMeta = {
+        kind: "preset",
+        assetType,
+        presetLabel: preset.label,
+        selectedText: "",
+        prompt: message,
+      };
+      void sendApplicationAssetRefinement(message, assetType, meta);
+    },
+    [fullDocumentImproveContext, sendApplicationAssetRefinement, showSelectionSentPill]
+  );
 
   useEffect(() => {
     return () => {
@@ -1519,6 +1657,20 @@ const ChatSidebar: React.FC<ChatSidebarProps> = ({ incomingRequest, onRequestHan
       if (!textToSend || !canSendMessage) return;
       if (!options?.afterRetry && streamError) return;
       clearStreamError();
+
+      if (fullDocumentImproveContext) {
+        const improveCtx = fullDocumentImproveContext;
+        const message = buildFullDocumentFreeformUserMessage(improveCtx.assetType, textToSend);
+        const meta: AssetActionMeta = {
+          kind: "freeform",
+          assetType: improveCtx.assetType,
+          selectedText: "",
+          prompt: message,
+        };
+        setInput("");
+        await sendApplicationAssetRefinement(message, improveCtx.assetType, meta);
+        return;
+      }
 
       if (selectionQuoteContext) {
         const quoteCtx = selectionQuoteContext;
@@ -1608,6 +1760,7 @@ const ChatSidebar: React.FC<ChatSidebarProps> = ({ incomingRequest, onRequestHan
       setMessages,
       setInput,
       selectionQuoteContext,
+      fullDocumentImproveContext,
       sendApplicationAssetRefinement,
     ]
   );
@@ -2458,6 +2611,43 @@ const ChatSidebar: React.FC<ChatSidebarProps> = ({ incomingRequest, onRequestHan
               </span>
             </div>
           ) : null}
+          {fullDocumentImproveContext ? (
+            <div className="mb-2 flex flex-wrap gap-1.5">
+              {APPLICATION_ASSET_SELECTION_PRESETS[fullDocumentImproveContext.assetType].map(preset => {
+                const Icon = preset.icon;
+                return (
+                  <button
+                    key={preset.id}
+                    type="button"
+                    onClick={() => handleFullDocumentPreset(preset)}
+                    disabled={!preset.fullDocumentInstruction}
+                    className="inline-flex items-center gap-1 rounded-full border border-slate-200 bg-slate-50 px-2.5 py-1 text-[11px] font-medium text-slate-700 transition-colors hover:border-brand-200 hover:bg-brand-50 hover:text-brand-800 disabled:opacity-50 dark:border-slate-600 dark:bg-slate-800 dark:text-slate-200 dark:hover:border-brand-500/40 dark:hover:bg-brand-500/10 dark:hover:text-brand-200"
+                  >
+                    <Icon size={12} className="shrink-0 opacity-80" aria-hidden />
+                    {preset.label}
+                  </button>
+                );
+              })}
+            </div>
+          ) : null}
+          {fullDocumentImproveContext ? (
+            <div className="mb-2">
+              <span className="inline-flex max-w-full items-center gap-1 rounded-full border border-brand-200 bg-brand-50 py-1 pl-2.5 pr-1 text-[11px] font-medium text-brand-900 dark:border-brand-500/40 dark:bg-brand-500/15 dark:text-brand-100">
+                <span className="truncate">
+                  Editing {assetTypeDisplayLabel(fullDocumentImproveContext.assetType)} · {fullDocumentImproveContext.role} @{" "}
+                  {fullDocumentImproveContext.company}
+                </span>
+                <button
+                  type="button"
+                  onClick={() => setFullDocumentImproveContext(null)}
+                  className="shrink-0 rounded-full p-0.5"
+                  aria-label="Clear improve context"
+                >
+                  <X size={13} />
+                </button>
+              </span>
+            </div>
+          ) : null}
           {selectionQuoteContext ? (
             <div className="mb-2">
               <span className="inline-flex max-w-full items-center gap-1 rounded-full border border-brand-200 bg-brand-50 py-1 pl-2.5 pr-1 text-[11px] font-medium text-brand-900 dark:border-brand-500/40 dark:bg-brand-500/15 dark:text-brand-100">
@@ -2515,11 +2705,13 @@ const ChatSidebar: React.FC<ChatSidebarProps> = ({ incomingRequest, onRequestHan
             placeholder={
               streamError
                 ? "Fix the error above to continue…"
-                : selectionQuoteContext
-                  ? "How should Unibot change this section?"
-                  : improveReplyTopicId && improveContextTopic
-                    ? "Reply in this topic…"
-                    : "Ask anything"
+                : fullDocumentImproveContext
+                  ? "Tell Unibot how to improve this document…"
+                  : selectionQuoteContext
+                    ? "How should Unibot change this section?"
+                    : improveReplyTopicId && improveContextTopic
+                      ? "Reply in this topic…"
+                      : "Ask anything"
             }
             rows={1}
             disabled={!canSend}
@@ -2685,7 +2877,7 @@ const ChatSidebar: React.FC<ChatSidebarProps> = ({ incomingRequest, onRequestHan
         typeof document !== "undefined" &&
         createPortal(
           <div
-            className="fixed inset-0 z-[100] flex items-center justify-center bg-black/60 backdrop-blur-sm p-4 animate-in fade-in duration-200"
+            className={`fixed inset-0 ${MODAL_OVERLAY_Z_CLASS} flex items-center justify-center bg-black/60 backdrop-blur-sm p-4 animate-in fade-in duration-200`}
             role="dialog"
             aria-modal="true"
             aria-labelledby="delete-chat-session-title"

@@ -19,3 +19,8 @@ export function getLinkedAssetId(assets: ApplicationAssets, kind: "resume" | "co
   if (kind === "cold-email" && assets.coldemail != null) return String(assets.coldemail);
   return null;
 }
+
+/** True when the application has at least one linked prepare asset. */
+export function applicationHasAnyLinkedAsset(assets: ApplicationAssets): boolean {
+  return Object.values(assets).some(value => value != null && String(value).trim() !== "");
+}

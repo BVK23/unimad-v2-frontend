@@ -1,4 +1,5 @@
 import React, { useState } from "react";
+import { ModalPortalOverlay } from "@/components/ui/ModalPortalOverlay";
 import { X, ArrowRight, ArrowLeft, Wand2, Edit3, MousePointerClick, LayoutTemplate, Share2, Layers } from "lucide-react";
 import Image from "next/image";
 
@@ -69,24 +70,35 @@ const OnboardingModal: React.FC<OnboardingModalProps> = ({ onComplete }) => {
   const stepData = STEPS[currentStep];
 
   return (
-    <div className="fixed inset-0 z-[100] flex items-center justify-center bg-slate-900/60 backdrop-blur-sm animate-in fade-in duration-300">
+    <ModalPortalOverlay className="flex items-center justify-center bg-slate-900/60 backdrop-blur-sm animate-in fade-in duration-300">
       <div className="bg-white dark:bg-slate-900 rounded-2xl shadow-2xl w-full max-w-lg overflow-hidden relative border border-slate-100 dark:border-slate-800 flex flex-col max-h-[90vh]">
-        {/* Close/Skip */}
-        <button
-          onClick={onComplete}
-          className="absolute top-4 right-4 text-slate-400 hover:text-slate-600 dark:hover:text-slate-200 p-1 hover:bg-slate-100 dark:hover:bg-slate-800 rounded-full transition-colors z-20"
-        >
-          <X size={20} />
-        </button>
-
-        {/* Progress Bar */}
-        <div className="flex gap-1 p-1 absolute top-0 left-0 w-full z-20">
-          {STEPS.map((_, idx) => (
-            <div
-              key={idx}
-              className={`h-1 flex-1 rounded-full transition-all duration-300 ${idx <= currentStep ? "bg-brand-500" : "bg-slate-200"}`}
-            ></div>
-          ))}
+        {/* Progress */}
+        <div className="relative px-4 pt-4 pb-2 shrink-0">
+          <button
+            onClick={onComplete}
+            className="absolute top-3 right-3 text-slate-400 hover:text-slate-600 dark:hover:text-slate-200 p-1 hover:bg-slate-100 dark:hover:bg-slate-800 rounded-full transition-colors"
+            aria-label="Close onboarding"
+          >
+            <X size={20} />
+          </button>
+          <p className="text-xs font-medium text-slate-500 dark:text-slate-400 text-center mb-2 pr-8" role="status" aria-live="polite">
+            Step {currentStep + 1} of {STEPS.length}
+          </p>
+          <div
+            className="flex gap-1"
+            role="progressbar"
+            aria-valuenow={currentStep + 1}
+            aria-valuemin={1}
+            aria-valuemax={STEPS.length}
+            aria-label={`Onboarding progress: step ${currentStep + 1} of ${STEPS.length}`}
+          >
+            {STEPS.map((_, idx) => (
+              <div
+                key={idx}
+                className={`h-1 flex-1 rounded-full transition-all duration-300 ${idx <= currentStep ? "bg-brand-500" : "bg-slate-200"}`}
+              />
+            ))}
+          </div>
         </div>
 
         {/* Media Area */}
@@ -137,7 +149,7 @@ const OnboardingModal: React.FC<OnboardingModalProps> = ({ onComplete }) => {
           </div>
         </div>
       </div>
-    </div>
+    </ModalPortalOverlay>
   );
 };
 

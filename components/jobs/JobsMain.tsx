@@ -1,13 +1,18 @@
 "use client";
 
-import React, { useState } from "react";
+import React, { useCallback, useEffect, useState } from "react";
+import { useApplications } from "@/features/application-tracker/hooks/useApplications";
+import type { OpenPrepareApplicationOptions } from "@/lib/jobs/open-prepare-application";
+import type { PrepareApplicationTab } from "@/lib/jobs/prepare-application-return";
+import { resolveJobForPrepareReopen } from "@/lib/jobs/resolve-prepare-reopen-job";
 import type { InterviewAutoStart, InterviewPrepContext, StartInterviewFromJobPayload } from "@/src/features/interview-prep/types";
 import type { InterviewView, JobsTab } from "@/src/features/jobs/jobs-url";
 import { Search, Map, Mic2 } from "lucide-react";
-import { GeneratorContext } from "../../types/jobs";
+import { GeneratorContext, Job } from "../../types/jobs";
 import ApplicationTracker from "./ApplicationTracker";
 import InterviewPrep from "./InterviewPrep";
 import JobDiscovery from "./JobDiscovery";
+import PrepareApplicationModal, { type PrepareModalSource } from "./PrepareApplicationModal";
 
 interface InterviewUrlState {
   interviewId: string | null;
@@ -29,12 +34,52 @@ interface JobsMainProps {
       setup: string | null;
     }>
   ) => void;
+  reopenPrepare?: { jobId: string; tab: PrepareApplicationTab } | null;
+  onPrepareReopened?: () => void;
 }
 
-const JobsMain: React.FC<JobsMainProps> = ({ onNavigateToStudio, activeTab, onTabChange, interviewUrl, onInterviewUrlChange }) => {
+const JobsMain: React.FC<JobsMainProps> = ({
+  onNavigateToStudio,
+  activeTab,
+  onTabChange,
+  interviewUrl,
+  onInterviewUrlChange,
+  reopenPrepare,
+  onPrepareReopened,
+}) => {
+  const { data: applications = [], isLoading: applicationsLoading } = useApplications();
   const [interviewPrepContext, setInterviewPrepContext] = useState<InterviewPrepContext | null>(null);
   const [interviewAutoStart, setInterviewAutoStart] = useState<InterviewAutoStart | null>(null);
+  const [prepareModalJob, setPrepareModalJob] = useState<Job | null>(null);
+  const [prepareModalSource, setPrepareModalSource] = useState<PrepareModalSource>("discovery");
+  const [prepareModalTab, setPrepareModalTab] = useState<PrepareApplicationTab>("resume");
   const goToTracker = () => onTabChange("tracker");
+
+  const handleOpenPrepareApplication = useCallback((job: Job, options: OpenPrepareApplicationOptions) => {
+    setPrepareModalJob(job);
+    setPrepareModalSource(options.source);
+    setPrepareModalTab(options.tab ?? "resume");
+  }, []);
+
+  useEffect(() => {
+    if (!reopenPrepare?.jobId || applicationsLoading) return;
+
+    let cancelled = false;
+
+    void (async () => {
+      const resolved = await resolveJobForPrepareReopen(reopenPrepare.jobId, applications);
+      if (cancelled || !resolved) return;
+
+      setPrepareModalJob(resolved.job);
+      setPrepareModalSource(resolved.source);
+      setPrepareModalTab(reopenPrepare.tab);
+      onPrepareReopened?.();
+    })();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [reopenPrepare, applications, applicationsLoading, onPrepareReopened]);
 
   const jobDescriptionForInterview = (job: StartInterviewFromJobPayload["job"]) =>
     job.description?.trim() || `${job.role} at ${job.company}`;
@@ -121,13 +166,18 @@ const JobsMain: React.FC<JobsMainProps> = ({ onNavigateToStudio, activeTab, onTa
 
       <div className="flex-1 overflow-y-auto">
         {activeTab === "discovery" && (
-          <JobDiscovery onNavigateToStudio={onNavigateToStudio} onGoToTracker={goToTracker} onStartInterviewPrep={startInterviewFromJob} />
+          <JobDiscovery
+            onNavigateToStudio={onNavigateToStudio}
+            onGoToTracker={goToTracker}
+            onStartInterviewPrep={startInterviewFromJob}
+            onOpenPrepareApplication={handleOpenPrepareApplication}
+          />
         )}
         {activeTab === "tracker" && (
           <ApplicationTracker
             onNavigateToStudio={onNavigateToStudio}
             onStartInterviewPrep={openInterviewPrepSetup}
-            onStartInterviewFromPrepare={startInterviewFromJob}
+            onOpenPrepareApplication={handleOpenPrepareApplication}
           />
         )}
         {activeTab === "interview" && (
@@ -143,6 +193,17 @@ const JobsMain: React.FC<JobsMainProps> = ({ onNavigateToStudio, activeTab, onTa
           />
         )}
       </div>
+
+      {prepareModalJob && (
+        <PrepareApplicationModal
+          job={prepareModalJob}
+          source={prepareModalSource}
+          initialTab={prepareModalTab}
+          onClose={() => setPrepareModalJob(null)}
+          onNavigateToStudio={onNavigateToStudio}
+          onStartInterviewPrep={startInterviewFromJob}
+        />
+      )}
     </div>
   );
 };

@@ -1,6 +1,7 @@
 "use client";
 
 import React, { useState } from "react";
+import { ModalPortalOverlay } from "@/components/ui/ModalPortalOverlay";
 import { updateApplication } from "@/features/application-tracker/server-actions/application-actions";
 import type { ApplicationStatus, CreateApplicationInput } from "@/features/application-tracker/types";
 import { importJobFromUrl } from "@/features/jobs/server-actions/jobs-actions";
@@ -60,6 +61,10 @@ const AddApplicationModal: React.FC<AddApplicationModalProps> = ({ isOpen, onClo
     setImportError(null);
     try {
       const result = await importJobFromUrl(trimmed);
+      if (!result.success) {
+        setImportError(result.error);
+        return;
+      }
       const appId = result.application?.application_id;
       if (appId && initialStatus !== "draft") {
         await updateApplication(appId, {
@@ -105,9 +110,9 @@ const AddApplicationModal: React.FC<AddApplicationModalProps> = ({ isOpen, onClo
   const showLinkedInHint = /linkedin\.com/i.test(jobUrl);
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4 backdrop-blur-sm animate-in fade-in duration-200">
-      <div className="w-full max-w-2xl overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-2xl dark:border-slate-800 dark:bg-[#1a1a1a]">
-        <div className="p-6">
+    <ModalPortalOverlay className="flex items-center justify-center overflow-y-auto bg-black/50 p-4 backdrop-blur-sm animate-in fade-in duration-200">
+      <div className="my-auto flex max-h-[min(90dvh,calc(100vh-2rem))] w-full max-w-2xl min-h-0 flex-col overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-2xl dark:border-slate-800 dark:bg-[#1a1a1a]">
+        <div className="shrink-0 border-b border-slate-200 p-6 dark:border-slate-800">
           <div className="mb-5 flex items-center justify-between">
             <h2 className="text-xl font-semibold text-slate-900 dark:text-white">Add Application</h2>
             <button
@@ -120,7 +125,7 @@ const AddApplicationModal: React.FC<AddApplicationModalProps> = ({ isOpen, onClo
             </button>
           </div>
 
-          <div className="mb-5 flex rounded-xl border border-slate-200 p-1 dark:border-slate-700">
+          <div className="flex rounded-xl border border-slate-200 p-1 dark:border-slate-700">
             <button
               type="button"
               onClick={() => setMode("url")}
@@ -146,7 +151,9 @@ const AddApplicationModal: React.FC<AddApplicationModalProps> = ({ isOpen, onClo
               <FileText size={16} /> Enter manually
             </button>
           </div>
+        </div>
 
+        <div className="scrollbar-on-hover min-h-0 flex-1 overflow-y-auto p-6">
           {mode === "url" ? (
             <div className="relative min-h-[12rem]">
               <div
@@ -269,7 +276,7 @@ const AddApplicationModal: React.FC<AddApplicationModalProps> = ({ isOpen, onClo
           )}
         </div>
       </div>
-    </div>
+    </ModalPortalOverlay>
   );
 };
 

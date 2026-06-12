@@ -1,4 +1,5 @@
 import React from "react";
+import { ModalPortalOverlay } from "@/components/ui/ModalPortalOverlay";
 import { X, Calendar, Clock, ChevronRight, RotateCcw } from "lucide-react";
 import { InterviewSession } from "../../types/jobs";
 
@@ -35,7 +36,7 @@ const InterviewReportModal: React.FC<InterviewReportModalProps> = ({ session, on
   ];
 
   return (
-    <div className="fixed inset-0 z-50 bg-black/50 backdrop-blur-sm flex items-center justify-center p-4 animate-in fade-in duration-200">
+    <ModalPortalOverlay className="flex items-center justify-center bg-black/50 p-4 backdrop-blur-sm animate-in fade-in duration-200">
       <div className="bg-white dark:bg-slate-900 w-full max-w-4xl h-[85vh] rounded-3xl shadow-2xl overflow-hidden flex flex-col border border-slate-200 dark:border-slate-800 animate-in zoom-in-95 duration-200">
         {/* Header */}
         <div className="p-6 border-b border-slate-100 dark:border-slate-800 flex justify-between items-start bg-slate-50/50 dark:bg-slate-900/50">
@@ -156,7 +157,7 @@ const InterviewReportModal: React.FC<InterviewReportModalProps> = ({ session, on
           </button>
         </div>
       </div>
-    </div>
+    </ModalPortalOverlay>
   );
 };
 

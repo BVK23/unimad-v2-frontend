@@ -255,6 +255,8 @@ const buildFallbackPortfolio = (portfolioId: string, initialData?: PortfolioData
 
 const AVATAR_CROP_MAX_OUTPUT_PX = 512;
 const COVER_CROP_MAX_OUTPUT_PX = 1920;
+/** Portfolio cover banner is always cropped to a horizontal 4:1 frame. */
+const COVER_BANNER_ASPECT_RATIO = 4;
 
 const Portfolio: React.FC<PortfolioProps> = ({ portfolioId, initialData, onBack, isReadOnly = false }) => {
   const queryClient = useQueryClient();
@@ -324,10 +326,11 @@ const Portfolio: React.FC<PortfolioProps> = ({ portfolioId, initialData, onBack,
   const [inlineInsertIndex, setInlineInsertIndex] = useState<number | null>(null);
   const publishMenuRef = useRef<HTMLDivElement>(null);
   const [toastMessage, setToastMessage] = useState<string | null>(null);
-  const [coverCropModal, setCoverCropModal] = useState<{ source: string; mimeType?: string } | null>(null);
-  const [selectedCoverCropRatio, setSelectedCoverCropRatio] = useState<NonNullable<UserProfile["coverCropRatio"]>>(
-    profile.coverCropRatio || "16:9"
-  );
+  const [coverCropModal, setCoverCropModal] = useState<{
+    source: string;
+    mimeType?: string;
+    mode: "upload" | "reposition";
+  } | null>(null);
   const [coverCropZoom, setCoverCropZoom] = useState(1);
   const [coverCropPan, setCoverCropPan] = useState({ x: 0, y: 0 });
   const [coverCropImageSize, setCoverCropImageSize] = useState({ width: 0, height: 0 });
@@ -775,23 +778,9 @@ const Portfolio: React.FC<PortfolioProps> = ({ portfolioId, initialData, onBack,
       reader.readAsDataURL(file);
     });
 
-  const COVER_CROP_RATIOS: Record<NonNullable<UserProfile["coverCropRatio"]>, number> = {
-    "1:1": 1,
-    "3:4": 3 / 4,
-    "4:5": 4 / 5,
-    "16:9": 16 / 9,
-  };
-
   const clamp = (value: number, min: number, max: number) => Math.min(max, Math.max(min, value));
 
-  const getCoverCropGeometry = (
-    imageWidth: number,
-    imageHeight: number,
-    ratioLabel: NonNullable<UserProfile["coverCropRatio"]>,
-    zoom: number,
-    pan: { x: number; y: number }
-  ) => {
-    const ratio = COVER_CROP_RATIOS[ratioLabel];
+  const getCoverCropGeometry = (imageWidth: number, imageHeight: number, ratio: number, zoom: number, pan: { x: number; y: number }) => {
     let baseCropWidth = imageWidth;
     let baseCropHeight = baseCropWidth / ratio;
 
@@ -810,9 +799,9 @@ const Portfolio: React.FC<PortfolioProps> = ({ portfolioId, initialData, onBack,
     return { cropWidth, cropHeight, offsetX, offsetY };
   };
 
-  const applyCoverCrop = (
+  const applyRatioCrop = (
     source: string,
-    ratioLabel: NonNullable<UserProfile["coverCropRatio"]>,
+    ratio: number,
     zoom: number,
     pan: { x: number; y: number },
     callback: (croppedDataUrl: string) => void,
@@ -823,7 +812,7 @@ const Portfolio: React.FC<PortfolioProps> = ({ portfolioId, initialData, onBack,
       img.crossOrigin = "anonymous";
     }
     img.onload = () => {
-      const { cropWidth, cropHeight, offsetX, offsetY } = getCoverCropGeometry(img.naturalWidth, img.naturalHeight, ratioLabel, zoom, pan);
+      const { cropWidth, cropHeight, offsetX, offsetY } = getCoverCropGeometry(img.naturalWidth, img.naturalHeight, ratio, zoom, pan);
 
       let outWidth = Math.round(cropWidth);
       let outHeight = Math.round(cropHeight);
@@ -849,6 +838,14 @@ const Portfolio: React.FC<PortfolioProps> = ({ portfolioId, initialData, onBack,
     img.src = source;
   };
 
+  const applyCoverBannerCrop = (
+    source: string,
+    zoom: number,
+    pan: { x: number; y: number },
+    callback: (croppedDataUrl: string) => void,
+    maxOutputPx?: number
+  ) => applyRatioCrop(source, COVER_BANNER_ASPECT_RATIO, zoom, pan, callback, maxOutputPx);
+
   const persistCroppedHeroImage = useCallback(
     async (croppedDataUrl: string, category: "profile-picture" | "cover-picture", applyUrl: (url: string) => void) => {
       setIsHeroImageUploading(true);
@@ -869,16 +866,39 @@ const Portfolio: React.FC<PortfolioProps> = ({ portfolioId, initialData, onBack,
     [queryClient, showToast]
   );
 
-  const openCoverCropModal = (source: string, mimeType?: string) => {
-    setSelectedCoverCropRatio(profile.coverCropRatio || "16:9");
+  const resolveCoverCropSource = async (source: string, mode: "upload" | "reposition") => {
+    const resolvedSource = resolveMediaDisplayUrl(source);
+    if (mode !== "reposition" || resolvedSource.startsWith("data:")) {
+      return resolvedSource;
+    }
+
+    try {
+      const response = await fetch(resolvedSource, { credentials: "include" });
+      if (!response.ok) {
+        return resolvedSource;
+      }
+      const blob = await response.blob();
+      return fileToDataUrl(new File([blob], "cover.jpg", { type: blob.type || "image/jpeg" }));
+    } catch {
+      return resolvedSource;
+    }
+  };
+
+  const openCoverCropModal = async (source: string, mimeType?: string, mode: "upload" | "reposition" = "upload") => {
     setCoverCropZoom(1);
     setCoverCropPan({ x: 0, y: 0 });
-    setCoverCropModal({ source: resolveMediaDisplayUrl(source), mimeType });
+    const cropSource = await resolveCoverCropSource(source, mode);
+    setCoverCropModal({ source: cropSource, mimeType, mode });
   };
 
   const handleCoverUpload = async (file: File) => {
     const dataUrl = await fileToDataUrl(file);
-    openCoverCropModal(dataUrl, file.type || "image/jpeg");
+    await openCoverCropModal(dataUrl, file.type || "image/jpeg", "upload");
+  };
+
+  const handleRepositionCover = () => {
+    if (!profile.coverUrl?.trim()) return;
+    void openCoverCropModal(profile.coverUrl, "image/jpeg", "reposition");
   };
 
   const openAvatarCropModal = (source: string, mimeType?: string) => {
@@ -924,7 +944,7 @@ const Portfolio: React.FC<PortfolioProps> = ({ portfolioId, initialData, onBack,
 
   const coverCropGeometry =
     coverCropModal && coverCropImageSize.width && coverCropImageSize.height
-      ? getCoverCropGeometry(coverCropImageSize.width, coverCropImageSize.height, selectedCoverCropRatio, coverCropZoom, coverCropPan)
+      ? getCoverCropGeometry(coverCropImageSize.width, coverCropImageSize.height, COVER_BANNER_ASPECT_RATIO, coverCropZoom, coverCropPan)
       : null;
 
   const coverCropPreviewStyle =
@@ -961,7 +981,7 @@ const Portfolio: React.FC<PortfolioProps> = ({ portfolioId, initialData, onBack,
 
   const avatarCropGeometry =
     avatarCropModal && avatarCropImageSize.width && avatarCropImageSize.height
-      ? getCoverCropGeometry(avatarCropImageSize.width, avatarCropImageSize.height, "1:1", avatarCropZoom, avatarCropPan)
+      ? getCoverCropGeometry(avatarCropImageSize.width, avatarCropImageSize.height, 1, avatarCropZoom, avatarCropPan)
       : null;
 
   const avatarCropPreviewStyle =
@@ -1679,7 +1699,7 @@ const Portfolio: React.FC<PortfolioProps> = ({ portfolioId, initialData, onBack,
             profile.showCover !== false && (
               <div className="max-w-5xl mx-auto px-4 mt-6">
                 <div
-                  className={`h-40 md:h-48 w-full relative group bg-slate-100 dark:bg-slate-900 border border-slate-200 dark:border-white/5 overflow-hidden ${
+                  className={`aspect-[4/1] w-full relative group bg-slate-100 dark:bg-slate-900 border border-slate-200 dark:border-white/5 overflow-hidden ${
                     showProfileSection ? "rounded-t-2xl" : "rounded-2xl"
                   }`}
                 >
@@ -1704,10 +1724,11 @@ const Portfolio: React.FC<PortfolioProps> = ({ portfolioId, initialData, onBack,
                       </button>
                       {profile.coverUrl ? (
                         <button
-                          onClick={() => openCoverCropModal(profile.coverUrl, "image/jpeg")}
+                          type="button"
+                          onClick={handleRepositionCover}
                           className="bg-white text-slate-900 px-6 py-2 rounded-full font-medium text-sm shadow-xl hover:scale-105 active:scale-95 transition-transform"
                         >
-                          Crop Cover
+                          Reposition Cover
                         </button>
                       ) : null}
                       <button
@@ -2227,9 +2248,9 @@ const Portfolio: React.FC<PortfolioProps> = ({ portfolioId, initialData, onBack,
                       type="button"
                       disabled={isHeroImageUploading}
                       onClick={() => {
-                        applyCoverCrop(
+                        applyRatioCrop(
                           avatarCropModal.source,
-                          "1:1",
+                          1,
                           avatarCropZoom,
                           avatarCropPan,
                           croppedDataUrl => {
@@ -2266,9 +2287,11 @@ const Portfolio: React.FC<PortfolioProps> = ({ portfolioId, initialData, onBack,
               >
                 <div className="flex items-center justify-between px-5 py-4 border-b border-slate-100 dark:border-white/10">
                   <div>
-                    <h3 className="text-sm font-semibold text-slate-900 dark:text-white">Crop Cover</h3>
+                    <h3 className="text-sm font-semibold text-slate-900 dark:text-white">
+                      {coverCropModal.mode === "reposition" ? "Reposition Cover" : "Set Cover Image"}
+                    </h3>
                     <p className="text-xs text-slate-500 dark:text-slate-400 mt-1">
-                      Choose a crop ratio, zoom, and position for the cover image.
+                      Drag to reposition and use zoom to frame your cover in a 4:1 banner.
                     </p>
                   </div>
                   <button
@@ -2280,28 +2303,11 @@ const Portfolio: React.FC<PortfolioProps> = ({ portfolioId, initialData, onBack,
                 </div>
 
                 <div className="p-5 space-y-5">
-                  <div className="flex flex-wrap gap-2">
-                    {(Object.keys(COVER_CROP_RATIOS) as Array<NonNullable<UserProfile["coverCropRatio"]>>).map(ratio => (
-                      <button
-                        key={ratio}
-                        type="button"
-                        onClick={() => setSelectedCoverCropRatio(ratio)}
-                        className={`px-4 py-2 rounded-full text-xs font-semibold border transition-colors ${
-                          selectedCoverCropRatio === ratio
-                            ? "border-brand-500 bg-brand-50 text-brand-700"
-                            : "border-slate-200 dark:border-white/10 text-slate-500 hover:text-slate-800 dark:hover:text-white"
-                        }`}
-                      >
-                        {ratio}
-                      </button>
-                    ))}
-                  </div>
-
-                  <div className="rounded-2xl bg-slate-100 dark:bg-slate-900 p-4 flex items-center justify-center min-h-[360px]">
+                  <div className="rounded-2xl bg-slate-100 dark:bg-slate-900 p-4 flex items-center justify-center">
                     <div
                       ref={coverCropPreviewRef}
                       className="w-full max-w-xl overflow-hidden rounded-2xl bg-black/5 dark:bg-black/30 shadow-inner"
-                      style={{ aspectRatio: String(COVER_CROP_RATIOS[selectedCoverCropRatio]) }}
+                      style={{ aspectRatio: String(COVER_BANNER_ASPECT_RATIO) }}
                       onPointerDown={handleCoverCropPointerDown}
                       onPointerMove={handleCoverCropPointerMove}
                       onPointerUp={handleCoverCropPointerUp}
@@ -2354,9 +2360,8 @@ const Portfolio: React.FC<PortfolioProps> = ({ portfolioId, initialData, onBack,
                       type="button"
                       disabled={isHeroImageUploading}
                       onClick={() => {
-                        applyCoverCrop(
+                        applyCoverBannerCrop(
                           coverCropModal.source,
-                          selectedCoverCropRatio,
                           coverCropZoom,
                           coverCropPan,
                           croppedDataUrl => {
@@ -2364,7 +2369,6 @@ const Portfolio: React.FC<PortfolioProps> = ({ portfolioId, initialData, onBack,
                               setProfile(prev => ({
                                 ...prev,
                                 coverUrl: url,
-                                coverCropRatio: selectedCoverCropRatio,
                                 showCover: true,
                               }));
                               setCoverCropModal(null);
@@ -2375,7 +2379,7 @@ const Portfolio: React.FC<PortfolioProps> = ({ portfolioId, initialData, onBack,
                       }}
                       className="px-5 py-2 rounded-full text-xs font-semibold bg-brand-600 text-white hover:scale-105 active:scale-95 transition-all shadow-lg shadow-brand-500/25 disabled:opacity-60 disabled:pointer-events-none"
                     >
-                      {isHeroImageUploading ? "Uploading…" : "Save Crop"}
+                      {isHeroImageUploading ? "Uploading…" : coverCropModal.mode === "reposition" ? "Save Position" : "Save Cover"}
                     </button>
                   </div>
                 </div>

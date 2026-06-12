@@ -1,8 +1,14 @@
 "use server";
 
-import { messageFromFailedResponse } from "@/utils/message-from-failed-response";
+import {
+  formatJobImportError,
+  GENERIC_JOB_IMPORT_FALLBACK,
+  isLinkedInJobUrl,
+  LINKEDIN_JOB_IMPORT_FALLBACK,
+} from "@/utils/job-import-error";
+import { sanitizeUserFacingError } from "@/utils/message-from-failed-response";
 import { cookies } from "next/headers";
-import type { BackendJob, ImportJobFromUrlResponse, JobListResponse, JobSearchParams } from "../types";
+import type { BackendJob, ImportJobFromUrlResponse, ImportJobFromUrlResult, JobListResponse, JobSearchParams } from "../types";
 
 // -----------------------------------------------------------------------------
 // Shared helpers (mirrors resume server-actions pattern)
@@ -174,37 +180,59 @@ export async function getSavedJobs(page = 1): Promise<JobListResponse> {
 /**
  * POST /api/jobs/import-from-url/
  * Extracts job data from a public posting URL and creates/links a draft application.
+ *
+ * Returns `{ success: false, error }` instead of throwing so Next.js production builds
+ * surface readable messages (thrown server-action errors are stripped to a generic digest).
  */
-export async function importJobFromUrl(url: string): Promise<ImportJobFromUrlResponse> {
+export async function importJobFromUrl(url: string): Promise<ImportJobFromUrlResult> {
   const trimmed = url.trim();
+  const importFallback = isLinkedInJobUrl(trimmed) ? LINKEDIN_JOB_IMPORT_FALLBACK : GENERIC_JOB_IMPORT_FALLBACK;
+
   if (!trimmed) {
-    throw new Error("Paste a job posting URL to continue.");
+    return { success: false, error: "Paste a job posting URL to continue." };
   }
 
-  const res = await authedFetch("/api/jobs/import-from-url/", {
-    method: "POST",
-    body: JSON.stringify({ url: trimmed }),
-  });
+  try {
+    const res = await authedFetch("/api/jobs/import-from-url/", {
+      method: "POST",
+      body: JSON.stringify({ url: trimmed }),
+    });
 
-  const contentType = res.headers.get("content-type") ?? "";
-  const bodyText = await res.text();
+    const contentType = res.headers.get("content-type") ?? "";
+    const bodyText = await res.text();
 
-  let data: ImportJobFromUrlResponse & { error?: string; code?: string };
-  if (contentType.includes("application/json")) {
-    try {
-      data = JSON.parse(bodyText) as ImportJobFromUrlResponse & { error?: string; code?: string };
-    } catch {
+    let data: ImportJobFromUrlResponse & { error?: string; code?: string };
+    if (contentType.includes("application/json")) {
+      try {
+        data = JSON.parse(bodyText) as ImportJobFromUrlResponse & { error?: string; code?: string };
+      } catch {
+        data = { error: bodyText } as ImportJobFromUrlResponse & { error?: string };
+      }
+    } else {
       data = { error: bodyText } as ImportJobFromUrlResponse & { error?: string };
     }
-  } else {
-    data = { error: bodyText } as ImportJobFromUrlResponse & { error?: string };
-  }
 
-  if (!res.ok) {
-    throw new Error(messageFromFailedResponse(res.status, bodyText, data.error));
-  }
+    if (!res.ok) {
+      return {
+        success: false,
+        error: formatJobImportError({
+          url: trimmed,
+          status: res.status,
+          bodyText,
+          jsonError: data.error,
+          code: data.code,
+        }),
+        code: data.code,
+      };
+    }
 
-  return data as ImportJobFromUrlResponse;
+    return { success: true, ...(data as ImportJobFromUrlResponse) };
+  } catch (e) {
+    return {
+      success: false,
+      error: sanitizeUserFacingError(e instanceof Error ? e.message : "", importFallback),
+    };
+  }
 }
 
 export async function getRecentJobs(limit = 10): Promise<JobListResponse> {

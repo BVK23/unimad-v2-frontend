@@ -1,7 +1,10 @@
 "use client";
 
 import React, { useState, useEffect } from "react";
+import { createPortal } from "react-dom";
+import { applicationHasAnyLinkedAsset, parseApplicationAssets } from "@/features/application-tracker/application-assets";
 import type { Application, ApplicationStatus, UpdateApplicationInput } from "@/features/application-tracker/types";
+import { MODAL_OVERLAY_Z_CLASS } from "@/lib/ui/modal-overlay";
 import { X, FileText, ExternalLink, Pencil, ChevronDown, CheckCircle2 } from "lucide-react";
 
 const STATUS_OPTIONS: { value: ApplicationStatus; label: string }[] = [
@@ -64,6 +67,7 @@ const ApplicationDetailsModal: React.FC<ApplicationDetailsModalProps> = ({
 
   if (!isOpen || !application) return null;
 
+  const hasPreparedApplication = applicationHasAnyLinkedAsset(parseApplicationAssets(application.assets));
   const isManualEntry = !application.job_id;
   const currentStatusLabel = STATUS_OPTIONS.find(o => o.value === application.status)?.label ?? application.status;
 
@@ -112,8 +116,12 @@ const ApplicationDetailsModal: React.FC<ApplicationDetailsModalProps> = ({
   const applyUrl = application.apply_url;
 
   if (mode === "edit") {
-    return (
-      <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4 backdrop-blur-sm animate-in fade-in duration-200">
+    if (typeof document === "undefined") return null;
+
+    return createPortal(
+      <div
+        className={`fixed inset-0 ${MODAL_OVERLAY_Z_CLASS} flex items-center justify-center bg-black/50 p-4 backdrop-blur-sm animate-in fade-in duration-200`}
+      >
         <div className="flex max-h-[90vh] w-full max-w-2xl flex-col rounded-2xl border border-slate-200 bg-white shadow-2xl dark:border-slate-800 dark:bg-[#1a1a1a]">
           <div className="flex shrink-0 items-center justify-between border-b border-slate-200 p-6 dark:border-slate-800">
             <h2 className="text-xl font-semibold text-slate-900 dark:text-white">Edit application</h2>
@@ -214,19 +222,22 @@ const ApplicationDetailsModal: React.FC<ApplicationDetailsModalProps> = ({
             </button>
           </div>
         </div>
-      </div>
+      </div>,
+      document.body
     );
   }
 
-  return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4 backdrop-blur-sm animate-in fade-in duration-200">
+  if (typeof document === "undefined") return null;
+
+  return createPortal(
+    <div
+      className={`fixed inset-0 ${MODAL_OVERLAY_Z_CLASS} flex items-center justify-center bg-black/50 p-4 backdrop-blur-sm animate-in fade-in duration-200`}
+    >
       <div className="flex max-h-[90vh] w-full max-w-3xl flex-col overflow-hidden rounded-3xl border border-slate-200 bg-white shadow-2xl dark:border-slate-800 dark:bg-[#1a1a1a] animate-in zoom-in-95 duration-200">
         <div className="flex items-start justify-between border-b border-slate-100 bg-slate-50/50 p-6 dark:border-slate-800 dark:bg-slate-900/50">
           <div className="flex gap-4">
-            <div className="flex h-16 w-16 items-center justify-center overflow-hidden rounded-2xl border border-slate-200 bg-white p-3 shadow-sm dark:border-slate-800 dark:bg-slate-900">
-              <div className="flex h-full w-full items-center justify-center rounded-xl bg-gradient-to-br from-blue-500 via-purple-500 to-pink-500">
-                <span className="text-2xl font-bold text-white">{application.company?.charAt(0)?.toUpperCase() || "?"}</span>
-              </div>
+            <div className="flex h-16 w-16 shrink-0 items-center justify-center overflow-hidden rounded-2xl bg-gradient-to-br from-brand-500 via-purple-500 to-pink-500 shadow-sm">
+              <span className="text-3xl font-bold text-white">{application.company?.charAt(0)?.toUpperCase() || "?"}</span>
             </div>
             <div>
               <h2 className="mb-1 text-2xl font-semibold text-slate-900 dark:text-white">{application.role}</h2>
@@ -325,7 +336,7 @@ const ApplicationDetailsModal: React.FC<ApplicationDetailsModalProps> = ({
             onClick={() => onPrepare(application)}
             className="flex flex-1 items-center justify-center gap-2 rounded-xl border border-slate-200 bg-white py-3 font-medium text-slate-900 shadow-sm transition-all hover:bg-slate-50 active:scale-95 dark:border-slate-700 dark:bg-slate-800 dark:text-white dark:hover:bg-slate-700"
           >
-            <FileText size={18} className="text-brand-500" /> Prepare Application
+            <FileText size={18} className="text-brand-500" /> {hasPreparedApplication ? "Continue Application" : "Prepare Application"}
           </button>
           <button
             onClick={() => applyUrl && window.open(applyUrl, "_blank")}
@@ -336,7 +347,8 @@ const ApplicationDetailsModal: React.FC<ApplicationDetailsModalProps> = ({
           </button>
         </div>
       </div>
-    </div>
+    </div>,
+    document.body
   );
 };
 

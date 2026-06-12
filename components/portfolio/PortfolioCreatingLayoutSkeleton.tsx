@@ -16,7 +16,7 @@ export default function PortfolioCreatingLayoutSkeleton() {
   return (
     <div className="pointer-events-none flex-1 overflow-y-auto bg-slate-50 dark:bg-[#080808] no-scrollbar" aria-hidden>
       <div className="max-w-5xl mx-auto px-4 mt-6">
-        <div className={`h-40 md:h-48 w-full rounded-t-2xl border border-slate-200 dark:border-white/5 ${bone}`} />
+        <div className={`aspect-[4/1] w-full rounded-t-2xl border border-slate-200 dark:border-white/5 ${bone}`} />
       </div>
 
       <div className="max-w-5xl mx-auto px-4 pb-40">

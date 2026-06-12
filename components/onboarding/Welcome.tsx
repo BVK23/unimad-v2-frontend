@@ -46,7 +46,7 @@ export default function Welcome({ name, userState, onComplete }: WelcomeProps) {
   const content = CONTENT_BY_STATE[safeState];
 
   return (
-    <FormShell width="narrow" className="text-center">
+    <FormShell width="narrow" className="text-center" showSkipStep={false}>
       <Heading subtitle={content.message}>{content.title(name)}</Heading>
 
       <div className="flex flex-col sm:flex-row items-center gap-3 mt-4 w-full justify-center">

@@ -1,11 +1,14 @@
 import React, { useState, useEffect, useRef, useCallback, useMemo } from "react";
+import { ModalPortalOverlay } from "@/components/ui/ModalPortalOverlay";
 import { PanelResizeHandle } from "@/components/ui/PanelResizeHandle";
 import { useAdkApplicationAssetReviewStore } from "@/features/adk-chat/stores/useAdkApplicationAssetReviewStore";
 import {
   APPLICATION_ASSET_EVENTS,
+  IMPROVE_INITIAL_DRAFT_PROMPT,
   type ApplicationAssetDraftFailedDetail,
   type ApplicationAssetDraftPreviewDetail,
   type ApplicationAssetDraftReadyDetail,
+  type ApplicationAssetOpenImproveDetail,
   type ApplyApplicationAssetDetail,
   type RequestApplicationAssetDraftDetail,
 } from "@/features/application-assets/api/application-asset-events";
@@ -13,6 +16,8 @@ import { runApplicationAssetDraftGeneration } from "@/features/application-asset
 import { useApplicationAssetReviewActions } from "@/features/application-assets/hooks/useApplicationAssetReviewActions";
 import { useApplicationAssetStudioStore } from "@/features/application-assets/store/useApplicationAssetStudioStore";
 import { API_TYPE_TO_STUDIO_TOPIC, STUDIO_TOPIC_TO_API_TYPE, type ApplicationAssetStudioTopic } from "@/features/application-assets/types";
+import { getLinkedAssetId, parseApplicationAssets } from "@/features/application-tracker/application-assets";
+import { useApplications } from "@/features/application-tracker/hooks/useApplications";
 import { useColdEmailHistory, useGenerateColdEmail, type GenerateColdEmailResult } from "@/features/cold-email/hooks";
 import { COLD_EMAIL_LIST_QUERY_KEY } from "@/features/cold-email/hooks/useColdEmailHistory";
 import { deleteColdEmail, fetchColdEmailById, updateColdEmail } from "@/features/cold-email/server-actions/cold-email-actions";
@@ -58,16 +63,33 @@ import { deleteReferral, fetchReferralById, updateReferral } from "@/features/re
 import type { ReferralAsset } from "@/features/referral/types";
 import { useProfileData } from "@/features/user-profile/hooks/use-profile-data";
 import { resolveLinkedInPostAuthorDisplay } from "@/features/user-profile/utils/resolve-linkedin-post-author";
+import { useDocumentAutosave } from "@/hooks/useDocumentAutosave";
 import { useResizablePanelWidth } from "@/hooks/useResizablePanelWidth";
+import {
+  clearPrepareReturnSession,
+  getPrepareReturnSession,
+  setPrepareReturnContentSnapshot,
+  setPrepareReturnSession,
+  type PrepareApplicationReturnSession,
+  type PrepareApplicationTab,
+} from "@/lib/jobs/prepare-application-return";
+import {
+  buildJobsPrepareReopenHref,
+  buildStudioAssetOnlyHref,
+  buildStudioSearchParams,
+  parseStudioSearchParams,
+} from "@/lib/jobs/prepare-application-url";
+import { getJob } from "@/src/features/jobs/server-actions/jobs-actions";
 import { exportApplicationAssetAsDocx } from "@/utils/export-application-asset-file";
+import { htmlToPlainText } from "@/utils/html-to-text";
 import { sanitizeUserFacingError } from "@/utils/message-from-failed-response";
 import { normalizeContentToHtml } from "@/utils/normalize-content-to-html";
-import { exportContentAsPDF } from "@/utils/pdf-export";
 import { useQueryClient } from "@tanstack/react-query";
 import { ThumbsUp, MessageSquare, Repeat, Send, MoreHorizontal, Wand2, Plus, History, Upload, Info } from "lucide-react";
 import { usePathname, useRouter, useSearchParams } from "next/navigation";
 import { PortfolioItem } from "../../types";
 import { GeneratorContext } from "../../types/jobs";
+import { PrepareApplicationReturnBar } from "../jobs/PrepareApplicationReturnBar";
 import AllDocumentsModal from "./AllDocumentsModal";
 import AllPostsModal from "./AllPostsModal";
 import AllVPDsModal from "./AllVPDsModal";
@@ -76,7 +98,7 @@ import LinkedInOptimizeBanner from "./LinkedInOptimizeBanner";
 import LinkedInPostAuthorHeader from "./LinkedInPostAuthorHeader";
 import LinkedInPostListCard from "./LinkedInPostListCard";
 import PostSchedulerModal from "./PostSchedulerModal";
-import StudioDocumentPreview, { type DocumentSaveStatus } from "./StudioDocumentPreview";
+import StudioDocumentPreview from "./StudioDocumentPreview";
 import StudioMediaPreviewImage from "./StudioMediaPreviewImage";
 import StudioSectionDot from "./StudioSectionDot";
 import VpdEditorWindow from "./VpdEditorWindow";
@@ -103,6 +125,16 @@ const DOCUMENT_TOPIC_LABELS: Record<"cover-letter" | "cold-email" | "referral", 
 
 const isDocumentTopic = (topic: string): topic is ApplicationAssetStudioTopic =>
   topic === "cover-letter" || topic === "cold-email" || topic === "referral";
+
+function isPrepareReturnTab(type: string): type is PrepareApplicationTab {
+  return type === "cover-letter" || type === "cold-email" || type === "vpd";
+}
+
+const PREPARE_MODE_LOCKED_TOPICS = new Set(["linkedin-post", "referral"]);
+
+function isPrepareModeStudioTab(topic: string): topic is PrepareApplicationTab {
+  return topic === "cover-letter" || topic === "cold-email" || topic === "vpd";
+}
 
 const documentTopicToApiType = (topic: ApplicationAssetStudioTopic) => STUDIO_TOPIC_TO_API_TYPE[topic];
 
@@ -243,15 +275,29 @@ const StudioMainV2: React.FC<StudioMainProps> = ({ initialContext, initialAssetI
   /** After generate, asset `content` is still empty on server; URL hydration must not overwrite the in-memory draft. */
   const linkedinPreserveDraftForAssetIdRef = useRef<string | null>(null);
   const linkedinPersistDebounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const [prepareReturn, setPrepareReturn] = useState<PrepareApplicationReturnSession | null>(null);
+  const { data: applications = [] } = useApplications();
+  const prepareApplication = useMemo(() => {
+    if (!prepareReturn?.jobId) return undefined;
+    return (
+      applications.find(a => a.application_id === prepareReturn.jobId) ??
+      applications.find(a => a.job_id != null && String(a.job_id) === prepareReturn.jobId)
+    );
+  }, [applications, prepareReturn?.jobId]);
+  const prepareApplicationAssets = useMemo(() => parseApplicationAssets(prepareApplication?.assets), [prepareApplication?.assets]);
+  const prepareApplicationId = prepareApplication?.application_id ?? null;
   // V2 Force Refresh
   const [selectedTopic, setSelectedTopic] = useState<string>(initialContext?.type ?? "linkedin-post");
   const [generatedContent, setGeneratedContent] = useState("");
   const [isGenerating, setIsGenerating] = useState(false);
   const [applicationAssetDraftLoading, setApplicationAssetDraftLoading] = useState(false);
+  const [documentGeneratingTopic, setDocumentGeneratingTopic] = useState<ApplicationAssetStudioTopic | null>(null);
 
   const hasApplicationAssetPendingRevision = adkApplicationAssetReviewStack.length > 0;
   const documentAssetApiType = isDocumentTopic(selectedTopic) ? documentTopicToApiType(selectedTopic) : null;
-  const isDocumentAdkLoading = applicationAssetDraftLoading || selectionRefineLoading;
+  const isDocumentDraftLoadingForTopic =
+    applicationAssetDraftLoading && documentGeneratingTopic != null && documentGeneratingTopic === selectedTopic;
+  const isDocumentAdkLoading = isDocumentDraftLoadingForTopic || selectionRefineLoading;
 
   useEffect(() => {
     if (!isDocumentTopic(selectedTopic)) {
@@ -319,7 +365,9 @@ const StudioMainV2: React.FC<StudioMainProps> = ({ initialContext, initialAssetI
     window.dispatchEvent(
       new CustomEvent("open-content-gen-topic", {
         detail: {
-          followUpText: `Please improve this LinkedIn post draft:\n\n${trimmed}`,
+          followUpText: `${IMPROVE_INITIAL_DRAFT_PROMPT}:\n\n${trimmed}`,
+          topicTitle: "Improve LinkedIn Post",
+          reuseExistingTopic: true,
           requestKey: Date.now(),
         },
       })
@@ -390,20 +438,7 @@ const StudioMainV2: React.FC<StudioMainProps> = ({ initialContext, initialAssetI
     hirname: string;
   } | null>(null);
   const lastReferralParamsRef = useRef<{ role: string; company: string; conname: string } | null>(null);
-  const documentPersistDebounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
-  const [documentSaveStatus, setDocumentSaveStatus] = useState<DocumentSaveStatus>("idle");
-
-  const clearDocumentPersistDebounce = useCallback(() => {
-    if (documentPersistDebounceRef.current) {
-      clearTimeout(documentPersistDebounceRef.current);
-      documentPersistDebounceRef.current = null;
-    }
-  }, []);
-
-  const resetDocumentSaveStatus = useCallback(() => {
-    clearDocumentPersistDebounce();
-    setDocumentSaveStatus("idle");
-  }, [clearDocumentPersistDebounce]);
+  const documentContentRef = useRef("");
 
   const { data: coverLetterHistory = [] } = useCoverLetterHistory();
   const { data: coldEmailHistory = [] } = useColdEmailHistory();
@@ -475,6 +510,33 @@ const StudioMainV2: React.FC<StudioMainProps> = ({ initialContext, initialAssetI
     setGeneratedContent(asset.content ?? "");
     setSelectedDocumentId(asset.id);
   };
+
+  const clearDocumentFormFields = useCallback(() => {
+    setRole("");
+    setCompany("");
+    setJobDescription("");
+    setManagerName("");
+    setConnectionName("");
+    setSelectedDocumentId(null);
+  }, []);
+
+  const applyPrepareJobFormDefaults = useCallback(() => {
+    if (!prepareReturn) return;
+    if (prepareReturn.role) setRole(prepareReturn.role);
+    if (prepareReturn.company) setCompany(prepareReturn.company);
+    if (prepareApplication?.job_description?.trim()) {
+      setJobDescription(prepareApplication.job_description);
+    }
+  }, [prepareApplication?.job_description, prepareReturn]);
+
+  const updatePrepareReturnTab = useCallback((tab: PrepareApplicationTab) => {
+    setPrepareReturn(prev => {
+      if (!prev || prev.tab === tab) return prev;
+      const next = { ...prev, tab };
+      setPrepareReturnSession(next);
+      return next;
+    });
+  }, []);
 
   const documentItemsForTopic = useMemo((): DocumentLibraryItem[] => {
     if (selectedTopic === "cover-letter") {
@@ -601,11 +663,15 @@ const StudioMainV2: React.FC<StudioMainProps> = ({ initialContext, initialAssetI
 
   const clearApplicationAssetDraftLoading = useCallback(() => {
     setApplicationAssetDraftLoading(false);
+    setDocumentGeneratingTopic(null);
   }, []);
 
   const generateCoverLetterMutation = useGenerateCoverLetter({
     onSuccess: (result: GenerateCoverLetterResult) => {
       handleApplicationAssetDraftStarted(result, "cover-letter");
+      if ("success" in result && result.success) {
+        void queryClient.invalidateQueries({ queryKey: ["applications"] });
+      }
       if ("subscriptionRequired" in result && result.subscriptionRequired) {
         setCoverLetterSubscriptionModal(true);
       }
@@ -617,6 +683,9 @@ const StudioMainV2: React.FC<StudioMainProps> = ({ initialContext, initialAssetI
   const generateColdEmailMutation = useGenerateColdEmail({
     onSuccess: (result: GenerateColdEmailResult) => {
       handleApplicationAssetDraftStarted(result, "cold-email");
+      if ("success" in result && result.success) {
+        void queryClient.invalidateQueries({ queryKey: ["applications"] });
+      }
       if ("subscriptionRequired" in result && result.subscriptionRequired) {
         setColdEmailSubscriptionModal(true);
       }
@@ -644,22 +713,22 @@ const StudioMainV2: React.FC<StudioMainProps> = ({ initialContext, initialAssetI
 
   const updateStudioUrl = useCallback(
     ({ type, id }: { type?: string; id?: string }) => {
-      const params = new URLSearchParams(searchParams.toString());
+      const parsed = parseStudioSearchParams(searchParams);
       const nextType = type ?? selectedTopic;
-      const currentType = searchParams.get("type") ?? "";
-      const currentId = searchParams.get("id") ?? "";
-      const normalizedNextId = id ?? "";
-      if (currentType === nextType && currentId === normalizedNextId) {
+      const nextId = id?.trim() ? id.trim() : undefined;
+      const currentType = parsed.type ?? "";
+      const currentId = parsed.id ?? "";
+      if (currentType === nextType && currentId === (nextId ?? "")) {
         return;
       }
-      if (nextType) {
-        params.set("type", nextType);
-      }
-      if (id) {
-        params.set("id", id);
-      } else {
-        params.delete("id");
-      }
+      const params = buildStudioSearchParams({
+        id: nextId,
+        type: nextType,
+        jobId: parsed.jobId,
+        navigate: parsed.navigate,
+        improve: parsed.improve,
+        interviewVpd: parsed.interviewVpd,
+      });
       const query = params.toString();
       router.replace(query ? `${pathname}?${query}` : pathname, { scroll: false });
     },
@@ -667,6 +736,119 @@ const StudioMainV2: React.FC<StudioMainProps> = ({ initialContext, initialAssetI
   );
 
   updateStudioUrlRef.current = updateStudioUrl;
+
+  const canAutosaveDocument =
+    (selectedTopic === "cover-letter" && Boolean(currentCoverLetterDraft?.id)) ||
+    (selectedTopic === "cold-email" && Boolean(currentColdEmailDraft?.id)) ||
+    (selectedTopic === "referral" && Boolean(currentReferralDraft?.id));
+
+  const persistDocumentContent = useCallback(
+    async (content: string) => {
+      if (selectedTopic === "cover-letter" && currentCoverLetterDraft?.id) {
+        await updateCoverLetter({ id: currentCoverLetterDraft.id, content });
+        setCurrentCoverLetterDraft(prev => (prev ? { ...prev, content, status: "accepted" } : prev));
+        return;
+      }
+      if (selectedTopic === "cold-email" && currentColdEmailDraft?.id) {
+        await updateColdEmail({ id: currentColdEmailDraft.id, content });
+        setCurrentColdEmailDraft(prev => (prev ? { ...prev, content, status: "accepted" } : prev));
+        return;
+      }
+      if (selectedTopic === "referral" && currentReferralDraft?.id) {
+        await updateReferral({ id: currentReferralDraft.id, content });
+        setCurrentReferralDraft(prev => (prev ? { ...prev, content, status: "accepted" } : prev));
+      }
+    },
+    [selectedTopic, currentCoverLetterDraft, currentColdEmailDraft, currentReferralDraft]
+  );
+
+  const {
+    hasPendingUnsavedChanges: documentHasPendingUnsavedChanges,
+    isSaving: documentIsSaving,
+    savedConfirmationVisible: documentSavedConfirmationVisible,
+    markDirty: markDocumentDirty,
+    runSave: runDocumentSave,
+    reset: resetDocumentSaveStatus,
+  } = useDocumentAutosave({
+    enabled: canAutosaveDocument,
+    onSave: async () => {
+      await persistDocumentContent(documentContentRef.current);
+    },
+  });
+
+  const handleDocumentContentChange = useCallback(
+    (content: string) => {
+      documentContentRef.current = content;
+      if (selectedTopic === "cover-letter") {
+        setCurrentCoverLetterDraft(prev => (prev ? { ...prev, content } : prev));
+      } else if (selectedTopic === "cold-email") {
+        setCurrentColdEmailDraft(prev => (prev ? { ...prev, content } : prev));
+      } else if (selectedTopic === "referral") {
+        setCurrentReferralDraft(prev => (prev ? { ...prev, content } : prev));
+      }
+      markDocumentDirty();
+    },
+    [markDocumentDirty, selectedTopic]
+  );
+
+  const resolvePrepareDocumentTopic = useCallback(
+    async (topicId: "cover-letter" | "cold-email") => {
+      resetDocumentSaveStatus();
+      pendingTopicRef.current = topicId;
+      setSelectedTopic(topicId);
+      setIsGenerating(false);
+      setGeneratedContent("");
+      setLinkedinGenerateError(null);
+      setLinkedinPersistError(null);
+      setLinkedinMediaError(null);
+      clearLinkedinPendingMedia();
+      linkedinPreserveDraftForAssetIdRef.current = null;
+      syncedDocumentUrlIdRef.current = null;
+
+      const linkedId = getLinkedAssetId(prepareApplicationAssets, topicId);
+
+      if (linkedId) {
+        if (topicId === "cover-letter") {
+          const full = await fetchCoverLetterById(linkedId);
+          if (full) {
+            setCurrentCoverLetterDraft(full);
+            applyCoverLetterDraftToForm(full);
+            setSelectedDocumentId(linkedId);
+            updateStudioUrl({ type: topicId, id: linkedId });
+          }
+        } else {
+          const full = await fetchColdEmailById(linkedId);
+          if (full) {
+            setCurrentColdEmailDraft(full);
+            applyColdEmailDraftToForm(full);
+            setSelectedDocumentId(linkedId);
+            updateStudioUrl({ type: topicId, id: linkedId });
+          }
+        }
+      } else {
+        if (topicId === "cover-letter") {
+          setCurrentCoverLetterDraft(null);
+        } else {
+          setCurrentColdEmailDraft(null);
+        }
+        setSelectedDocumentId(null);
+        updateStudioUrl({ type: topicId });
+        applyPrepareJobFormDefaults();
+      }
+
+      updatePrepareReturnTab(topicId);
+    },
+    [
+      applyColdEmailDraftToForm,
+      applyCoverLetterDraftToForm,
+      applyPrepareJobFormDefaults,
+      clearLinkedinPendingMedia,
+      prepareApplicationAssets,
+      resetDocumentSaveStatus,
+      updatePrepareReturnTab,
+      updateStudioUrl,
+    ]
+  );
 
   const handleSelectDocument = useCallback(
     async (doc: DocumentLibraryItem) => {
@@ -750,60 +932,6 @@ const StudioMainV2: React.FC<StudioMainProps> = ({ initialContext, initialAssetI
       updateStudioUrl,
     ]
   );
-
-  const persistDocumentContent = useCallback(
-    async (content: string) => {
-      const canPersist =
-        (selectedTopic === "cover-letter" && currentCoverLetterDraft?.id) ||
-        (selectedTopic === "cold-email" && currentColdEmailDraft?.id) ||
-        (selectedTopic === "referral" && currentReferralDraft?.id);
-
-      if (!canPersist) return;
-
-      setDocumentSaveStatus("saving");
-      try {
-        if (selectedTopic === "cover-letter" && currentCoverLetterDraft?.id) {
-          await updateCoverLetter({ id: currentCoverLetterDraft.id, content });
-          setCurrentCoverLetterDraft(prev => (prev ? { ...prev, content, status: "accepted" } : prev));
-        } else if (selectedTopic === "cold-email" && currentColdEmailDraft?.id) {
-          await updateColdEmail({ id: currentColdEmailDraft.id, content });
-          setCurrentColdEmailDraft(prev => (prev ? { ...prev, content, status: "accepted" } : prev));
-        } else if (selectedTopic === "referral" && currentReferralDraft?.id) {
-          await updateReferral({ id: currentReferralDraft.id, content });
-          setCurrentReferralDraft(prev => (prev ? { ...prev, content, status: "accepted" } : prev));
-        }
-        setDocumentSaveStatus("saved");
-      } catch {
-        setDocumentSaveStatus("error");
-      }
-    },
-    [selectedTopic, currentCoverLetterDraft, currentColdEmailDraft, currentReferralDraft]
-  );
-
-  const handleDocumentContentChange = useCallback(
-    (content: string) => {
-      setDocumentSaveStatus("unsaved");
-      if (selectedTopic === "cover-letter") {
-        setCurrentCoverLetterDraft(prev => (prev ? { ...prev, content } : prev));
-      } else if (selectedTopic === "cold-email") {
-        setCurrentColdEmailDraft(prev => (prev ? { ...prev, content } : prev));
-      } else if (selectedTopic === "referral") {
-        setCurrentReferralDraft(prev => (prev ? { ...prev, content } : prev));
-      }
-      clearDocumentPersistDebounce();
-      documentPersistDebounceRef.current = setTimeout(() => {
-        documentPersistDebounceRef.current = null;
-        void persistDocumentContent(content);
-      }, 750);
-    },
-    [clearDocumentPersistDebounce, persistDocumentContent, selectedTopic]
-  );
-
-  useEffect(() => {
-    return () => {
-      clearDocumentPersistDebounce();
-    };
-  }, [clearDocumentPersistDebounce]);
 
   const handleSelectVpd = (vpd: VpdListItem) => {
     setVpdProject({ ...vpd.project, id: String(vpd.id), title: vpd.title });
@@ -1128,7 +1256,9 @@ const StudioMainV2: React.FC<StudioMainProps> = ({ initialContext, initialAssetI
       if (!d?.assetType || !d.role?.trim() || !d.company?.trim()) {
         return;
       }
+      const studioTopic = d.assetType === "coverletter" ? "cover-letter" : d.assetType === "coldemail" ? "cold-email" : "referral";
       setApplicationAssetDraftLoading(true);
+      setDocumentGeneratingTopic(studioTopic);
       setGeneratedContent("");
       setSelectedDocumentId(null);
       setRole(d.role.trim());
@@ -1141,7 +1271,6 @@ const StudioMainV2: React.FC<StudioMainProps> = ({ initialContext, initialAssetI
           setConnectionName(d.contactName);
         }
       }
-      const studioTopic = d.assetType === "coverletter" ? "cover-letter" : d.assetType === "coldemail" ? "cold-email" : "referral";
       if (studioTopic === "cover-letter") {
         setCurrentCoverLetterDraft(null);
         setCoverLetterFormError(null);
@@ -1339,6 +1468,10 @@ const StudioMainV2: React.FC<StudioMainProps> = ({ initialContext, initialAssetI
   }, [generatedContent, isUploadingLinkedinMedia, linkedinPendingMedia.length, linkedinPostAssetId]);
 
   const handleTopicChange = (topicId: string) => {
+    if (prepareReturn && PREPARE_MODE_LOCKED_TOPICS.has(topicId)) {
+      return;
+    }
+
     resetDocumentSaveStatus();
     if (selectedTopic === "linkedin-post" && topicId !== "linkedin-post") {
       preservedLinkedinTabRef.current = {
@@ -1348,6 +1481,21 @@ const StudioMainV2: React.FC<StudioMainProps> = ({ initialContext, initialAssetI
         topicIdea,
         funnel: linkedinFunnel,
       };
+    }
+
+    if (prepareReturn && (topicId === "cover-letter" || topicId === "cold-email")) {
+      void resolvePrepareDocumentTopic(topicId);
+      return;
+    }
+
+    if (prepareReturn && topicId === "vpd") {
+      pendingTopicRef.current = topicId;
+      setSelectedTopic(topicId);
+      setIsGenerating(false);
+      setGeneratedContent("");
+      updateStudioUrl({ type: topicId });
+      updatePrepareReturnTab("vpd");
+      return;
     }
 
     pendingTopicRef.current = topicId;
@@ -1370,12 +1518,9 @@ const StudioMainV2: React.FC<StudioMainProps> = ({ initialContext, initialAssetI
       setLinkedinPersistError(null);
       setLinkedinMediaError(null);
     } else {
-      const documentAssetId = savedApplicationAssetIdForTopic(topicId, {
-        cover: currentCoverLetterDraft,
-        cold: currentColdEmailDraft,
-        referral: currentReferralDraft,
-      });
-      updateStudioUrl({ type: topicId, id: documentAssetId });
+      updateStudioUrl({ type: topicId });
+      syncedDocumentUrlIdRef.current = null;
+      setSelectedDocumentId(null);
       setIsGenerating(false);
       setGeneratedContent("");
       setLinkedinGenerateError(null);
@@ -1383,16 +1528,10 @@ const StudioMainV2: React.FC<StudioMainProps> = ({ initialContext, initialAssetI
       setLinkedinMediaError(null);
       clearLinkedinPendingMedia();
       linkedinPreserveDraftForAssetIdRef.current = null;
-
-      if (topicId === "cover-letter" && currentCoverLetterDraft) {
-        applyCoverLetterDraftToForm(currentCoverLetterDraft);
-      } else if (topicId === "cold-email" && currentColdEmailDraft) {
-        applyColdEmailDraftToForm(currentColdEmailDraft);
-      } else if (topicId === "referral" && currentReferralDraft) {
-        applyReferralDraftToForm(currentReferralDraft);
-      } else {
-        setSelectedDocumentId(null);
-      }
+      setCurrentCoverLetterDraft(null);
+      setCurrentColdEmailDraft(null);
+      setCurrentReferralDraft(null);
+      clearDocumentFormFields();
     }
   };
 
@@ -1433,24 +1572,172 @@ const StudioMainV2: React.FC<StudioMainProps> = ({ initialContext, initialAssetI
     }
   }, [initialContext]);
 
+  const syncPrepareReturnFromUrl = useCallback(async () => {
+    const parsed = parseStudioSearchParams(searchParams);
+    if (!parsed.jobId) {
+      return;
+    }
+
+    const stored = getPrepareReturnSession();
+    const navigate = parsed.navigate ?? stored?.navigate ?? "tracker";
+    const tab = (isPrepareReturnTab(parsed.type ?? "") ? parsed.type : (stored?.tab ?? "cover-letter")) as PrepareApplicationTab;
+
+    let company = stored?.company ?? "";
+    let role = stored?.role ?? "";
+
+    if (!company || !role || stored?.jobId !== parsed.jobId) {
+      try {
+        const job = await getJob(parsed.jobId);
+        if (job) {
+          company = job.company ?? company;
+          role = job.title ?? role;
+          setCompany(company);
+          setRole(role);
+          if (job.description) {
+            setJobDescription(job.description);
+          }
+        }
+      } catch {
+        // Banner can still show with partial labels.
+      }
+    }
+
+    const session: PrepareApplicationReturnSession = {
+      jobId: parsed.jobId,
+      tab,
+      company,
+      role,
+      navigate,
+    };
+    setPrepareReturn(session);
+    setPrepareReturnSession(session);
+  }, [searchParams]);
+
+  useEffect(() => {
+    void syncPrepareReturnFromUrl();
+  }, [syncPrepareReturnFromUrl]);
+
+  /** When opened from Prepare Application without an asset id, load linked asset or show generate UI. */
+  useEffect(() => {
+    if (!prepareReturn) return;
+    if (selectedTopic !== "cover-letter" && selectedTopic !== "cold-email") return;
+
+    const urlId = searchParams.get("id")?.trim();
+    if (urlId) return;
+
+    const linkedId = getLinkedAssetId(prepareApplicationAssets, selectedTopic);
+    const currentDraftId = selectedTopic === "cover-letter" ? currentCoverLetterDraft?.id : currentColdEmailDraft?.id;
+
+    if (linkedId) {
+      if (currentDraftId && String(currentDraftId) === linkedId) return;
+      void resolvePrepareDocumentTopic(selectedTopic);
+      return;
+    }
+
+    if (!currentDraftId) {
+      applyPrepareJobFormDefaults();
+    }
+  }, [
+    applyPrepareJobFormDefaults,
+    currentColdEmailDraft?.id,
+    currentCoverLetterDraft?.id,
+    prepareApplicationAssets,
+    prepareReturn,
+    resolvePrepareDocumentTopic,
+    searchParams,
+    selectedTopic,
+  ]);
+
   useEffect(() => {
     if (!initialContext) {
       return;
     }
-    if (initialContext.role) {
-      setRole(initialContext.role);
-    }
-    if (initialContext.company) {
-      setCompany(initialContext.company);
-    }
-    if (initialContext.description) {
-      setJobDescription(initialContext.description);
-    }
+
     if (initialContext.recipientName) {
       setConnectionName(initialContext.recipientName);
       setManagerName(initialContext.recipientName);
     }
   }, [initialContext]);
+
+  const handleSaveAndReturnToPrepare = async () => {
+    if (!prepareReturn) return;
+
+    let returnTab: PrepareApplicationTab = prepareReturn.tab;
+    if (selectedTopic === "cover-letter" && currentCoverLetterDraft?.id) {
+      const content = currentCoverLetterDraft.content ?? "";
+      documentContentRef.current = content;
+      await runDocumentSave();
+      setPrepareReturnContentSnapshot({
+        assetId: String(currentCoverLetterDraft.id),
+        kind: "cover-letter",
+        content,
+      });
+      returnTab = "cover-letter";
+    } else if (selectedTopic === "cold-email" && currentColdEmailDraft?.id) {
+      const content = currentColdEmailDraft.content ?? "";
+      documentContentRef.current = content;
+      await runDocumentSave();
+      setPrepareReturnContentSnapshot({
+        assetId: String(currentColdEmailDraft.id),
+        kind: "cold-email",
+        content,
+      });
+      returnTab = "cold-email";
+    } else {
+      return;
+    }
+
+    const { jobId, navigate } = prepareReturn;
+    clearPrepareReturnSession();
+    setPrepareReturn(null);
+    router.push(buildJobsPrepareReopenHref(jobId, returnTab, navigate));
+  };
+
+  const handleDismissPrepareReturn = () => {
+    clearPrepareReturnSession();
+    setPrepareReturn(null);
+    const parsed = parseStudioSearchParams(searchParams);
+    router.replace(buildStudioAssetOnlyHref(pathname, { id: parsed.id, type: parsed.type }), { scroll: false });
+  };
+
+  const dispatchOpenImproveForAsset = useCallback(
+    (detail: ApplicationAssetOpenImproveDetail) => {
+      if (!initialContext?.openImproveMode || improveDispatchedRef.current) {
+        return;
+      }
+      improveDispatchedRef.current = true;
+
+      const roleLabel = detail.role || role || initialContext.role || "";
+      const companyLabel = detail.company || company || initialContext.company || "";
+      const jd = detail.jobDescription || jobDescription || initialContext.description || "";
+      const content = detail.content ?? "";
+
+      useApplicationAssetStudioStore.getState().syncFromStudio({
+        assetType: detail.assetType,
+        assetId: detail.assetId,
+        applicationId: detail.applicationId ?? null,
+        role: roleLabel,
+        company: companyLabel,
+        jobDescription: jd,
+        contactName: detail.contactName ?? "",
+        draftPreview: content,
+        acceptedContent: content,
+      });
+
+      window.dispatchEvent(
+        new CustomEvent(APPLICATION_ASSET_EVENTS.openImprove, {
+          detail: {
+            ...detail,
+            role: roleLabel,
+            company: companyLabel,
+            jobDescription: jd,
+            content,
+          },
+        })
+      );
+    },
+    [company, initialContext, jobDescription, role]
+  );
 
   useEffect(() => {
     const urlId = searchParams.get("id") ?? initialAssetId;
@@ -1473,6 +1760,15 @@ const StudioMainV2: React.FC<StudioMainProps> = ({ initialContext, initialAssetI
           setCurrentCoverLetterDraft(asset);
           setSelectedTopic("cover-letter");
           applyCoverLetterDraftToForm(asset);
+          dispatchOpenImproveForAsset({
+            assetType: "coverletter",
+            assetId: String(asset.id),
+            applicationId: initialContext?.jobId,
+            role: asset.role ?? "",
+            company: asset.company ?? "",
+            jobDescription: jobDescriptionFromAsset(asset),
+            content: asset.content ?? "",
+          });
           return;
         }
         if (urlType === "cold-email") {
@@ -1481,6 +1777,17 @@ const StudioMainV2: React.FC<StudioMainProps> = ({ initialContext, initialAssetI
           setCurrentColdEmailDraft(asset);
           setSelectedTopic("cold-email");
           applyColdEmailDraftToForm(asset);
+          const contact = managerName || initialContext?.recipientName || asset.hirname || "Hiring Manager";
+          dispatchOpenImproveForAsset({
+            assetType: "coldemail",
+            assetId: String(asset.id),
+            applicationId: initialContext?.jobId,
+            role: asset.role ?? "",
+            company: asset.company ?? "",
+            jobDescription: jobDescriptionFromAsset(asset),
+            contactName: contact,
+            content: asset.content ?? "",
+          });
           return;
         }
         if (urlType === "referral") {
@@ -1527,7 +1834,19 @@ const StudioMainV2: React.FC<StudioMainProps> = ({ initialContext, initialAssetI
       }
     };
     hydrate();
-  }, [clearLinkedinPendingMedia, initialAssetId, pathname, router, searchParams, selectedTopic]);
+  }, [
+    clearLinkedinPendingMedia,
+    company,
+    dispatchOpenImproveForAsset,
+    initialAssetId,
+    initialContext?.description,
+    initialContext?.recipientName,
+    managerName,
+    pathname,
+    router,
+    searchParams,
+    selectedTopic,
+  ]);
 
   const handlePost = async (finalContent: string, isScheduled: boolean, scheduleDate?: Date) => {
     if (selectedTopic === "linkedin-post") {
@@ -1667,6 +1986,7 @@ const StudioMainV2: React.FC<StudioMainProps> = ({ initialContext, initialAssetI
 
   const beginDocumentDraftGeneration = (topic: ApplicationAssetStudioTopic) => {
     setApplicationAssetDraftLoading(true);
+    setDocumentGeneratingTopic(topic);
     setGeneratedContent("");
     setSelectedDocumentId(null);
     if (topic === "cover-letter") {
@@ -1688,7 +2008,12 @@ const StudioMainV2: React.FC<StudioMainProps> = ({ initialContext, initialAssetI
         setCoverLetterFormError("Please fill Role, Company and Job Description.");
         return;
       }
-      const params = { role: trimmedRole, company: trimmedCompany, job_description: trimmedJd };
+      const params = {
+        role: trimmedRole,
+        company: trimmedCompany,
+        job_description: trimmedJd,
+        ...(prepareApplicationId ? { application_id: prepareApplicationId } : {}),
+      };
       lastCoverLetterParamsRef.current = params;
       beginDocumentDraftGeneration("cover-letter");
       generateCoverLetterMutation.mutate(params, {
@@ -1716,6 +2041,7 @@ const StudioMainV2: React.FC<StudioMainProps> = ({ initialContext, initialAssetI
         company: trimmedCompany,
         job_description: trimmedJd,
         hirname: trimmedHirname,
+        ...(prepareApplicationId ? { application_id: prepareApplicationId } : {}),
       };
       lastColdEmailParamsRef.current = params;
       beginDocumentDraftGeneration("cold-email");
@@ -1780,11 +2106,88 @@ const StudioMainV2: React.FC<StudioMainProps> = ({ initialContext, initialAssetI
     }
   };
 
+  const handleImproveWithUnibot = useCallback(() => {
+    if (selectedTopic === "linkedin-post") {
+      const content = generatedContent.trim();
+      if (!content || !linkedinPostAssetId) return;
+      window.dispatchEvent(
+        new CustomEvent("open-content-gen-topic", {
+          detail: {
+            followUpText: `${IMPROVE_INITIAL_DRAFT_PROMPT}:\n\n${content}`,
+            topicTitle: "Improve LinkedIn Post",
+            reuseExistingTopic: true,
+            requestKey: Date.now(),
+          },
+        })
+      );
+      return;
+    }
+
+    if (!isDocumentTopic(selectedTopic)) return;
+
+    const apiType = documentTopicToApiType(selectedTopic);
+    let content = "";
+    if (selectedTopic === "cover-letter") {
+      content = currentCoverLetterDraft?.content ?? generatedContent;
+    } else if (selectedTopic === "cold-email") {
+      content = currentColdEmailDraft?.content ?? generatedContent;
+    } else {
+      content = currentReferralDraft?.content ?? generatedContent;
+    }
+    if (!htmlToPlainText(content).trim()) return;
+
+    let assetId: string | null = null;
+    let contactName = "";
+    if (selectedTopic === "cover-letter" && currentCoverLetterDraft?.id) {
+      assetId = String(currentCoverLetterDraft.id);
+    } else if (selectedTopic === "cold-email" && currentColdEmailDraft?.id) {
+      assetId = String(currentColdEmailDraft.id);
+      contactName = managerName;
+    } else if (selectedTopic === "referral" && currentReferralDraft?.id) {
+      assetId = String(currentReferralDraft.id);
+      contactName = connectionName;
+    }
+    if (!assetId) return;
+
+    window.dispatchEvent(
+      new CustomEvent(APPLICATION_ASSET_EVENTS.openImprove, {
+        detail: {
+          assetType: apiType,
+          assetId,
+          applicationId: prepareApplicationId ?? undefined,
+          role: role.trim(),
+          company: company.trim(),
+          jobDescription: jobDescription.trim(),
+          contactName: contactName || undefined,
+          content,
+          initialPrompt: IMPROVE_INITIAL_DRAFT_PROMPT,
+          autoSend: true,
+        },
+      })
+    );
+  }, [
+    company,
+    connectionName,
+    currentColdEmailDraft?.content,
+    currentColdEmailDraft?.id,
+    currentCoverLetterDraft?.content,
+    currentCoverLetterDraft?.id,
+    currentReferralDraft?.content,
+    currentReferralDraft?.id,
+    generatedContent,
+    jobDescription,
+    linkedinPostAssetId,
+    managerName,
+    prepareApplicationId,
+    role,
+    selectedTopic,
+  ]);
+
   const isDocumentGenerating =
-    generateCoverLetterMutation.isPending ||
-    generateColdEmailMutation.isPending ||
-    generateReferralMutation.isPending ||
-    applicationAssetDraftLoading;
+    (selectedTopic === "cover-letter" && generateCoverLetterMutation.isPending) ||
+    (selectedTopic === "cold-email" && generateColdEmailMutation.isPending) ||
+    (selectedTopic === "referral" && generateReferralMutation.isPending) ||
+    isDocumentDraftLoadingForTopic;
 
   const generateMockContent = () => {
     if (selectedTopic === "linkedin-post") {
@@ -1988,6 +2391,7 @@ const StudioMainV2: React.FC<StudioMainProps> = ({ initialContext, initialAssetI
 
   const renderDocumentSavedCards = () => {
     if (!isDocumentTopic(selectedTopic)) return null;
+    if (prepareReturn) return null;
 
     const combinedList = documentItemsForTopic;
 
@@ -2225,7 +2629,7 @@ const StudioMainV2: React.FC<StudioMainProps> = ({ initialContext, initialAssetI
           </div>
         )}
 
-        {(selectedTopic === "cover-letter" || selectedTopic === "vpd") && (
+        {(selectedTopic === "cover-letter" || selectedTopic === "cold-email" || selectedTopic === "vpd") && (
           <div>
             <label className="block text-xs font-medium text-slate-500 uppercase mb-2">Job Description</label>
             <textarea
@@ -2283,12 +2687,28 @@ const StudioMainV2: React.FC<StudioMainProps> = ({ initialContext, initialAssetI
           </p>
         ) : null}
 
-        {selectedTopic === "linkedin-post" && (
+        {(isDocumentTopic(selectedTopic) || selectedTopic === "linkedin-post") && (
+          <button
+            type="button"
+            onClick={handleStudioPrimaryAction}
+            disabled={isStudioPrimaryActionLoading || isDocumentAdkLoading}
+            className="mt-4 flex w-full items-center justify-center gap-2 rounded-xl bg-brand-600 py-4 font-medium text-white shadow-lg shadow-brand-500/30 transition-all hover:bg-brand-700 active:scale-95 disabled:cursor-not-allowed disabled:opacity-70"
+          >
+            {isStudioPrimaryActionLoading ? (
+              <div className="h-4 w-4 animate-spin rounded-full border-2 border-white/50 border-t-white" />
+            ) : (
+              <Wand2 size={18} />
+            )}
+            {studioPrimaryActionLabel}
+          </button>
+        )}
+
+        {selectedTopic === "vpd" && (
           <button
             type="button"
             onClick={handleGenerate}
             disabled={isGenerating}
-            className="mt-2 flex w-full items-center justify-center gap-2 rounded-xl bg-brand-600 py-4 font-medium text-white shadow-lg shadow-brand-500/30 transition-all hover:bg-brand-700 active:scale-95 disabled:cursor-not-allowed disabled:opacity-70"
+            className="mt-4 flex w-full items-center justify-center gap-2 rounded-xl bg-brand-600 py-4 font-medium text-white shadow-lg shadow-brand-500/30 transition-all hover:bg-brand-700 active:scale-95 disabled:cursor-not-allowed disabled:opacity-70"
           >
             {isGenerating ? (
               <div className="h-4 w-4 animate-spin rounded-full border-2 border-white/50 border-t-white" />
@@ -2296,22 +2716,6 @@ const StudioMainV2: React.FC<StudioMainProps> = ({ initialContext, initialAssetI
               <Wand2 size={18} />
             )}
             {isGenerating ? " Crafting..." : "Generate Draft"}
-          </button>
-        )}
-
-        {selectedTopic !== "linkedin-post" && (
-          <button
-            type="button"
-            onClick={handleGenerate}
-            disabled={isDocumentGenerating || (selectedTopic === "vpd" && isGenerating)}
-            className="mt-4 flex w-full items-center justify-center gap-2 rounded-xl bg-brand-600 py-4 font-medium text-white shadow-lg shadow-brand-500/30 transition-all hover:bg-brand-700 active:scale-95 disabled:cursor-not-allowed disabled:opacity-70"
-          >
-            {isDocumentGenerating || (selectedTopic === "vpd" && isGenerating) ? (
-              <div className="h-4 w-4 animate-spin rounded-full border-2 border-white/50 border-t-white" />
-            ) : (
-              <Wand2 size={18} />
-            )}
-            {isDocumentGenerating || (selectedTopic === "vpd" && isGenerating) ? " Crafting..." : "Generate Draft"}
           </button>
         )}
 
@@ -2472,8 +2876,54 @@ const StudioMainV2: React.FC<StudioMainProps> = ({ initialContext, initialAssetI
     return "Your draft will appear here...";
   };
 
+  const prepareBannerTab: PrepareApplicationTab = isPrepareModeStudioTab(selectedTopic)
+    ? selectedTopic
+    : (prepareReturn?.tab ?? "cover-letter");
+
+  const showPrepareSaveAndReturn =
+    prepareReturn != null &&
+    ((selectedTopic === "cover-letter" && !!currentCoverLetterDraft?.id) ||
+      (selectedTopic === "cold-email" && !!currentColdEmailDraft?.id));
+
+  const documentHasGeneratedAsset =
+    (selectedTopic === "cover-letter" && !!currentCoverLetterDraft?.id) ||
+    (selectedTopic === "cold-email" && !!currentColdEmailDraft?.id) ||
+    (selectedTopic === "referral" && !!currentReferralDraft?.id) ||
+    (selectedTopic === "linkedin-post" && !!linkedinPostAssetId && generatedContent.trim().length > 0);
+
+  const topicHasGeneratedDraft = documentHasGeneratedAsset;
+
+  const isStudioPrimaryActionLoading =
+    selectedTopic === "linkedin-post" ? isGenerating : isDocumentGenerating || (selectedTopic === "vpd" && isGenerating);
+
+  const studioPrimaryActionLabel = isStudioPrimaryActionLoading
+    ? " Crafting..."
+    : topicHasGeneratedDraft && (isDocumentTopic(selectedTopic) || selectedTopic === "linkedin-post")
+      ? "Improve with Unibot"
+      : "Generate Draft";
+
+  const handleStudioPrimaryAction =
+    topicHasGeneratedDraft && (isDocumentTopic(selectedTopic) || selectedTopic === "linkedin-post")
+      ? handleImproveWithUnibot
+      : handleGenerate;
+
+  const showDocumentGenerateCta =
+    !!prepareReturn && (selectedTopic === "cover-letter" || selectedTopic === "cold-email") && !documentHasGeneratedAsset;
+
+  const documentGenerateCtaLabel =
+    selectedTopic === "cover-letter" ? "Generate Cover Letter" : selectedTopic === "cold-email" ? "Generate Cold Email" : "";
+
   return (
-    <div className="flex-1 bg-white dark:bg-slate-950 h-full overflow-hidden font-sans flex flex-col">
+    <div className="flex h-full flex-1 flex-col overflow-hidden bg-white font-sans dark:bg-slate-950">
+      {prepareReturn ? (
+        <PrepareApplicationReturnBar
+          session={prepareReturn}
+          currentTab={prepareBannerTab}
+          showSaveAndReturn={showPrepareSaveAndReturn}
+          onSaveAndReturn={() => void handleSaveAndReturnToPrepare()}
+          onDismiss={handleDismissPrepareReturn}
+        />
+      ) : null}
       <div className="flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden lg:flex-row">
         {/* LEFT: Input / Generator — drag right edge to resize */}
         <div className={`flex h-1/2 w-full shrink-0 lg:h-full lg:w-auto ${isEditorResizing ? "select-none" : ""}`}>
@@ -2507,33 +2957,32 @@ const StudioMainV2: React.FC<StudioMainProps> = ({ initialContext, initialAssetI
                     group.blueStroke ? "border border-brand-500/25 dark:border-brand-400/30" : "border border-transparent"
                   }`}
                 >
-                  {group.topics.map(t => (
-                    <button
-                      key={t.id}
-                      type="button"
-                      onClick={() => handleTopicChange(t.id)}
-                      className={`whitespace-nowrap rounded-full px-4 py-2 text-sm font-medium transition-all ${
-                        selectedTopic === t.id
-                          ? "bg-white text-slate-900 shadow-sm dark:bg-slate-800 dark:text-white"
-                          : "text-slate-500 hover:text-slate-700 dark:text-slate-400 dark:hover:text-slate-200"
-                      }`}
-                    >
-                      {t.label}
-                    </button>
-                  ))}
+                  {group.topics.map(t => {
+                    const isLockedInPrepareMode = prepareReturn != null && PREPARE_MODE_LOCKED_TOPICS.has(t.id);
+                    return (
+                      <button
+                        key={t.id}
+                        type="button"
+                        onClick={() => handleTopicChange(t.id)}
+                        disabled={isLockedInPrepareMode}
+                        title={isLockedInPrepareMode ? "Close the banner to switch to this tab" : undefined}
+                        className={`whitespace-nowrap rounded-full px-4 py-2 text-sm font-medium transition-all ${
+                          selectedTopic === t.id
+                            ? "bg-white text-slate-900 shadow-sm dark:bg-slate-800 dark:text-white"
+                            : "text-slate-500 hover:text-slate-700 dark:text-slate-400 dark:hover:text-slate-200"
+                        } ${isLockedInPrepareMode ? "cursor-not-allowed opacity-40" : ""}`}
+                      >
+                        {t.label}
+                      </button>
+                    );
+                  })}
                 </div>
               ))}
             </div>
           </div>
 
-          <div
-            className={`relative flex min-h-0 flex-1 flex-col ${showLinkedInOptimizeBanner ? "" : "overflow-y-auto scrollbar-on-hover"}`}
-          >
-            <div
-              className={`flex flex-1 items-start justify-center p-8 ${
-                showLinkedInOptimizeBanner ? "min-h-0 overflow-y-auto pb-28 scrollbar-on-hover" : "overflow-y-auto scrollbar-on-hover"
-              }`}
-            >
+          <div className="relative flex min-h-0 flex-1 flex-col overflow-hidden">
+            <div className="flex min-h-0 flex-1 items-start justify-center overflow-y-auto p-8 scrollbar-on-hover">
               {isVpdTopic ? (
                 <div className="flex h-full min-h-[min(70vh,640px)] w-full max-w-3xl flex-col">
                   <VpdPreview project={vpdProject} onOpenEditor={() => setShowVpdEditor(true)} variant="panel" />
@@ -2624,7 +3073,18 @@ const StudioMainV2: React.FC<StudioMainProps> = ({ initialContext, initialAssetI
                           <Send size={18} /> <span className="hidden sm:inline">Send</span>
                         </button>
                       </div>
-                      <div className="mt-4 flex shrink-0 justify-end border-t border-slate-100 pt-4 dark:border-slate-800">
+                      <div className="mt-4 flex shrink-0 justify-end gap-3 border-t border-slate-100 pt-4 dark:border-slate-800">
+                        {topicHasGeneratedDraft && linkedinPostAssetId ? (
+                          <button
+                            type="button"
+                            onClick={handleImproveWithUnibot}
+                            disabled={isDocumentAdkLoading || !getLinkedInPreviewContent().trim()}
+                            className="inline-flex items-center gap-2 rounded-full border border-brand-200 bg-brand-50 px-5 py-2.5 text-sm font-medium text-brand-700 transition-all hover:bg-brand-100 active:scale-[0.99] disabled:cursor-not-allowed disabled:opacity-40 dark:border-brand-800 dark:bg-brand-900/40 dark:text-brand-300 dark:hover:bg-brand-900/60"
+                          >
+                            <Wand2 size={16} />
+                            Improve with Unibot
+                          </button>
+                        ) : null}
                         <button
                           type="button"
                           disabled={
@@ -2643,7 +3103,7 @@ const StudioMainV2: React.FC<StudioMainProps> = ({ initialContext, initialAssetI
                           }}
                           className="inline-flex items-center rounded-full bg-brand-600 px-6 py-2.5 text-sm font-medium text-white shadow-md shadow-brand-500/25 transition-all hover:bg-brand-700 active:scale-[0.99] disabled:cursor-not-allowed disabled:opacity-40"
                         >
-                          Schedule / Post
+                          Post
                         </button>
                       </div>
                     </div>
@@ -2651,7 +3111,9 @@ const StudioMainV2: React.FC<StudioMainProps> = ({ initialContext, initialAssetI
                     <StudioDocumentPreview
                       content={documentPreviewContent}
                       placeholder={getDocumentPlaceholder()}
-                      saveStatus={documentSaveStatus}
+                      hasPendingUnsavedChanges={documentHasPendingUnsavedChanges}
+                      isSaving={documentIsSaving}
+                      savedConfirmationVisible={documentSavedConfirmationVisible}
                       isGenerating={isDocumentGenerating}
                       generatingLabel={
                         selectedTopic === "cover-letter"
@@ -2690,52 +3152,48 @@ const StudioMainV2: React.FC<StudioMainProps> = ({ initialContext, initialAssetI
                         }
                       }}
                       onContentChange={handleDocumentContentChange}
-                      showDocumentDownload={selectedTopic === "cover-letter" || selectedTopic === "cold-email"}
-                      onDownloadPdf={async () => {
-                        const content = getDocumentPreviewContent();
-                        if (selectedTopic === "cover-letter" && currentCoverLetterDraft) {
-                          await exportCoverLetterAsPDF({ ...currentCoverLetterDraft, content });
-                          return;
-                        }
-                        if (selectedTopic === "cold-email" && currentColdEmailDraft) {
-                          const roleSlug = (currentColdEmailDraft.role || "cold-email").toLowerCase().replace(/\s+/g, "-");
-                          const companySlug = (currentColdEmailDraft.company || "").toLowerCase().replace(/\s+/g, "-");
-                          const filename = `cold-email-${roleSlug}${companySlug ? `-${companySlug}` : ""}.pdf`;
-                          await exportContentAsPDF(content, filename);
-                        }
+                      onSaveNow={() => {
+                        documentContentRef.current = getDocumentPreviewContent();
+                        void runDocumentSave();
                       }}
-                      onDownloadDocx={async () => {
-                        const content = getDocumentPreviewContent();
-                        if (selectedTopic === "cover-letter" && currentCoverLetterDraft) {
-                          await exportApplicationAssetAsDocx(
-                            content,
-                            "cover-letter",
-                            currentCoverLetterDraft.company,
-                            currentCoverLetterDraft.role
-                          );
-                          return;
-                        }
-                        if (selectedTopic === "cold-email" && currentColdEmailDraft) {
-                          await exportApplicationAssetAsDocx(
-                            content,
-                            "cold-email",
-                            currentColdEmailDraft.company,
-                            currentColdEmailDraft.role
-                          );
-                        }
-                      }}
+                      showDocumentDownload={selectedTopic === "cover-letter"}
+                      generateCtaLabel={showDocumentGenerateCta ? documentGenerateCtaLabel : undefined}
+                      onGenerateCta={showDocumentGenerateCta ? handleGenerate : undefined}
+                      onDownloadPdf={
+                        selectedTopic === "cover-letter"
+                          ? async () => {
+                              const content = getDocumentPreviewContent();
+                              if (currentCoverLetterDraft) {
+                                await exportCoverLetterAsPDF({ ...currentCoverLetterDraft, content });
+                              }
+                            }
+                          : undefined
+                      }
+                      onDownloadDocx={
+                        selectedTopic === "cover-letter"
+                          ? async () => {
+                              const content = getDocumentPreviewContent();
+                              if (currentCoverLetterDraft) {
+                                await exportApplicationAssetAsDocx(
+                                  content,
+                                  "cover-letter",
+                                  currentCoverLetterDraft.company,
+                                  currentCoverLetterDraft.role
+                                );
+                              }
+                            }
+                          : undefined
+                      }
                     />
                   ) : null}
                 </div>
               )}
             </div>
-            {showLinkedInOptimizeBanner && (
-              <div className="pointer-events-none absolute inset-x-0 bottom-0 z-10 bg-gradient-to-t from-slate-100 via-slate-100/95 to-transparent px-8 pb-6 pt-10 dark:from-slate-950 dark:via-slate-950/95">
-                <div className="pointer-events-auto">
-                  <LinkedInOptimizeBanner />
-                </div>
+            {showLinkedInOptimizeBanner ? (
+              <div className="shrink-0 border-t border-slate-200/60 bg-slate-100 px-8 py-4 dark:border-slate-800/60 dark:bg-slate-950">
+                <LinkedInOptimizeBanner />
               </div>
-            )}
+            ) : null}
           </div>
         </div>
       </div>
@@ -2814,7 +3272,7 @@ const StudioMainV2: React.FC<StudioMainProps> = ({ initialContext, initialAssetI
       )}
 
       {coverLetterDuplicateModal && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 p-4 backdrop-blur-sm" role="dialog">
+        <ModalPortalOverlay className="flex items-center justify-center bg-black/60 p-4 backdrop-blur-sm" role="dialog">
           <div className="w-full max-w-md rounded-2xl border border-slate-200 bg-white p-6 shadow-2xl dark:border-slate-800 dark:bg-slate-900">
             <h2 className="mb-2 text-lg font-semibold text-slate-900 dark:text-white">Cover Letter Already Exists</h2>
             <p className="mb-6 text-sm text-slate-600 dark:text-slate-400">
@@ -2854,11 +3312,11 @@ const StudioMainV2: React.FC<StudioMainProps> = ({ initialContext, initialAssetI
               </button>
             </div>
           </div>
-        </div>
+        </ModalPortalOverlay>
       )}
 
       {coldEmailDuplicateModal && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 p-4 backdrop-blur-sm" role="dialog">
+        <ModalPortalOverlay className="flex items-center justify-center bg-black/60 p-4 backdrop-blur-sm" role="dialog">
           <div className="w-full max-w-md rounded-2xl border border-slate-200 bg-white p-6 shadow-2xl dark:border-slate-800 dark:bg-slate-900">
             <h2 className="mb-2 text-lg font-semibold text-slate-900 dark:text-white">Cold Email Already Exists</h2>
             <p className="mb-6 text-sm text-slate-600 dark:text-slate-400">
@@ -2898,11 +3356,11 @@ const StudioMainV2: React.FC<StudioMainProps> = ({ initialContext, initialAssetI
               </button>
             </div>
           </div>
-        </div>
+        </ModalPortalOverlay>
       )}
 
       {coverLetterSubscriptionModal && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 p-4 backdrop-blur-sm" role="dialog">
+        <ModalPortalOverlay className="flex items-center justify-center bg-black/60 p-4 backdrop-blur-sm" role="dialog">
           <div className="w-full max-w-md rounded-2xl border border-slate-200 bg-white p-6 shadow-2xl dark:border-slate-800 dark:bg-slate-900">
             <h2 className="mb-2 text-lg font-semibold text-slate-900 dark:text-white">Subscription required</h2>
             <p className="mb-6 text-sm text-slate-600 dark:text-slate-400">
@@ -2916,11 +3374,11 @@ const StudioMainV2: React.FC<StudioMainProps> = ({ initialContext, initialAssetI
               Close
             </button>
           </div>
-        </div>
+        </ModalPortalOverlay>
       )}
 
       {coldEmailSubscriptionModal && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 p-4 backdrop-blur-sm" role="dialog">
+        <ModalPortalOverlay className="flex items-center justify-center bg-black/60 p-4 backdrop-blur-sm" role="dialog">
           <div className="w-full max-w-md rounded-2xl border border-slate-200 bg-white p-6 shadow-2xl dark:border-slate-800 dark:bg-slate-900">
             <h2 className="mb-2 text-lg font-semibold text-slate-900 dark:text-white">Subscription required</h2>
             <p className="mb-6 text-sm text-slate-600 dark:text-slate-400">
@@ -2934,12 +3392,12 @@ const StudioMainV2: React.FC<StudioMainProps> = ({ initialContext, initialAssetI
               Close
             </button>
           </div>
-        </div>
+        </ModalPortalOverlay>
       )}
 
       {referralDuplicateModal && (
-        <div
-          className="fixed inset-0 bg-black/60 backdrop-blur-sm z-50 flex items-center justify-center p-4"
+        <ModalPortalOverlay
+          className="flex items-center justify-center bg-black/60 p-4 backdrop-blur-sm"
           role="dialog"
           aria-labelledby="referral-duplicate-modal-title"
         >
@@ -2984,12 +3442,12 @@ const StudioMainV2: React.FC<StudioMainProps> = ({ initialContext, initialAssetI
               </button>
             </div>
           </div>
-        </div>
+        </ModalPortalOverlay>
       )}
 
       {referralSubscriptionModal && (
-        <div
-          className="fixed inset-0 bg-black/60 backdrop-blur-sm z-50 flex items-center justify-center p-4"
+        <ModalPortalOverlay
+          className="flex items-center justify-center bg-black/60 p-4 backdrop-blur-sm"
           role="dialog"
           aria-labelledby="referral-subscription-modal-title"
         >
@@ -3008,7 +3466,7 @@ const StudioMainV2: React.FC<StudioMainProps> = ({ initialContext, initialAssetI
               Close
             </button>
           </div>
-        </div>
+        </ModalPortalOverlay>
       )}
     </div>
   );

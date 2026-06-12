@@ -10,6 +10,8 @@ interface JobCardProps {
   hideButtons?: boolean;
   showVpdPrompt?: boolean;
   onPrepare: (job: Job) => void;
+  /** When true, show "Continue" instead of "Prepare" (application already has assets). */
+  hasPreparedApplication?: boolean;
   onApply?: (job: Job) => void;
   onClick: (job: Job) => void;
   onVpdPromptClick?: (job: Job) => void;
@@ -22,6 +24,7 @@ const JobCard: React.FC<JobCardProps> = ({
   hideButtons = false,
   showVpdPrompt = false,
   onPrepare,
+  hasPreparedApplication = false,
   onApply,
   onClick,
   onVpdPromptClick,
@@ -121,7 +124,7 @@ const JobCard: React.FC<JobCardProps> = ({
             }}
             className="relative flex flex-1 items-center justify-center rounded-lg border border-slate-200 px-2 py-2 text-xs font-medium text-slate-700 transition-all hover:bg-slate-50 active:scale-95 dark:border-slate-700 dark:text-slate-200 dark:hover:bg-slate-800"
           >
-            Prepare
+            {hasPreparedApplication ? "Continue" : "Prepare"}
             {showVpdPrompt && (
               <span className="absolute right-2 top-2 h-2 w-2 animate-pulse rounded-full bg-red-500 ring-2 ring-white dark:ring-slate-900" />
             )}

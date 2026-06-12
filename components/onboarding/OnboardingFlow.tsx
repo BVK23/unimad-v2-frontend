@@ -1,6 +1,7 @@
 "use client";
 
-import React, { useEffect } from "react";
+import React, { useCallback, useEffect } from "react";
+import { useOnboardingUIStore } from "@/features/onboarding/store/useOnboardingUIStore";
 import type { OnboardingStep, OnboardingStepName } from "@/features/onboarding/types";
 import {
   fetchOnboardingCheckpoints,
@@ -67,6 +68,8 @@ const LoadingState = () => (
 
 export default function OnboardingFlow() {
   const queryClient = useQueryClient();
+  const registerSkipCurrentStep = useOnboardingUIStore(s => s.registerSkipCurrentStep);
+  const setCanSkipCurrentStep = useOnboardingUIStore(s => s.setCanSkipCurrentStep);
 
   const { data, isLoading } = useQuery<OnboardingState | null>({
     queryKey: ONBOARDING_QUERY_KEY,
@@ -139,6 +142,72 @@ export default function OnboardingFlow() {
       queryClient.setQueryData(ONBOARDING_QUERY_KEY, next);
     },
   });
+
+  const advanceWithoutCompleting = useMutation({
+    mutationFn: async () => {
+      const current = queryClient.getQueryData<OnboardingState>(ONBOARDING_QUERY_KEY);
+      if (!current) throw new Error("No onboarding state cached");
+      const currentIndex = current.currentStepIndex;
+
+      let nextIndex = currentIndex + 1;
+      while (nextIndex < current.steps.length && current.steps[nextIndex].completed) {
+        nextIndex += 1;
+      }
+
+      const nextStepIndex = nextIndex >= current.steps.length ? -1 : nextIndex;
+      const nextHistory = nextStepIndex !== -1 && currentIndex >= 0 ? [...current.history, currentIndex] : current.history;
+
+      return {
+        ...current,
+        currentStepIndex: nextStepIndex,
+        history: nextHistory,
+      };
+    },
+    onSuccess: next => {
+      queryClient.setQueryData(ONBOARDING_QUERY_KEY, next);
+    },
+  });
+
+  const handleSkipCurrentStep = useCallback(() => {
+    const current = queryClient.getQueryData<OnboardingState>(ONBOARDING_QUERY_KEY);
+    if (!current || current.currentStepIndex < 0) return;
+
+    const step = current.steps[current.currentStepIndex];
+    switch (step.name) {
+      case "resume":
+        updateStep.mutate({ completedSteps: ["resume"] });
+        return;
+      case "experiences":
+        updateStep.mutate({ completedSteps: "experiences", skipExperience: true });
+        return;
+      case "projects":
+        updateStep.mutate({ completedSteps: "projects" });
+        return;
+      default:
+        advanceWithoutCompleting.mutate();
+    }
+  }, [advanceWithoutCompleting, queryClient, updateStep]);
+
+  useEffect(() => {
+    if (!data || data.currentStepIndex < 0) {
+      setCanSkipCurrentStep(false);
+      registerSkipCurrentStep(null);
+      return;
+    }
+
+    const step = data.steps[data.currentStepIndex];
+    const isLastStep = data.currentStepIndex === data.steps.length - 1;
+    const isWelcome = step.name === "welcome";
+    const isProjectsRequired = step.name === "projects" && step.required;
+
+    setCanSkipCurrentStep(!isWelcome && !isLastStep && !isProjectsRequired);
+    registerSkipCurrentStep(handleSkipCurrentStep);
+
+    return () => {
+      registerSkipCurrentStep(null);
+      setCanSkipCurrentStep(false);
+    };
+  }, [data, handleSkipCurrentStep, registerSkipCurrentStep, setCanSkipCurrentStep]);
 
   const reachedEnd = Boolean(
     data && (data.currentStepIndex >= data.steps.length || data.currentStepIndex === -1 || data.steps.length === 0)

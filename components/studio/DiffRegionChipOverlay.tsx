@@ -25,6 +25,21 @@ const CHIP_WIDTH = 148;
 const CHIP_HEIGHT = 32;
 const CHIP_INSET = 8;
 
+const getScrollableAncestors = (element: HTMLElement): HTMLElement[] => {
+  const scrollables: HTMLElement[] = [];
+  let current: HTMLElement | null = element;
+
+  while (current) {
+    const { overflowY } = window.getComputedStyle(current);
+    if (/(auto|scroll|overlay)/.test(overflowY) && current.scrollHeight > current.clientHeight + 1) {
+      scrollables.push(current);
+    }
+    current = current.parentElement;
+  }
+
+  return scrollables;
+};
+
 const measurePlacements = (
   container: HTMLDivElement,
   regionIds: string[],
@@ -86,7 +101,9 @@ const DiffRegionChipOverlay = ({
 
     const onScroll = () => updatePlacements();
     const raf = requestAnimationFrame(onScroll);
-    container.addEventListener("scroll", onScroll, { passive: true });
+    const scrollTargets = Array.from(new Set([container, ...getScrollableAncestors(container)]));
+
+    scrollTargets.forEach(target => target.addEventListener("scroll", onScroll, { passive: true }));
     window.addEventListener("resize", onScroll);
 
     const ro = typeof ResizeObserver !== "undefined" ? new ResizeObserver(onScroll) : null;
@@ -96,7 +113,7 @@ const DiffRegionChipOverlay = ({
 
     return () => {
       cancelAnimationFrame(raf);
-      container.removeEventListener("scroll", onScroll);
+      scrollTargets.forEach(target => target.removeEventListener("scroll", onScroll));
       window.removeEventListener("resize", onScroll);
       ro?.disconnect();
       window.clearTimeout(t);

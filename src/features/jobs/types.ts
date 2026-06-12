@@ -80,3 +80,5 @@ export interface ImportJobFromUrlResponse {
   job: BackendJob;
   application: ImportJobFromUrlApplication;
 }
+
+export type ImportJobFromUrlResult = ({ success: true } & ImportJobFromUrlResponse) | { success: false; error: string; code?: string };

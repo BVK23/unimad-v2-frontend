@@ -1,8 +1,9 @@
 "use client";
 
-import { Suspense, useCallback, useEffect, useState } from "react";
+import { Suspense, useCallback, useEffect, useRef, useState } from "react";
 import ResumeDashboard from "@/components/ResumeDashboard";
 import ResumeEditor from "@/components/ResumeEditor";
+import { ModalPortalOverlay } from "@/components/ui/ModalPortalOverlay";
 import { useResume, resumeByIdQueryKey } from "@/features/resume/hooks/useResume";
 import { resumesListQueryKey } from "@/features/resume/hooks/useResumesList";
 import { getResumeContentSignature } from "@/features/resume/utils/getResumeContentSignature";
@@ -72,6 +73,8 @@ function ResumePageContent({ initialResumeId }: ResumePageClientProps) {
 
   const [urlId, setUrlId] = useState<string | undefined>(initialResumeId);
   const resumeQuery = useResume(urlId);
+  /** Ignore stale ?id= in searchParams while router.replace is clearing the query. */
+  const pendingUrlClearRef = useRef(false);
 
   const [resumeView, setResumeView] = useState<"list" | "editor">("list");
   const [currentResume, setCurrentResume] = useState<ResumeData | null>(null);
@@ -80,18 +83,18 @@ function ResumePageContent({ initialResumeId }: ResumePageClientProps) {
   const [resumeLoadError, setResumeLoadError] = useState<string | null>(null);
 
   const handleUrlIdFromBrowser = useCallback((nextId: string | undefined) => {
-    if (!nextId) {
-      const fromWindow = new URLSearchParams(window.location.search).get("id")?.trim() || undefined;
-      if (fromWindow) {
-        setUrlId(fromWindow);
-        return;
-      }
+    if (pendingUrlClearRef.current) {
+      if (nextId) return;
+      pendingUrlClearRef.current = false;
     }
     setUrlId(nextId);
   }, []);
 
   const updateResumeUrl = useCallback(
     (id?: string) => {
+      if (!id) {
+        pendingUrlClearRef.current = true;
+      }
       setUrlId(id);
       const params = new URLSearchParams(window.location.search);
       if (id) {
@@ -105,18 +108,19 @@ function ResumePageContent({ initialResumeId }: ResumePageClientProps) {
     [pathname, router]
   );
 
-  // No ?id=: show list and clear URL-driven state, but keep local-only editor (new resume, not saved yet)
+  // No ?id=: landing list — keep editor only for unsaved local draft (no resume id yet)
   /* eslint-disable react-hooks/set-state-in-effect -- URL-driven view sync; list vs editor follows search params */
   useEffect(() => {
     if (urlId) return;
 
     const isLocalOnlyEditor = resumeView === "editor" && currentResume !== null && !String(currentResume.id || "").trim();
-    const isActiveEditor = resumeView === "editor" && currentResume !== null;
 
-    if (isLocalOnlyEditor || isActiveEditor) return;
+    if (isLocalOnlyEditor) return;
 
-    setResumeView("list");
-    setCurrentResume(null);
+    if (resumeView !== "list" || currentResume !== null) {
+      setResumeView("list");
+      setCurrentResume(null);
+    }
   }, [urlId, resumeView, currentResume]);
 
   // URL ?id= resolved successfully → open editor from cache or network
@@ -226,8 +230,8 @@ function ResumePageContent({ initialResumeId }: ResumePageClientProps) {
         )}
         <ResumeDashboard onEditResume={handleEditResume} onCreateResume={handleCreateResume} />
         {resumeLoadError && (
-          <div
-            className="fixed inset-0 bg-black/60 backdrop-blur-sm z-50 flex items-center justify-center p-4"
+          <ModalPortalOverlay
+            className="flex items-center justify-center bg-black/60 backdrop-blur-sm p-4"
             role="dialog"
             aria-labelledby="resume-load-error-title"
             aria-modal="true"
@@ -245,7 +249,7 @@ function ResumePageContent({ initialResumeId }: ResumePageClientProps) {
                 Got it
               </button>
             </div>
-          </div>
+          </ModalPortalOverlay>
         )}
       </div>
     );
@@ -260,9 +264,9 @@ function ResumePageContent({ initialResumeId }: ResumePageClientProps) {
           initialData={currentResume}
           onBack={() => {
             void queryClient.refetchQueries({ queryKey: resumesListQueryKey, exact: true });
+            updateResumeUrl();
             setResumeView("list");
             setCurrentResume(null);
-            updateResumeUrl();
           }}
           onSave={handleSaveResume}
           onImprove={handleImproveWithAI}
@@ -274,8 +278,8 @@ function ResumePageContent({ initialResumeId }: ResumePageClientProps) {
   }
 
   return resumeLoadError ? (
-    <div
-      className="fixed inset-0 bg-black/60 backdrop-blur-sm z-50 flex items-center justify-center p-4"
+    <ModalPortalOverlay
+      className="flex items-center justify-center bg-black/60 backdrop-blur-sm p-4"
       role="dialog"
       aria-labelledby="resume-load-error-title"
       aria-modal="true"
@@ -293,7 +297,7 @@ function ResumePageContent({ initialResumeId }: ResumePageClientProps) {
           Got it
         </button>
       </div>
-    </div>
+    </ModalPortalOverlay>
   ) : null;
 }
 

@@ -2,7 +2,9 @@
 
 import { useCallback, useEffect, useRef, useState } from "react";
 import RichTextEditor, { type RichTextEditorSelectionInfo } from "@/components/RichTextEditor";
+import { ApplicationAssetDownloadMenu } from "@/components/application-assets/ApplicationAssetDownloadMenu";
 import { ApplicationDocumentPageFrame } from "@/components/application-assets/ApplicationDocumentPageFrame";
+import { DocumentSaveStatusBar, type DocumentSaveStatusBarVariant } from "@/components/application-assets/DocumentSaveStatusBar";
 import AssetPreviewLoadingOverlay from "@/components/studio/AssetPreviewLoadingOverlay";
 import DocumentDiffPreview from "@/components/studio/DocumentDiffPreview";
 import DocumentPendingRevisionBar from "@/components/studio/DocumentPendingRevisionBar";
@@ -13,24 +15,7 @@ import { useApplicationAssetStudioStore } from "@/features/application-assets/st
 import type { ApplicationAssetApiType } from "@/features/application-assets/types";
 import { htmlToPlainText } from "@/utils/html-to-text";
 import { normalizeContentToHtml } from "@/utils/normalize-content-to-html";
-import { Copy, Download, FileText } from "lucide-react";
-
-export type DocumentSaveStatus = "idle" | "unsaved" | "saving" | "saved" | "error";
-
-const documentSaveStatusLabel = (status: DocumentSaveStatus | undefined): string => {
-  switch (status) {
-    case "unsaved":
-      return "Unsaved changes";
-    case "saving":
-      return "Autosaving...";
-    case "saved":
-      return "All changes saved";
-    case "error":
-      return "Failed to save";
-    default:
-      return "";
-  }
-};
+import { Copy, Wand2 } from "lucide-react";
 
 interface StudioDocumentPreviewProps {
   content: string;
@@ -38,12 +23,18 @@ interface StudioDocumentPreviewProps {
   isGenerating?: boolean;
   generatingLabel?: string;
   copyFeedback?: boolean;
-  saveStatus?: DocumentSaveStatus;
+  hasPendingUnsavedChanges?: boolean;
+  isSaving?: boolean;
+  savedConfirmationVisible?: boolean;
+  saveStatusVariant?: DocumentSaveStatusBarVariant;
   onCopy: () => void;
+  onSaveNow?: () => void;
   onContentChange?: (content: string) => void;
   onDownloadPdf?: () => Promise<void>;
   onDownloadDocx?: () => Promise<void>;
   showDocumentDownload?: boolean;
+  generateCtaLabel?: string;
+  onGenerateCta?: () => void;
   assetType?: ApplicationAssetApiType | null;
   isAdkLoading?: boolean;
   hasPendingRevision?: boolean;
@@ -73,12 +64,18 @@ const StudioDocumentPreview = ({
   isGenerating = false,
   generatingLabel = "Generating draft...",
   copyFeedback = false,
-  saveStatus = "idle",
+  hasPendingUnsavedChanges = false,
+  isSaving = false,
+  savedConfirmationVisible = false,
+  saveStatusVariant = "studio",
   onCopy,
+  onSaveNow,
   onContentChange,
   onDownloadPdf,
   onDownloadDocx,
   showDocumentDownload = false,
+  generateCtaLabel,
+  onGenerateCta,
   assetType = null,
   isAdkLoading = false,
   hasPendingRevision = false,
@@ -90,8 +87,7 @@ const StudioDocumentPreview = ({
   onApplyReconciled,
   reviewSessionKey = "review",
 }: StudioDocumentPreviewProps) => {
-  const [isDownloadingPdf, setIsDownloadingPdf] = useState(false);
-  const [isDownloadingDocx, setIsDownloadingDocx] = useState(false);
+  const [isDownloading, setIsDownloading] = useState(false);
   const [localContent, setLocalContent] = useState(() => normalizeContentToHtml(content));
   const lastExternalContent = useRef(content);
 
@@ -125,7 +121,8 @@ const StudioDocumentPreview = ({
   }, [showDiffView, clearSelection]);
 
   const showActions = !isGenerating && hasContent;
-  const saveStatusLabel = showActions && !hasPendingRevision ? documentSaveStatusLabel(saveStatus) : "";
+  const showSaveStatus = showActions && !hasPendingRevision && (hasPendingUnsavedChanges || isSaving || savedConfirmationVisible);
+  const showGenerateOverlay = Boolean(onGenerateCta && generateCtaLabel && !hasContent && !isGenerating && !hasPendingRevision);
 
   const stripDisabled = isAdkLoading || hasPendingRevision;
   const stripDisabledReason = hasPendingRevision
@@ -159,23 +156,13 @@ const StudioDocumentPreview = ({
     navigator.clipboard.writeText(text).then(() => onCopy());
   };
 
-  const handleDownloadPdf = async () => {
-    if (!onDownloadPdf || isDownloadingPdf) return;
-    setIsDownloadingPdf(true);
+  const handleDownload = async (action: () => Promise<void>) => {
+    if (isDownloading) return;
+    setIsDownloading(true);
     try {
-      await onDownloadPdf();
+      await action();
     } finally {
-      setIsDownloadingPdf(false);
-    }
-  };
-
-  const handleDownloadDocx = async () => {
-    if (!onDownloadDocx || isDownloadingDocx) return;
-    setIsDownloadingDocx(true);
-    try {
-      await onDownloadDocx();
-    } finally {
-      setIsDownloadingDocx(false);
+      setIsDownloading(false);
     }
   };
 
@@ -186,50 +173,38 @@ const StudioDocumentPreview = ({
 
   const toolbar = (
     <div className="flex min-h-[52px] items-center justify-between gap-2 p-4">
-      {saveStatusLabel ? (
-        <span className="text-xs text-slate-500 tabular-nums dark:text-slate-400" aria-live="polite">
-          {saveStatusLabel}
-        </span>
-      ) : (
-        <span className="flex-1" aria-hidden />
-      )}
-      {showActions && (
-        <div className="flex shrink-0 justify-end gap-2">
-          <button
-            type="button"
-            onClick={handleCopy}
-            aria-label="Copy to clipboard"
-            className="flex items-center gap-2 rounded-lg bg-slate-100 px-4 py-2 text-xs font-medium text-slate-600 transition-all hover:bg-slate-200 dark:bg-slate-800 dark:text-slate-300 dark:hover:bg-slate-700"
-          >
-            <Copy size={14} />
-            {copyFeedback ? "Copied!" : "Copy"}
-          </button>
-          {showDocumentDownload && onDownloadPdf ? (
+      <span className="flex-1" aria-hidden />
+      <div className="flex shrink-0 items-center justify-end gap-2">
+        <DocumentSaveStatusBar
+          variant={saveStatusVariant}
+          hasPendingUnsavedChanges={hasPendingUnsavedChanges}
+          isSaving={isSaving}
+          savedConfirmationVisible={savedConfirmationVisible}
+          onSaveNow={onSaveNow}
+          visible={showSaveStatus}
+        />
+        {showActions ? (
+          <>
             <button
               type="button"
-              onClick={() => void handleDownloadPdf()}
-              disabled={isDownloadingPdf}
-              aria-label="Download as PDF"
-              className="flex items-center gap-2 rounded-lg bg-slate-100 px-4 py-2 text-xs font-medium text-slate-600 transition-all hover:bg-slate-200 disabled:cursor-not-allowed disabled:opacity-50 dark:bg-slate-800 dark:text-slate-300 dark:hover:bg-slate-700"
+              onClick={handleCopy}
+              aria-label="Copy to clipboard"
+              className="flex items-center gap-2 rounded-lg bg-slate-100 px-4 py-2 text-xs font-medium text-slate-600 transition-all hover:bg-slate-200 dark:bg-slate-800 dark:text-slate-300 dark:hover:bg-slate-700"
             >
-              <Download size={14} />
-              {isDownloadingPdf ? "Preparing..." : "Download PDF"}
+              <Copy size={14} />
+              {copyFeedback ? "Copied!" : "Copy"}
             </button>
-          ) : null}
-          {showDocumentDownload && onDownloadDocx ? (
-            <button
-              type="button"
-              onClick={() => void handleDownloadDocx()}
-              disabled={isDownloadingDocx}
-              aria-label="Download as Word"
-              className="flex items-center gap-2 rounded-lg bg-slate-100 px-4 py-2 text-xs font-medium text-slate-600 transition-all hover:bg-slate-200 disabled:cursor-not-allowed disabled:opacity-50 dark:bg-slate-800 dark:text-slate-300 dark:hover:bg-slate-700"
-            >
-              <FileText size={14} />
-              {isDownloadingDocx ? "Preparing..." : "Download Word"}
-            </button>
-          ) : null}
-        </div>
-      )}
+            {showDocumentDownload && onDownloadPdf && onDownloadDocx ? (
+              <ApplicationAssetDownloadMenu
+                disabled={isDownloading}
+                isBusy={isDownloading}
+                onDownloadPdf={() => handleDownload(onDownloadPdf)}
+                onDownloadDocx={() => handleDownload(onDownloadDocx)}
+              />
+            ) : null}
+          </>
+        ) : null}
+      </div>
     </div>
   );
 
@@ -249,7 +224,7 @@ const StudioDocumentPreview = ({
           />
         </div>
       ) : (
-        <div className={`relative ${documentPreviewBodyTypography} ${isGenerating ? "min-h-[320px]" : ""}`}>
+        <div className={`relative ${documentPreviewBodyTypography} ${isGenerating || showGenerateOverlay ? "min-h-[320px]" : ""}`}>
           {hasPendingRevision && !showDiffView && assetType && onAcceptRevision && onRevertRevision ? (
             <DocumentPendingRevisionBar
               assetType={assetType}
@@ -284,6 +259,18 @@ const StudioDocumentPreview = ({
           ) : (
             <p className="font-sans text-[11pt] text-slate-400">{placeholder}</p>
           )}
+          {showGenerateOverlay ? (
+            <div className="absolute inset-0 z-10 flex items-center justify-center bg-white/85 backdrop-blur-[1px] dark:bg-slate-900/85">
+              <button
+                type="button"
+                onClick={onGenerateCta}
+                className="inline-flex items-center gap-2 rounded-xl bg-brand-600 px-6 py-3 text-sm font-medium text-white shadow-lg shadow-brand-500/25 transition-all hover:bg-brand-700 active:scale-[0.99]"
+              >
+                <Wand2 size={16} />
+                {generateCtaLabel}
+              </button>
+            </div>
+          ) : null}
         </div>
       )}
     </ApplicationDocumentPageFrame>

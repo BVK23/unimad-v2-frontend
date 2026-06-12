@@ -3,6 +3,7 @@
 import React from "react";
 import LinkedInPostListCard, { type LinkedInListItem } from "@/components/studio/LinkedInPostListCard";
 import StudioSectionDot from "@/components/studio/StudioSectionDot";
+import { ModalPortalOverlay } from "@/components/ui/ModalPortalOverlay";
 import { X } from "lucide-react";
 
 interface LinkedInScheduledPostsModalProps {
@@ -13,7 +14,7 @@ interface LinkedInScheduledPostsModalProps {
 }
 
 const LinkedInScheduledPostsModal: React.FC<LinkedInScheduledPostsModalProps> = ({ posts, onClose, onPostClick, onDeletePost }) => (
-  <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 p-4 backdrop-blur-sm animate-in fade-in duration-200">
+  <ModalPortalOverlay className="flex items-center justify-center bg-black/60 p-4 backdrop-blur-sm animate-in fade-in duration-200">
     <div className="flex max-h-[80vh] w-full max-w-lg flex-col overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-2xl animate-in zoom-in-95 duration-200 dark:border-slate-800 dark:bg-slate-900">
       <div className="flex items-center justify-between border-b border-slate-100 p-5 dark:border-slate-800">
         <div className="flex items-center gap-2">
@@ -43,7 +44,7 @@ const LinkedInScheduledPostsModal: React.FC<LinkedInScheduledPostsModalProps> = 
         )}
       </div>
     </div>
-  </div>
+  </ModalPortalOverlay>
 );
 
 export default LinkedInScheduledPostsModal;

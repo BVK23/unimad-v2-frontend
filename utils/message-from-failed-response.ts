@@ -15,6 +15,8 @@ export function looksLikeTechnicalErrorMessage(candidate: string): boolean {
     lower.includes("malformed function call") ||
     lower.includes("default_api.") ||
     lower.includes("traceback (most recent call last)") ||
+    lower.includes("an error occurred in the server components render") ||
+    lower.includes("digest property is included on this error") ||
     /^print\(default_api\./i.test(trimmed)
   );
 }

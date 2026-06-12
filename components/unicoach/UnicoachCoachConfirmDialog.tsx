@@ -1,6 +1,7 @@
 "use client";
 
 import React, { useEffect, useRef } from "react";
+import { ModalPortalOverlay } from "@/components/ui/ModalPortalOverlay";
 
 export type UnicoachCoachConfirmDialogProps = {
   open: boolean;
@@ -45,8 +46,9 @@ export const UnicoachCoachConfirmDialog: React.FC<UnicoachCoachConfirmDialogProp
   };
 
   return (
-    <div
-      className="fixed inset-0 z-[80] flex items-center justify-center bg-slate-900/50 backdrop-blur-sm p-4 animate-in fade-in duration-200"
+    <ModalPortalOverlay
+      open={open}
+      className="flex items-center justify-center bg-slate-900/50 p-4 backdrop-blur-sm animate-in fade-in duration-200"
       role="presentation"
       onClick={onCancel}
       onKeyDown={handleBackdropKeyDown}
@@ -80,6 +82,6 @@ export const UnicoachCoachConfirmDialog: React.FC<UnicoachCoachConfirmDialogProp
           </button>
         </div>
       </div>
-    </div>
+    </ModalPortalOverlay>
   );
 };
