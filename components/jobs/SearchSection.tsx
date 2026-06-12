@@ -1,7 +1,13 @@
 import React, { useEffect, useRef, useState } from "react";
 import { useJobSuggestions } from "@/features/jobs/hooks/useJobSuggestions";
 import { useLocationSuggestions } from "@/features/jobs/hooks/useLocationSuggestions";
-import { JOB_TYPE_FILTER_OPTIONS, LOCATION_FILTER_OPTIONS, VISA_FILTER_OPTION } from "@/features/jobs/job-search-filters";
+import {
+  EXPERIENCE_LEVEL_FILTER_OPTIONS,
+  formatFilterChipLabel,
+  JOB_TYPE_FILTER_OPTIONS,
+  LOCATION_FILTER_OPTIONS,
+  SPONSORED_FILTER_OPTIONS,
+} from "@/features/jobs/job-search-filters";
 import { useDebounce } from "@/hooks/useDebounce";
 import { Search, MapPin, SlidersHorizontal, ChevronDown, CheckSquare, Square, Bookmark } from "lucide-react";
 
@@ -13,6 +19,8 @@ interface SearchSectionProps {
   locationTerm: string;
   setLocationTerm: (term: string) => void;
   onSearchSubmit: (q: string, location: string, activeFilters: string[]) => void;
+  onFiltersChange?: (activeFilters: string[]) => void;
+  hasActiveSearch?: boolean;
   filterType: JobsBrowseFilter;
   setFilterType: (type: JobsBrowseFilter) => void;
 }
@@ -66,13 +74,15 @@ const SearchSection: React.FC<SearchSectionProps> = ({
   locationTerm,
   setLocationTerm,
   onSearchSubmit,
+  onFiltersChange,
+  hasActiveSearch = false,
   filterType,
   setFilterType,
 }) => {
   const [showFilters, setShowFilters] = useState(false);
   const [showRoleDropdown, setShowRoleDropdown] = useState(false);
   const [showLocationDropdown, setShowLocationDropdown] = useState(false);
-  const [activeFilters, setActiveFilters] = useState<string[]>(["Remote", "Full-time"]);
+  const [activeFilters, setActiveFilters] = useState<string[]>([]);
   const roleContainerRef = useRef<HTMLDivElement>(null);
   const locationContainerRef = useRef<HTMLDivElement>(null);
 
@@ -94,22 +104,39 @@ const SearchSection: React.FC<SearchSectionProps> = ({
     return () => document.removeEventListener("mousedown", handleClickOutside);
   }, []);
 
+  const computeNextFilters = (prev: string[], filter: string): string[] => {
+    if (prev.includes(filter)) {
+      return prev.filter(f => f !== filter);
+    }
+    let next = [...prev, filter];
+    if ((LOCATION_FILTER_OPTIONS as readonly string[]).includes(filter)) {
+      next = next.filter(f => !(LOCATION_FILTER_OPTIONS as readonly string[]).includes(f));
+      next.push(filter);
+    }
+    if ((JOB_TYPE_FILTER_OPTIONS as readonly string[]).includes(filter)) {
+      next = next.filter(f => !(JOB_TYPE_FILTER_OPTIONS as readonly string[]).includes(f));
+      next.push(filter);
+    }
+    if ((EXPERIENCE_LEVEL_FILTER_OPTIONS as readonly string[]).includes(filter)) {
+      next = next.filter(f => !(EXPERIENCE_LEVEL_FILTER_OPTIONS as readonly string[]).includes(f));
+      next.push(filter);
+    }
+    if ((SPONSORED_FILTER_OPTIONS as readonly string[]).includes(filter)) {
+      next = next.filter(f => !(SPONSORED_FILTER_OPTIONS as readonly string[]).includes(f));
+      next.push(filter);
+    }
+    return next;
+  };
+
   const toggleFilter = (filter: string) => {
+    let nextFilters: string[] = activeFilters;
     setActiveFilters(prev => {
-      if (prev.includes(filter)) {
-        return prev.filter(f => f !== filter);
-      }
-      let next = [...prev, filter];
-      if ((LOCATION_FILTER_OPTIONS as readonly string[]).includes(filter)) {
-        next = next.filter(f => !(LOCATION_FILTER_OPTIONS as readonly string[]).includes(f));
-        next.push(filter);
-      }
-      if ((JOB_TYPE_FILTER_OPTIONS as readonly string[]).includes(filter)) {
-        next = next.filter(f => !(JOB_TYPE_FILTER_OPTIONS as readonly string[]).includes(f));
-        next.push(filter);
-      }
-      return next;
+      nextFilters = computeNextFilters(prev, filter);
+      return nextFilters;
     });
+    if (hasActiveSearch) {
+      onFiltersChange?.(nextFilters);
+    }
   };
 
   const submitWithFilters = (q: string) => {
@@ -222,7 +249,7 @@ const SearchSection: React.FC<SearchSectionProps> = ({
           )}
         </div>
 
-        <div className="flex shrink-0 items-center gap-2">
+        <div className="relative flex shrink-0 items-center gap-2">
           <button
             type="button"
             onClick={toggleSavedBrowse}
@@ -236,19 +263,83 @@ const SearchSection: React.FC<SearchSectionProps> = ({
             <span className="hidden whitespace-nowrap md:inline">Saved Jobs</span>
           </button>
 
-          <button
-            type="button"
-            onClick={() => setShowFilters(!showFilters)}
-            className={`flex items-center gap-2 rounded-xl border px-4 py-2.5 text-sm font-medium transition-all active:scale-95 ${
-              showFilters
-                ? "border-brand-200 bg-brand-50 text-brand-600 dark:border-brand-800 dark:bg-brand-900/30 dark:text-brand-400"
-                : "border-slate-200 bg-transparent text-slate-700 hover:border-slate-300 hover:bg-slate-50 dark:border-slate-700 dark:text-slate-300 dark:hover:bg-slate-800/50"
-            }`}
-          >
-            <SlidersHorizontal size={18} />
-            <span className="hidden md:inline">Filters</span>
-            <ChevronDown size={14} className={`transition-transform ${showFilters ? "rotate-180" : ""}`} />
-          </button>
+          <div className="relative">
+            <button
+              type="button"
+              onClick={() => setShowFilters(!showFilters)}
+              className={`flex items-center gap-2 rounded-xl border px-4 py-2.5 text-sm font-medium transition-all active:scale-95 ${
+                showFilters
+                  ? "border-brand-200 bg-brand-50 text-brand-600 dark:border-brand-800 dark:bg-brand-900/30 dark:text-brand-400"
+                  : "border-slate-200 bg-transparent text-slate-700 hover:border-slate-300 hover:bg-slate-50 dark:border-slate-700 dark:text-slate-300 dark:hover:bg-slate-800/50"
+              }`}
+            >
+              <SlidersHorizontal size={18} />
+              <span className="hidden md:inline">Filters</span>
+              <ChevronDown size={14} className={`transition-transform ${showFilters ? "rotate-180" : ""}`} />
+            </button>
+
+            {showFilters && (
+              <div className="absolute right-0 top-full z-30 mt-2 w-72 animate-in fade-in zoom-in-95 rounded-2xl border border-slate-200 bg-white p-6 shadow-xl duration-200 dark:border-slate-800 dark:bg-slate-900">
+                <FilterGroup
+                  title="Job Type"
+                  options={[...JOB_TYPE_FILTER_OPTIONS]}
+                  activeFilters={activeFilters}
+                  onToggle={toggleFilter}
+                />
+                <FilterGroup
+                  title="Location"
+                  options={[...LOCATION_FILTER_OPTIONS]}
+                  activeFilters={activeFilters}
+                  onToggle={toggleFilter}
+                />
+                <FilterGroup
+                  title="Experience Level"
+                  options={[...EXPERIENCE_LEVEL_FILTER_OPTIONS]}
+                  activeFilters={activeFilters}
+                  onToggle={toggleFilter}
+                />
+                <FilterGroup
+                  title="Sponsored"
+                  options={[...SPONSORED_FILTER_OPTIONS]}
+                  activeFilters={activeFilters}
+                  onToggle={toggleFilter}
+                />
+                {/* Pay scale — not supported by /api/jobs/ yet
+                <FilterGroup
+                  title="Pay Scale"
+                  options={["$50k - $100k", "$100k - $150k", "$150k+", "Equity Only"]}
+                  activeFilters={activeFilters}
+                  onToggle={toggleFilter}
+                />
+                */}
+                {/* Extra benefits — not supported by /api/jobs/ yet
+                <FilterGroup
+                  title="Benefits"
+                  options={["Health Insurance", "401k"]}
+                  activeFilters={activeFilters}
+                  onToggle={toggleFilter}
+                />
+                */}
+                {/* Posted date — not supported by /api/jobs/ yet
+                <FilterGroup
+                  title="Date Posted"
+                  options={["Past 24 hours", "Past Week", "Past Month"]}
+                  activeFilters={activeFilters}
+                  onToggle={toggleFilter}
+                />
+                */}
+                <div className="mt-4 flex justify-end border-t border-slate-100 pt-4 dark:border-slate-800">
+                  <button
+                    type="button"
+                    onClick={() => setShowFilters(false)}
+                    className="text-xs font-medium text-brand-600 hover:text-brand-700 dark:text-brand-400"
+                  >
+                    Done
+                  </button>
+                </div>
+              </div>
+            )}
+          </div>
         </div>
       </div>
 
@@ -258,7 +349,7 @@ const SearchSection: React.FC<SearchSectionProps> = ({
             key={filter}
             className="flex items-center gap-1 whitespace-nowrap rounded-lg border border-brand-100 bg-brand-50 px-3 py-1 text-xs font-medium text-brand-600 dark:border-brand-800/30 dark:bg-brand-900/20 dark:text-brand-400"
           >
-            {filter}{" "}
+            {formatFilterChipLabel(filter)}{" "}
             <button
               type="button"
               onClick={e => {
@@ -273,47 +364,6 @@ const SearchSection: React.FC<SearchSectionProps> = ({
         ))}
         {activeFilters.length === 0 && <span className="py-1 text-xs text-slate-400">No active filters</span>}
       </div>
-
-      {showFilters && (
-        <div className="absolute right-0 top-full z-30 mt-2 w-72 animate-in fade-in zoom-in-95 rounded-2xl border border-slate-200 bg-white p-6 shadow-xl duration-200 dark:border-slate-800 dark:bg-slate-900">
-          <FilterGroup title="Job Type" options={[...JOB_TYPE_FILTER_OPTIONS]} activeFilters={activeFilters} onToggle={toggleFilter} />
-          <FilterGroup title="Location" options={[...LOCATION_FILTER_OPTIONS]} activeFilters={activeFilters} onToggle={toggleFilter} />
-          <FilterGroup title="Benefits" options={[VISA_FILTER_OPTION]} activeFilters={activeFilters} onToggle={toggleFilter} />
-          {/* Pay scale — not supported by /api/jobs/ yet
-          <FilterGroup
-            title="Pay Scale"
-            options={["$50k - $100k", "$100k - $150k", "$150k+", "Equity Only"]}
-            activeFilters={activeFilters}
-            onToggle={toggleFilter}
-          />
-          */}
-          {/* Extra benefits — not supported by /api/jobs/ yet
-          <FilterGroup
-            title="Benefits"
-            options={["Health Insurance", "401k"]}
-            activeFilters={activeFilters}
-            onToggle={toggleFilter}
-          />
-          */}
-          {/* Posted date — not supported by /api/jobs/ yet
-          <FilterGroup
-            title="Date Posted"
-            options={["Past 24 hours", "Past Week", "Past Month"]}
-            activeFilters={activeFilters}
-            onToggle={toggleFilter}
-          />
-          */}
-          <div className="mt-4 flex justify-end border-t border-slate-100 pt-4 dark:border-slate-800">
-            <button
-              type="button"
-              onClick={() => setShowFilters(false)}
-              className="text-xs font-medium text-brand-600 hover:text-brand-700 dark:text-brand-400"
-            >
-              Done
-            </button>
-          </div>
-        </div>
-      )}
 
       {showFilters && <div className="fixed inset-0 z-10" onClick={() => setShowFilters(false)} aria-hidden />}
     </div>

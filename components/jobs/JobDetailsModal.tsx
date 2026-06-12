@@ -182,8 +182,8 @@ const JobDetailsModal: React.FC<JobDetailsModalProps> = ({
             */}
             {job.isSponsoring && (
               <span
-                title="This job is highly likely to sponsor a visa"
-                className="px-3 py-1 bg-gradient-to-b from-amber-200 to-yellow-400 text-yellow-900 text-xs font-semibold rounded-full border border-yellow-300 shadow-sm cursor-help hover:brightness-105 transition-all"
+                title="This job explicitly mentions visa sponsorship"
+                className="cursor-help rounded-full border border-yellow-300 bg-gradient-to-b from-amber-200 to-yellow-400 px-3 py-1 text-xs font-semibold text-yellow-900 shadow-sm transition-all hover:brightness-105"
               >
                 Visa Sponsorship
               </span>

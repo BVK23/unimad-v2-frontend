@@ -136,7 +136,8 @@ const JobDiscovery: React.FC<JobDiscoveryProps> = ({
     [searchResultsJobs, searchUIPage]
   );
   const searchTotalUIPages = Math.max(1, Math.ceil(searchResultsJobs.length / SEARCH_JOBS_PER_PAGE));
-  const isOnLastSearchUIPage = searchUIPage >= searchTotalUIPages;
+  const searchPageNeedsMoreJobs = !!submittedSearch && searchHasNextPage && searchResultsJobs.length < searchUIPage * SEARCH_JOBS_PER_PAGE;
+  const showSearchPageSkeletons = isSearchFetchingNextPage || searchPageNeedsMoreJobs;
 
   const allListedJobs = useMemo(() => {
     const seen = new Set<string>();
@@ -161,6 +162,17 @@ const JobDiscovery: React.FC<JobDiscoveryProps> = ({
       fetchMoreRecommendedJobs();
     }
   }, [recommendedHasNextPage, isRecommendedFetchingNextPage, recommendedUIPage, recommendedJobs.length, fetchMoreRecommendedJobs]);
+
+  useEffect(() => {
+    if (!submittedSearch || !searchHasNextPage || isSearchFetchingNextPage || searchResultsJobs.length === 0) return;
+
+    const neededForCurrentPage = searchUIPage * SEARCH_JOBS_PER_PAGE;
+    const onLastLoadedPage = searchUIPage >= Math.ceil(searchResultsJobs.length / SEARCH_JOBS_PER_PAGE);
+
+    if (searchResultsJobs.length < neededForCurrentPage || onLastLoadedPage) {
+      fetchMoreSearchJobs();
+    }
+  }, [submittedSearch, searchHasNextPage, isSearchFetchingNextPage, searchUIPage, searchResultsJobs.length, fetchMoreSearchJobs]);
 
   const handleHeroPrevPage = () => {
     setRecommendedUIPage(prev => Math.max(1, prev - 1));
@@ -213,6 +225,12 @@ const JobDiscovery: React.FC<JobDiscoveryProps> = ({
     const trimmedQ = q.trim();
     if (!trimmedQ) return;
     setSubmittedSearch({ q: trimmedQ, location: location.trim(), activeFilters });
+    setSearchUIPage(1);
+  };
+
+  const handleFiltersChange = (activeFilters: string[]) => {
+    if (!submittedSearch) return;
+    setSubmittedSearch({ ...submittedSearch, activeFilters });
     setSearchUIPage(1);
   };
 
@@ -422,6 +440,8 @@ const JobDiscovery: React.FC<JobDiscoveryProps> = ({
             locationTerm={locationTerm}
             setLocationTerm={setLocationTerm}
             onSearchSubmit={handleSearchSubmit}
+            onFiltersChange={handleFiltersChange}
+            hasActiveSearch={!!submittedSearch}
             filterType={filterType}
             setFilterType={handleBrowseFilterChange}
           />
@@ -499,9 +519,9 @@ const JobDiscovery: React.FC<JobDiscoveryProps> = ({
               </p>
             </div>
           ) : isSearchResultsLoading && searchResultsJobs.length === 0 ? (
-            [1, 2, 3, 4, 5, 6, 7, 8, 9].map(i => (
+            Array.from({ length: SEARCH_JOBS_PER_PAGE }, (_, i) => (
               <div key={i} className="w-full">
-                <JobCardSkeleton />
+                <JobCardSkeleton hideButtons />
               </div>
             ))
           ) : searchResultsJobs.length === 0 ? (
@@ -510,30 +530,24 @@ const JobDiscovery: React.FC<JobDiscoveryProps> = ({
             </div>
           ) : (
             <>
-              {searchJobsOnCurrentPage.map(job => (
-                <div key={job.id} className="relative group">
-                  <div className="h-full w-full">
-                    <JobCard job={job} hideButtons={true} onClick={checkJobDetails} onPrepare={handlePrepareApp} onApply={handleApply} />
-                  </div>
-                </div>
-              ))}
-              {/* Fetch more card - same size as job cell, only on last page when more from API */}
-              {isOnLastSearchUIPage && searchHasNextPage && !isSearchFetchingNextPage && (
-                <button
-                  type="button"
-                  onClick={() => fetchMoreSearchJobs()}
-                  className="w-full h-full min-h-0 rounded-2xl border-2 border-dashed border-slate-200 dark:border-slate-700 bg-slate-50/50 dark:bg-slate-900/20 hover:border-brand-300 dark:hover:border-brand-600 hover:bg-slate-100 dark:hover:bg-slate-800/50 flex flex-col items-center justify-center p-4 text-slate-600 dark:text-slate-400 font-medium text-sm transition-colors"
-                >
-                  Fetch more jobs
-                </button>
-              )}
-              {/* Shimmer cells only while fetching next batch */}
-              {isSearchFetchingNextPage &&
-                [1, 2, 3].map(i => (
-                  <div key={`skeleton-more-${i}`} className="w-full">
-                    <JobCardSkeleton />
-                  </div>
-                ))}
+              {Array.from({ length: SEARCH_JOBS_PER_PAGE }, (_, slotIndex) => {
+                const job = searchJobsOnCurrentPage[slotIndex];
+                if (job) {
+                  return (
+                    <div key={job.id} className="relative group w-full">
+                      <JobCard job={job} hideButtons={true} onClick={checkJobDetails} onPrepare={handlePrepareApp} onApply={handleApply} />
+                    </div>
+                  );
+                }
+                if (showSearchPageSkeletons) {
+                  return (
+                    <div key={`search-slot-skeleton-${searchUIPage}-${slotIndex}`} className="w-full">
+                      <JobCardSkeleton hideButtons />
+                    </div>
+                  );
+                }
+                return null;
+              })}
             </>
           )}
         </div>

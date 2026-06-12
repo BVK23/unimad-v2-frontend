@@ -93,15 +93,15 @@ const JobCard: React.FC<JobCardProps> = ({
             <span className="font-medium flex items-center gap-1">{job.location}</span>
           </div>
           <div className="flex flex-wrap gap-1.5">
-            <span
-              title="This job is highly likely to sponsor a visa"
-              className="px-1.5 py-0.5 bg-gradient-to-b from-amber-200 to-yellow-400 text-yellow-900 rounded-md text-[9px] font-semibold border border-yellow-300 shadow-[0_1px_2px_rgba(251,191,36,0.2)] cursor-help hover:brightness-105 transition-all"
-            >
-              Visa
-            </span>
-            {/* Only show timing if not sponsoring to save space, or if hero */}
-            {/* The original condition (!job.isSponsoring || isHero) is simplified as space is less of an issue now */}
-            <span className="px-1.5 py-0.5 bg-slate-50 dark:bg-slate-800 text-slate-500 dark:text-slate-400 rounded-md text-[9px] font-medium border border-slate-100 dark:border-slate-700 flex items-center gap-1">
+            {job.isSponsoring && (
+              <span
+                title="This job explicitly mentions visa sponsorship"
+                className="cursor-help rounded-md border border-yellow-300 bg-gradient-to-b from-amber-200 to-yellow-400 px-1.5 py-0.5 text-[9px] font-semibold text-yellow-900 shadow-[0_1px_2px_rgba(251,191,36,0.2)] transition-all hover:brightness-105"
+              >
+                Visa
+              </span>
+            )}
+            <span className="flex items-center gap-1 rounded-md border border-slate-100 bg-slate-50 px-1.5 py-0.5 text-[9px] font-medium text-slate-500 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-400">
               <Clock size={9} /> {job.postedDate}
             </span>
           </div>

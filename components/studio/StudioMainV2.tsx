@@ -2918,7 +2918,6 @@ const StudioMainV2: React.FC<StudioMainProps> = ({ initialContext, initialAssetI
       {prepareReturn ? (
         <PrepareApplicationReturnBar
           session={prepareReturn}
-          currentTab={prepareBannerTab}
           showSaveAndReturn={showPrepareSaveAndReturn}
           onSaveAndReturn={() => void handleSaveAndReturnToPrepare()}
           onDismiss={handleDismissPrepareReturn}
