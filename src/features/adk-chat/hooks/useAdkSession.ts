@@ -1,7 +1,9 @@
 "use client";
 
 import { useState, useCallback, useEffect, useRef } from "react";
-import { createSessionAction, deleteSessionAction, listSessionsAction, type ActiveSession, type SessionListResult } from "../actions";
+import type { ActiveSession } from "../actions";
+import { createSessionAction, deleteSessionAction, listSessionsAction, type SessionListResult } from "../actions";
+import { clearPersistedActiveSessionId, loadPersistedActiveSessionId, persistActiveSessionId } from "../active-session-persist";
 import { UNTITLED_THREAD_TITLE } from "../constants";
 import type { UnibotSessionKind } from "../session-metadata";
 import { getRegistryRow, getSubsForMain, removeRegistrySessions, setSessionRegistry, upsertRegistryRow } from "../session-registry";
@@ -64,6 +66,21 @@ function pickLatestSessionId(sessions: ActiveSession[]): string {
   return sorted[0].id;
 }
 
+function resolveInitialMainSessionId(userId: string, sessions: ActiveSession[]): string {
+  const persisted = loadPersistedActiveSessionId(userId);
+  if (persisted) {
+    const row = getRegistryRow(persisted);
+    if (row?.kind === "sub" && row.parent_adk_session_id) {
+      if (sessions.some(s => s.id === row.parent_adk_session_id)) {
+        return row.parent_adk_session_id;
+      }
+    } else if (sessions.some(s => s.id === persisted)) {
+      return persisted;
+    }
+  }
+  return pickLatestSessionId(sessions);
+}
+
 export interface UseAdkSessionReturn {
   sessionId: string;
   sessions: ActiveSession[];
@@ -107,6 +124,7 @@ export function useAdkSession(userId: string): UseAdkSessionReturn {
     (newSessionId: string): void => {
       if (!userId || !newSessionId || newSessionId === sessionId) return;
       setSessionId(newSessionId);
+      persistActiveSessionId(userId, newSessionId);
     },
     [userId, sessionId]
   );
@@ -135,6 +153,7 @@ export function useAdkSession(userId: string): UseAdkSessionReturn {
             upsertRegistryRow(reg.session);
           }
           setSessionId(result.sessionId);
+          persistActiveSessionId(userId, result.sessionId);
           await refreshSessions();
         } else {
           throw new Error(result.error || "Session creation failed");
@@ -172,6 +191,11 @@ export function useAdkSession(userId: string): UseAdkSessionReturn {
       if (optimisticIds.has(previousSessionId)) {
         const nextSessionId = pickLatestSessionId(remainingSessions);
         setSessionId(nextSessionId || "");
+        if (nextSessionId) {
+          persistActiveSessionId(userId, nextSessionId);
+        } else {
+          clearPersistedActiveSessionId(userId);
+        }
       }
 
       try {
@@ -196,6 +220,7 @@ export function useAdkSession(userId: string): UseAdkSessionReturn {
               title: UNTITLED_THREAD_TITLE,
             });
             setSessionId(created.sessionId);
+            persistActiveSessionId(userId, created.sessionId);
           } else {
             throw new Error(created.error || "Failed to create a new session after deletion");
           }
@@ -242,8 +267,9 @@ export function useAdkSession(userId: string): UseAdkSessionReturn {
         setSessions(filtered);
 
         if (filtered.length > 0) {
-          const pickedId = pickLatestSessionId(filtered);
+          const pickedId = resolveInitialMainSessionId(userId, filtered);
           setSessionId(pickedId);
+          persistActiveSessionId(userId, pickedId);
           if (!getRegistryRow(pickedId)) {
             const reg = await registerUnibotAdkSessionAction({
               adk_session_id: pickedId,
@@ -264,6 +290,7 @@ export function useAdkSession(userId: string): UseAdkSessionReturn {
               title: UNTITLED_THREAD_TITLE,
             });
             setSessionId(created.sessionId);
+            persistActiveSessionId(userId, created.sessionId);
             const again = await listSessionsAction(userId);
             if (!cancelled) {
               setSessions(filterDeletedSessions(normalizeSessionsFromAction(again), userId));

@@ -1,5 +1,6 @@
 import type { ContentGenFunnel } from "@/features/content-lab/api/adk-mappers";
 import { create } from "zustand";
+import { hasReviewForAssistant } from "../review-store-utils";
 
 export type AdkContentGenReviewCard = {
   id: string;
@@ -98,6 +99,10 @@ export const useAdkContentGenReviewStore = create<AdkContentGenReviewState>((set
     const trimmed = proposedDraft.trim();
 
     if (!trimmed || !topic.trim()) {
+      return;
+    }
+
+    if (hasReviewForAssistant(get().reviewStack, assistantMessageId)) {
       return;
     }
 

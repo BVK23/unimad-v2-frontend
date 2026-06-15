@@ -1,3 +1,4 @@
+import { shouldOfferDraftReview } from "@/features/adk-chat/review-decisions";
 import { useAdkContentGenReviewStore } from "@/features/adk-chat/stores/useAdkContentGenReviewStore";
 import { isApplicationAssetBotMessage } from "@/features/application-assets/api/isApplicationAssetBotMessage";
 import type { ContentGenFunnel } from "@/features/content-lab/api/adk-mappers";
@@ -19,12 +20,19 @@ export type OfferContentGenDraftReviewParams = {
   funnelOverride?: ContentGenFunnel | null;
   appliedTopicRef?: string | null;
   threadMessages?: ResolveContentGenDraftTopicParams["threadMessages"];
+  userId?: string;
+  sessionId?: string;
+  /** When false, open the review card only — do not sync draft into Studio stores/events. */
+  syncStudioPreview?: boolean;
 };
 
 /**
  * When a draft is detected: open Accept/Discard review and preview on Studio (if on Studio + topic set).
  */
 export const offerContentGenDraftReview = (params: OfferContentGenDraftReviewParams): boolean => {
+  if (params.userId && params.sessionId && !shouldOfferDraftReview(params.userId, params.sessionId, params.assistantMessageId)) {
+    return false;
+  }
   if (isApplicationAssetBotMessage(params.botMessage)) {
     return false;
   }
@@ -56,6 +64,7 @@ export const offerContentGenDraftReview = (params: OfferContentGenDraftReviewPar
   const baselineDraft = studio.draftPreview?.trim() ?? "";
   const isTopicChange = Boolean(baselineTopic) && !contentGenTopicsEqual(baselineTopic, topic);
   const onStudio = Boolean(params.pathname?.startsWith("/uniboard/studio"));
+  const syncStudioPreview = params.syncStudioPreview !== false;
 
   const bannerTitle = isTopicChange
     ? resolved.topicInferredFromDraft
@@ -76,7 +85,7 @@ export const offerContentGenDraftReview = (params: OfferContentGenDraftReviewPar
     isTopicChange,
   });
 
-  if (onStudio) {
+  if (onStudio && syncStudioPreview) {
     window.dispatchEvent(
       new CustomEvent(CONTENT_GEN_EVENTS.draftPreview, {
         detail: {

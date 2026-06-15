@@ -55,11 +55,17 @@ export function sortMainThreadChronologically(messages: ChatMessage[]): ChatMess
   return welcome ? [welcome, ...rest] : rest;
 }
 
+function topicKindForSub(sub: UnibotAdkSessionRow): ChatMessage["topicKind"] | undefined {
+  if (sub.feature === "content_gen") return "content_gen";
+  if (sub.feature === "application_asset") return "application_asset";
+  return undefined;
+}
+
 /**
  * After loading a main ADK session, attach each registry sub-session as a collapsed
- * improve topic (with nested history). Fresh load: topics use Django `created_at` for
- * ordering among themselves; live wand clicks append with `new Date()` so they appear
- * after current main messages.
+ * improve / content_gen / application_asset topic (with nested history). Fresh load:
+ * topics use Django `created_at` for ordering among themselves; live wand clicks
+ * append with `new Date()` so they appear after current main messages.
  */
 export async function mergeSubSessionsIntoMainMessages(
   userId: string,
@@ -86,6 +92,7 @@ export async function mergeSubSessionsIntoMainMessages(
       text: "",
       timestamp: sub.created_at ? new Date(sub.created_at) : new Date(),
       isTopic: true,
+      topicKind: topicKindForSub(sub),
       topicTitle: sub.title,
       isExpanded: false,
       subSessionAdkId: sub.adk_session_id,

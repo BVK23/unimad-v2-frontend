@@ -7,6 +7,8 @@ import type {
   ApplicationAssetGenerateDraftResult,
   ApplicationAssetStatus,
   CreateApplicationAssetShellParams,
+  FetchSelectionSuggestionsParams,
+  SelectionSuggestion,
 } from "@/features/application-assets/types";
 import { messageFromFailedResponse } from "@/utils/message-from-failed-response";
 import { cookies } from "next/headers";
@@ -162,4 +164,26 @@ export async function generateApplicationAssetDraft(
     throw new Error(messageFromFailedResponse(res.status, rawText, jsonError));
   }
   return data as ApplicationAssetGenerateDraftResult;
+}
+
+/** Studio selection hover: fetch 2 dynamic improvement suggestions for highlighted text. */
+export async function fetchSelectionSuggestions(params: FetchSelectionSuggestionsParams): Promise<{ data: SelectionSuggestion[] }> {
+  const res = await authedFetch("/api/application-assets/selection-suggestions/", {
+    method: "POST",
+    body: JSON.stringify({
+      type: params.type,
+      selected_text: params.selectedText,
+      document_body: params.documentBody ?? "",
+      role: params.role ?? "",
+      company: params.company ?? "",
+      job_description: params.jobDescription ?? "",
+      contact_name: params.contactName ?? "",
+      asset_id: params.assetId ?? undefined,
+    }),
+  });
+  const data = await res.json().catch(() => ({}));
+  if (!res.ok) {
+    throw new Error((data as { error?: string })?.error ?? "Failed to fetch selection suggestions");
+  }
+  return data as { data: SelectionSuggestion[] };
 }

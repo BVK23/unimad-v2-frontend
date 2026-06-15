@@ -1,6 +1,7 @@
 import type { PortfolioData } from "@/types";
 import { create } from "zustand";
 import { EMPTY_PORTFOLIO_HIGHLIGHT_MAP, type PortfolioHighlightMap } from "../adkPortfolioHighlightDiff";
+import { hasReviewForAssistant } from "../review-store-utils";
 
 function newReviewId(): string {
   if (typeof crypto !== "undefined" && crypto.randomUUID) {
@@ -65,6 +66,7 @@ export const useAdkPortfolioReviewStore = create<AdkPortfolioReviewState>((set, 
 
   beginReview: ({ portfolioId, baselinePortfolio, highlights, bannerTitle, assistantMessageId }) => {
     if (Object.keys(highlights).length === 0) return;
+    if (hasReviewForAssistant(get().reviewStack, assistantMessageId)) return;
     const card: AdkPortfolioReviewCard = {
       id: newReviewId(),
       assistantMessageId: assistantMessageId ?? null,

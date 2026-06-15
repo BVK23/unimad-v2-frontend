@@ -43,3 +43,20 @@ export type ApplicationAssetGenerateDraftResult = {
   job_description?: string;
   contact_name?: string;
 };
+
+export type SelectionSuggestion = {
+  id: string;
+  label: string;
+  instruction: string;
+};
+
+export type FetchSelectionSuggestionsParams = {
+  type: ApplicationAssetApiType;
+  selectedText: string;
+  documentBody?: string;
+  role?: string;
+  company?: string;
+  jobDescription?: string;
+  contactName?: string;
+  assetId?: string | null;
+};

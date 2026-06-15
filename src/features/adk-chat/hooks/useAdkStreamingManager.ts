@@ -75,6 +75,7 @@ export function useAdkStreamingManager({
   const lastPortfolioStoreFingerprintRef = useRef<string | null>(null);
   const suppressStoreSyncRef = useRef(false);
   const [isSyncingContext, setIsSyncingContext] = useState(false);
+  const [isSubmitInFlight, setIsSubmitInFlight] = useState(false);
   const sessionPullDebounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   /** Captures resume snapshot before ADK session GET applies mutating tool results (avoids racing after_stream). */
   const pendingPrePullBaselineRef = useRef<ResumeData | null>(null);
@@ -100,17 +101,17 @@ export function useAdkStreamingManager({
   }, [pathname, queryClient]);
 
   const { isLoading: isStreamLoading, currentAgent, startStream } = useAdkStreaming(retryWithBackoff);
-  const isLoading = isSyncingContext || isStreamLoading;
+  const isLoading = isSubmitInFlight || isStreamLoading;
 
   useEffect(() => {
     onLoadingChange?.(isLoading);
   }, [isLoading, onLoadingChange]);
 
   useEffect(() => {
-    if (!isStreamLoading && !isSyncingContext) {
+    if (!isStreamLoading && !isSyncingContext && !isSubmitInFlight) {
       setStreamActivityLabel(null);
     }
-  }, [isStreamLoading, isSyncingContext]);
+  }, [isStreamLoading, isSyncingContext, isSubmitInFlight]);
 
   useEffect(() => {
     return () => {
@@ -516,6 +517,7 @@ export function useAdkStreamingManager({
         throw new Error("Message, userId, and sessionId are required");
       }
 
+      setIsSubmitInFlight(true);
       setIsSyncingContext(true);
       setStreamActivityLabel(WAKING_UP_LABEL);
       try {
@@ -530,25 +532,29 @@ export function useAdkStreamingManager({
       setStreamActivityLabel(null);
       pendingReviewAssistantIdRef.current = options?.aiMessageId ?? null;
 
-      await startStream(
-        {
-          message: message.trim(),
-          userId,
-          sessionId: targetSessionId,
-          aiMessageId: options?.aiMessageId,
-        },
-        onMessageUpdate,
-        onEventUpdate,
-        onWebsiteCountUpdate,
-        streamExtras
-      );
-      const isSubSend = Boolean(options?.sessionIdOverride && options.sessionIdOverride !== sessionId);
-      if (!isSubSend) {
-        if (pathname.startsWith("/uniboard/portfolio")) {
-          await syncPortfolioStoreFromSessionState("after_stream");
-        } else if (pathname.startsWith("/uniboard/resume")) {
-          await syncResumeStoreFromSessionState("after_stream");
+      try {
+        await startStream(
+          {
+            message: message.trim(),
+            userId,
+            sessionId: targetSessionId,
+            aiMessageId: options?.aiMessageId,
+          },
+          onMessageUpdate,
+          onEventUpdate,
+          onWebsiteCountUpdate,
+          streamExtras
+        );
+        const isSubSend = Boolean(options?.sessionIdOverride && options.sessionIdOverride !== sessionId);
+        if (!isSubSend) {
+          if (pathname.startsWith("/uniboard/portfolio")) {
+            await syncPortfolioStoreFromSessionState("after_stream");
+          } else if (pathname.startsWith("/uniboard/resume")) {
+            await syncResumeStoreFromSessionState("after_stream");
+          }
         }
+      } finally {
+        setIsSubmitInFlight(false);
       }
     },
     [

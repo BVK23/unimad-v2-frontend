@@ -3,12 +3,25 @@
 import React, { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState } from "react";
 import { formatUnibotStreamError, type FormattedUnibotStreamError } from "@/features/adk-chat/format-stream-error";
 import type { ActiveSession } from "@/src/features/adk-chat/actions";
-import { loadSessionHistoryAction, rewindSessionAction } from "@/src/features/adk-chat/actions";
+import { loadSessionHistoryAction, pullSessionStateAction, rewindSessionAction } from "@/src/features/adk-chat/actions";
 import { applyAdkSessionStateToStores } from "@/src/features/adk-chat/apply-adk-session-state-to-stores";
+import { backfillMainSessionTitleFromHistory } from "@/src/features/adk-chat/generate-main-session-title";
 import { useAdkSession } from "@/src/features/adk-chat/hooks/useAdkSession";
 import { useAdkStreamingManager } from "@/src/features/adk-chat/hooks/useAdkStreamingManager";
-import { mergeSubSessionsIntoMainMessages } from "@/src/features/adk-chat/improve-topic-helpers";
-import { getRegistryRow } from "@/src/features/adk-chat/session-registry";
+import { hydrateLoadedTopicMessages } from "@/src/features/adk-chat/hydrate-loaded-topics";
+import { mergeSubSessionsIntoMainMessages, sortMainThreadChronologically } from "@/src/features/adk-chat/improve-topic-helpers";
+import {
+  filterMessagesExcludingIds,
+  mergeLegacyAndSubTopics,
+  reconstructLegacyTopicsFromMain,
+} from "@/src/features/adk-chat/reconstruct-legacy-topics";
+import {
+  loadReviewDecisionsFromLocalStorage,
+  mergeReviewDecisions,
+  parseReviewDecisionsFromAdkState,
+  setReviewDecisionsCache,
+} from "@/src/features/adk-chat/review-decisions";
+import { getRegistryRow, getSessionRegistry } from "@/src/features/adk-chat/session-registry";
 import { useAdkApplicationAssetReviewStore } from "@/src/features/adk-chat/stores/useAdkApplicationAssetReviewStore";
 import { useAdkContentGenReviewStore } from "@/src/features/adk-chat/stores/useAdkContentGenReviewStore";
 import { useAdkPortfolioReviewStore } from "@/src/features/adk-chat/stores/useAdkPortfolioReviewStore";
@@ -112,6 +125,9 @@ export function AdkChatProvider({ userId, children }: { userId: string; children
     handleDeleteSession,
   } = useAdkSession(userId);
 
+  const sessionIdRef = useRef(sessionId);
+  sessionIdRef.current = sessionId;
+
   const onMessageUpdate = useCallback((am: AgentMessage) => {
     setMessages(prev => updateChatMessageInTree(prev, am.id, am.content));
   }, []);
@@ -170,19 +186,39 @@ export function AdkChatProvider({ userId, children }: { userId: string; children
   useEffect(() => {
     useAdkResumeReviewStore.getState().clearAllReviews();
     useAdkPortfolioReviewStore.getState().clearAllReviews();
+    useAdkContentGenReviewStore.getState().clearAllReviews();
+    useAdkApplicationAssetReviewStore.getState().clearAllReviews();
   }, [sessionId, userId]);
 
   useEffect(() => {
     if (!userId || !sessionId) return;
 
+    const loadSessionId = sessionId;
     let cancelled = false;
     setMessages([WELCOME_MESSAGE]);
     setStreamError(null);
     setIsLoadingHistory(true);
 
+    const refreshIfStillActive = (): void | Promise<void> => {
+      if (cancelled || sessionIdRef.current !== loadSessionId) return;
+      return refreshSessions();
+    };
+
     void (async () => {
       try {
-        const result = await loadSessionHistoryAction(userId, sessionId);
+        const meta = getRegistryRow(sessionId);
+        const isSubSession = meta?.kind === "sub";
+        const mainSessionIdForLoad = isSubSession && meta?.parent_adk_session_id ? meta.parent_adk_session_id : sessionId;
+        const historySessionId = isSubSession ? sessionId : mainSessionIdForLoad;
+
+        const pullResult = await pullSessionStateAction(userId, mainSessionIdForLoad);
+        if (!cancelled && pullResult.success) {
+          const adkDecisions = parseReviewDecisionsFromAdkState(pullResult.state);
+          const localDecisions = loadReviewDecisionsFromLocalStorage(userId, mainSessionIdForLoad);
+          setReviewDecisionsCache(userId, mainSessionIdForLoad, mergeReviewDecisions(adkDecisions, localDecisions));
+        }
+
+        const result = await loadSessionHistoryAction(userId, historySessionId);
         if (cancelled) return;
 
         if (result.success) {
@@ -193,11 +229,27 @@ export function AdkChatProvider({ userId, children }: { userId: string; children
             })
           );
           let mainMessages = mapped.length > 0 ? mapped : [WELCOME_MESSAGE];
-          const meta = getRegistryRow(sessionId);
-          const isSubSession = meta?.kind === "sub";
+
           if (!isSubSession) {
+            const registry = getSessionRegistry();
+            const legacy = reconstructLegacyTopicsFromMain(mainMessages, registry);
+            mainMessages = filterMessagesExcludingIds(mainMessages, legacy.excludedMessageIds);
             mainMessages = await mergeSubSessionsIntoMainMessages(userId, sessionId, mainMessages);
+            const subTopics = mainMessages.filter(m => m.isTopic && m.subSessionAdkId);
+            const nonTopicMain = mainMessages.filter(m => !m.isTopic || !m.subSessionAdkId);
+            const mergedTopics = mergeLegacyAndSubTopics(subTopics, legacy.topics);
+            mainMessages = sortMainThreadChronologically([...nonTopicMain, ...mergedTopics]);
+            mainMessages = hydrateLoadedTopicMessages(mainMessages);
+
+            if (result.messages.length > 0) {
+              void backfillMainSessionTitleFromHistory(loadSessionId, result.messages, refreshIfStillActive);
+            }
+
+            if (pathname.startsWith("/uniboard/studio")) {
+              void applyAdkSessionStateToStores(userId, mainSessionIdForLoad, pathname, queryClient);
+            }
           }
+
           if (!cancelled) {
             setMessages(mainMessages);
           }
@@ -212,7 +264,7 @@ export function AdkChatProvider({ userId, children }: { userId: string; children
     return () => {
       cancelled = true;
     };
-  }, [userId, sessionId]);
+  }, [userId, sessionId, refreshSessions, pathname, queryClient]);
 
   const sendMainMessageNow = useCallback(
     async (text: string, activeSessionId: string, options?: SendMainMessageOptions): Promise<{ assistantId: string }> => {
@@ -360,7 +412,15 @@ export function AdkChatProvider({ userId, children }: { userId: string; children
           let mainMessages = mapped.length > 0 ? mapped : [WELCOME_MESSAGE];
           const meta = getRegistryRow(targetSessionId);
           if (meta?.kind !== "sub") {
+            const registry = getSessionRegistry();
+            const legacy = reconstructLegacyTopicsFromMain(mainMessages, registry);
+            mainMessages = filterMessagesExcludingIds(mainMessages, legacy.excludedMessageIds);
             mainMessages = await mergeSubSessionsIntoMainMessages(userId, targetSessionId, mainMessages);
+            const subTopics = mainMessages.filter(m => m.isTopic && m.subSessionAdkId);
+            const nonTopicMain = mainMessages.filter(m => !m.isTopic || !m.subSessionAdkId);
+            const mergedTopics = mergeLegacyAndSubTopics(subTopics, legacy.topics);
+            mainMessages = sortMainThreadChronologically([...nonTopicMain, ...mergedTopics]);
+            mainMessages = hydrateLoadedTopicMessages(mainMessages);
           }
           setMessages(mainMessages);
         }
@@ -439,4 +499,9 @@ export function useAdkChatContext(): AdkChatContextValue {
     throw new Error("useAdkChatContext must be used within AdkChatProvider");
   }
   return ctx;
+}
+
+/** Same as useAdkChatContext but returns null outside the provider (e.g. legacy App.tsx studio tab). */
+export function useOptionalAdkChatContext(): AdkChatContextValue | null {
+  return useContext(AdkChatContext);
 }

@@ -1,6 +1,7 @@
 import type { ResumeData } from "@/types";
 import { create } from "zustand";
 import { EMPTY_PDF_HIGHLIGHT_MAP, type PdfHighlightMap } from "../adkResumeHighlightDiff";
+import { hasReviewForAssistant } from "../review-store-utils";
 
 function newReviewId(): string {
   if (typeof crypto !== "undefined" && crypto.randomUUID) {
@@ -70,6 +71,7 @@ export const useAdkResumeReviewStore = create<AdkResumeReviewState>((set, get) =
 
   beginReview: ({ resumeId, baselineResume, highlights, bannerTitle, assistantMessageId }) => {
     if (Object.keys(highlights).length === 0) return;
+    if (hasReviewForAssistant(get().reviewStack, assistantMessageId)) return;
     const card: AdkReviewCard = {
       id: newReviewId(),
       assistantMessageId: assistantMessageId ?? null,

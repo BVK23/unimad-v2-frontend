@@ -29,11 +29,13 @@ export function useRecommendedJobs(options: { enabled?: boolean } = {}) {
   const flattenedJobs = query.data?.pages?.flatMap(page => page.jobs ?? []) ?? [];
   const hasNextPage = query.hasNextPage ?? false;
   const isFetchingNextPage = query.isFetchingNextPage;
+  const recommendedContext = query.data?.pages?.[0]?.recommended_context;
 
   return {
     ...query,
     flattenedJobs,
     hasNextPage,
     isFetchingNextPage,
+    recommendedContext,
   };
 }

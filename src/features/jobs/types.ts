@@ -41,6 +41,8 @@ export interface JobListResponse {
   recommended_context?: {
     primary_role?: string;
     experience_roles?: string[];
+    recommended_from_experience?: boolean;
+    recommended_fallback?: boolean;
   };
   jobs_for_experience?: BackendJob[];
   experience_role_label?: string;

@@ -34,6 +34,11 @@ const CONTENT_BY_STATE: Record<OnboardingUserState, { title: (name: string) => s
     message: <p>We need a few more details from you.</p>,
     buttonText: "Complete Setup",
   },
+  MINIMAL_COMPLETE: {
+    title: name => `Hey ${name || "friend"}!`,
+    message: <p>Add more profile details to unlock Resume, Portfolio, Studio, and personalised job prep.</p>,
+    buttonText: "Continue",
+  },
   COMPLETED: {
     title: name => `Welcome ${name || "friend"}`,
     message: <p>Let&apos;s get started.</p>,
@@ -50,14 +55,16 @@ export default function Welcome({ name, userState, onComplete }: WelcomeProps) {
       <Heading subtitle={content.message}>{content.title(name)}</Heading>
 
       <div className="flex flex-col sm:flex-row items-center gap-3 mt-4 w-full justify-center">
-        <PrimaryButton
-          variant="ghost"
-          onClick={() => {
-            window.location.href = "/uniboard/resume";
-          }}
-        >
-          I&apos;ll do this later
-        </PrimaryButton>
+        {safeState === "MINIMAL_COMPLETE" ? (
+          <PrimaryButton
+            variant="ghost"
+            onClick={() => {
+              window.location.href = "/uniboard/resume";
+            }}
+          >
+            I&apos;ll do this later
+          </PrimaryButton>
+        ) : null}
         <PrimaryButton onClick={onComplete}>{content.buttonText}</PrimaryButton>
       </div>
 

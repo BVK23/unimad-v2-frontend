@@ -1,5 +1,6 @@
 import type { ApplicationAssetApiType } from "@/features/application-assets/types";
 import { create } from "zustand";
+import { hasReviewForAssistant } from "../review-store-utils";
 
 export type AdkApplicationAssetReviewCard = {
   id: string;
@@ -82,6 +83,9 @@ export const useAdkApplicationAssetReviewStore = create<AdkApplicationAssetRevie
   }) => {
     const trimmed = proposedDraft.trim();
     if (!trimmed) {
+      return;
+    }
+    if (hasReviewForAssistant(get().reviewStack, assistantMessageId)) {
       return;
     }
     const roleLabel = role.trim();

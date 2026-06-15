@@ -1,3 +1,4 @@
+import { shouldOfferDraftReview } from "@/features/adk-chat/review-decisions";
 import { useAdkApplicationAssetReviewStore } from "@/features/adk-chat/stores/useAdkApplicationAssetReviewStore";
 import { APPLICATION_ASSET_EVENTS } from "@/features/application-assets/api/application-asset-events";
 import { APPLICATION_ASSET_MIN_DRAFT_CHARS } from "@/features/application-assets/api/applicationAssetDraftConfig";
@@ -24,6 +25,13 @@ export type OfferApplicationAssetDraftReviewParams = {
   assetTypeOverride?: ApplicationAssetApiType;
 
   threadMessages?: ThreadMessageLike[];
+
+  userId?: string;
+
+  sessionId?: string;
+
+  /** When false, open the review card only — do not sync draft into Studio stores/events. */
+  syncStudioPreview?: boolean;
 };
 
 const pushStudioContext = (ctx: {
@@ -104,6 +112,10 @@ const isDifferentJobContext = (baselineRole: string, baselineCompany: string, pr
 };
 
 export const offerApplicationAssetDraftReview = (params: OfferApplicationAssetDraftReviewParams): boolean => {
+  if (params.userId && params.sessionId && !shouldOfferDraftReview(params.userId, params.sessionId, params.assistantMessageId)) {
+    return false;
+  }
+
   const proposedDraft = extractApplicationAssetDraftPayload(params.botMessage).draft.trim();
 
   if (proposedDraft.length < APPLICATION_ASSET_MIN_DRAFT_CHARS) {
@@ -148,6 +160,7 @@ export const offerApplicationAssetDraftReview = (params: OfferApplicationAssetDr
   const refineCtx = useApplicationAssetStudioStore.getState().consumePendingRefineContext();
 
   const onStudio = Boolean(params.pathname?.startsWith("/uniboard/studio"));
+  const syncStudioPreview = params.syncStudioPreview !== false;
 
   useAdkApplicationAssetReviewStore.getState().beginReview({
     assistantMessageId: params.assistantMessageId,
@@ -167,7 +180,7 @@ export const offerApplicationAssetDraftReview = (params: OfferApplicationAssetDr
     presetLabel: refineCtx?.presetLabel,
   });
 
-  if (onStudio) {
+  if (onStudio && syncStudioPreview) {
     const previewAssetId = isDifferentJobContext(baselineRole, baselineCompany, role, company) ? null : baselineAssetId;
     pushStudioContext({
       assetType,

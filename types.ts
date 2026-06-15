@@ -148,6 +148,8 @@ export interface ChatMessage {
   errorKind?: "rate_limit" | "generic";
   /** Present on user messages created by selection quick-action or freeform refine. */
   assetActionMeta?: AssetActionMeta;
+  /** True when rebuilt from flat main-session history before sub-session migration. */
+  legacyTopic?: boolean;
 }
 
 // --- Resume Types ---

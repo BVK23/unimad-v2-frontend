@@ -1,4 +1,3 @@
-import { requireOnboardingComplete } from "@/features/onboarding/server/requireOnboardingComplete";
 import PortfolioPageClient from "./PortfolioPageClient";
 
 export const metadata = {
@@ -7,6 +6,5 @@ export const metadata = {
 };
 
 export default async function PortfolioPage() {
-  await requireOnboardingComplete();
   return <PortfolioPageClient />;
 }

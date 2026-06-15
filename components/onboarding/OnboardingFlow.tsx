@@ -24,6 +24,7 @@ import Welcome from "./Welcome";
 import WhatsAppForm from "./WhatsAppForm";
 
 const ONBOARDING_QUERY_KEY = ["onboardingSteps"] as const;
+const REQUIRED_STEP_NAMES = new Set<OnboardingStepName>(["welcome", "whatsapp", "linkedin"]);
 
 type OnboardingState = {
   steps: OnboardingStep[];
@@ -34,23 +35,32 @@ type OnboardingState = {
   history: number[];
 };
 
-const buildSteps = (checkpoints: OnboardingCheckpoints): OnboardingStep[] => [
+const buildRequiredSteps = (checkpoints: OnboardingCheckpoints): OnboardingStep[] => [
   { name: "welcome", completed: false, required: true },
-  { name: "name", completed: Boolean(checkpoints.preferred_name), required: true },
+  { name: "whatsapp", completed: Boolean(checkpoints.phone_number), required: true },
+  { name: "linkedin", completed: Boolean(checkpoints.linkedin_url), required: true },
+];
+
+const buildOptionalSteps = (checkpoints: OnboardingCheckpoints): OnboardingStep[] => [
+  { name: "name", completed: Boolean(checkpoints.preferred_name), required: false },
   {
     name: "resume",
     completed: Boolean(checkpoints.education || checkpoints.experience || checkpoints.project || checkpoints.skill),
-    required: true,
+    required: false,
   },
-  { name: "educations", completed: Boolean(checkpoints.education), required: true },
+  { name: "educations", completed: Boolean(checkpoints.education), required: false },
   { name: "experiences", completed: Boolean(checkpoints.experience), required: false },
   { name: "projects", completed: Boolean(checkpoints.project), required: false },
-  { name: "skills", completed: Boolean(checkpoints.skill), required: true },
-  { name: "role", completed: Boolean(checkpoints.role), required: true },
-  { name: "whatsapp", completed: Boolean(checkpoints.phone_number), required: true },
-  { name: "linkedin", completed: Boolean(checkpoints.linkedin_url), required: true },
-  { name: "goal", completed: Boolean(checkpoints.goal), required: true },
+  { name: "skills", completed: Boolean(checkpoints.skill), required: false },
+  { name: "role", completed: Boolean(checkpoints.role), required: false },
+  { name: "goal", completed: Boolean(checkpoints.goal), required: false },
 ];
+
+const buildSteps = (checkpoints: OnboardingCheckpoints, userState: OnboardingUserState): OnboardingStep[] => {
+  const requiredSteps = buildRequiredSteps(checkpoints);
+  const optionalSteps = buildOptionalSteps(checkpoints);
+  return userState === "MINIMAL_COMPLETE" ? optionalSteps : [...requiredSteps, ...optionalSteps];
+};
 
 const RedirectingState = () => (
   <div className="flex flex-col items-center gap-3 mt-10">
@@ -85,11 +95,16 @@ export default function OnboardingFlow() {
           history: [],
         };
       }
+
+      const steps = buildSteps(checkpoints, userState);
+      const firstIncompleteIndex = steps.findIndex(step => !step.completed);
+      const currentStepIndex = firstIncompleteIndex === -1 ? -1 : firstIncompleteIndex;
+
       return {
-        steps: buildSteps(checkpoints),
+        steps,
         name: checkpoints.name ?? "",
         userState,
-        currentStepIndex: 0,
+        currentStepIndex,
         history: [],
       };
     },
@@ -125,10 +140,25 @@ export default function OnboardingFlow() {
         }
       }
 
+      const isManualProfileEntry =
+        completedSteps === "resume" || (Array.isArray(completedSteps) && completedSteps.length === 1 && completedSteps[0] === "resume");
+
+      if (isManualProfileEntry) {
+        const educationsIdx = updatedSteps.findIndex(s => s.name === "educations");
+        if (educationsIdx !== -1) {
+          const nextHistory = currentIndex >= 0 ? [...current.history, currentIndex] : current.history;
+          return {
+            ...current,
+            steps: updatedSteps,
+            currentStepIndex: educationsIdx,
+            history: nextHistory,
+          };
+        }
+      }
+
       const nextIncompleteIdx = updatedSteps.findIndex((step, i) => i > currentIndex && !step.completed);
 
       const nextStepIndex = nextIncompleteIdx === -1 ? -1 : nextIncompleteIdx;
-      // Only record history when we actually advance to another rendered step.
       const nextHistory = nextStepIndex !== -1 && currentIndex >= 0 ? [...current.history, currentIndex] : current.history;
 
       return {
@@ -197,10 +227,10 @@ export default function OnboardingFlow() {
 
     const step = data.steps[data.currentStepIndex];
     const isLastStep = data.currentStepIndex === data.steps.length - 1;
-    const isWelcome = step.name === "welcome";
+    const isRequiredStep = REQUIRED_STEP_NAMES.has(step.name);
     const isProjectsRequired = step.name === "projects" && step.required;
 
-    setCanSkipCurrentStep(!isWelcome && !isLastStep && !isProjectsRequired);
+    setCanSkipCurrentStep(!isRequiredStep && !isLastStep && !isProjectsRequired);
     registerSkipCurrentStep(handleSkipCurrentStep);
 
     return () => {

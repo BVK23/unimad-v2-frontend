@@ -1,4 +1,7 @@
+"use client";
+
 import React, { useState } from "react";
+import { useOnboardingGate } from "@/features/onboarding/context/OnboardingGateContext";
 import { Building2, MapPin, Clock, ExternalLink, CheckCircle2 } from "lucide-react";
 import Image from "next/image";
 import { Job, GeneratorContext } from "../../types/jobs";
@@ -29,6 +32,7 @@ const JobCard: React.FC<JobCardProps> = ({
   onClick,
   onVpdPromptClick,
 }) => {
+  const { profileSetupRequired, promptProfileSetup } = useOnboardingGate();
   const [logoError, setLogoError] = useState(false);
 
   const isValidUrl = (url: string | undefined) => {
@@ -120,9 +124,18 @@ const JobCard: React.FC<JobCardProps> = ({
           <button
             onClick={e => {
               e.stopPropagation();
+              if (profileSetupRequired) {
+                promptProfileSetup();
+                return;
+              }
               onPrepare(job);
             }}
-            className="relative flex flex-1 items-center justify-center rounded-lg border border-slate-200 px-2 py-2 text-xs font-medium text-slate-700 transition-all hover:bg-slate-50 active:scale-95 dark:border-slate-700 dark:text-slate-200 dark:hover:bg-slate-800"
+            title={profileSetupRequired ? "Finish onboarding fully to prepare applications" : undefined}
+            className={`relative flex flex-1 items-center justify-center rounded-lg border border-slate-200 px-2 py-2 text-xs font-medium text-slate-700 transition-all active:scale-95 dark:border-slate-700 dark:text-slate-200 ${
+              profileSetupRequired
+                ? "cursor-not-allowed opacity-60 hover:bg-transparent dark:hover:bg-transparent"
+                : "hover:bg-slate-50 dark:hover:bg-slate-800"
+            }`}
           >
             {hasPreparedApplication ? "Continue" : "Prepare"}
             {showVpdPrompt && (

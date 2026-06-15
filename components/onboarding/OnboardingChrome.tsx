@@ -62,14 +62,23 @@ function BackButton() {
   );
 }
 
+const REQUIRED_STEP_NAMES = new Set(["welcome", "whatsapp", "linkedin"]);
+
 function SkipLink() {
+  const queryClient = useQueryClient();
+  const data = useCachedQueryData<CachedSteps>(queryClient, ONBOARDING_QUERY_KEY);
+  const currentStepName = data?.steps?.[data.currentStepIndex ?? -1] as { name?: string } | undefined;
+  const showSkip = currentStepName?.name && !REQUIRED_STEP_NAMES.has(currentStepName.name);
+
+  if (!showSkip) return null;
+
   return (
     <Link
       href="/uniboard/resume"
       className="inline-flex items-center text-sm font-medium text-[#346DE0] hover:underline absolute top-4 right-4 md:top-6 md:right-8"
-      aria-label="Skip all onboarding steps and go to resume"
+      aria-label="Skip optional onboarding steps and go to resume"
     >
-      Skip All
+      Skip
     </Link>
   );
 }

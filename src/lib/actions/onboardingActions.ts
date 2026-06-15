@@ -15,28 +15,27 @@ export type OnboardingCheckpoints = {
   goal: boolean;
 };
 
-export type OnboardingUserState = "NEW_USER" | "RETURNING_USER" | "EXISTING_USER" | "COMPLETED";
+export type OnboardingUserState = "NEW_USER" | "RETURNING_USER" | "EXISTING_USER" | "MINIMAL_COMPLETE" | "COMPLETED";
 
-const BACKEND_URL = process.env.NEXT_PUBLIC_BACKEND_URL ?? "";
-
-async function getAccessToken() {
-  const cookieStore = await cookies();
-  const token = cookieStore.get("_ut");
-  return token?.value ?? null;
+function isProfileSetupComplete(checkpoints: OnboardingCheckpoints): boolean {
+  const { preferred_name, education, experience, project, skill, role } = checkpoints;
+  return Boolean(preferred_name && education && skill && role && (experience || project));
 }
 
 /** Compute high-level user state from checkpoints (matches v1 logic). */
 export const getUserOnboardingState = async (checkpoints: OnboardingCheckpoints): Promise<OnboardingUserState> => {
   const { preferred_name, education, experience, project, skill, role, phone_number, linkedin_url, goal } = checkpoints;
 
+  const profileComplete = isProfileSetupComplete(checkpoints);
+
+  // Minimal onboarding (phone + LinkedIn) unlocks Uniboard access.
+  if (phone_number && linkedin_url) {
+    return profileComplete ? "COMPLETED" : "MINIMAL_COMPLETE";
+  }
+
   if (!preferred_name && !education && !experience && !project && !skill && !role && !phone_number && !linkedin_url && !goal) {
     return "NEW_USER";
   }
-
-  const isOnboardingComplete =
-    preferred_name && education && skill && role && (experience || project) && phone_number && linkedin_url && goal;
-
-  if (isOnboardingComplete) return "COMPLETED";
 
   // Existing-user heuristic (mirrors v1): main steps done and only one of phone/linkedin/goal pending
   const mainStepsComplete = preferred_name && education && skill && role && (experience || project);
@@ -45,6 +44,14 @@ export const getUserOnboardingState = async (checkpoints: OnboardingCheckpoints)
 
   return "RETURNING_USER";
 };
+
+const BACKEND_URL = process.env.NEXT_PUBLIC_BACKEND_URL ?? "";
+
+async function getAccessToken() {
+  const cookieStore = await cookies();
+  const token = cookieStore.get("_ut");
+  return token?.value ?? null;
+}
 
 export async function fetchOnboardingCheckpoints(): Promise<OnboardingCheckpoints> {
   const accessToken = await getAccessToken();
@@ -73,7 +80,24 @@ export async function fetchOnboardingCheckpoints(): Promise<OnboardingCheckpoint
   return (await response.json()) as OnboardingCheckpoints;
 }
 
-/** Server-side helper used by route gates (e.g. /uniboard/resume) to redirect when onboarding is incomplete. */
+/** Server-side helper: redirect when phone or LinkedIn are missing. */
+export async function getMinimalOnboardingGateState(): Promise<
+  { kind: "unauthenticated" } | { kind: "complete" } | { kind: "incomplete"; userState: OnboardingUserState }
+> {
+  const accessToken = await getAccessToken();
+  if (!accessToken) return { kind: "unauthenticated" };
+
+  try {
+    const checkpoints = await fetchOnboardingCheckpoints();
+    if (checkpoints.phone_number && checkpoints.linkedin_url) return { kind: "complete" };
+    const userState = await getUserOnboardingState(checkpoints);
+    return { kind: "incomplete", userState };
+  } catch {
+    return { kind: "complete" };
+  }
+}
+
+/** @deprecated Use getMinimalOnboardingGateState for layout gates. Profile gating uses profile_setup_required from user-data. */
 export async function getOnboardingGateState(): Promise<
   { kind: "unauthenticated" } | { kind: "complete" } | { kind: "incomplete"; userState: OnboardingUserState }
 > {
@@ -86,7 +110,6 @@ export async function getOnboardingGateState(): Promise<
     if (userState === "COMPLETED") return { kind: "complete" };
     return { kind: "incomplete", userState };
   } catch {
-    // On backend hiccup we fail-open and let the page render rather than send the user in circles.
     return { kind: "complete" };
   }
 }

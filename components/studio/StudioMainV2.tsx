@@ -1,6 +1,8 @@
 import React, { useState, useEffect, useRef, useCallback, useMemo } from "react";
+import { useOptionalAdkChatContext } from "@/components/chat/AdkChatProvider";
 import { ModalPortalOverlay } from "@/components/ui/ModalPortalOverlay";
 import { PanelResizeHandle } from "@/components/ui/PanelResizeHandle";
+import { loadPersistedActiveSessionId } from "@/features/adk-chat/active-session-persist";
 import { useAdkApplicationAssetReviewStore } from "@/features/adk-chat/stores/useAdkApplicationAssetReviewStore";
 import {
   APPLICATION_ASSET_EVENTS,
@@ -57,6 +59,7 @@ import { useGenerateCoverLetter, type GenerateCoverLetterResult } from "@/featur
 import { deleteCoverLetter, fetchCoverLetterById, updateCoverLetter } from "@/features/cover-letter/server-actions/cover-letter-actions";
 import type { CoverLetterAsset } from "@/features/cover-letter/types";
 import { useLinkedInAnalysis } from "@/features/linkedin/hooks/useLinkedInAnalysis";
+import { useOnboardingGate } from "@/features/onboarding/context/OnboardingGateContext";
 import { useReferralHistory, useGenerateReferral, type GenerateReferralResult } from "@/features/referral/hooks";
 import { REFERRAL_LIST_QUERY_KEY } from "@/features/referral/hooks/useReferralHistory";
 import { deleteReferral, fetchReferralById, updateReferral } from "@/features/referral/server-actions/referral-actions";
@@ -79,7 +82,9 @@ import {
   buildStudioSearchParams,
   parseStudioSearchParams,
 } from "@/lib/jobs/prepare-application-url";
+import { getRegistryRow } from "@/src/features/adk-chat/session-registry";
 import { getJob } from "@/src/features/jobs/server-actions/jobs-actions";
+import { computeAdkUserId } from "@/utils/adkUserId";
 import { exportApplicationAssetAsDocx } from "@/utils/export-application-asset-file";
 import { htmlToPlainText } from "@/utils/html-to-text";
 import { sanitizeUserFacingError } from "@/utils/message-from-failed-response";
@@ -249,6 +254,28 @@ const StudioMainV2: React.FC<StudioMainProps> = ({ initialContext, initialAssetI
   const router = useRouter();
   const pathname = usePathname();
   const searchParams = useSearchParams();
+  const { profileSetupRequired, promptProfileSetup } = useOnboardingGate();
+  const { data: profileData } = useProfileData();
+  const adkChat = useOptionalAdkChatContext();
+  const reviewUserId =
+    adkChat?.userId ??
+    computeAdkUserId(
+      profileData
+        ? {
+            email: profileData.email ?? undefined,
+            name: profileData.name ?? undefined,
+          }
+        : undefined
+    );
+  const reviewSessionId = adkChat?.sessionId ?? (reviewUserId ? (loadPersistedActiveSessionId(reviewUserId) ?? "") : "");
+  const reviewMainSessionId = useMemo(() => {
+    if (!reviewSessionId) return "";
+    const row = getRegistryRow(reviewSessionId);
+    if (row?.kind === "sub" && row.parent_adk_session_id) {
+      return row.parent_adk_session_id;
+    }
+    return reviewSessionId;
+  }, [reviewSessionId]);
   const adkApplicationAssetReviewStack = useAdkApplicationAssetReviewStore(s => s.reviewStack);
   const activeApplicationAssetReview = useAdkApplicationAssetReviewStore(s => s.reviewStack.at(-1) ?? null);
   const selectionRefineLoading = useApplicationAssetStudioStore(s => s.selectionRefineLoading);
@@ -256,7 +283,7 @@ const StudioMainV2: React.FC<StudioMainProps> = ({ initialContext, initialAssetI
     adkReviewBusy: applicationAssetReviewBusy,
     acceptApplicationAssetReview,
     discardApplicationAssetReview,
-  } = useApplicationAssetReviewActions();
+  } = useApplicationAssetReviewActions({ userId: reviewUserId, mainSessionId: reviewMainSessionId });
   const clearApplicationAssetSelection = useApplicationAssetStudioStore(s => s.clearSelection);
   const isHydratingFromUrlRef = useRef(false);
   const hydratedAssetKeyRef = useRef<string | null>(null);
@@ -322,7 +349,6 @@ const StudioMainV2: React.FC<StudioMainProps> = ({ initialContext, initialAssetI
   const linkedinPostAssetIdRef = useRef<string | null>(null);
   const updateStudioUrlRef = useRef<(args: { type?: string; id?: string }) => void>(() => {});
 
-  const { data: profileData } = useProfileData();
   const { data: linkedInAnalysis } = useLinkedInAnalysis({ enabled: selectedTopic === "linkedin-post" });
   const linkedInPostAuthor = useMemo(
     () => resolveLinkedInPostAuthorDisplay(profileData, linkedInAnalysis),
@@ -1065,6 +1091,10 @@ const StudioMainV2: React.FC<StudioMainProps> = ({ initialContext, initialAssetI
       if (!d?.draft) {
         return;
       }
+      const targetTopic = d.assetType ? API_TYPE_TO_STUDIO_TOPIC[d.assetType] : null;
+      if (targetTopic && targetTopic !== selectedTopic) {
+        return;
+      }
       setGeneratedContent(d.draft);
       const draftRole = d.role !== undefined ? d.role.trim() : role;
       const draftCompany = d.company !== undefined ? d.company.trim() : company;
@@ -1223,11 +1253,10 @@ const StudioMainV2: React.FC<StudioMainProps> = ({ initialContext, initialAssetI
         return;
       }
       const studioTopic = API_TYPE_TO_STUDIO_TOPIC[d.assetType];
-      const assetIdStr = d.assetId != null && String(d.assetId).trim() ? String(d.assetId).trim() : null;
       if (studioTopic !== selectedTopic) {
-        setSelectedTopic(studioTopic);
+        return;
       }
-      updateStudioUrl({ type: studioTopic, id: assetIdStr ?? undefined });
+      const assetIdStr = d.assetId != null && String(d.assetId).trim() ? String(d.assetId).trim() : null;
       setSelectedDocumentId(assetIdStr);
       setRole(d.role);
       setCompany(d.company);
@@ -1373,6 +1402,9 @@ const StudioMainV2: React.FC<StudioMainProps> = ({ initialContext, initialAssetI
     const onDraftPreview = (e: Event) => {
       const d = (e as CustomEvent<ContentGenDraftPreviewDetail>).detail;
       if (!d?.draft) {
+        return;
+      }
+      if (selectedTopic !== "linkedin-post") {
         return;
       }
       setGeneratedContent(d.draft);
@@ -1999,6 +2031,11 @@ const StudioMainV2: React.FC<StudioMainProps> = ({ initialContext, initialAssetI
   };
 
   const handleGenerate = () => {
+    if (profileSetupRequired) {
+      promptProfileSetup();
+      return;
+    }
+
     if (selectedTopic === "cover-letter") {
       setCoverLetterFormError(null);
       const trimmedRole = role.trim();

@@ -1,4 +1,5 @@
 import type { UnibotLinkedInSection } from "@/components/chat/unibot-incoming-request";
+import { LINKEDIN_IMPROVE_PREFIX, LINKEDIN_IMPROVE_PROFILE_FALLBACK } from "@/features/adk-chat/handoff-prompts";
 import type { LinkedInSectionId } from "@/src/features/linkedin/constants";
 
 const SECTION_LABELS: Record<UnibotLinkedInSection, string> = {
@@ -25,13 +26,13 @@ export function linkedInSectionIdToAdkSection(sectionId: string): UnibotLinkedIn
 /** Short user message — score, feedback, and tip live in session state (PATCH), not the chat turn. */
 export function buildLinkedInImproveMessage(section: UnibotLinkedInSection): string {
   const label = SECTION_LABELS[section];
-  return `Improve my LinkedIn ${label}.`;
+  return `${LINKEDIN_IMPROVE_PREFIX}${label}.`;
 }
 
 export function buildLinkedInImproveMessageFromSectionId(sectionId: LinkedInSectionId | string): string {
   const adkSection = linkedInSectionIdToAdkSection(sectionId);
   if (!adkSection) {
-    return "Improve my LinkedIn profile. Use session tools for context.";
+    return LINKEDIN_IMPROVE_PROFILE_FALLBACK;
   }
   return buildLinkedInImproveMessage(adkSection);
 }

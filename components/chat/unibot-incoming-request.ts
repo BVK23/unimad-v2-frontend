@@ -36,19 +36,7 @@ export interface UnibotImproveTarget {
   entryId?: string;
 }
 
-/** User message sent as a main chat turn (not the legacy topic thread). */
-export const UNIBOT_SECTION_REVIEW_PROMPTS: Record<UnibotResumeSection, string> = {
-  summary:
-    "Please review my professional summary on my resume and suggest concrete improvements. You can use my current resume context from the session.",
-  education:
-    "Please look at my education section on my resume and suggest improvements (including descriptions if any). Use my resume data from the session.",
-  experience: "Please look at my work experience descriptions on my resume and suggest improvements. Use my resume data from the session.",
-  projects:
-    "Please look at my projects section on my resume and suggest improvements (including project descriptions). Use my resume data from the session.",
-  certifications:
-    "Please look at my certifications on my resume and suggest improvements (including descriptions if any). Use my resume data from the session.",
-  custom: "Please look at my custom section content on my resume and suggest improvements. Use my resume data from the session.",
-};
+export { UNIBOT_SECTION_REVIEW_PROMPTS } from "@/features/adk-chat/handoff-prompts";
 
 /** Stable dedupe key for one-shot improve / section-review handoffs (must not use Date.now()). */
 export function incomingRequestSignature(req: UnibotIncomingRequest): string {

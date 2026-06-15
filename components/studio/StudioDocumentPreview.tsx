@@ -250,6 +250,7 @@ const StudioDocumentPreview = ({
                   assetType={assetType}
                   selectedText={selectedText}
                   selectionRect={selectionRect}
+                  documentBody={htmlToPlainText(displayContent)}
                   disabled={stripDisabled}
                   disabledReason={stripDisabledReason}
                   onActionFired={clearSelection}

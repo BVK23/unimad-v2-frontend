@@ -61,6 +61,7 @@ const JobDiscovery: React.FC<JobDiscoveryProps> = ({
     isFetchingNextPage: isRecommendedFetchingNextPage,
     isLoading: isRecommendedLoading,
     fetchNextPage: fetchMoreRecommendedJobs,
+    recommendedContext,
   } = useRecommendedJobs({ enabled: true });
 
   const { data: savedData, isLoading: isSavedLoading } = useSavedJobs(savedPage, { enabled: filterType === "Saved" });
@@ -94,6 +95,19 @@ const JobDiscovery: React.FC<JobDiscoveryProps> = ({
   });
 
   const isMutatingSave = saveJobMutation.isPending || unsaveJobMutation.isPending;
+
+  const recommendedSubtitle = useMemo(() => {
+    if (recommendedContext?.recommended_fallback) {
+      return "Recently posted roles while you finish onboarding.";
+    }
+    if (recommendedContext?.recommended_from_experience && recommendedContext.primary_role) {
+      return `Based on your experience as ${recommendedContext.primary_role}.`;
+    }
+    if (recommendedContext?.primary_role) {
+      return `Based on your desired role: ${recommendedContext.primary_role}.`;
+    }
+    return "Based on your portfolio and resume profile.";
+  }, [recommendedContext]);
 
   const recommendedJobs: Job[] = useMemo(() => {
     const raw = (recommendedFlattenedJobs ?? []).map(mapBackendJobToUi);
@@ -302,7 +316,7 @@ const JobDiscovery: React.FC<JobDiscoveryProps> = ({
           <div className="flex items-center justify-between mb-6">
             <div>
               <h2 className="text-xl font-normal text-slate-900 dark:text-white">Recommended For You</h2>
-              <p className="mt-1 text-sm text-slate-500 dark:text-slate-400">Based on your portfolio and resume profile.</p>
+              <p className="mt-1 text-sm text-slate-500 dark:text-slate-400">{recommendedSubtitle}</p>
             </div>
 
             <div className="flex items-center gap-2">
