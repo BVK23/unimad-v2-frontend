@@ -19,6 +19,8 @@ import { startInterviewSession } from "@/src/features/interview-prep/server-acti
 import type { StartInterviewFromJobPayload } from "@/src/features/interview-prep/types";
 import { usePrepareApplicationContext } from "@/src/features/jobs/hooks/usePrepareApplicationContext";
 import { generateResume } from "@/src/features/resume/server-actions/resume-actions";
+import { downloadResumePdf } from "@/src/features/resume/utils/downloadResumePdf";
+import type { ResumeData } from "@/types";
 import { exportApplicationAssetAsDocx, exportApplicationAssetAsPdf } from "@/utils/export-application-asset-file";
 import { htmlToPlainText } from "@/utils/html-to-text";
 import { sanitizeUserFacingError } from "@/utils/message-from-failed-response";
@@ -503,6 +505,24 @@ const PrepareApplicationModal: React.FC<PrepareApplicationModalProps> = ({
 
   const activeResumeId = activeTab === "resume" ? (tabStates.resume.assetId ?? linkedResumeId) : null;
 
+  const handleDownloadResume = () => {
+    const resumeId = tabStates.resume.assetId ?? linkedResumeId;
+    if (!resumeId) return;
+
+    void (async () => {
+      setIsDownloading(true);
+      try {
+        await downloadResumePdf({ id: resumeId } as ResumeData);
+      } catch (e) {
+        window.alert(
+          sanitizeUserFacingError(e instanceof Error ? e.message : "Failed to download PDF", "Failed to download PDF. Please try again.")
+        );
+      } finally {
+        setIsDownloading(false);
+      }
+    })();
+  };
+
   const resumeEditHref = activeResumeId && prepareNavigate ? buildResumePrepareHref(activeResumeId, job.id, prepareNavigate) : null;
 
   const handleClose = () => {
@@ -701,6 +721,19 @@ const PrepareApplicationModal: React.FC<PrepareApplicationModalProps> = ({
               )}
             </h2>
             <div className="flex shrink-0 items-center gap-2">
+              {activeTab === "resume" && activeResumeId && tabStates.resume.status === "ready" && (
+                <button
+                  type="button"
+                  onClick={handleDownloadResume}
+                  disabled={isDownloading}
+                  title="Download PDF"
+                  aria-label="Download resume PDF"
+                  className="inline-flex h-8 items-center gap-1.5 rounded-lg border border-slate-200 bg-slate-50 px-2.5 text-xs font-medium text-slate-600 transition-colors hover:bg-slate-100 disabled:cursor-not-allowed disabled:opacity-50 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-300 dark:hover:bg-slate-700"
+                >
+                  {isDownloading ? <Loader2 size={14} className="animate-spin" /> : <Download size={14} />}
+                  {isDownloading ? "Preparing…" : "Download"}
+                </button>
+              )}
               {showTextAssetActions && (
                 <DocumentSaveStatusBar
                   variant="modal"

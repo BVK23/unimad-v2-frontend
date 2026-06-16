@@ -2,28 +2,44 @@
 
 import React from "react";
 import { ModalPortalOverlay } from "@/components/ui/ModalPortalOverlay";
-import { MODAL_OVERLAY_ABOVE_MENU_Z_CLASS } from "@/lib/ui/modal-overlay";
 import { X } from "lucide-react";
 import Link from "next/link";
+import { useRouter } from "next/navigation";
 
 type OnboardingGateModalProps = {
   open: boolean;
   userName?: string;
+  pathname?: string;
   onDismiss?: () => void;
   /** When true, user can dismiss and stay on the page (studio/jobs). When false, modal blocks the feature page. */
   dismissible?: boolean;
 };
 
-export default function OnboardingGateModal({ open, userName, onDismiss, dismissible = false }: OnboardingGateModalProps) {
+export default function OnboardingGateModal({ open, userName, pathname = "", onDismiss, dismissible = false }: OnboardingGateModalProps) {
+  const router = useRouter();
+
   if (!open) return null;
 
   const heading = userName ? `Hi ${userName}, finish setting up your profile` : "Complete your onboarding";
+  const onResumePage = pathname.startsWith("/uniboard/resume");
+  const onPortfolioPage = pathname.startsWith("/uniboard/portfolio");
+
+  const handleSecondaryAction = () => {
+    if (dismissible) {
+      onDismiss?.();
+      return;
+    }
+    if (onResumePage) {
+      onDismiss?.();
+      return;
+    }
+    router.push("/uniboard/resume");
+  };
+
+  const secondaryLabel = dismissible ? "Stay on this page" : onResumePage ? "Maybe later" : "Go to Resume";
 
   return (
-    <ModalPortalOverlay
-      className="flex items-center justify-center bg-black/50 p-4 backdrop-blur-sm"
-      zClass={MODAL_OVERLAY_ABOVE_MENU_Z_CLASS}
-    >
+    <ModalPortalOverlay tier="nested" className="flex items-center justify-center bg-black/50 p-4 backdrop-blur-sm">
       <div
         role="dialog"
         aria-modal="true"
@@ -45,7 +61,9 @@ export default function OnboardingGateModal({ open, userName, onDismiss, dismiss
           {heading}
         </h2>
         <p className="mt-2 text-sm text-slate-600 dark:text-slate-300">
-          Please finish onboarding first to get personalised help across Resume, Portfolio, Studio, and job applications.
+          {onPortfolioPage
+            ? "Complete your profile setup to generate and edit your portfolio with personalised content."
+            : "Please finish onboarding first to get personalised help across Resume, Portfolio, Studio, and job applications."}
         </p>
 
         <div className="mt-6 flex flex-col gap-3 sm:flex-row">
@@ -55,22 +73,13 @@ export default function OnboardingGateModal({ open, userName, onDismiss, dismiss
           >
             Go to Onboarding
           </Link>
-          {dismissible ? (
-            <button
-              type="button"
-              onClick={onDismiss}
-              className="inline-flex flex-1 items-center justify-center rounded-xl border border-slate-200 bg-white px-4 py-3 text-sm font-medium text-slate-700 transition-colors hover:bg-slate-50 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-200"
-            >
-              Stay on this page
-            </button>
-          ) : (
-            <Link
-              href="/uniboard/resume"
-              className="inline-flex flex-1 items-center justify-center rounded-xl border border-slate-200 bg-white px-4 py-3 text-sm font-medium text-slate-700 transition-colors hover:bg-slate-50 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-200"
-            >
-              Go to Resume
-            </Link>
-          )}
+          <button
+            type="button"
+            onClick={handleSecondaryAction}
+            className="inline-flex flex-1 items-center justify-center rounded-xl border border-slate-200 bg-white px-4 py-3 text-sm font-medium text-slate-700 transition-colors hover:bg-slate-50 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-200"
+          >
+            {secondaryLabel}
+          </button>
         </div>
       </div>
     </ModalPortalOverlay>

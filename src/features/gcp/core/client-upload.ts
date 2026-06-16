@@ -11,6 +11,21 @@ export type UploadFileDirectResult =
     }
   | { success: false; error: string };
 
+const isLikelyCorsOrNetworkFailure = (message: string): boolean =>
+  message === "Failed to fetch" || /networkerror|load failed|cors/i.test(message);
+
+const formatDirectUploadError = (error: unknown): string => {
+  const message = error instanceof Error ? error.message : "Upload failed";
+  if (isLikelyCorsOrNetworkFailure(message)) {
+    console.error(
+      "[gcp-upload] Browser blocked PUT to GCS (CORS). Apply src/features/gcp/gcs-bucket-cors.json to the media bucket.",
+      error
+    );
+    return "Video upload failed due to storage configuration on this environment. Please try again later or contact support.";
+  }
+  return message;
+};
+
 const uploadToSignedUrl = async (file: File, signedUrl: string): Promise<{ success: true; status: number }> => {
   const response = await fetch(signedUrl, {
     method: "PUT",
@@ -60,7 +75,7 @@ export const uploadFileDirect = async (file: File, category: string = "portfolio
       originalName: file.name,
     };
   } catch (error) {
-    const message = error instanceof Error ? error.message : "Upload failed";
+    const message = formatDirectUploadError(error);
     console.error("Upload error:", error);
     return { success: false, error: message };
   }

@@ -93,17 +93,19 @@ export function ProfilePictureDialog({ open, onClose, currentUrl, croppableUrl }
 
   if (!open) return null;
 
+  const showPicker = !cropSource;
+
   return (
     <>
       <ModalPortalOverlay
-        open={open}
+        open={showPicker}
         className="flex items-center justify-center p-4"
         role="dialog"
         aria-modal="true"
         aria-labelledby="profile-picture-title"
       >
         <button type="button" className="absolute inset-0 bg-slate-900/50 backdrop-blur-sm" aria-label="Close" onClick={onClose} />
-        <div className="relative w-full max-w-lg rounded-2xl border border-slate-200 bg-white shadow-xl dark:border-slate-800 dark:bg-[#111]">
+        <div className="relative z-10 w-full max-w-lg rounded-2xl border border-slate-200 bg-white shadow-xl dark:border-slate-800 dark:bg-[#111]">
           <div className="flex items-center justify-between border-b border-slate-100 px-5 py-4 dark:border-slate-800">
             <h2 id="profile-picture-title" className="text-base font-semibold text-slate-900 dark:text-white">
               Profile picture

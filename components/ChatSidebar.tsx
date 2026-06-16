@@ -1174,16 +1174,16 @@ const ChatSidebar: React.FC<ChatSidebarProps> = ({ incomingRequest, onRequestHan
       return;
     }
 
-    const isResumeSub = req.improveType === "resume" && Boolean(req.featureId && req.section);
+    const isImproveSubSession = Boolean(req.featureId && req.section) && (req.improveType === "resume" || req.improveType === "linkedin");
 
-    const isLinkedIn = req.improveType === "linkedin";
-    const promptText = isLinkedIn ? req.text.trim() : `Please improve the following text for my resume:\n\n"${req.text}"`;
+    const promptText =
+      req.improveType === "linkedin" ? req.text.trim() : `Please improve the following text for my resume:\n\n"${req.text}"`;
 
     void (async () => {
       try {
         if (!userId || !sessionReady) return;
 
-        if (isResumeSub && req.featureId && req.section) {
+        if (isImproveSubSession && req.featureId && req.section) {
           const mainId = currentMainSessionId ?? sessionId;
           if (!getRegistryRow(mainId)) {
             const regMain = await registerUnibotAdkSessionAction({

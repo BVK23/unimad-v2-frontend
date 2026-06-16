@@ -19,6 +19,7 @@ import type { PortfolioData, ResumeData } from "@/types";
 import { useQueryClient } from "@tanstack/react-query";
 import { usePathname, useSearchParams } from "next/navigation";
 import { pullSessionStateAction, syncSessionStateAction } from "../actions";
+import { checkAdkRequestRateLimit, ADK_REQUEST_RATE_LIMIT_MESSAGE } from "../adk-request-rate-limit";
 import { computeAdkPortfolioReviewFromDiff } from "../adkPortfolioHighlightDiff";
 import { computeAdkReviewFromDiff } from "../adkResumeHighlightDiff";
 import { useAdkPortfolioReviewStore } from "../stores/useAdkPortfolioReviewStore";
@@ -515,6 +516,11 @@ export function useAdkStreamingManager({
       const targetSessionId = options?.sessionIdOverride?.trim() || sessionId;
       if (!message.trim() || !userId || !targetSessionId) {
         throw new Error("Message, userId, and sessionId are required");
+      }
+
+      const rateLimit = checkAdkRequestRateLimit(userId);
+      if (!rateLimit.allowed) {
+        throw new Error(`${ADK_REQUEST_RATE_LIMIT_MESSAGE} (${rateLimit.retryAfterSeconds}s)`);
       }
 
       setIsSubmitInFlight(true);

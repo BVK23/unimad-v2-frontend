@@ -35,18 +35,33 @@ type UserData = {
 
 function UniboardOnboardingGate({ userData }: { userData: UserData | null }) {
   const pathname = usePathname() || "";
-  const { profileSetupRequired, profileSetupPromptOpen, dismissProfileSetupPrompt } = useOnboardingGate();
+  const {
+    profileSetupRequired,
+    profileSetupPromptOpen,
+    dismissProfileSetupPrompt,
+    blockingGateDismissed,
+    dismissBlockingGate,
+    resetBlockingGate,
+  } = useOnboardingGate();
 
-  const isBlockingRoute = profileSetupRequired && (pathname.startsWith("/uniboard/resume") || pathname.startsWith("/uniboard/portfolio"));
+  useEffect(() => {
+    resetBlockingGate();
+  }, [pathname, resetBlockingGate]);
+
+  const isBlockingRoute =
+    profileSetupRequired &&
+    !blockingGateDismissed &&
+    (pathname.startsWith("/uniboard/resume") || pathname.startsWith("/uniboard/portfolio"));
 
   const showPromptModal = profileSetupRequired && profileSetupPromptOpen;
 
   return (
     <OnboardingGateModal
       open={isBlockingRoute || showPromptModal}
+      pathname={pathname}
       userName={userData?.firstName || userData?.name}
       dismissible={showPromptModal && !isBlockingRoute}
-      onDismiss={dismissProfileSetupPrompt}
+      onDismiss={showPromptModal && !isBlockingRoute ? dismissProfileSetupPrompt : dismissBlockingGate}
     />
   );
 }

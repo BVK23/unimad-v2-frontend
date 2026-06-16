@@ -3,6 +3,7 @@
 import { useEffect, useMemo, useRef } from "react";
 import Portfolio from "@/components/Portfolio";
 import PortfolioCreatingOverlay from "@/components/portfolio/PortfolioCreatingOverlay";
+import { useOnboardingGate } from "@/features/onboarding/context/OnboardingGateContext";
 import type { PortfolioCreationVariant } from "@/features/portfolio/constants/portfolioCreationCopy";
 import { defaultBootstrapCreateInput, useCreatePortfolio } from "@/features/portfolio/hooks/useCreatePortfolio";
 import { usePortfolio } from "@/features/portfolio/hooks/usePortfolio";
@@ -32,6 +33,7 @@ const getFriendlyLoadError = (err: unknown) => {
  */
 export default function PortfolioPageClient() {
   const bootstrapAttemptedRef = useRef(false);
+  const { profileSetupRequired } = useOnboardingGate();
   const portfolioQuery = usePortfolio();
   const createPortfolioMutation = useCreatePortfolio();
 
@@ -48,6 +50,9 @@ export default function PortfolioPageClient() {
   const { mutate: mutateCreatePortfolio, isPending: isCreatePending, isError: isCreateError } = createPortfolioMutation;
 
   useEffect(() => {
+    if (profileSetupRequired) {
+      return;
+    }
     if (portfolioQuery.isLoading || portfolioQuery.isFetching) {
       return;
     }
@@ -70,6 +75,7 @@ export default function PortfolioPageClient() {
     portfolioQuery.isError,
     portfolioQuery.isFetching,
     portfolioQuery.isLoading,
+    profileSetupRequired,
   ]);
 
   const awaitingBootstrap = useMemo(
@@ -121,6 +127,14 @@ export default function PortfolioPageClient() {
     }
     handleRetryCreate();
   };
+
+  if (profileSetupRequired) {
+    return (
+      <div className="flex h-full min-h-[40vh] items-center justify-center px-6 text-center text-sm text-slate-500 dark:text-slate-400">
+        Complete onboarding to generate your portfolio.
+      </div>
+    );
+  }
 
   if (phase === "error" && !displayPortfolio) {
     return (

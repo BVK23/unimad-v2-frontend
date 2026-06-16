@@ -7,12 +7,16 @@ type OnboardingGateContextValue = {
   promptProfileSetup: () => void;
   dismissProfileSetupPrompt: () => void;
   profileSetupPromptOpen: boolean;
+  blockingGateDismissed: boolean;
+  dismissBlockingGate: () => void;
+  resetBlockingGate: () => void;
 };
 
 const OnboardingGateContext = createContext<OnboardingGateContextValue | null>(null);
 
 export function OnboardingGateProvider({ profileSetupRequired, children }: { profileSetupRequired: boolean; children: React.ReactNode }) {
   const [profileSetupPromptOpen, setProfileSetupPromptOpen] = useState(false);
+  const [blockingGateDismissed, setBlockingGateDismissed] = useState(false);
 
   const promptProfileSetup = useCallback(() => {
     if (profileSetupRequired) setProfileSetupPromptOpen(true);
@@ -22,14 +26,40 @@ export function OnboardingGateProvider({ profileSetupRequired, children }: { pro
     setProfileSetupPromptOpen(false);
   }, []);
 
+  const dismissBlockingGate = useCallback(() => {
+    setBlockingGateDismissed(true);
+    setProfileSetupPromptOpen(false);
+  }, []);
+
+  const resetBlockingGate = useCallback(() => {
+    setBlockingGateDismissed(false);
+  }, []);
+
+  React.useEffect(() => {
+    if (!profileSetupRequired) {
+      setBlockingGateDismissed(false);
+    }
+  }, [profileSetupRequired]);
+
   const value = useMemo(
     () => ({
       profileSetupRequired,
       promptProfileSetup,
       dismissProfileSetupPrompt,
       profileSetupPromptOpen,
+      blockingGateDismissed,
+      dismissBlockingGate,
+      resetBlockingGate,
     }),
-    [profileSetupRequired, promptProfileSetup, dismissProfileSetupPrompt, profileSetupPromptOpen]
+    [
+      profileSetupRequired,
+      promptProfileSetup,
+      dismissProfileSetupPrompt,
+      profileSetupPromptOpen,
+      blockingGateDismissed,
+      dismissBlockingGate,
+      resetBlockingGate,
+    ]
   );
 
   return <OnboardingGateContext.Provider value={value}>{children}</OnboardingGateContext.Provider>;
@@ -43,6 +73,9 @@ export function useOnboardingGate() {
       promptProfileSetup: () => {},
       dismissProfileSetupPrompt: () => {},
       profileSetupPromptOpen: false,
+      blockingGateDismissed: false,
+      dismissBlockingGate: () => {},
+      resetBlockingGate: () => {},
     };
   }
   return ctx;

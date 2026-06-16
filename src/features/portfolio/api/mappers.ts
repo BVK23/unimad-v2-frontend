@@ -166,6 +166,15 @@ function mapLegacyProfile(dto: Record<string, unknown>): UserProfile {
   });
 }
 
+function normalizePortfolioItemMedia(item: PortfolioItem): PortfolioItem {
+  return {
+    ...item,
+    content: readMediaUrl(item.content),
+    linkIcon: item.linkIcon ? readMediaUrl(item.linkIcon) : item.linkIcon,
+    detailedBlocks: item.detailedBlocks?.map(normalizePortfolioItemMedia),
+  };
+}
+
 export function mapBackendPortfolioToFrontend(dto: Record<string, unknown>): PortfolioData {
   const document = safeObject<Record<string, unknown>>(dto.document, {});
   const documentProfile = safeObject<Record<string, unknown>>(document.profile, {});
@@ -176,10 +185,12 @@ export function mapBackendPortfolioToFrontend(dto: Record<string, unknown>): Por
     : safeArray<PortfolioItem>(dto.items);
   const items = normalizeTemplateSpans(
     filterV2PortfolioItems(
-      rawItems.map(item => ({
-        ...item,
-        type: resolvePortfolioBlockType(item),
-      }))
+      rawItems.map(item =>
+        normalizePortfolioItemMedia({
+          ...item,
+          type: resolvePortfolioBlockType(item),
+        })
+      )
     )
   );
 

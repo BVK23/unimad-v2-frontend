@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useRef, useState } from "react";
-import { MODAL_OVERLAY_ABOVE_MENU_Z_CLASS, ModalPortalOverlay } from "@/components/ui/ModalPortalOverlay";
+import { ModalPortalOverlay } from "@/components/ui/ModalPortalOverlay";
 import { applyImageCrop, getCropPreviewBackgroundStyle, getImageCropGeometry, type CropGeometry } from "@/utils/image-crop";
 
 const clampPan = (value: number, min: number, max: number) => Math.min(max, Math.max(min, value));
@@ -81,11 +81,7 @@ function SquareImageCropEditor({ source, title, description, maxOutputPx, isSavi
   };
 
   return (
-    <ModalPortalOverlay
-      zClass={MODAL_OVERLAY_ABOVE_MENU_Z_CLASS}
-      className="flex items-center justify-center bg-black/60 p-4 backdrop-blur-sm"
-      onClick={onClose}
-    >
+    <ModalPortalOverlay tier="nested" className="flex items-center justify-center bg-black/60 p-4 backdrop-blur-sm" onClick={onClose}>
       <div
         className="w-full max-w-md overflow-hidden rounded-3xl border border-slate-200 bg-white shadow-2xl dark:border-white/10 dark:bg-[#0c0c0c]"
         onClick={e => e.stopPropagation()}

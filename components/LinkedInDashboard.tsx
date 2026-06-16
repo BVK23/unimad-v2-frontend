@@ -1,4 +1,4 @@
-import React, { useCallback, useState } from "react";
+import React, { useCallback, useEffect, useState } from "react";
 import LinkedInScheduledPostsModal from "@/components/LinkedInScheduledPostsModal";
 import type { UnibotIncomingRequest } from "@/components/chat/unibot-incoming-request";
 import LinkedInAnalyzeErrorMessage from "@/components/linkedin/LinkedInAnalyzeErrorMessage";
@@ -12,7 +12,7 @@ import type { LinkedInAnalyzeResult, LinkedInAnalyzerErrorCode } from "@/feature
 import { LINKEDIN_ADK_PROFILE_KEY, LINKEDIN_COMMENT_EXTENSION_URL } from "@/src/features/linkedin/constants";
 import { linkedinScheduledPostsQueryKey, useLinkedInScheduledPosts } from "@/src/features/linkedin/hooks/useLinkedInScheduledPosts";
 import { buildLinkedInImproveMessage, linkedInSectionIdToAdkSection } from "@/src/features/linkedin/improve-prompts";
-import { useUnibotAgentBusy } from "@/src/hooks/useUnibotAgentBusy";
+import { useUnibotAgentBusy, UNIBOT_AGENT_LOADING_EVENT } from "@/src/hooks/useUnibotAgentBusy";
 import type { GeneratorContext } from "@/types/jobs";
 import { useQueryClient } from "@tanstack/react-query";
 import { Linkedin, Download, RefreshCw, ChevronDown, Copy } from "lucide-react";
@@ -49,6 +49,16 @@ const LinkedInDashboard: React.FC<LinkedInDashboardProps> = ({ onImprove, onNavi
   const { data, isLoading, isError, error, refetch } = useLinkedInAnalysis();
   const analyzeMutation = useAnalyzeLinkedInProfile();
   const isUnibotBusy = useUnibotAgentBusy();
+  const [activeImproveSectionId, setActiveImproveSectionId] = useState<string | null>(null);
+
+  useEffect(() => {
+    const onLoading = (e: Event) => {
+      const loading = Boolean((e as CustomEvent<{ loading?: boolean }>).detail?.loading);
+      if (!loading) setActiveImproveSectionId(null);
+    };
+    window.addEventListener(UNIBOT_AGENT_LOADING_EVENT, onLoading);
+    return () => window.removeEventListener(UNIBOT_AGENT_LOADING_EVENT, onLoading);
+  }, []);
   const { data: scheduledPosts = [] } = useLinkedInScheduledPosts(Boolean(data?.result));
 
   const [profileBreakdownOpen, setProfileBreakdownOpen] = useState(true);
@@ -316,6 +326,7 @@ const LinkedInDashboard: React.FC<LinkedInDashboardProps> = ({ onImprove, onNavi
                                 if (isUnibotBusy) return;
                                 const adkSection = linkedInSectionIdToAdkSection(section.id);
                                 if (!adkSection) return;
+                                setActiveImproveSectionId(section.id);
                                 onImprove({
                                   type: "improve",
                                   improveType: "linkedin",
@@ -329,7 +340,7 @@ const LinkedInDashboard: React.FC<LinkedInDashboardProps> = ({ onImprove, onNavi
                               }}
                               className="flex shrink-0 items-center gap-1.5 rounded-lg bg-brand-50 px-3 py-1.5 text-xs font-medium text-brand-600 transition-colors hover:bg-brand-100 disabled:pointer-events-none disabled:opacity-50 dark:bg-brand-900/40 dark:text-brand-300 dark:hover:bg-brand-900/60"
                             >
-                              {isUnibotBusy ? "Improving…" : "Improve"}
+                              {activeImproveSectionId === section.id && isUnibotBusy ? "Improving…" : "Improve"}
                             </button>
                           </div>
                           <p className="mb-2 text-sm leading-relaxed text-slate-600 dark:text-slate-400">{section.feedback}</p>

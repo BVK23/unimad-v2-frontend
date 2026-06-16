@@ -5,8 +5,10 @@ export default {
     "./*.{js,ts,jsx,tsx}",
     "./components/**/*.{js,ts,jsx,tsx}",
     "./constants/**/*.{js,ts}",
+    "./lib/**/*.{js,ts}",
     "./src/**/*.{js,ts,jsx,tsx}",
   ],
+  safelist: ["z-[200]", "z-[320]", "z-[500]", "z-[510]"],
   darkMode: "class",
   theme: {
     extend: {

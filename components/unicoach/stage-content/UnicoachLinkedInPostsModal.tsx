@@ -1,7 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useState } from "react";
-import { ModalPortalOverlay, MODAL_OVERLAY_ABOVE_MENU_Z_CLASS } from "@/components/ui/ModalPortalOverlay";
+import { ModalPortalOverlay } from "@/components/ui/ModalPortalOverlay";
 import { UNICOACH_LINKEDIN_POSTS, type UnicoachLinkedInPost } from "@/constants/unicoach-linkedin-posts";
 import { Check, Copy, X } from "lucide-react";
 
@@ -24,7 +24,7 @@ function PostDetailModal({ post, onClose }: { post: UnicoachLinkedInPost; onClos
   }, [post.examplePost]);
 
   return (
-    <ModalPortalOverlay zClass={MODAL_OVERLAY_ABOVE_MENU_Z_CLASS} className="flex items-center justify-center p-4">
+    <ModalPortalOverlay tier="nested" className="flex items-center justify-center p-4">
       <button type="button" className="absolute inset-0 bg-black/50" aria-label="Close" onClick={onClose} />
       <div className="relative z-10 flex max-h-[85vh] w-full max-w-2xl flex-col overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-xl dark:border-slate-700 dark:bg-[#111]">
         <div className="flex items-start justify-between gap-3 border-b border-slate-100 px-4 py-3 dark:border-slate-800">

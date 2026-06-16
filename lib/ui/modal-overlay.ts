@@ -1,5 +1,15 @@
-/** Above Uniboard header (z-100); below profile menu dropdown (z-300). */
-export const MODAL_OVERLAY_Z_CLASS = "z-[200]";
+/**
+ * Modal stacking — above Uniboard header (z-100) and profile menu dropdown (z-300).
+ * Use numeric zIndex via ModalPortalOverlay (inline style) so tiers work even when
+ * Tailwind does not emit dynamic z-[…] classes from this file.
+ */
+export const MODAL_OVERLAY_Z_INDEX = 500;
 
-/** Nested modals that must sit above a standard overlay (e.g. image crop on profile dialog). */
-export const MODAL_OVERLAY_ABOVE_MENU_Z_CLASS = "z-[230]";
+/** Nested modals (crop on picker, gate on overlay, etc.) */
+export const MODAL_OVERLAY_NESTED_Z_INDEX = 510;
+
+/** @deprecated Prefer zIndex on ModalPortalOverlay; kept for legacy className strings */
+export const MODAL_OVERLAY_Z_CLASS = "z-[500]";
+
+/** @deprecated Prefer zIndex on ModalPortalOverlay */
+export const MODAL_OVERLAY_ABOVE_MENU_Z_CLASS = "z-[510]";

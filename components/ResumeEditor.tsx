@@ -14,8 +14,9 @@ import { useDebouncedResumePreview } from "@/features/resume/hooks/useDebouncedR
 import { useGeolocationTemplate } from "@/features/resume/hooks/useGeolocationTemplate";
 import { resumeAtsQueryKey, useResumeAtsScore } from "@/features/resume/hooks/useResumeAtsScore";
 import { useUpdateResume } from "@/features/resume/hooks/useUpdateResume";
-import { publishResumeAsset, recordResumeDownload } from "@/features/resume/server-actions/resume-actions";
+import { publishResumeAsset } from "@/features/resume/server-actions/resume-actions";
 import { useResumeStore } from "@/features/resume/store/useResumeStore";
+import { downloadResumePdf } from "@/features/resume/utils/downloadResumePdf";
 import {
   clearPrepareReturnSession,
   getPrepareReturnSession,
@@ -42,7 +43,6 @@ import {
   CustomSectionItem,
 } from "@/types";
 import { validateResume, ValidationError } from "@/utils/validation";
-import { PDFDownloadLink } from "@react-pdf/renderer";
 import { useQueryClient } from "@tanstack/react-query";
 import {
   ArrowLeft,
@@ -90,7 +90,6 @@ import {
   CheckCircle2,
 } from "lucide-react";
 import { useRouter, useSearchParams } from "next/navigation";
-import ResumePDF from "./ResumePDF";
 import ResumePDFPreview from "./ResumePDFPreview";
 import TiptapEditor from "./TiptapEditor";
 import ResumeFieldError from "./resume/ResumeFieldError";
@@ -527,6 +526,7 @@ const ResumeEditor: React.FC<ResumeEditorProps> = ({
   /** After successful publish, primary button shows "Published" for at least this long */
   const [publishShowPublished, setPublishShowPublished] = useState(false);
   const [isExportDropdownOpen, setIsExportDropdownOpen] = useState(false);
+  const [isDownloadingPdf, setIsDownloadingPdf] = useState(false);
   const exportDropdownRef = useRef<HTMLDivElement>(null);
   const publishPublishedTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
@@ -937,6 +937,18 @@ const ResumeEditor: React.FC<ResumeEditorProps> = ({
       return;
     }
     setIsExportDropdownOpen(prev => !prev);
+  };
+
+  const handleDownloadPdf = async () => {
+    setIsDownloadingPdf(true);
+    try {
+      await downloadResumePdf(resume);
+      setIsExportDropdownOpen(false);
+    } catch (e) {
+      showToast(e instanceof Error ? e.message : "Failed to download PDF", "error");
+    } finally {
+      setIsDownloadingPdf(false);
+    }
   };
 
   // -- Handlers --
@@ -1757,29 +1769,18 @@ const ResumeEditor: React.FC<ResumeEditorProps> = ({
                 >
                   {inlinePublishStep === "cta" ? (
                     <>
-                      <div
-                        className="w-full"
-                        onClick={() => {
-                          if (resumeId) recordResumeDownload(resumeId).catch(() => {});
-                          setIsExportDropdownOpen(false);
-                        }}
+                      <button
+                        type="button"
+                        onClick={() => void handleDownloadPdf()}
+                        disabled={isDownloadingPdf}
+                        className="flex w-full items-center gap-3 px-4 py-2.5 text-sm text-slate-700 transition-colors hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-60 dark:text-slate-200 dark:hover:bg-slate-800"
                       >
-                        <PDFDownloadLink
-                          document={<ResumePDF data={resume} />}
-                          fileName={`${(resume.profile.fullName ?? "Resume").replace(/\s+/g, "_")}_Resume.pdf`}
-                          className="flex w-full items-center gap-3 px-4 py-2.5 text-sm text-slate-700 transition-colors hover:bg-slate-50 dark:text-slate-200 dark:hover:bg-slate-800"
-                        >
-                          {({ loading }) => (
-                            <>
-                              <Download size={16} className="text-slate-500" />
-                              <span className="font-medium">{loading ? "Preparing PDF…" : "Download PDF"}</span>
-                              {loading && (
-                                <div className="ml-auto h-4 w-4 animate-spin rounded-full border-2 border-brand-500 border-t-transparent" />
-                              )}
-                            </>
-                          )}
-                        </PDFDownloadLink>
-                      </div>
+                        <Download size={16} className="text-slate-500" />
+                        <span className="font-medium">{isDownloadingPdf ? "Preparing PDF…" : "Download PDF"}</span>
+                        {isDownloadingPdf && (
+                          <div className="ml-auto h-4 w-4 animate-spin rounded-full border-2 border-brand-500 border-t-transparent" />
+                        )}
+                      </button>
                       <button
                         type="button"
                         onClick={handleEnterPublishMode}
