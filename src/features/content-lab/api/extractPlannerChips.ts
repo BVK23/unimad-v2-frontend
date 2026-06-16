@@ -1,22 +1,17 @@
 /**
  * Parse topics, affirmations, and actions from planner / topic_planner_agent responses.
  */
+import { stripMachineReadablePayloadFromMessage } from "@/features/adk-chat/utils/strip-machine-readable-payload";
 import type { ContentGenFunnel } from "@/features/content-lab/api/adk-mappers";
 import type { ContentGenPlannerAction, ContentGenPlannerActionId } from "@/features/content-lab/api/content-gen-events";
 
 const JSON_FENCE_REGEX = /```\s*json\s*([\s\S]*?)```/gi;
-const JSON_FENCE_STRIP_REGEX = /```\s*json\s*[\s\S]*?```/gi;
-const INLINE_DATA_JSON_REGEX = /\{\s*"data"\s*:\s*\{[\s\S]*?\}\s*\}/g;
 
 const VALID_ACTION_IDS = new Set<ContentGenPlannerActionId>(["generate_draft", "post_now", "schedule"]);
 
 /** Remove machine-readable JSON from assistant copy shown in the UI. */
 export const stripPlannerJsonFromMessage = (botMessage: string): string => {
-  return botMessage
-    .replace(JSON_FENCE_STRIP_REGEX, "")
-    .replace(INLINE_DATA_JSON_REGEX, "")
-    .replace(/\n{3,}/g, "\n\n")
-    .trim();
+  return stripMachineReadablePayloadFromMessage(botMessage);
 };
 
 function cleanJsonPayload(raw: string): string {

@@ -19,7 +19,7 @@ export function useGeolocationTemplate() {
           setRecommendedTemplate(recommendTemplate(countryCode));
         }
       } catch {
-        if (!cancelled) setRecommendedTemplate("classic");
+        if (!cancelled) setRecommendedTemplate("basic");
       } finally {
         if (!cancelled) setIsLoading(false);
       }

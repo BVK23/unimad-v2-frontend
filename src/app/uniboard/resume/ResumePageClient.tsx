@@ -10,7 +10,7 @@ import { getResumeContentSignature } from "@/features/resume/utils/getResumeCont
 import type { ResumeData } from "@/types";
 import { useQueryClient } from "@tanstack/react-query";
 import { Loader2 } from "lucide-react";
-import { usePathname, useRouter, useSearchParams } from "next/navigation";
+import { usePathname, useSearchParams } from "next/navigation";
 
 const NEW_RESUME_TEMPLATE: ResumeData = {
   id: "",
@@ -67,16 +67,15 @@ function ResumeUrlSync({ onUrlIdChange }: { onUrlIdChange: (id: string | undefin
 }
 
 function ResumePageContent({ initialResumeId }: ResumePageClientProps) {
-  const router = useRouter();
   const pathname = usePathname();
   const queryClient = useQueryClient();
 
   const [urlId, setUrlId] = useState<string | undefined>(initialResumeId);
   const resumeQuery = useResume(urlId);
-  /** Ignore stale ?id= in searchParams while router.replace is clearing the query. */
+  /** Ignore stale ?id= in searchParams while the URL is being cleared. */
   const pendingUrlClearRef = useRef(false);
 
-  const [resumeView, setResumeView] = useState<"list" | "editor">("list");
+  const [resumeView, setResumeView] = useState<"list" | "editor">(initialResumeId ? "editor" : "list");
   const [currentResume, setCurrentResume] = useState<ResumeData | null>(null);
   const [showTemplateModal, setShowTemplateModal] = useState(false);
   const [showOnboardingModal, setShowOnboardingModal] = useState(false);
@@ -90,12 +89,10 @@ function ResumePageContent({ initialResumeId }: ResumePageClientProps) {
     setUrlId(nextId);
   }, []);
 
-  const updateResumeUrl = useCallback(
+  const syncResumeUrl = useCallback(
     (id?: string) => {
-      if (!id) {
-        pendingUrlClearRef.current = true;
-      }
-      setUrlId(id);
+      if (typeof window === "undefined") return;
+
       const params = new URLSearchParams(window.location.search);
       if (id) {
         params.set("id", id);
@@ -103,9 +100,21 @@ function ResumePageContent({ initialResumeId }: ResumePageClientProps) {
         params.delete("id");
       }
       const query = params.toString();
-      router.replace(query ? `${pathname}?${query}` : pathname, { scroll: false });
+      const nextUrl = query ? `${pathname}?${query}` : pathname;
+      window.history.replaceState(window.history.state, "", nextUrl);
     },
-    [pathname, router]
+    [pathname]
+  );
+
+  const updateResumeUrl = useCallback(
+    (id?: string) => {
+      if (!id) {
+        pendingUrlClearRef.current = true;
+      }
+      setUrlId(id);
+      syncResumeUrl(id);
+    },
+    [syncResumeUrl]
   );
 
   // No ?id=: landing list — keep editor only for unsaved local draft (no resume id yet)
@@ -151,22 +160,41 @@ function ResumePageContent({ initialResumeId }: ResumePageClientProps) {
   }, [urlId, resumeQuery.isError, resumeQuery.error, updateResumeUrl]);
   /* eslint-enable react-hooks/set-state-in-effect */
 
-  const handleEditResume = (resume: ResumeData) => {
-    if (resume.id) {
-      queryClient.setQueryData(resumeByIdQueryKey(String(resume.id)), resume);
-    }
-    setCurrentResume(resume);
-    setResumeView("editor");
-    if (resume.id) {
-      updateResumeUrl(String(resume.id));
-    }
-  };
+  const handleEditResume = useCallback(
+    (resume: ResumeData) => {
+      if (resume.id) {
+        queryClient.setQueryData(resumeByIdQueryKey(String(resume.id)), resume);
+      }
+      setCurrentResume(resume);
+      setResumeView("editor");
+      setResumeLoadError(null);
+      if (resume.id) {
+        updateResumeUrl(String(resume.id));
+      }
+    },
+    [queryClient, updateResumeUrl]
+  );
+
+  const openResumeById = useCallback(
+    async (resumeId: string) => {
+      setResumeLoadError(null);
+      const list = queryClient.getQueryData<ResumeData[]>(resumesListQueryKey);
+      const cached = list?.find(r => String(r.id) === String(resumeId));
+      if (cached) {
+        handleEditResume(cached);
+        return;
+      }
+      setUrlId(resumeId);
+      syncResumeUrl(resumeId);
+      setResumeView("editor");
+    },
+    [handleEditResume, queryClient, syncResumeUrl]
+  );
 
   const handleCreateResume = async (type: "scratch" | "jd" | "upload", resumeId?: string) => {
     if ((type === "jd" || type === "upload") && resumeId) {
-      setResumeLoadError(null);
       await queryClient.refetchQueries({ queryKey: resumesListQueryKey, exact: true });
-      updateResumeUrl(String(resumeId));
+      await openResumeById(String(resumeId));
       return;
     }
     const newResume: ResumeData = {
@@ -202,9 +230,7 @@ function ResumePageContent({ initialResumeId }: ResumePageClientProps) {
     );
   };
 
-  const urlIdLoading = Boolean(urlId && resumeView === "list" && !resumeQuery.isSuccess && !resumeQuery.isError);
-
-  const showListLoader = urlIdLoading;
+  const urlIdLoading = Boolean(urlId && resumeView === "editor" && currentResume === null && !resumeQuery.isError);
 
   const urlSync = (
     <Suspense fallback={null}>
@@ -216,18 +242,6 @@ function ResumePageContent({ initialResumeId }: ResumePageClientProps) {
     return (
       <div className="relative flex flex-col h-full">
         {urlSync}
-        {showListLoader && (
-          <div
-            className="absolute inset-0 z-50 flex items-center justify-center bg-slate-50/90"
-            aria-busy="true"
-            aria-label="Loading resume"
-          >
-            <div className="flex flex-col items-center gap-3">
-              <Loader2 size={32} className="animate-spin text-brand-600" />
-              <span className="text-sm text-slate-600">Loading your resume…</span>
-            </div>
-          </div>
-        )}
         <ResumeDashboard onEditResume={handleEditResume} onCreateResume={handleCreateResume} />
         {resumeLoadError && (
           <ModalPortalOverlay
@@ -252,6 +266,22 @@ function ResumePageContent({ initialResumeId }: ResumePageClientProps) {
           </ModalPortalOverlay>
         )}
       </div>
+    );
+  }
+
+  if (resumeView === "editor" && !currentResume) {
+    return (
+      <>
+        {urlSync}
+        {urlIdLoading ? (
+          <div className="flex min-h-[50vh] flex-1 items-center justify-center" aria-busy="true" aria-label="Loading resume">
+            <div className="flex flex-col items-center gap-3">
+              <Loader2 size={32} className="animate-spin text-brand-600" />
+              <span className="text-sm text-slate-600">Loading your resume…</span>
+            </div>
+          </div>
+        ) : null}
+      </>
     );
   }
 

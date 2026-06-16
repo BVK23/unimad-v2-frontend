@@ -1616,6 +1616,7 @@ const StudioMainV2: React.FC<StudioMainProps> = ({ initialContext, initialAssetI
 
     let company = stored?.company ?? "";
     let role = stored?.role ?? "";
+    let logo = stored?.logo ?? null;
 
     if (!company || !role || stored?.jobId !== parsed.jobId) {
       try {
@@ -1623,6 +1624,7 @@ const StudioMainV2: React.FC<StudioMainProps> = ({ initialContext, initialAssetI
         if (job) {
           company = job.company ?? company;
           role = job.title ?? role;
+          logo = job.company_logo_url ?? logo;
           setCompany(company);
           setRole(role);
           if (job.description) {
@@ -1639,6 +1641,7 @@ const StudioMainV2: React.FC<StudioMainProps> = ({ initialContext, initialAssetI
       tab,
       company,
       role,
+      logo,
       navigate,
     };
     setPrepareReturn(session);

@@ -1,10 +1,9 @@
+import { stripMachineReadablePayloadFromMessage } from "@/features/adk-chat/utils/strip-machine-readable-payload";
 import { APPLICATION_ASSET_MIN_DRAFT_CHARS } from "@/features/application-assets/api/applicationAssetDraftConfig";
 import { extractApplicationAssetDraftPayload } from "@/features/application-assets/api/extractApplicationAssetDraft";
 import { isApplicationAssetBotMessage } from "@/features/application-assets/api/isApplicationAssetBotMessage";
 import type { ApplicationAssetApiType } from "@/features/application-assets/types";
 
-const JSON_FENCE_STRIP_REGEX = /```\s*json\s*[\s\S]*?```/gi;
-const INLINE_DRAFT_JSON_REGEX = /\{\s*"data"\s*:\s*"(?:[^"\\]|\\.)*"\s*\}/g;
 const DRAFT_INTRO_PATTERNS = [
   /here'?s (a )?(first |another )?draft[^.!?\n]*[.!?]?/gi,
   /here is (a )?(first |another )?draft[^.!?\n]*[.!?]?/gi,
@@ -33,18 +32,14 @@ export const messageHasApplicationAssetDraft = (botMessage: string): boolean => 
 
 /** Hide machine-readable draft JSON and use review-oriented copy in chat bubbles. */
 export const stripApplicationAssetDraftFromMessage = (botMessage: string): string => {
+  let visible = stripMachineReadablePayloadFromMessage(botMessage);
+
   if (!messageHasApplicationAssetDraft(botMessage)) {
-    return botMessage;
+    return visible;
   }
 
   const payload = extractApplicationAssetDraftPayload(botMessage);
   const reviewLine = applicationAssetDraftReviewMessage(payload.assetType);
-
-  let visible = botMessage
-    .replace(JSON_FENCE_STRIP_REGEX, "")
-    .replace(INLINE_DRAFT_JSON_REGEX, "")
-    .replace(/\n{3,}/g, "\n\n")
-    .trim();
 
   for (const pattern of DRAFT_INTRO_PATTERNS) {
     visible = visible.replace(pattern, "").trim();

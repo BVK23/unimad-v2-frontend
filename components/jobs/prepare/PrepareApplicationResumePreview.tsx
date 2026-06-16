@@ -15,13 +15,14 @@ const MAX_SCALE = 0.92;
 interface PrepareApplicationResumePreviewProps {
   resumeId: string;
   editHref?: string | null;
+  onEditResume?: () => void;
 }
 
 /**
  * Full-width resume preview for the Prepare Application modal.
  * Scales the A4 template to fit the available panel width (not the small dashboard thumbnail).
  */
-const PrepareApplicationResumePreview: React.FC<PrepareApplicationResumePreviewProps> = ({ resumeId, editHref }) => {
+const PrepareApplicationResumePreview: React.FC<PrepareApplicationResumePreviewProps> = ({ resumeId, editHref, onEditResume }) => {
   const containerRef = useRef<HTMLDivElement>(null);
   const [previewScale, setPreviewScale] = useState(0.55);
   const { data: resumesList = [] } = useResumesList();
@@ -84,6 +85,7 @@ const PrepareApplicationResumePreview: React.FC<PrepareApplicationResumePreviewP
             <div className="pointer-events-none absolute inset-x-0 bottom-4 flex justify-center opacity-0 transition-opacity duration-200 group-hover/resume-preview:opacity-100">
               <Link
                 href={editHref}
+                onClick={() => onEditResume?.()}
                 className="pointer-events-auto inline-flex translate-y-3 items-center gap-2 rounded-full bg-brand-600 px-5 py-2.5 text-sm font-medium text-white shadow-lg shadow-brand-500/25 transition-all hover:bg-brand-700 group-hover/resume-preview:translate-y-0"
               >
                 <Pencil size={15} />

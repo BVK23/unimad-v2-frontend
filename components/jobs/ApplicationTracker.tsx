@@ -247,6 +247,8 @@ const ApplicationTracker: React.FC<ApplicationTrackerProps> = ({ onNavigateToStu
   };
 
   const handlePrepareFromDetails = (app: Application) => {
+    setTabState("");
+    setSelectedApplication(null);
     openPrepare(applicationToJob(app));
   };
 

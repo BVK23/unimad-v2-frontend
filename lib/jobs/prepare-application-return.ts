@@ -8,6 +8,7 @@ export type PrepareApplicationReturnSession = {
   tab: PrepareApplicationTab;
   company: string;
   role: string;
+  logo?: string | null;
   navigate: PrepareNavigateTarget;
 };
 

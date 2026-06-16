@@ -1,4 +1,4 @@
-import React, { useState } from "react";
+import React, { useEffect, useRef, useState } from "react";
 import JobUrlImportLoading from "@/components/jobs/JobUrlImportLoading";
 import ResumeCardActionsMenu from "@/components/resume/ResumeCardActionsMenu";
 import ResumeGenerationOverlay from "@/components/resume/ResumeGenerationOverlay";
@@ -30,6 +30,7 @@ import {
   Trash2,
   Download,
   Link,
+  Check,
   ArrowLeft,
   Loader2,
   AlertCircle,
@@ -51,6 +52,8 @@ const ResumeDashboard: React.FC<ResumeDashboardProps> = ({ onEditResume, onCreat
   const [createModalState, setCreateModalState] = useState<"closed" | "menu" | "jd" | "upload">("closed");
   const [activeMenuId, setActiveMenuId] = useState<string | null>(null);
   const [activeMenuAnchor, setActiveMenuAnchor] = useState<HTMLElement | null>(null);
+  const [copiedLinkResumeId, setCopiedLinkResumeId] = useState<string | null>(null);
+  const copiedLinkTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const [downloadingId, setDownloadingId] = useState<string | null>(null);
   const [duplicatingId, setDuplicatingId] = useState<string | null>(null);
   const [deletingId, setDeletingId] = useState<string | null>(null);
@@ -77,6 +80,22 @@ const ResumeDashboard: React.FC<ResumeDashboardProps> = ({ onEditResume, onCreat
   const [isUploadingFromFile, setIsUploadingFromFile] = useState(false);
   const [uploadError, setUploadError] = useState<string | null>(null);
   const isCreateFlowBusy = isGenerating || isUploadingFromFile || isImporting;
+
+  useEffect(() => {
+    return () => {
+      if (copiedLinkTimeoutRef.current) clearTimeout(copiedLinkTimeoutRef.current);
+    };
+  }, []);
+
+  const closeActionsMenu = () => {
+    setActiveMenuId(null);
+    setActiveMenuAnchor(null);
+    setCopiedLinkResumeId(null);
+    if (copiedLinkTimeoutRef.current) {
+      clearTimeout(copiedLinkTimeoutRef.current);
+      copiedLinkTimeoutRef.current = null;
+    }
+  };
 
   const resetJdState = () => {
     setJdMode("url");
@@ -251,12 +270,22 @@ const ResumeDashboard: React.FC<ResumeDashboardProps> = ({ onEditResume, onCreat
     }
   };
 
-  const handleCopyLink = (e: React.MouseEvent, resume: ResumeData) => {
+  const handleCopyLink = async (e: React.MouseEvent, resume: ResumeData) => {
     e.stopPropagation();
     const identifier = resume.slug ?? resume.id;
-    navigator.clipboard.writeText(`https://unimad.dev/resume/${identifier}`);
-    alert("Link copied to clipboard!");
-    setActiveMenuId(null);
+    const origin = typeof window !== "undefined" ? window.location.origin : "https://unimad.ai";
+    try {
+      await navigator.clipboard.writeText(`${origin}/resume/${identifier}`);
+      setCopiedLinkResumeId(resume.id);
+      if (copiedLinkTimeoutRef.current) clearTimeout(copiedLinkTimeoutRef.current);
+      copiedLinkTimeoutRef.current = setTimeout(() => {
+        setCopiedLinkResumeId(current => (current === resume.id ? null : current));
+        copiedLinkTimeoutRef.current = null;
+      }, 3000);
+    } catch {
+      setBaseStatusType("error");
+      setBaseStatusMessage("Could not copy link to clipboard");
+    }
   };
 
   const handleSetBaseResume = async (e: React.MouseEvent, resume: ResumeData) => {
@@ -410,10 +439,13 @@ const ResumeDashboard: React.FC<ResumeDashboardProps> = ({ onEditResume, onCreat
             resumes.map(resume => (
               <div
                 key={resume.id}
-                onClick={() => onEditResume(resume)}
+                onClick={() => {
+                  if (activeMenuId !== null) return;
+                  onEditResume(resume);
+                }}
                 className={`
                         bg-white rounded-xl shadow-sm hover:shadow-md border cursor-pointer transition-all hover:-translate-y-1 group relative
-                        ${activeMenuId === resume.id ? "z-30 ring-2 ring-brand-100" : "z-0"}
+                        ${activeMenuId === resume.id ? "ring-2 ring-brand-100 pointer-events-none" : "z-0"}
                         ${resume.isBase ? "border-brand-300 ring-1 ring-brand-100" : "border-slate-200"}
                     `}
               >
@@ -431,7 +463,7 @@ const ResumeDashboard: React.FC<ResumeDashboardProps> = ({ onEditResume, onCreat
                       </div>
                     </div>
 
-                    <div className="relative">
+                    <div className="relative pointer-events-auto">
                       <button
                         className={`p-1 rounded transition-colors ${activeMenuId === resume.id ? "bg-slate-100 text-slate-900" : "hover:bg-slate-100 text-slate-400 hover:text-slate-600"}`}
                         onClick={e => {
@@ -448,14 +480,7 @@ const ResumeDashboard: React.FC<ResumeDashboardProps> = ({ onEditResume, onCreat
                         <MoreVertical size={16} />
                       </button>
 
-                      <ResumeCardActionsMenu
-                        open={activeMenuId === resume.id}
-                        anchorEl={activeMenuAnchor}
-                        onClose={() => {
-                          setActiveMenuId(null);
-                          setActiveMenuAnchor(null);
-                        }}
-                      >
+                      <ResumeCardActionsMenu open={activeMenuId === resume.id} anchorEl={activeMenuAnchor} onClose={closeActionsMenu}>
                         <button
                           onClick={e => {
                             e.stopPropagation();
@@ -485,10 +510,15 @@ const ResumeDashboard: React.FC<ResumeDashboardProps> = ({ onEditResume, onCreat
                           {duplicatingId === resume.id ? <Loader2 size={14} className="animate-spin" /> : <Copy size={14} />} Duplicate
                         </button>
                         <button
-                          onClick={e => handleCopyLink(e, resume)}
-                          className="w-full text-left px-4 py-2 text-sm text-slate-700 hover:bg-slate-50 hover:text-brand-600 flex items-center gap-2.5 transition-colors"
+                          onClick={e => void handleCopyLink(e, resume)}
+                          className={`w-full text-left px-4 py-2 text-sm flex items-center gap-2.5 transition-colors ${
+                            copiedLinkResumeId === resume.id
+                              ? "bg-brand-50 text-brand-600"
+                              : "text-slate-700 hover:bg-slate-50 hover:text-brand-600"
+                          }`}
                         >
-                          <Link size={14} /> Copy Link
+                          {copiedLinkResumeId === resume.id ? <Check size={14} className="text-brand-600" /> : <Link size={14} />}
+                          {copiedLinkResumeId === resume.id ? "Copied" : "Copy Link"}
                         </button>
                         <button
                           onClick={e => void handleDownload(e, resume)}

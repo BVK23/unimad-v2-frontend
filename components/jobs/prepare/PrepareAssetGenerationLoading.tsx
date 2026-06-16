@@ -2,6 +2,7 @@
 
 import React, { useEffect, useState } from "react";
 import {
+  getPrepareAssetGenerationMessageIndex,
   PREPARE_ASSET_GENERATION_MESSAGES,
   prepareAssetGenerationTitle,
   type PrepareAssetGenerationKind,
@@ -10,7 +11,7 @@ import { Loader2, Wand2 } from "lucide-react";
 
 interface PrepareAssetGenerationLoadingProps {
   kind: PrepareAssetGenerationKind;
-  /** How long each status line is shown before cycling (ms). */
+  /** How long each status line is shown before advancing (ms). */
   intervalMs?: number;
   className?: string;
 }
@@ -20,23 +21,25 @@ interface PrepareAssetGenerationLoadingProps {
  */
 export default function PrepareAssetGenerationLoading({ kind, intervalMs = 1500, className = "" }: PrepareAssetGenerationLoadingProps) {
   const messages = PREPARE_ASSET_GENERATION_MESSAGES[kind];
-  const [index, setIndex] = useState(0);
-  const [trackedKind, setTrackedKind] = useState(kind);
-  if (trackedKind !== kind) {
-    setTrackedKind(kind);
-    setIndex(0);
-  }
+  const [step, setStep] = useState(0);
+
+  useEffect(() => {
+    // Avoid calling setState synchronously inside the effect body.
+    const id = window.setTimeout(() => setStep(0), 0);
+    return () => window.clearTimeout(id);
+  }, [kind]);
 
   useEffect(() => {
     if (messages.length <= 1) return undefined;
 
     const id = window.setInterval(() => {
-      setIndex(prev => (prev + 1) % messages.length);
+      setStep(prev => prev + 1);
     }, intervalMs);
 
     return () => window.clearInterval(id);
-  }, [messages, intervalMs]);
+  }, [messages.length, intervalMs, kind]);
 
+  const index = getPrepareAssetGenerationMessageIndex(messages.length, step);
   const statusLine = messages[index] ?? messages[0];
 
   return (
@@ -54,7 +57,7 @@ export default function PrepareAssetGenerationLoading({ kind, intervalMs = 1500,
       </div>
       <h3 className="mb-2 font-medium text-slate-900 dark:text-white">{prepareAssetGenerationTitle(kind)}</h3>
       <p
-        key={`${kind}-${index}`}
+        key={`${kind}-${index}-${step}`}
         className="min-h-[1.25rem] max-w-sm animate-in fade-in duration-300 text-sm text-slate-600 dark:text-slate-300"
       >
         {statusLine}

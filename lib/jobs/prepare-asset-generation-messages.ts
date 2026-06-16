@@ -1,5 +1,29 @@
 export type PrepareAssetGenerationKind = "resume" | "cover-letter" | "cold-email" | "vpd" | "ensuring-app";
 
+/** How many ending messages cycle once the full sequence has played. */
+export const PREPARE_ASSET_GENERATION_TAIL_COUNT = 3;
+
+/**
+ * Map a monotonic step counter to a message index: play all messages in order once,
+ * then loop only the last {@link PREPARE_ASSET_GENERATION_TAIL_COUNT} lines (e.g. fine adjustments → finishing touches).
+ */
+export function getPrepareAssetGenerationMessageIndex(
+  messageCount: number,
+  step: number,
+  tailCount: number = PREPARE_ASSET_GENERATION_TAIL_COUNT
+): number {
+  if (messageCount <= 0) return 0;
+  if (messageCount === 1) return 0;
+
+  const lastIndex = messageCount - 1;
+  if (step <= lastIndex) return step;
+
+  const tailStart = Math.max(0, messageCount - tailCount);
+  const tailLength = lastIndex - tailStart + 1;
+  const overflow = step - lastIndex;
+  return tailStart + ((overflow - 1) % tailLength);
+}
+
 export const PREPARE_ASSET_GENERATION_MESSAGES: Record<PrepareAssetGenerationKind, readonly string[]> = {
   resume: [
     "Reading your job description…",

@@ -22,7 +22,7 @@ export function applicationToJob(app: Application): Job {
     id: app.application_id,
     role: app.role,
     company: app.company,
-    logo: "",
+    logo: app.company_logo_url ?? "",
     location: app.location?.trim() || "—",
     postedDate,
     matchScore: 95,

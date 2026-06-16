@@ -21,6 +21,10 @@ import { useAdkContentGenReviewStore } from "@/features/adk-chat/stores/useAdkCo
 import { useAdkPortfolioReviewStore, type AdkPortfolioReviewCard } from "@/features/adk-chat/stores/useAdkPortfolioReviewStore";
 import { useAdkResumeReviewStore, type AdkReviewCard } from "@/features/adk-chat/stores/useAdkResumeReviewStore";
 import {
+  isStreamingMachineReadablePayloadOnly,
+  stripMachineReadablePayloadFromMessage,
+} from "@/features/adk-chat/utils/strip-machine-readable-payload";
+import {
   APPLICATION_ASSET_EVENTS,
   type ApplicationAssetOpenImproveDetail,
   type ApplicationAssetSelectionFreeformDetail,
@@ -1292,10 +1296,17 @@ const ChatSidebar: React.FC<ChatSidebarProps> = ({ incomingRequest, onRequestHan
     if (!isAgentLoading && !isContentGenPublishing) {
       return false;
     }
+    const isStreamingPlaceholderBubble = (text: string | undefined, isError?: boolean) => {
+      if (isError) return false;
+      if (!text?.trim()) return true;
+      return isStreamingMachineReadablePayloadOnly(text);
+    };
     const topicPlaceholder = messages.some(
-      msg => msg.isTopic && (msg.messages ?? []).some(sub => sub.role === "model" && !sub.text?.trim() && !sub.isError)
+      msg => msg.isTopic && (msg.messages ?? []).some(sub => sub.role === "model" && isStreamingPlaceholderBubble(sub.text, sub.isError))
     );
-    const mainPlaceholder = messages.some(msg => !msg.isTopic && msg.role === "model" && !msg.text?.trim() && !msg.isError);
+    const mainPlaceholder = messages.some(
+      msg => !msg.isTopic && msg.role === "model" && isStreamingPlaceholderBubble(msg.text, msg.isError)
+    );
     return topicPlaceholder || mainPlaceholder;
   }, [isAgentLoading, isContentGenPublishing, messages]);
 
@@ -2525,10 +2536,6 @@ const ChatSidebar: React.FC<ChatSidebarProps> = ({ incomingRequest, onRequestHan
                         const isApplicationAsset = msg.topicKind === "application_asset";
                         const subHasDraft =
                           isContentGen && subMsg.role === "model" && Boolean(subMsg.text && messageHasContentGenDraft(subMsg.text));
-                        const subHasAppAssetDraft =
-                          isApplicationAsset &&
-                          subMsg.role === "model" &&
-                          Boolean(subMsg.text && messageHasApplicationAssetDraft(subMsg.text));
                         const subHasPlanner =
                           isContentGen &&
                           subMsg.role === "model" &&
@@ -2540,10 +2547,10 @@ const ChatSidebar: React.FC<ChatSidebarProps> = ({ incomingRequest, onRequestHan
                                 ? stripContentGenDraftFromMessage(subMsg.text)
                                 : subHasPlanner
                                   ? stripPlannerJsonFromMessage(subMsg.text)
-                                  : subMsg.text
-                              : isApplicationAsset && subHasAppAssetDraft
+                                  : stripMachineReadablePayloadFromMessage(subMsg.text)
+                              : isApplicationAsset
                                 ? stripApplicationAssetDraftFromMessage(subMsg.text)
-                                : subMsg.text
+                                : stripMachineReadablePayloadFromMessage(subMsg.text)
                             : "";
                         const userVisibleText =
                           subMsg.role === "user" && subMsg.text
@@ -2551,7 +2558,9 @@ const ChatSidebar: React.FC<ChatSidebarProps> = ({ incomingRequest, onRequestHan
                               ? contentGenTopicUserDisplayText(subMsg.text)
                               : subMsg.text
                             : "";
-                        const showModelBubble = subMsg.role === "model" && (modelVisibleText || !subMsg.text);
+                        const showModelBubble =
+                          subMsg.role === "model" &&
+                          (modelVisibleText || !subMsg.text || isStreamingMachineReadablePayloadOnly(subMsg.text));
                         const showUserBubble = subMsg.role === "user" && userVisibleText;
                         const hasActionCard = subMsg.role === "user" && subMsg.assetActionMeta;
 
@@ -2684,7 +2693,9 @@ const ChatSidebar: React.FC<ChatSidebarProps> = ({ incomingRequest, onRequestHan
               ? stripContentGenDraftFromMessage(msg.text!)
               : mainPlannerPayload != null
                 ? stripPlannerJsonFromMessage(mainPlannerPayload)
-                : msg.text;
+                : msg.text
+                  ? stripMachineReadablePayloadFromMessage(msg.text)
+                  : msg.text;
 
           return (
             <div key={msg.id} className={`flex min-w-0 flex-col gap-1 ${msg.role === "user" ? "items-end" : "items-start"}`}>
@@ -2713,7 +2724,7 @@ const ChatSidebar: React.FC<ChatSidebarProps> = ({ incomingRequest, onRequestHan
                 <div className="max-w-full bg-transparent px-1 text-[13px] leading-relaxed text-slate-600 dark:text-slate-300">
                   {msg.role === "model" && mainModelVisible ? (
                     <FormattedAgentMessage content={mainModelVisible} />
-                  ) : msg.role === "model" && !msg.text ? (
+                  ) : msg.role === "model" && (!msg.text || isStreamingMachineReadablePayloadOnly(msg.text)) ? (
                     <div className="flex items-center gap-2 text-slate-400 px-1">
                       <Loader2 size={14} className="animate-spin shrink-0" />
                       <span>{contentGenPublishActivity[msg.id] ?? streamActivityLabel ?? "Thinking…"}</span>

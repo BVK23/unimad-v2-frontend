@@ -72,25 +72,30 @@ export default function ResumeCardActionsMenu({ open, anchorEl, onClose, childre
     };
   }, [open, anchorEl]);
 
-  useLayoutEffect(() => {
-    if (!open || !menuRef.current) return;
-    menuRef.current.scrollIntoView({ block: "nearest", behavior: "smooth" });
-  }, [open, coords]);
+  const handleBackdropPointerDown = (event: React.PointerEvent<HTMLDivElement>) => {
+    // Prevent the subsequent click from reaching the resume card under the backdrop
+    // (classic dismiss → navigate click-through when the overlay unmounts mid-gesture).
+    event.preventDefault();
+    event.stopPropagation();
+    onClose();
+  };
 
   if (!open || typeof document === "undefined") return null;
 
   return createPortal(
     <>
-      <div className="fixed inset-0 z-[210]" onClick={onClose} aria-hidden />
+      <div className="fixed inset-0" style={{ zIndex: 210 }} onPointerDown={handleBackdropPointerDown} aria-hidden />
       <div
         ref={menuRef}
         role="menu"
-        className="fixed z-[220] w-48 rounded-xl border border-slate-100 bg-white py-1.5 shadow-xl animate-in fade-in zoom-in-95 duration-100"
+        className="fixed w-48 rounded-xl border border-slate-100 bg-white py-1.5 shadow-xl animate-in fade-in zoom-in-95 duration-100"
         style={{
+          zIndex: 220,
           top: coords?.top ?? -9999,
           left: coords?.left ?? -9999,
           visibility: coords ? "visible" : "hidden",
         }}
+        onPointerDown={e => e.stopPropagation()}
         onClick={e => e.stopPropagation()}
       >
         {children}

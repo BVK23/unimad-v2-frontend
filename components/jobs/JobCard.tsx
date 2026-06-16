@@ -1,10 +1,10 @@
 "use client";
 
-import React, { useState } from "react";
+import React from "react";
 import { useOnboardingGate } from "@/features/onboarding/context/OnboardingGateContext";
-import { Building2, MapPin, Clock, ExternalLink, CheckCircle2 } from "lucide-react";
-import Image from "next/image";
-import { Job, GeneratorContext } from "../../types/jobs";
+import { Clock } from "lucide-react";
+import { Job } from "../../types/jobs";
+import { CompanyLogo } from "./CompanyLogo";
 
 interface JobCardProps {
   job: Job;
@@ -33,19 +33,6 @@ const JobCard: React.FC<JobCardProps> = ({
   onVpdPromptClick,
 }) => {
   const { profileSetupRequired, promptProfileSetup } = useOnboardingGate();
-  const [logoError, setLogoError] = useState(false);
-
-  const isValidUrl = (url: string | undefined) => {
-    if (!url) return false;
-    try {
-      const parsed = new URL(url);
-      return parsed.protocol === "http:" || parsed.protocol === "https:";
-    } catch {
-      return false;
-    }
-  };
-
-  const showFallback = !isValidUrl(job.logo) || logoError;
 
   return (
     <div
@@ -69,22 +56,12 @@ const JobCard: React.FC<JobCardProps> = ({
 
       <div className={`flex gap-4 ${hideButtons ? "mb-0" : "mb-4"}`}>
         {/* Logo - Left */}
-        <div className="relative w-12 h-12 rounded-xl bg-slate-50 dark:bg-slate-900 border border-slate-100 dark:border-slate-800 flex items-center justify-center p-2 overflow-hidden shrink-0">
-          {!showFallback ? (
-            <Image
-              src={job.logo as string}
-              alt={job.company}
-              fill
-              sizes="48px"
-              className="object-contain p-1"
-              onError={() => setLogoError(true)}
-            />
-          ) : (
-            <div className="w-full h-full rounded-lg bg-gradient-to-br from-brand-500 via-purple-500 to-pink-500 flex items-center justify-center">
-              <span className="text-white font-bold text-lg">{job.company?.charAt(0)?.toUpperCase() || "?"}</span>
-            </div>
-          )}
-        </div>
+        <CompanyLogo
+          logoUrl={job.logo}
+          company={job.company}
+          size="sm"
+          className="border-slate-100 bg-slate-50 dark:border-slate-800 dark:bg-slate-900"
+        />
 
         {/* Text - Right */}
         <div className="min-w-0 flex-1">

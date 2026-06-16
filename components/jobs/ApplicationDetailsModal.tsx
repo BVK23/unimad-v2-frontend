@@ -7,6 +7,7 @@ import type { Application, ApplicationStatus, UpdateApplicationInput } from "@/f
 import { useOnboardingGate } from "@/features/onboarding/context/OnboardingGateContext";
 import { MODAL_OVERLAY_Z_CLASS } from "@/lib/ui/modal-overlay";
 import { X, FileText, ExternalLink, Pencil, ChevronDown, CheckCircle2 } from "lucide-react";
+import { CompanyLogo } from "./CompanyLogo";
 
 const STATUS_OPTIONS: { value: ApplicationStatus; label: string }[] = [
   { value: "draft", label: "Draft" },
@@ -238,9 +239,7 @@ const ApplicationDetailsModal: React.FC<ApplicationDetailsModalProps> = ({
       <div className="flex max-h-[90vh] w-full max-w-3xl flex-col overflow-hidden rounded-3xl border border-slate-200 bg-white shadow-2xl dark:border-slate-800 dark:bg-[#1a1a1a] animate-in zoom-in-95 duration-200">
         <div className="flex items-start justify-between border-b border-slate-100 bg-slate-50/50 p-6 dark:border-slate-800 dark:bg-slate-900/50">
           <div className="flex gap-4">
-            <div className="flex h-16 w-16 shrink-0 items-center justify-center overflow-hidden rounded-2xl bg-gradient-to-br from-brand-500 via-purple-500 to-pink-500 shadow-sm">
-              <span className="text-3xl font-bold text-white">{application.company?.charAt(0)?.toUpperCase() || "?"}</span>
-            </div>
+            <CompanyLogo logoUrl={application.company_logo_url} company={application.company} size="md" className="shadow-sm" />
             <div>
               <h2 className="mb-1 text-2xl font-semibold text-slate-900 dark:text-white">{application.role}</h2>
               <div className="flex flex-wrap items-center gap-3 text-sm text-slate-500 dark:text-slate-400">

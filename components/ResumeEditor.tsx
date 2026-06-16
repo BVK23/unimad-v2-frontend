@@ -142,6 +142,14 @@ const TEMPLATES: {
   available: boolean;
 }[] = [
   {
+    id: "basic",
+    name: "Basic",
+    description: "Traditional layout with blue accents",
+    color: "bg-sky-50",
+    border: "border-sky-200",
+    available: true,
+  },
+  {
     id: "modern",
     name: "Modern",
     description: "Clean and professional",
@@ -155,14 +163,6 @@ const TEMPLATES: {
     description: "Simple and elegant",
     color: "bg-slate-50",
     border: "border-slate-200",
-    available: true,
-  },
-  {
-    id: "classic",
-    name: "Classic",
-    description: "Traditional serif style",
-    color: "bg-amber-50",
-    border: "border-amber-200",
     available: true,
   },
   {
@@ -182,14 +182,6 @@ const TEMPLATES: {
     available: true,
   },
   {
-    id: "basic",
-    name: "Basic",
-    description: "Traditional layout with blue accents",
-    color: "bg-sky-50",
-    border: "border-sky-200",
-    available: true,
-  },
-  {
     id: "ireland",
     name: "Ireland",
     description: "Centered header and piped contacts",
@@ -206,14 +198,6 @@ const TEMPLATES: {
     available: true,
   },
   {
-    id: "nextgen",
-    name: "Nextgen",
-    description: "Two-column layout with Outfit typography",
-    color: "bg-brand-50",
-    border: "border-brand-300",
-    available: true,
-  },
-  {
     id: "professional",
     name: "Professional",
     description: "Centered header with split detail rows",
@@ -227,14 +211,6 @@ const TEMPLATES: {
     description: "Two-column layout with avatar header and contact sidebar",
     color: "bg-stone-50",
     border: "border-stone-300",
-    available: true,
-  },
-  {
-    id: "primeslate",
-    name: "Prime Slate",
-    description: "Blue-accent header, photo, summary, and two-column body with skill pills",
-    color: "bg-brand-50",
-    border: "border-brand-400",
     available: true,
   },
   // PRO templates — re-enable when subscription/unlock flow ships
@@ -588,11 +564,14 @@ const ResumeEditor: React.FC<ResumeEditorProps> = ({
   const { recommendedTemplate } = useGeolocationTemplate();
   const availableTemplates = useMemo(() => TEMPLATES.filter(t => t.available), []);
   const templatePickerItems = useMemo(() => {
-    if (!recommendedTemplate) return availableTemplates;
+    const pickerRank = (id: ResumeTemplateId) => {
+      if (id === "basic") return 0;
+      if (recommendedTemplate && id === recommendedTemplate) return 1;
+      return 2;
+    };
     return [...availableTemplates].sort((a, b) => {
-      if (a.id === recommendedTemplate) return -1;
-      if (b.id === recommendedTemplate) return 1;
-      return 0;
+      const rankDiff = pickerRank(a.id) - pickerRank(b.id);
+      return rankDiff !== 0 ? rankDiff : 0;
     });
   }, [availableTemplates, recommendedTemplate]);
 
@@ -1324,6 +1303,7 @@ const ResumeEditor: React.FC<ResumeEditorProps> = ({
     const navigate = parsed.navigate ?? stored?.navigate ?? "tracker";
     let company = stored?.company ?? "";
     let role = stored?.role ?? "";
+    let logo = stored?.logo ?? null;
 
     if (!company || !role || stored?.jobId !== parsed.jobId) {
       try {
@@ -1331,6 +1311,7 @@ const ResumeEditor: React.FC<ResumeEditorProps> = ({
         if (job) {
           company = job.company ?? company;
           role = job.title ?? role;
+          logo = job.company_logo_url ?? logo;
         }
       } catch {
         // Partial banner labels are acceptable.
@@ -1342,6 +1323,7 @@ const ResumeEditor: React.FC<ResumeEditorProps> = ({
       tab: "resume",
       company,
       role,
+      logo,
       navigate,
     };
     setPrepareReturn(session);

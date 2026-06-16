@@ -1,6 +1,51 @@
 "use server";
 
+import type { OnboardingEducation, OnboardingExperience, OnboardingProject } from "@/features/onboarding/types";
 import { cookies } from "next/headers";
+
+export type OnboardingSavedProfile = {
+  educations: OnboardingEducation[];
+  experiences: OnboardingExperience[];
+  projects: OnboardingProject[];
+  skills: string[];
+};
+
+function asEducationArray(value: unknown): OnboardingEducation[] {
+  if (!Array.isArray(value)) return [];
+  return value.filter(
+    (item): item is OnboardingEducation =>
+      Boolean(item) &&
+      typeof item === "object" &&
+      "institution" in item &&
+      "course" in item &&
+      typeof (item as OnboardingEducation).institution === "string"
+  );
+}
+
+function asExperienceArray(value: unknown): OnboardingExperience[] {
+  if (!Array.isArray(value)) return [];
+  return value.filter(
+    (item): item is OnboardingExperience =>
+      Boolean(item) &&
+      typeof item === "object" &&
+      "organisation" in item &&
+      "role" in item &&
+      typeof (item as OnboardingExperience).organisation === "string"
+  );
+}
+
+function asProjectArray(value: unknown): OnboardingProject[] {
+  if (!Array.isArray(value)) return [];
+  return value.filter(
+    (item): item is OnboardingProject =>
+      Boolean(item) && typeof item === "object" && "name" in item && typeof (item as OnboardingProject).name === "string"
+  );
+}
+
+function asSkillArray(value: unknown): string[] {
+  if (!Array.isArray(value)) return [];
+  return value.filter((item): item is string => typeof item === "string" && item.trim().length > 0);
+}
 
 export type OnboardingCheckpoints = {
   name: string;
@@ -78,6 +123,34 @@ export async function fetchOnboardingCheckpoints(): Promise<OnboardingCheckpoint
   }
 
   return (await response.json()) as OnboardingCheckpoints;
+}
+
+/** Load saved profile sections for onboarding forms (education, experience, etc.). */
+export async function fetchOnboardingSavedProfile(): Promise<OnboardingSavedProfile> {
+  const accessToken = await getAccessToken();
+  if (!accessToken) throw new Error("Unauthorized");
+
+  const response = await fetch(`${BACKEND_URL}/api/user-data/`, {
+    method: "GET",
+    headers: {
+      Authorization: `Bearer ${accessToken}`,
+      "Content-Type": "application/json",
+    },
+    cache: "no-store",
+  });
+
+  if (!response.ok) throw new Error("Failed to load saved profile data");
+
+  const data = (await response.json()) as Record<string, unknown>;
+  const onboardingData =
+    data.onboarding_data && typeof data.onboarding_data === "object" ? (data.onboarding_data as Record<string, unknown>) : null;
+
+  return {
+    educations: asEducationArray(data.educations ?? onboardingData?.educations),
+    experiences: asExperienceArray(data.experiences ?? onboardingData?.experiences),
+    projects: asProjectArray(data.projects ?? onboardingData?.projects),
+    skills: asSkillArray(data.skills ?? onboardingData?.skills),
+  };
 }
 
 /** Server-side helper: redirect when phone or LinkedIn are missing. */

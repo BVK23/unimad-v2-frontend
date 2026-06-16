@@ -427,7 +427,6 @@ const PrepareApplicationModal: React.FC<PrepareApplicationModalProps> = ({
       role: job.role,
       description: job.description,
     });
-    onClose();
   };
 
   const prepareNavigate: PrepareNavigateTarget = source === "tracker" ? "tracker" : "jobs";
@@ -439,6 +438,7 @@ const PrepareApplicationModal: React.FC<PrepareApplicationModalProps> = ({
       tab: type,
       company: job.company,
       role: job.role,
+      logo: job.logo,
       navigate: prepareNavigate,
     });
     onNavigateToStudio({
@@ -450,7 +450,6 @@ const PrepareApplicationModal: React.FC<PrepareApplicationModalProps> = ({
       openImproveMode: true,
       recipientName: type === "cold-email" ? "Hiring Manager" : undefined,
     });
-    onClose();
   };
 
   const activeTextAssetId =
@@ -567,7 +566,22 @@ const PrepareApplicationModal: React.FC<PrepareApplicationModalProps> = ({
     }
 
     if (activeTab === "resume" && resumeId) {
-      return <PrepareApplicationResumePreview resumeId={resumeId} editHref={resumeEditHref} />;
+      return (
+        <PrepareApplicationResumePreview
+          resumeId={resumeId}
+          editHref={resumeEditHref}
+          onEditResume={() => {
+            setPrepareReturnSession({
+              jobId: job.id,
+              tab: "resume",
+              company: job.company,
+              role: job.role,
+              logo: job.logo,
+              navigate: prepareNavigate,
+            });
+          }}
+        />
+      );
     }
 
     if (

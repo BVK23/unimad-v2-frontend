@@ -1,6 +1,7 @@
 "use client";
 
 import type { ReactNode } from "react";
+import { CompanyLogo } from "@/components/jobs/CompanyLogo";
 import type { PrepareApplicationReturnSession } from "@/lib/jobs/prepare-application-return";
 import { Save, X } from "lucide-react";
 
@@ -31,6 +32,7 @@ export function PrepareApplicationReturnBar({
       >
         <X size={18} />
       </button>
+      <CompanyLogo logoUrl={session.logo} company={session.company} size="xs" />
       <div className="min-w-0 flex-1">
         <p className="mb-0.5 text-[10px] font-semibold uppercase tracking-wider text-brand-600 dark:text-brand-400">Editing</p>
         <p className="truncate text-sm font-semibold text-slate-900 dark:text-white">{session.role}</p>

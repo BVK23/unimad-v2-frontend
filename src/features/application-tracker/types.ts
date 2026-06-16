@@ -13,6 +13,8 @@ export interface Application {
   apply_url?: string | null;
   /** Location when from job board; may be missing for manually added applications */
   location?: string | null;
+  /** Company logo from linked job board job when available */
+  company_logo_url?: string | null;
   /** ISO datetime when the application row was created (tracker "Added" date) */
   created_at?: string | null;
   /** ISO datetime from linked Job.posted_at when available */

@@ -1,7 +1,8 @@
 "use client";
 
-import { Suspense, useMemo } from "react";
+import { Suspense, useMemo, useState, useTransition } from "react";
 import JobsMain from "@/components/jobs/JobsMain";
+import { RouteNavigationOverlay } from "@/components/ui/RouteNavigationOverlay";
 import type { PrepareApplicationTab } from "@/lib/jobs/prepare-application-return";
 import { buildStudioHref } from "@/lib/jobs/prepare-application-url";
 import { buildJobsSearchParams, parseJobsSearchParams, type InterviewView, type JobsTab } from "@/src/features/jobs/jobs-url";
@@ -16,6 +17,8 @@ function JobsPageContent() {
   const router = useRouter();
   const searchParams = useSearchParams();
   const urlState = parseJobsSearchParams(searchParams);
+  const [isNavigating, startTransition] = useTransition();
+  const [navMessage, setNavMessage] = useState<string | null>(null);
 
   const reopenPrepare = useMemo(() => {
     const jobId = urlState.prepareJob;
@@ -26,17 +29,28 @@ function JobsPageContent() {
   }, [urlState.prepareJob, urlState.prepareTab]);
 
   const handleNavigateToStudio = (context: GeneratorContext) => {
-    router.push(
-      buildStudioHref({
-        id: context.assetId,
-        type: context.type,
-        jobId: context.jobId,
-        navigate: context.navigate,
-        improve: context.openImproveMode,
-        interviewVpd: context.fromInterviewVpd,
-      })
-    );
+    const message = context.openImproveMode
+      ? "Opening Content Lab…"
+      : context.type === "referral"
+        ? "Opening Content Lab…"
+        : "Loading Content Lab…";
+    setNavMessage(message);
+    startTransition(() => {
+      router.push(
+        buildStudioHref({
+          id: context.assetId,
+          type: context.type,
+          jobId: context.jobId,
+          navigate: context.navigate,
+          improve: context.openImproveMode,
+          interviewVpd: context.fromInterviewVpd,
+        })
+      );
+    });
   };
+  // Show overlay only while the navigation transition is pending.
+  // We intentionally don't clear `navMessage` via an effect to satisfy lint rules.
+  const showNavigationOverlay = isNavigating;
 
   const updateJobsUrl = (
     updates: Partial<{
@@ -60,30 +74,33 @@ function JobsPageContent() {
   const openSetupOnMount = searchParams.get("setup") === "1";
 
   return (
-    <JobsMain
-      onNavigateToStudio={handleNavigateToStudio}
-      activeTab={urlState.tab}
-      onTabChange={tab => {
-        updateJobsUrl({
-          tab,
-          interview_id: null,
-          view: null,
-          round: null,
-          setup: null,
-        });
-      }}
-      interviewUrl={{
-        interviewId: urlState.interviewId,
-        view: urlState.view,
-        round: urlState.round,
-        openSetupOnMount,
-      }}
-      onInterviewUrlChange={updates => {
-        updateJobsUrl({ tab: "interview", ...updates });
-      }}
-      reopenPrepare={reopenPrepare}
-      onPrepareReopened={handlePrepareReopened}
-    />
+    <>
+      <JobsMain
+        onNavigateToStudio={handleNavigateToStudio}
+        activeTab={urlState.tab}
+        onTabChange={tab => {
+          updateJobsUrl({
+            tab,
+            interview_id: null,
+            view: null,
+            round: null,
+            setup: null,
+          });
+        }}
+        interviewUrl={{
+          interviewId: urlState.interviewId,
+          view: urlState.view,
+          round: urlState.round,
+          openSetupOnMount,
+        }}
+        onInterviewUrlChange={updates => {
+          updateJobsUrl({ tab: "interview", ...updates });
+        }}
+        reopenPrepare={reopenPrepare}
+        onPrepareReopened={handlePrepareReopened}
+      />
+      {showNavigationOverlay ? <RouteNavigationOverlay message={navMessage ?? "Loading…"} /> : null}
+    </>
   );
 }
 

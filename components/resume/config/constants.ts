@@ -33,6 +33,8 @@ export interface TemplateConfig {
   description: string;
   layout: TemplateLayout;
   available: boolean;
+  /** When false, template still renders for existing resumes but is hidden from the picker */
+  showInPicker: boolean;
 
   // Visual metadata for template picker
   accentColor: string;
@@ -54,6 +56,7 @@ export const TEMPLATE_CONFIGS: Record<ResumeTemplateId, TemplateConfig> = {
     description: "Clean, professional layout with brand color accents",
     layout: "single-column",
     available: true,
+    showInPicker: true,
     accentColor: "#346de0",
     pdf: {
       fontFamily: "Onest",
@@ -67,6 +70,7 @@ export const TEMPLATE_CONFIGS: Record<ResumeTemplateId, TemplateConfig> = {
     description: "Centered header with two-column content layout",
     layout: "two-column",
     available: true,
+    showInPicker: true,
     accentColor: "#64748b",
     pdf: {
       fontFamily: "Onest",
@@ -80,6 +84,7 @@ export const TEMPLATE_CONFIGS: Record<ResumeTemplateId, TemplateConfig> = {
     description: "Traditional serif layout, perfect for academia",
     layout: "single-column",
     available: true,
+    showInPicker: false,
     accentColor: "#1e293b",
     pdf: {
       fontFamily: "Onest",
@@ -93,6 +98,7 @@ export const TEMPLATE_CONFIGS: Record<ResumeTemplateId, TemplateConfig> = {
     description: "Standard US formatting with Times New Roman",
     layout: "single-column",
     available: true,
+    showInPicker: true,
     accentColor: "#000000",
     pdf: {
       fontFamily: "Times-Roman",
@@ -106,6 +112,7 @@ export const TEMPLATE_CONFIGS: Record<ResumeTemplateId, TemplateConfig> = {
     description: "Clean formatting optimized for Canadian employers",
     layout: "single-column",
     available: true,
+    showInPicker: true,
     accentColor: "#000000",
     pdf: {
       fontFamily: "Helvetica", // Will override with Poppins later if we add custom font loader
@@ -119,6 +126,7 @@ export const TEMPLATE_CONFIGS: Record<ResumeTemplateId, TemplateConfig> = {
     description: "Clean formatting with blue accents and traditional layout",
     layout: "single-column",
     available: true,
+    showInPicker: true,
     accentColor: "#346DE0",
     pdf: {
       fontFamily: "Poppins",
@@ -132,6 +140,7 @@ export const TEMPLATE_CONFIGS: Record<ResumeTemplateId, TemplateConfig> = {
     description: "Centered header with pipe-separated contacts and serif headings",
     layout: "single-column",
     available: true,
+    showInPicker: true,
     accentColor: "#000000",
     pdf: {
       fontFamily: "Onest",
@@ -145,6 +154,7 @@ export const TEMPLATE_CONFIGS: Record<ResumeTemplateId, TemplateConfig> = {
     description: "Clean formatting optimized for Australian employers, similar to the Basic template but left-aligned.",
     layout: "single-column",
     available: true,
+    showInPicker: true,
     accentColor: "#000000",
     pdf: {
       fontFamily: "Poppins",
@@ -158,6 +168,7 @@ export const TEMPLATE_CONFIGS: Record<ResumeTemplateId, TemplateConfig> = {
     description: "Two-column layout with Outfit typography and section columns",
     layout: "two-column",
     available: true,
+    showInPicker: false,
     accentColor: "#346DE0",
     pdf: {
       fontFamily: "Outfit",
@@ -172,6 +183,7 @@ export const TEMPLATE_CONFIGS: Record<ResumeTemplateId, TemplateConfig> = {
     description: "Centered header with 40/60 split rows and Outfit typography",
     layout: "single-column",
     available: true,
+    showInPicker: true,
     accentColor: "#373737",
     pdf: {
       fontFamily: "Outfit",
@@ -185,6 +197,7 @@ export const TEMPLATE_CONFIGS: Record<ResumeTemplateId, TemplateConfig> = {
     description: "Two-column layout with avatar header and contact sidebar",
     layout: "two-column",
     available: true,
+    showInPicker: true,
     accentColor: "#373737",
     pdf: {
       fontFamily: "Outfit",
@@ -198,6 +211,7 @@ export const TEMPLATE_CONFIGS: Record<ResumeTemplateId, TemplateConfig> = {
     description: "Blue-accent header, photo, summary, and two-column body with skill pills",
     layout: "two-column",
     available: true,
+    showInPicker: false,
     accentColor: "#2D4B98",
     pdf: {
       fontFamily: "Onest",
@@ -207,9 +221,15 @@ export const TEMPLATE_CONFIGS: Record<ResumeTemplateId, TemplateConfig> = {
   },
 };
 
-/** Get all available templates for the template picker */
+/** Get all templates shown in the template picker (basic first) */
 export const getAvailableTemplates = (): TemplateConfig[] => {
-  return Object.values(TEMPLATE_CONFIGS).filter(t => t.available);
+  return Object.values(TEMPLATE_CONFIGS)
+    .filter(t => t.available && t.showInPicker)
+    .sort((a, b) => {
+      if (a.id === "basic") return -1;
+      if (b.id === "basic") return 1;
+      return 0;
+    });
 };
 
 /** Get config for a specific template */

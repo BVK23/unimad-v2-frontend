@@ -8,8 +8,8 @@ import { useOnboardingGate } from "@/features/onboarding/context/OnboardingGateC
 import { MODAL_OVERLAY_Z_CLASS } from "@/lib/ui/modal-overlay";
 import type { StartInterviewFromJobPayload } from "@/src/features/interview-prep/types";
 import { X, ExternalLink, FileText, CheckCircle2, DollarSign, ChevronDown } from "lucide-react";
-import Image from "next/image";
 import { Job, ApplicationStatus, GeneratorContext } from "../../types/jobs";
+import { CompanyLogo } from "./CompanyLogo";
 import PrepareApplicationModal from "./PrepareApplicationModal";
 
 interface JobDetailsModalProps {
@@ -52,21 +52,8 @@ const JobDetailsModal: React.FC<JobDetailsModalProps> = ({
   const { profileSetupRequired, promptProfileSetup } = useOnboardingGate();
   const [isStatusDropdownOpen, setIsStatusDropdownOpen] = useState(false);
   const [showPrepareModal, setShowPrepareModal] = useState(false);
-  const [logoError, setLogoError] = useState(false);
   const { data: applications = [] } = useApplications();
   const hasPreparedApplication = jobHasPreparedApplication(applications, job.id);
-
-  const isValidUrl = (url: string | undefined) => {
-    if (!url) return false;
-    try {
-      const parsed = new URL(url);
-      return parsed.protocol === "http:" || parsed.protocol === "https:";
-    } catch {
-      return false;
-    }
-  };
-
-  const showFallback = !isValidUrl(job.logo) || logoError;
 
   if (showPrepareModal) {
     return (
@@ -90,22 +77,7 @@ const JobDetailsModal: React.FC<JobDetailsModalProps> = ({
         {/* Header */}
         <div className="p-6 border-b border-slate-100 dark:border-slate-800 flex justify-between items-start bg-slate-50/50 dark:bg-slate-900/50">
           <div className="flex gap-4">
-            <div className="relative flex h-16 w-16 shrink-0 items-center justify-center overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-sm dark:border-slate-800 dark:bg-slate-900">
-              {!showFallback ? (
-                <Image
-                  src={job.logo as string}
-                  alt={job.company}
-                  fill
-                  sizes="64px"
-                  className="object-contain p-2"
-                  onError={() => setLogoError(true)}
-                />
-              ) : (
-                <div className="absolute inset-0 flex items-center justify-center bg-gradient-to-br from-brand-500 via-purple-500 to-pink-500">
-                  <span className="text-3xl font-bold text-white">{job.company?.charAt(0)?.toUpperCase() || "?"}</span>
-                </div>
-              )}
-            </div>
+            <CompanyLogo logoUrl={job.logo} company={job.company} size="md" className="shadow-sm" />
             <div>
               <h2 className="text-2xl font-semibold text-slate-900 dark:text-white mb-1">{job.role}</h2>
               <div className="flex items-center gap-3 text-sm text-slate-500 dark:text-slate-400">
