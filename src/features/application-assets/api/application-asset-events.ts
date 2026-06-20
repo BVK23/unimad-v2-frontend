@@ -60,17 +60,24 @@ export type ApplicationAssetDraftFailedDetail = {
   message?: string;
 };
 
+export type ApplicationAssetReviewAcceptedDetail = {
+  assetType: ApplicationAssetApiType;
+  assetId?: string | null;
+};
+
 export type ApplicationAssetSelectionRefineDetail = {
   assetType: ApplicationAssetApiType;
   selectedText: string;
   instruction: string;
   presetLabel: string;
   message: string;
+  baselineDraft: string;
 };
 
 export type ApplicationAssetSelectionFreeformDetail = {
   assetType: ApplicationAssetApiType;
   selectedText: string;
+  baselineDraft: string;
 };
 
 export const APPLICATION_ASSET_EVENTS = {
@@ -83,6 +90,8 @@ export const APPLICATION_ASSET_EVENTS = {
   openDraft: "open-application-asset-draft",
   /** Studio form / Prepare modal: ADK headless generate + persist, or Django preview-only fallback. */
   requestDraft: "request-application-asset-draft",
+  /** Studio UX: emitted after review accept has been persisted. */
+  reviewAccepted: "application-asset-review-accepted",
   /** Studio selection: preset quick action fires refinement in application_asset topic. */
   selectionRefine: "application-asset-selection-refine",
   /** Studio selection: open chat with quoted selection for freeform instruction. */

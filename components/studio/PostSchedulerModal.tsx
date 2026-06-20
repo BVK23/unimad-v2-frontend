@@ -1,10 +1,19 @@
 "use client";
 
-import React, { useEffect, useState } from "react";
+import React, { useEffect, useMemo, useState } from "react";
 import { createPortal } from "react-dom";
 import ProfilePictureWithFallback from "@/components/user-profile/ProfilePictureWithFallback";
+import {
+  formatSessionEndsDate,
+  isLinkedInScheduleDateAllowed,
+  parseScheduleDateTime,
+  resolveLinkedInPublishAccess,
+  sessionEndsAtInputMax,
+  type LinkedInPublishAccess,
+} from "@/features/linkedin/utils/linkedinPublishAccess";
 import { MODAL_OVERLAY_Z_CLASS } from "@/lib/ui/modal-overlay";
 import { X, Send, CheckCircle2, Edit2, Wand2 } from "lucide-react";
+import { LinkedInPublishAccessNotice } from "./LinkedInPublishAccessNotice";
 import StudioMediaPreviewImage from "./StudioMediaPreviewImage";
 
 export type LinkedinPreviewPendingItem = { id: string; objectUrl: string };
@@ -27,6 +36,8 @@ interface PostSchedulerModalProps {
     isScheduled: boolean;
     date?: Date;
   };
+  linkedInPublishAccess?: LinkedInPublishAccess;
+  userId?: number;
 }
 
 const PostSchedulerModal: React.FC<PostSchedulerModalProps> = ({
@@ -42,7 +53,10 @@ const PostSchedulerModal: React.FC<PostSchedulerModalProps> = ({
   linkedinPreviewPendingMedia = [],
   linkedinPreviewImages = [],
   initialData,
+  linkedInPublishAccess: linkedInPublishAccessProp,
+  userId,
 }) => {
+  const linkedInPublishAccess = linkedInPublishAccessProp ?? resolveLinkedInPublishAccess(null);
   const [mode, setMode] = useState<"preview" | "edit">("preview");
   const [currentContent, setCurrentContent] = useState(content);
   // const [postToLinkedin, setPostToLinkedin] = useState(true);
@@ -59,16 +73,31 @@ const PostSchedulerModal: React.FC<PostSchedulerModalProps> = ({
   const [scheduleDate, setScheduleDate] = useState<string>(initialDateStr);
   const [scheduleTime, setScheduleTime] = useState<string>(initialTimeStr);
 
+  const scheduleDateTime = useMemo(
+    () => (isScheduling ? parseScheduleDateTime(scheduleDate, scheduleTime) : null),
+    [isScheduling, scheduleDate, scheduleTime]
+  );
+  const scheduleBeyondSession = Boolean(scheduleDateTime && !isLinkedInScheduleDateAllowed(scheduleDateTime, linkedInPublishAccess));
+  const sessionEndsLabel = linkedInPublishAccess.sessionEndsAt ? formatSessionEndsDate(linkedInPublishAccess.sessionEndsAt) : undefined;
+  const dateInputMax = sessionEndsAtInputMax(linkedInPublishAccess.sessionEndsAt);
+  const publishBlocked = !linkedInPublishAccess.canPost;
+  const confirmDisabled =
+    isSubmitting || showSuccess || publishBlocked || (isScheduling && (!scheduleDate || !scheduleTime || scheduleBeyondSession));
+
   useEffect(() => {
     setCurrentContent(content);
   }, [content]);
 
   const handleConfirm = async () => {
+    if (publishBlocked) return;
     if (isScheduling && (!scheduleDate || !scheduleTime)) {
       return;
     }
 
-    const date = isScheduling ? new Date(`${scheduleDate}T${scheduleTime}`) : undefined;
+    const date = isScheduling ? (scheduleDateTime ?? undefined) : undefined;
+    if (isScheduling && date && scheduleBeyondSession) {
+      return;
+    }
     setErrorToast("");
     setIsSubmitting(true);
     try {
@@ -215,6 +244,8 @@ const PostSchedulerModal: React.FC<PostSchedulerModalProps> = ({
           )}
 
           <div className="mt-8 space-y-4">
+            {publishBlocked ? <LinkedInPublishAccessNotice access={linkedInPublishAccess} userId={userId} /> : null}
+
             <div className="grid grid-cols-1 gap-4">
               <div className="relative flex flex-col justify-between rounded-2xl border-2 border-brand-500 bg-brand-50/50 p-5 dark:bg-brand-900/10">
                 <div>
@@ -273,8 +304,9 @@ const PostSchedulerModal: React.FC<PostSchedulerModalProps> = ({
                   type="button"
                   role="switch"
                   aria-checked={isScheduling}
+                  disabled={!linkedInPublishAccess.canSchedule || publishBlocked}
                   onClick={() => setIsScheduling(!isScheduling)}
-                  className={`h-7 w-12 cursor-pointer rounded-full p-1 transition-colors duration-300 ${
+                  className={`h-7 w-12 cursor-pointer rounded-full p-1 transition-colors duration-300 disabled:cursor-not-allowed disabled:opacity-40 ${
                     isScheduling ? "bg-brand-600" : "bg-slate-200 dark:bg-slate-700"
                   }`}
                 >
@@ -287,19 +319,35 @@ const PostSchedulerModal: React.FC<PostSchedulerModalProps> = ({
               </div>
 
               {isScheduling ? (
-                <div className="grid animate-in fade-in slide-in-from-top-2 grid-cols-2 gap-3 p-4 pt-0">
-                  <input
-                    type="date"
-                    value={scheduleDate}
-                    onChange={e => setScheduleDate(e.target.value)}
-                    className="rounded-xl border border-slate-200 bg-white px-4 py-3 text-sm font-medium outline-none focus:ring-2 focus:ring-brand-500/20 dark:border-slate-600 dark:bg-slate-800"
-                  />
-                  <input
-                    type="time"
-                    value={scheduleTime}
-                    onChange={e => setScheduleTime(e.target.value)}
-                    className="rounded-xl border border-slate-200 bg-white px-4 py-3 text-sm font-medium outline-none focus:ring-2 focus:ring-brand-500/20 dark:border-slate-600 dark:bg-slate-800"
-                  />
+                <div className="space-y-3 p-4 pt-0">
+                  <div className="grid animate-in fade-in slide-in-from-top-2 grid-cols-2 gap-3">
+                    <input
+                      type="date"
+                      value={scheduleDate}
+                      max={dateInputMax}
+                      onChange={e => setScheduleDate(e.target.value)}
+                      className={`rounded-xl border bg-white px-4 py-3 text-sm font-medium outline-none focus:ring-2 focus:ring-brand-500/20 dark:bg-slate-800 ${
+                        scheduleBeyondSession ? "border-amber-300 dark:border-amber-800" : "border-slate-200 dark:border-slate-600"
+                      }`}
+                    />
+                    <input
+                      type="time"
+                      value={scheduleTime}
+                      onChange={e => setScheduleTime(e.target.value)}
+                      className={`rounded-xl border bg-white px-4 py-3 text-sm font-medium outline-none focus:ring-2 focus:ring-brand-500/20 dark:bg-slate-800 ${
+                        scheduleBeyondSession ? "border-amber-300 dark:border-amber-800" : "border-slate-200 dark:border-slate-600"
+                      }`}
+                    />
+                  </div>
+                  {scheduleBeyondSession ? (
+                    <LinkedInPublishAccessNotice
+                      access={linkedInPublishAccess}
+                      userId={userId}
+                      variant="inline"
+                      scheduleBeyondSession
+                      sessionEndsLabel={sessionEndsLabel}
+                    />
+                  ) : null}
                 </div>
               ) : null}
             </div>
@@ -318,7 +366,16 @@ const PostSchedulerModal: React.FC<PostSchedulerModalProps> = ({
           <button
             type="button"
             onClick={() => void handleConfirm()}
-            disabled={isSubmitting || showSuccess}
+            disabled={confirmDisabled}
+            title={
+              publishBlocked
+                ? linkedInPublishAccess.blockReason === "connect"
+                  ? "Connect LinkedIn to post"
+                  : "Sign in with LinkedIn again to post"
+                : scheduleBeyondSession
+                  ? "Choose a date within your LinkedIn connection window"
+                  : undefined
+            }
             className="flex items-center gap-2 rounded-xl bg-brand-600 px-8 py-3 text-sm font-medium text-white shadow-xl shadow-brand-500/20 transition-all hover:bg-brand-700 active:scale-95 disabled:pointer-events-none disabled:opacity-60"
           >
             {isSubmitting ? "Working…" : isScheduling ? "Schedule Post" : "Post Now"}

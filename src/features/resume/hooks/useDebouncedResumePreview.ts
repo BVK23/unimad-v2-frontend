@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState } from "react";
 import type { ResumeData } from "@/types";
 
-const PROFILE_DEBOUNCE_MS = 300;
+const PROFILE_DEBOUNCE_MS = 750;
 const ITEM_DEBOUNCE_MS = 750;
 
 type ResumeSliceRefs = {

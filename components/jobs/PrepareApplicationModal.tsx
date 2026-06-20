@@ -5,8 +5,6 @@ import { createPortal } from "react-dom";
 import { ApplicationAssetDownloadMenu } from "@/components/application-assets/ApplicationAssetDownloadMenu";
 import { DocumentSaveStatusBar } from "@/components/application-assets/DocumentSaveStatusBar";
 import InterviewLaunchOverlay from "@/components/interview-prep/InterviewLaunchOverlay";
-import { runApplicationAssetDraftGeneration } from "@/features/application-assets/api/runApplicationAssetDraftGeneration";
-import { checkApplicationAssetAvailability } from "@/features/application-assets/server-actions/application-asset-actions";
 import { getLinkedAssetId } from "@/features/application-tracker/application-assets";
 import { useDocumentAutosave } from "@/hooks/useDocumentAutosave";
 import { setPrepareReturnSession } from "@/lib/jobs/prepare-application-return";
@@ -17,8 +15,11 @@ import { fetchCoverLetterById, updateCoverLetter } from "@/src/features/cover-le
 import { storeInterviewLaunch } from "@/src/features/interview-prep/interview-launch";
 import { startInterviewSession } from "@/src/features/interview-prep/server-actions/interview-actions";
 import type { StartInterviewFromJobPayload } from "@/src/features/interview-prep/types";
+import {
+  type GeneratablePrepareTab,
+  usePrepareApplicationAssetMutations,
+} from "@/src/features/jobs/hooks/usePrepareApplicationAssetMutations";
 import { usePrepareApplicationContext } from "@/src/features/jobs/hooks/usePrepareApplicationContext";
-import { generateResume } from "@/src/features/resume/server-actions/resume-actions";
 import { downloadResumePdf } from "@/src/features/resume/utils/downloadResumePdf";
 import type { ResumeData } from "@/types";
 import { exportApplicationAssetAsDocx, exportApplicationAssetAsPdf } from "@/utils/export-application-asset-file";
@@ -39,7 +40,7 @@ export type PrepareTabId = ContentGeneratorType | "interview";
 
 type GeneratableTab = "resume" | "cover-letter" | "cold-email" | "vpd";
 
-type AssetStatus = "idle" | "loading" | "ready" | "error";
+type AssetStatus = "idle" | "loading" | "ready" | "error"; // loading only used for vpd mock
 
 interface TabAssetState {
   status: AssetStatus;
@@ -98,6 +99,7 @@ const PrepareApplicationModal: React.FC<PrepareApplicationModalProps> = ({
   const [isDownloading, setIsDownloading] = useState(false);
   const applicationIdRef = useRef<string | null>(null);
   const activeTextContentRef = useRef("");
+  const isTabPendingRef = useRef<(tab: GeneratablePrepareTab) => boolean>(() => false);
 
   const {
     applicationId,
@@ -126,6 +128,7 @@ const PrepareApplicationModal: React.FC<PrepareApplicationModalProps> = ({
     const hydrate = (tab: GeneratableTab, assetId: string | null) => {
       if (!assetId) return;
       setTabStates(prev => {
+        if (tab !== "vpd" && isTabPendingRef.current(tab as GeneratablePrepareTab)) return prev;
         if (prev[tab].status === "loading") return prev;
         if (prev[tab].assetId === assetId && prev[tab].status === "ready") return prev;
         return {
@@ -209,7 +212,24 @@ const PrepareApplicationModal: React.FC<PrepareApplicationModalProps> = ({
     }
   }, [resolveApplicationId]);
 
-  const handleGenerate = async (tab: GeneratableTab = activeTab as GeneratableTab) => {
+  const onGenerationTabPatch = useCallback((tab: GeneratablePrepareTab, patch: Partial<TabAssetState>) => {
+    setTabStates(prev => ({ ...prev, [tab]: { ...prev[tab], ...patch } }));
+  }, []);
+
+  const { isTabPending, generateTab } = usePrepareApplicationAssetMutations({
+    job,
+    ensureApplicationId: runEnsureApplication,
+    applySyncedAsset,
+    syncApplicationAssets,
+    onTabPatch: onGenerationTabPatch,
+  });
+
+  isTabPendingRef.current = isTabPending;
+
+  const isActiveTabGenerating =
+    !isInterviewTab && (activeTab === "vpd" ? tabStates.vpd.status === "loading" : isTabPending(activeTab as GeneratablePrepareTab));
+
+  const handleGenerate = (tab: GeneratableTab = activeTab as GeneratableTab) => {
     if (tab === "vpd") {
       setTabState("vpd", { status: "loading", error: null });
       window.setTimeout(() => {
@@ -223,88 +243,7 @@ const PrepareApplicationModal: React.FC<PrepareApplicationModalProps> = ({
       return;
     }
 
-    setTabState(tab, { status: "loading", error: null });
-
-    try {
-      const applicationIdResolved = await runEnsureApplication();
-      const jd = job.description?.trim() || `${job.role} at ${job.company}`;
-      const baseParams = {
-        role: job.role,
-        company: job.company,
-        job_description: jd,
-        application_id: applicationIdResolved,
-      };
-
-      if (tab === "resume") {
-        const result = await generateResume({
-          application_id: applicationIdResolved,
-          company: job.company,
-          role: job.role,
-          jd,
-        });
-
-        if ("error" in result) {
-          const existingId = result.error.resume_id;
-          if (existingId) {
-            await applySyncedAsset(tab, String(existingId));
-            return;
-          }
-          throw new Error(result.error.message ?? "Resume already exists for this application");
-        }
-
-        await applySyncedAsset(tab, result.id);
-        return;
-      }
-
-      if (tab === "cover-letter" || tab === "cold-email") {
-        const assetType = tab === "cover-letter" ? "coverletter" : "coldemail";
-        const contactName = tab === "cold-email" ? "Hiring Manager" : undefined;
-        const availability = await checkApplicationAssetAvailability({
-          type: assetType,
-          ...baseParams,
-          ...(tab === "cold-email" ? { hirname: contactName } : {}),
-        });
-        if ("error_code" in availability) {
-          throw new Error(
-            tab === "cover-letter"
-              ? "Plus membership required to generate cover letters"
-              : "Plus membership required to generate cold emails"
-          );
-        }
-        if ("error" in availability) {
-          await applySyncedAsset(tab, String(availability.error.data.existing_asset_id));
-          return;
-        }
-
-        const genResult = await runApplicationAssetDraftGeneration({
-          assetType,
-          role: job.role,
-          company: job.company,
-          jobDescription: jd,
-          contactName,
-          applicationId: applicationIdResolved,
-        });
-
-        const assetId = genResult.assetId;
-        if (!assetId) {
-          await applySyncedAsset(tab);
-          return;
-        }
-
-        setTabState(tab, {
-          status: "ready",
-          assetId,
-          content: genResult.draft,
-          error: null,
-        });
-        await syncApplicationAssets();
-      }
-    } catch (e) {
-      setTabState(tab, {
-        status: "error",
-        error: sanitizeUserFacingError(e instanceof Error ? e.message : "Generation failed", "Generation failed. Please try again."),
-      });
-    }
+    generateTab(tab);
   };
 
   useEffect(() => {
@@ -461,8 +400,8 @@ const PrepareApplicationModal: React.FC<PrepareApplicationModalProps> = ({
     !isInterviewTab &&
     (activeTab === "cover-letter" || activeTab === "cold-email") &&
     Boolean(activeTextAssetId) &&
-    activeAsset?.status !== "loading" &&
-    activeAsset?.status !== "error";
+    activeAsset?.status !== "error" &&
+    !isActiveTabGenerating;
 
   const persistContentEdit = useCallback(async () => {
     if (!activeAsset?.assetId || activeTab === "resume" || activeTab === "vpd" || activeTab === "interview") return;
@@ -538,11 +477,7 @@ const PrepareApplicationModal: React.FC<PrepareApplicationModalProps> = ({
     const tabLabel = PREPARE_TABS.find(t => t.id === activeTab)?.label ?? "asset";
     const resumeId = state.assetId ?? linkedResumeId;
 
-    if (ensuringApp) {
-      return <PrepareAssetGenerationLoading kind="ensuring-app" />;
-    }
-
-    if (state.status === "loading") {
+    if (isActiveTabGenerating) {
       const loadingKind =
         activeTab === "resume" || activeTab === "cover-letter" || activeTab === "cold-email" || activeTab === "vpd"
           ? activeTab
@@ -556,7 +491,7 @@ const PrepareApplicationModal: React.FC<PrepareApplicationModalProps> = ({
           <p className="mb-4 text-sm text-red-600 dark:text-red-400">{state.error ?? ensureError ?? "Something went wrong"}</p>
           <button
             type="button"
-            onClick={() => void handleGenerate(activeTab as GeneratableTab)}
+            onClick={() => handleGenerate(activeTab as GeneratableTab)}
             className="rounded-xl bg-brand-600 px-5 py-2 text-sm font-medium text-white hover:bg-brand-700"
           >
             Try again
@@ -625,8 +560,8 @@ const PrepareApplicationModal: React.FC<PrepareApplicationModalProps> = ({
         {ensureError && <p className="mb-4 text-xs text-red-500">{ensureError}</p>}
         <button
           type="button"
-          onClick={() => void handleGenerate(activeTab as GeneratableTab)}
-          disabled={ensuringApp}
+          onClick={() => handleGenerate(activeTab as GeneratableTab)}
+          disabled={isActiveTabGenerating}
           className="flex items-center gap-2 rounded-xl bg-brand-600 px-6 py-2.5 font-medium text-white shadow-lg shadow-brand-500/20 transition-all hover:bg-brand-700 active:scale-95 disabled:opacity-50"
         >
           <Wand2 size={16} fill="currentColor" />
@@ -677,7 +612,10 @@ const PrepareApplicationModal: React.FC<PrepareApplicationModalProps> = ({
               const Icon = tab.icon;
               const isActive = activeTab === tab.id;
               const tabKey = tab.id as GeneratableTab | "interview";
-              const isLoading = tabKey !== "interview" && tabStates[tabKey as GeneratableTab]?.status === "loading";
+              const isLoading =
+                tabKey === "vpd"
+                  ? tabStates.vpd.status === "loading"
+                  : tabKey !== "interview" && isTabPending(tabKey as GeneratablePrepareTab);
               const hasAsset = tabKey !== "interview" && tabHasLinkedAsset(tabKey as GeneratableTab);
 
               return (
@@ -730,7 +668,7 @@ const PrepareApplicationModal: React.FC<PrepareApplicationModalProps> = ({
               ) : (
                 <>
                   <Wand2 size={16} className="text-brand-500" /> Generate {PREPARE_TABS.find(t => t.id === activeTab)?.label}
-                  {activeAsset?.status === "loading" && <Loader2 size={14} className="animate-spin text-brand-500" />}
+                  {isActiveTabGenerating && <Loader2 size={14} className="animate-spin text-brand-500" />}
                 </>
               )}
             </h2>
@@ -827,13 +765,13 @@ const PrepareApplicationModal: React.FC<PrepareApplicationModalProps> = ({
           </div>
 
           {!isInterviewTab && showTextAssetActions && activeTextAssetId && onNavigateToStudio && (
-            <div className="flex shrink-0 justify-end border-t border-slate-100 px-6 py-3 dark:border-slate-800">
+            <div className="flex shrink-0 justify-center border-t border-slate-100 px-6 py-2.5 dark:border-slate-800">
               <button
                 type="button"
                 onClick={() => handleImproveWithUnibot(activeTextAssetId, activeTab === "cold-email" ? "cold-email" : "cover-letter")}
-                className="flex items-center gap-2 rounded-xl border border-brand-200 bg-brand-50 px-4 py-2 text-sm font-medium text-brand-700 transition-colors hover:bg-brand-100 dark:border-brand-800 dark:bg-brand-900/40 dark:text-brand-300 dark:hover:bg-brand-900/60"
+                className="flex items-center gap-1.5 rounded-lg bg-slate-100 px-3 py-1.5 text-xs font-medium text-slate-600 transition-all hover:bg-slate-200 dark:bg-slate-800 dark:text-slate-300 dark:hover:bg-slate-700"
               >
-                <Wand2 size={16} /> Improve with Unibot
+                <Wand2 size={14} /> Improve with Unibot
               </button>
             </div>
           )}

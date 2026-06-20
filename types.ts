@@ -271,6 +271,8 @@ export interface ResumeData {
   isBase?: boolean;
   /** Public URL segment when backend provides a slug */
   slug?: string;
+  /** ISO timestamp when resume was last published (`published_at` from API). */
+  publishedAt?: string | null;
   profile: ResumeProfile;
   experience: ResumeExperience[];
   education: ResumeEducation[];

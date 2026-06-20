@@ -873,7 +873,7 @@ const Portfolio: React.FC<PortfolioProps> = ({ portfolioId, initialData, onBack,
     }
 
     try {
-      const response = await fetch(resolvedSource, { credentials: "include" });
+      const response = await fetch(resolvedSource, { credentials: "omit", mode: "cors" });
       if (!response.ok) {
         return resolvedSource;
       }

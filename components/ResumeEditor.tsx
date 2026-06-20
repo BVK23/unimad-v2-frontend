@@ -17,6 +17,7 @@ import { useUpdateResume } from "@/features/resume/hooks/useUpdateResume";
 import { publishResumeAsset } from "@/features/resume/server-actions/resume-actions";
 import { useResumeStore } from "@/features/resume/store/useResumeStore";
 import { downloadResumePdf } from "@/features/resume/utils/downloadResumePdf";
+import { copyResumePublicLink, isResumePublished } from "@/features/resume/utils/resumePublish";
 import {
   clearPrepareReturnSession,
   getPrepareReturnSession,
@@ -69,6 +70,7 @@ import {
   Linkedin,
   Github,
   ExternalLink,
+  Link,
   Calendar,
   Check,
   AlertCircle,
@@ -93,6 +95,8 @@ import { useRouter, useSearchParams } from "next/navigation";
 import ResumePDFPreview from "./ResumePDFPreview";
 import TiptapEditor from "./TiptapEditor";
 import ResumeFieldError from "./resume/ResumeFieldError";
+import ResumePersonalDetailsFields, { type ResumePersonalDetailsFieldsHandle } from "./resume/ResumePersonalDetailsFields";
+import ResumePublishedBeacon from "./resume/ResumePublishedBeacon";
 import HtmlDisplay from "./resume/shared/HtmlDisplay";
 import { parseDate } from "./resume/shared/dateUtils";
 import { getTemplate } from "./resume/templates";
@@ -501,6 +505,8 @@ const ResumeEditor: React.FC<ResumeEditorProps> = ({
   const [publishError, setPublishError] = useState<string | null>(null);
   /** After successful publish, primary button shows "Published" for at least this long */
   const [publishShowPublished, setPublishShowPublished] = useState(false);
+  const [copiedPublicLink, setCopiedPublicLink] = useState(false);
+  const copiedPublicLinkTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const [isExportDropdownOpen, setIsExportDropdownOpen] = useState(false);
   const [isDownloadingPdf, setIsDownloadingPdf] = useState(false);
   const exportDropdownRef = useRef<HTMLDivElement>(null);
@@ -510,6 +516,9 @@ const ResumeEditor: React.FC<ResumeEditorProps> = ({
     return () => {
       if (publishPublishedTimerRef.current) {
         clearTimeout(publishPublishedTimerRef.current);
+      }
+      if (copiedPublicLinkTimerRef.current) {
+        clearTimeout(copiedPublicLinkTimerRef.current);
       }
     };
   }, []);
@@ -591,6 +600,7 @@ const ResumeEditor: React.FC<ResumeEditorProps> = ({
   const queuedSaveRef = useRef(false);
   const runSaveRef = useRef<((source: "auto" | "manual") => Promise<void>) | null>(null);
   const latestSnapshotRef = useRef(JSON.stringify(getInitialResume()));
+  const profileFieldsRef = useRef<ResumePersonalDetailsFieldsHandle>(null);
 
   // Toast notification state
   const [toast, setToast] = useState<{
@@ -678,8 +688,9 @@ const ResumeEditor: React.FC<ResumeEditorProps> = ({
       }
 
       const canonicalSlug = result.slug;
-      updateResume(prev => ({ ...prev, slug: canonicalSlug }));
-      onSave({ ...resume, slug: canonicalSlug });
+      const publishedAt = new Date().toISOString();
+      updateResume(prev => ({ ...prev, slug: canonicalSlug, publishedAt }));
+      onSave({ ...resume, slug: canonicalSlug, publishedAt });
 
       await queryClient.invalidateQueries({ queryKey: ["resumes"] });
       await queryClient.invalidateQueries({ queryKey: ["resumes", resumeId] });
@@ -910,7 +921,10 @@ const ResumeEditor: React.FC<ResumeEditorProps> = ({
   };
 
   const handleExportClick = () => {
-    if (validationErrors.length > 0) {
+    profileFieldsRef.current?.flushToStore();
+    const latestResume = useResumeStore.getState().getResumeData(resumeId) ?? resume;
+    const exportValidationErrors = validateResume(latestResume);
+    if (exportValidationErrors.length > 0) {
       setShowFieldValidation(true);
       showToast("Please fill in all required fields before exporting.", "error");
       return;
@@ -930,6 +944,23 @@ const ResumeEditor: React.FC<ResumeEditorProps> = ({
     }
   };
 
+  const handleCopyPublicLink = async () => {
+    if (!isResumePublished(resume)) return;
+    const copied = await copyResumePublicLink(resume);
+    if (!copied) {
+      showToast("Could not copy link to clipboard", "error");
+      return;
+    }
+    setCopiedPublicLink(true);
+    if (copiedPublicLinkTimerRef.current) clearTimeout(copiedPublicLinkTimerRef.current);
+    copiedPublicLinkTimerRef.current = setTimeout(() => {
+      setCopiedPublicLink(false);
+      copiedPublicLinkTimerRef.current = null;
+    }, 3000);
+  };
+
+  const isPublishedResume = isResumePublished(resume);
+
   // -- Handlers --
 
   const handleProfileChange = (field: string, value: string) => {
@@ -938,6 +969,13 @@ const ResumeEditor: React.FC<ResumeEditorProps> = ({
       profile: { ...prev.profile, [field]: value },
     }));
   };
+
+  const handleProfileSync = useCallback(
+    (profile: ResumeData["profile"]) => {
+      updateResume(prev => ({ ...prev, profile }));
+    },
+    [updateResume]
+  );
 
   const addExperience = () => {
     const newExp: ResumeExperience = {
@@ -1250,6 +1288,7 @@ const ResumeEditor: React.FC<ResumeEditorProps> = ({
       }
 
       const snapshotAtStart = latestSnapshotRef.current;
+      profileFieldsRef.current?.flushToStore();
       const dataToSave = useResumeStore.getState().getResumeData(resumeId) ?? resume;
       saveInFlightRef.current = true;
       setActiveSaveSource(source);
@@ -1738,8 +1777,15 @@ const ResumeEditor: React.FC<ResumeEditorProps> = ({
                 type="button"
                 onClick={handleExportClick}
                 title={validationErrors.length > 0 ? "Please fill in all required fields" : "Export Resume"}
-                className={`flex items-center gap-2 px-4 py-2 text-white rounded-lg font-medium text-sm transition-all shadow-md ${validationErrors.length > 0 ? "bg-slate-400 hover:bg-slate-500" : "bg-slate-900 hover:bg-slate-800 hover:shadow-lg hover:-translate-y-0.5"}`}
+                className={`flex items-center gap-2 px-4 py-2 rounded-lg font-medium text-sm transition-all shadow-md ${
+                  validationErrors.length > 0
+                    ? "bg-slate-400 hover:bg-slate-500 text-white"
+                    : isPublishedResume
+                      ? "border border-green-500/30 bg-green-50 text-green-800 hover:bg-green-100 hover:shadow-lg hover:-translate-y-0.5 dark:border-green-500/25 dark:bg-green-950/40 dark:text-green-300 dark:hover:bg-green-950/55"
+                      : "bg-slate-900 hover:bg-slate-800 text-white hover:shadow-lg hover:-translate-y-0.5"
+                }`}
               >
+                {isPublishedResume ? <ResumePublishedBeacon label="Resume published" /> : null}
                 <Share2 size={16} /> Share & Download
               </button>
 
@@ -1763,6 +1809,24 @@ const ResumeEditor: React.FC<ResumeEditorProps> = ({
                           <div className="ml-auto h-4 w-4 animate-spin rounded-full border-2 border-brand-500 border-t-transparent" />
                         )}
                       </button>
+                      {isPublishedResume ? (
+                        <button
+                          type="button"
+                          onClick={() => void handleCopyPublicLink()}
+                          className={`flex w-full items-center gap-3 px-4 py-2.5 text-sm transition-colors ${
+                            copiedPublicLink
+                              ? "bg-brand-50 text-brand-600 dark:bg-brand-950/40 dark:text-brand-300"
+                              : "text-slate-700 hover:bg-slate-50 dark:text-slate-200 dark:hover:bg-slate-800"
+                          }`}
+                        >
+                          {copiedPublicLink ? (
+                            <Check size={16} className="text-brand-600" />
+                          ) : (
+                            <Link size={16} className="text-slate-500" />
+                          )}
+                          <span className="font-medium">{copiedPublicLink ? "Copied" : "Copy public link"}</span>
+                        </button>
+                      ) : null}
                       <button
                         type="button"
                         onClick={handleEnterPublishMode}
@@ -1770,7 +1834,7 @@ const ResumeEditor: React.FC<ResumeEditorProps> = ({
                         className="flex w-full items-center gap-3 px-4 py-2.5 text-sm text-slate-700 transition-colors hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-50 dark:text-slate-200 dark:hover:bg-slate-800"
                       >
                         <Share2 size={16} className="text-slate-500" />
-                        <span className="font-medium">Share Public Link</span>
+                        <span className="font-medium">{isPublishedResume ? "Update public link" : "Share Public Link"}</span>
                       </button>
                     </>
                   ) : (
@@ -1936,90 +2000,15 @@ const ResumeEditor: React.FC<ResumeEditorProps> = ({
           >
             <div className="scrollbar-on-hover flex-1 overflow-y-auto bg-white p-6 dark:bg-slate-900">
               {activeSection === "profile" && (
-                <div className="space-y-5 animate-in fade-in slide-in-from-left-2 duration-200">
-                  <h2 className="text-lg font-medium text-slate-900 dark:text-white flex items-center gap-2">Personal Details</h2>
-                  <div className="space-y-4">
-                    <div>
-                      <input
-                        placeholder="Full Name"
-                        value={resume.profile.fullName ?? ""}
-                        onChange={e => handleProfileChange("fullName", e.target.value)}
-                        className={`w-full p-3 bg-white dark:bg-slate-800 border rounded-lg text-sm font-medium focus:border-brand-500 focus:ring-1 focus:ring-brand-500 outline-none transition-all dark:text-white dark:placeholder:text-slate-500 ${getError("profile", "fullName") ? "border-red-500" : "border-slate-200 dark:border-slate-700"}`}
-                      />
-                      <ResumeFieldError errors={validationErrors} section="profile" field="fullName" visible={showFieldValidation} />
-                    </div>
-                    <input
-                      placeholder="Job Title"
-                      value={resume.profile.title ?? ""}
-                      onChange={e => handleProfileChange("title", e.target.value)}
-                      className="w-full p-3 bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-lg text-sm focus:border-brand-500 focus:ring-1 focus:ring-brand-500 outline-none transition-all dark:text-white dark:placeholder:text-slate-500"
-                    />
-                    <div className="grid grid-cols-2 gap-4">
-                      <div>
-                        <input
-                          placeholder="Email"
-                          value={resume.profile.email ?? ""}
-                          onChange={e => handleProfileChange("email", e.target.value)}
-                          className={`w-full p-3 bg-white dark:bg-slate-800 border rounded-lg text-sm focus:border-brand-500 focus:ring-1 focus:ring-brand-500 outline-none transition-all dark:text-white dark:placeholder:text-slate-500 ${getError("profile", "email") ? "border-red-500" : "border-slate-200 dark:border-slate-700"}`}
-                        />
-                        <ResumeFieldError errors={validationErrors} section="profile" field="email" visible={showFieldValidation} />
-                      </div>
-                      <div>
-                        <input
-                          placeholder="Phone"
-                          value={resume.profile.phone ?? ""}
-                          onChange={e => handleProfileChange("phone", e.target.value)}
-                          className={`w-full p-3 bg-white dark:bg-slate-800 border rounded-lg text-sm focus:border-brand-500 focus:ring-1 focus:ring-brand-500 outline-none transition-all dark:text-white dark:placeholder:text-slate-500 ${getError("profile", "phone") ? "border-red-500" : "border-slate-200 dark:border-slate-700"}`}
-                        />
-                        <ResumeFieldError errors={validationErrors} section="profile" field="phone" visible={showFieldValidation} />
-                      </div>
-                    </div>
-                    <div className="grid grid-cols-2 gap-3">
-                      <input
-                        placeholder="City"
-                        value={resume.profile.city ?? ""}
-                        onChange={e => handleProfileChange("city", e.target.value)}
-                        className="w-full p-3 bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-lg text-sm focus:border-brand-500 focus:ring-1 focus:ring-brand-500 outline-none transition-all dark:text-white dark:placeholder:text-slate-500"
-                      />
-                      <input
-                        placeholder="Country"
-                        value={resume.profile.country ?? ""}
-                        onChange={e => handleProfileChange("country", e.target.value)}
-                        className="w-full p-3 bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-lg text-sm focus:border-brand-500 focus:ring-1 focus:ring-brand-500 outline-none transition-all dark:text-white dark:placeholder:text-slate-500"
-                      />
-                    </div>
-                    <input
-                      placeholder="LinkedIn (username or URL)"
-                      value={resume.profile.linkedin || ""}
-                      onChange={e => handleProfileChange("linkedin", e.target.value)}
-                      className="w-full p-3 bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-lg text-sm focus:border-brand-500 focus:ring-1 focus:ring-brand-500 outline-none transition-all dark:text-white dark:placeholder:text-slate-500"
-                    />
-                    <input
-                      placeholder="GitHub (username or URL)"
-                      value={resume.profile.github || ""}
-                      onChange={e => handleProfileChange("github", e.target.value)}
-                      className="w-full p-3 bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-lg text-sm focus:border-brand-500 focus:ring-1 focus:ring-brand-500 outline-none transition-all dark:text-white dark:placeholder:text-slate-500"
-                    />
-                    <input
-                      placeholder="Portfolio (URL)"
-                      value={resume.profile.portfolio || ""}
-                      onChange={e => handleProfileChange("portfolio", e.target.value)}
-                      className="w-full p-3 bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-lg text-sm focus:border-brand-500 focus:ring-1 focus:ring-brand-500 outline-none transition-all dark:text-white dark:placeholder:text-slate-500"
-                    />
-                    <div className="pt-2">
-                      <label className="text-xs font-medium text-slate-500 dark:text-slate-400 block mb-2 uppercase tracking-wide">
-                        Professional Summary
-                      </label>
-                      <TiptapEditor
-                        placeholder="Write a short professional summary..."
-                        value={resume.profile.summary ?? ""}
-                        onChange={val => handleProfileChange("summary", val)}
-                        onImprove={onImprove}
-                        unibotImproveTarget={{ section: "summary", resumeId }}
-                      />
-                    </div>
-                  </div>
-                </div>
+                <ResumePersonalDetailsFields
+                  ref={profileFieldsRef}
+                  profile={resume.profile}
+                  onProfileSync={handleProfileSync}
+                  validationErrors={validationErrors}
+                  showFieldValidation={showFieldValidation}
+                  onImprove={onImprove}
+                  resumeId={resumeId}
+                />
               )}
 
               {activeSection === "experience" && (

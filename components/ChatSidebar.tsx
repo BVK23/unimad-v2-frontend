@@ -86,6 +86,7 @@ import { UNTITLED_THREAD_TITLE } from "@/src/features/adk-chat/constants";
 import { ensureApplicationAssetTopicSubSession, ensureContentGenTopicSubSession } from "@/src/features/adk-chat/ensure-topic-sub-session";
 import { getRegistryRow, upsertRegistryRow } from "@/src/features/adk-chat/session-registry";
 import { registerUnibotAdkSessionAction } from "@/src/features/adk-chat/unibot-adk-session-actions";
+import { growTextareaToFit, resetTextareaHeight } from "@/utils/textarea-autosize";
 import { useQueryClient } from "@tanstack/react-query";
 import {
   Send,
@@ -232,6 +233,8 @@ const ChatSidebar: React.FC<ChatSidebarProps> = ({ incomingRequest, onRequestHan
   } | null>(null);
 
   const [input, setInput] = useState("");
+  const mainInputRef = useRef<HTMLTextAreaElement>(null);
+  const topicInputRefs = useRef<Record<string, HTMLTextAreaElement | null>>({});
   const messagesScrollRef = useRef<HTMLDivElement>(null);
   const footerInputCardRef = useRef<HTMLDivElement>(null);
   const sidebarWidthRef = useRef(SIDEBAR_DEFAULT_WIDTH_PX);
@@ -1909,6 +1912,21 @@ const ChatSidebar: React.FC<ChatSidebarProps> = ({ incomingRequest, onRequestHan
     };
   }, []);
 
+  useEffect(() => {
+    if (!input && mainInputRef.current) {
+      resetTextareaHeight(mainInputRef.current);
+    }
+  }, [input]);
+
+  useEffect(() => {
+    for (const [topicId, value] of Object.entries(topicInputs)) {
+      if (!value) {
+        const el = topicInputRefs.current[topicId];
+        if (el) resetTextareaHeight(el);
+      }
+    }
+  }, [topicInputs]);
+
   const handleSend = useCallback(
     async (overrideText?: string, options?: { afterRetry?: boolean }) => {
       const textToSend = (overrideText ?? input).trim();
@@ -2645,14 +2663,16 @@ const ChatSidebar: React.FC<ChatSidebarProps> = ({ incomingRequest, onRequestHan
                     {/* Topic Input - Seamless (nextjs layout; textarea for multi-line) */}
                     <div className="relative flex items-center gap-2 pt-2">
                       <textarea
+                        ref={el => {
+                          topicInputRefs.current[msg.id] = el;
+                        }}
                         value={topicInputs[msg.id] || ""}
                         onChange={e => {
                           setTopicInputs(prev => ({
                             ...prev,
                             [msg.id]: e.target.value,
                           }));
-                          e.target.style.height = "auto";
-                          e.target.style.height = `${e.target.scrollHeight}px`;
+                          growTextareaToFit(e.target);
                         }}
                         onKeyDown={e => {
                           if (e.key === "Enter" && !e.shiftKey) {
@@ -2951,11 +2971,11 @@ const ChatSidebar: React.FC<ChatSidebarProps> = ({ incomingRequest, onRequestHan
             </p>
           ) : null}
           <textarea
+            ref={mainInputRef}
             value={input}
             onChange={e => {
               setInput(e.target.value);
-              e.target.style.height = "auto";
-              e.target.style.height = e.target.scrollHeight + "px";
+              growTextareaToFit(e.target);
             }}
             onKeyDown={e => {
               if (e.key === "Enter" && !e.shiftKey) {

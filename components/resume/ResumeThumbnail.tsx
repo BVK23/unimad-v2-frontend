@@ -53,6 +53,7 @@ const ResumeThumbnail = React.memo(
     prev.resume.templateId === next.resume.templateId &&
     prev.resume.lastModified.getTime() === next.resume.lastModified.getTime() &&
     prev.resume.isBase === next.resume.isBase &&
+    prev.resume.publishedAt === next.resume.publishedAt &&
     prev.previewScale === next.previewScale
 );
 

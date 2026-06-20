@@ -2,6 +2,7 @@ import React, { useEffect, useRef, useState } from "react";
 import JobUrlImportLoading from "@/components/jobs/JobUrlImportLoading";
 import ResumeCardActionsMenu from "@/components/resume/ResumeCardActionsMenu";
 import ResumeGenerationOverlay from "@/components/resume/ResumeGenerationOverlay";
+import ResumePublishedBeacon from "@/components/resume/ResumePublishedBeacon";
 import ResumeThumbnail from "@/components/resume/ResumeThumbnail";
 import { ModalPortalOverlay } from "@/components/ui/ModalPortalOverlay";
 import { importJobFromUrl } from "@/features/jobs/server-actions/jobs-actions";
@@ -14,6 +15,7 @@ import {
   setBaseResume,
 } from "@/features/resume/server-actions/resume-actions";
 import { downloadResumePdf } from "@/features/resume/utils/downloadResumePdf";
+import { copyResumePublicLink, isResumePublished } from "@/features/resume/utils/resumePublish";
 import { ResumeData } from "@/types";
 import { useQueryClient } from "@tanstack/react-query";
 import {
@@ -272,20 +274,19 @@ const ResumeDashboard: React.FC<ResumeDashboardProps> = ({ onEditResume, onCreat
 
   const handleCopyLink = async (e: React.MouseEvent, resume: ResumeData) => {
     e.stopPropagation();
-    const identifier = resume.slug ?? resume.id;
-    const origin = typeof window !== "undefined" ? window.location.origin : "https://unimad.ai";
-    try {
-      await navigator.clipboard.writeText(`${origin}/resume/${identifier}`);
-      setCopiedLinkResumeId(resume.id);
-      if (copiedLinkTimeoutRef.current) clearTimeout(copiedLinkTimeoutRef.current);
-      copiedLinkTimeoutRef.current = setTimeout(() => {
-        setCopiedLinkResumeId(current => (current === resume.id ? null : current));
-        copiedLinkTimeoutRef.current = null;
-      }, 3000);
-    } catch {
+    if (!isResumePublished(resume)) return;
+    const copied = await copyResumePublicLink(resume);
+    if (!copied) {
       setBaseStatusType("error");
       setBaseStatusMessage("Could not copy link to clipboard");
+      return;
     }
+    setCopiedLinkResumeId(resume.id);
+    if (copiedLinkTimeoutRef.current) clearTimeout(copiedLinkTimeoutRef.current);
+    copiedLinkTimeoutRef.current = setTimeout(() => {
+      setCopiedLinkResumeId(current => (current === resume.id ? null : current));
+      copiedLinkTimeoutRef.current = null;
+    }, 3000);
   };
 
   const handleSetBaseResume = async (e: React.MouseEvent, resume: ResumeData) => {
@@ -452,6 +453,13 @@ const ResumeDashboard: React.FC<ResumeDashboardProps> = ({ onEditResume, onCreat
                 {/* Preview (base badge renders inside ResumeThumbnail above scaled preview + hover layers) */}
                 <ResumeThumbnail resume={resume} />
 
+                {isResumePublished(resume) ? (
+                  <div className="pointer-events-none absolute left-3 top-3 z-[35] inline-flex items-center gap-1.5 rounded-full border border-green-200 bg-white/95 px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wider text-green-700 shadow-sm backdrop-blur-sm">
+                    <ResumePublishedBeacon label="Resume published" />
+                    Published
+                  </div>
+                ) : null}
+
                 {/* Info */}
                 <div className="p-4 rounded-b-xl relative">
                   <div className="flex justify-between items-start">
@@ -509,17 +517,19 @@ const ResumeDashboard: React.FC<ResumeDashboardProps> = ({ onEditResume, onCreat
                         >
                           {duplicatingId === resume.id ? <Loader2 size={14} className="animate-spin" /> : <Copy size={14} />} Duplicate
                         </button>
-                        <button
-                          onClick={e => void handleCopyLink(e, resume)}
-                          className={`w-full text-left px-4 py-2 text-sm flex items-center gap-2.5 transition-colors ${
-                            copiedLinkResumeId === resume.id
-                              ? "bg-brand-50 text-brand-600"
-                              : "text-slate-700 hover:bg-slate-50 hover:text-brand-600"
-                          }`}
-                        >
-                          {copiedLinkResumeId === resume.id ? <Check size={14} className="text-brand-600" /> : <Link size={14} />}
-                          {copiedLinkResumeId === resume.id ? "Copied" : "Copy Link"}
-                        </button>
+                        {isResumePublished(resume) ? (
+                          <button
+                            onClick={e => void handleCopyLink(e, resume)}
+                            className={`w-full text-left px-4 py-2 text-sm flex items-center gap-2.5 transition-colors ${
+                              copiedLinkResumeId === resume.id
+                                ? "bg-brand-50 text-brand-600"
+                                : "text-slate-700 hover:bg-slate-50 hover:text-brand-600"
+                            }`}
+                          >
+                            {copiedLinkResumeId === resume.id ? <Check size={14} className="text-brand-600" /> : <Link size={14} />}
+                            {copiedLinkResumeId === resume.id ? "Copied" : "Copy Link"}
+                          </button>
+                        ) : null}
                         <button
                           onClick={e => void handleDownload(e, resume)}
                           disabled={downloadingId === resume.id}

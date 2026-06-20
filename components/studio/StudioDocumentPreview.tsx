@@ -49,6 +49,8 @@ interface StudioDocumentPreviewProps {
   onApplyReconciled?: (reconciledHtml: string) => void;
   /** Remount diff review when a new ADK revision arrives. */
   reviewSessionKey?: string;
+  onImproveWithUnibot?: () => void;
+  improveDisabled?: boolean;
 }
 
 /** Typography on the preview body — matches `utils/pdf-export.tsx` (A4 Helvetica). */
@@ -86,6 +88,8 @@ const StudioDocumentPreview = ({
   anchorSelectedText,
   onApplyReconciled,
   reviewSessionKey = "review",
+  onImproveWithUnibot,
+  improveDisabled = false,
 }: StudioDocumentPreviewProps) => {
   const [isDownloading, setIsDownloading] = useState(false);
   const [localContent, setLocalContent] = useState(() => normalizeContentToHtml(content));
@@ -171,9 +175,19 @@ const StudioDocumentPreview = ({
     onContentChange?.(val);
   };
 
+  const toolbarActionClass =
+    "flex items-center gap-2 rounded-lg bg-slate-100 px-4 py-2 text-xs font-medium text-slate-600 transition-all hover:bg-slate-200 disabled:cursor-not-allowed disabled:opacity-40 dark:bg-slate-800 dark:text-slate-300 dark:hover:bg-slate-700";
+
   const toolbar = (
     <div className="flex min-h-[52px] items-center justify-between gap-2 p-4">
-      <span className="flex-1" aria-hidden />
+      <div className="flex shrink-0 items-center gap-2">
+        {showActions && onImproveWithUnibot && !hasPendingRevision ? (
+          <button type="button" onClick={onImproveWithUnibot} disabled={improveDisabled} className={toolbarActionClass}>
+            <Wand2 size={14} />
+            Improve with Unibot
+          </button>
+        ) : null}
+      </div>
       <div className="flex shrink-0 items-center justify-end gap-2">
         <DocumentSaveStatusBar
           variant={saveStatusVariant}
@@ -185,12 +199,7 @@ const StudioDocumentPreview = ({
         />
         {showActions ? (
           <>
-            <button
-              type="button"
-              onClick={handleCopy}
-              aria-label="Copy to clipboard"
-              className="flex items-center gap-2 rounded-lg bg-slate-100 px-4 py-2 text-xs font-medium text-slate-600 transition-all hover:bg-slate-200 dark:bg-slate-800 dark:text-slate-300 dark:hover:bg-slate-700"
-            >
+            <button type="button" onClick={handleCopy} aria-label="Copy to clipboard" className={toolbarActionClass}>
               <Copy size={14} />
               {copyFeedback ? "Copied!" : "Copy"}
             </button>

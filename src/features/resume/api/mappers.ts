@@ -148,6 +148,9 @@ export function mapBackendResumeToFrontend(dto: Record<string, unknown>): Resume
 
   const slugRaw = dto.slug;
   const slug = typeof slugRaw === "string" && slugRaw.trim().length > 0 ? slugRaw.trim() : undefined;
+  const publishedAtRaw = dto.published_at ?? dto.publishedAt;
+  const publishedAt =
+    typeof publishedAtRaw === "string" && publishedAtRaw.trim().length > 0 ? publishedAtRaw.trim() : (publishedAtRaw ?? undefined);
 
   const educationLeftRaw = dto.education_left_column ?? dto.educationLeftColumn;
 
@@ -159,6 +162,7 @@ export function mapBackendResumeToFrontend(dto: Record<string, unknown>): Resume
     lastModified: new Date((dto.updated_at as string) ?? (dto.created_at as string) ?? Date.now()),
     isBase: readIsBaseResumeFlag(dto),
     ...(slug ? { slug } : {}),
+    ...(publishedAt ? { publishedAt: String(publishedAt) } : {}),
 
     // Profile
     profile: mapProfile(profile, dto.summary),

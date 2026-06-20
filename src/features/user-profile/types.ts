@@ -81,6 +81,9 @@ export type ProfileData = {
   projects?: ProfileProject[] | null;
   has_google?: boolean;
   has_linkedin?: boolean;
+  linkedin_can_post?: boolean;
+  linkedin_can_schedule?: boolean;
+  linkedin_session_ends_at?: string | null;
   onboarding_data?: OnboardingData | null;
   linkedin_stored_data?: LinkedInStoredData | null;
 };

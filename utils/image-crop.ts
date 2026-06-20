@@ -113,7 +113,7 @@ export async function resolveRemoteImageForCrop(source: string): Promise<string>
     return resolvedSource;
   }
 
-  const response = await fetch(resolvedSource, { credentials: "include", mode: "cors" });
+  const response = await fetch(resolvedSource, { credentials: "omit", mode: "cors" });
   if (!response.ok) {
     throw new Error("Could not load this image for cropping. Try uploading again.");
   }
