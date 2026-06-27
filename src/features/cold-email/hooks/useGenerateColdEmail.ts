@@ -1,6 +1,8 @@
 import {
   useGenerateApplicationAsset,
+  regenerateApplicationAssetDraft,
   type GenerateApplicationAssetResult,
+  type RegenerateApplicationAssetParams,
 } from "@/features/application-assets/hooks/useGenerateApplicationAsset";
 import { deleteColdEmail } from "../server-actions/cold-email-actions";
 import type { GenerateColdEmailParams } from "../types";
@@ -53,5 +55,7 @@ export function useGenerateColdEmail(options?: {
         application_id: params.application_id,
       }),
     replaceExistingAndGenerate,
+    regenerateAnother: (params: RegenerateApplicationAssetParams) =>
+      regenerateApplicationAssetDraft({ ...params, studioTopic: "cold-email" }),
   };
 }

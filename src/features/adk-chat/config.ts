@@ -5,7 +5,7 @@
  * Local ADK Python: set `ADK_BACKEND_URL` (preferred; avoids clashing with Django
  *   `BACKEND_URL`) to the agent server, e.g. http://127.0.0.1:8001 if Django uses 8000.
  *   Default when unset is http://127.0.0.1:8001 (Django often uses 8000).
- *   Optional `ADK_APP_NAME` (default "app").
+ *   Optional `ADK_APP_NAME` (default "unibot").
  * Agent Engine: set `AGENT_ENGINE_ENDPOINT` and `GOOGLE_SERVICE_ACCOUNT_KEY_BASE64`.
  */
 

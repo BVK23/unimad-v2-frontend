@@ -61,11 +61,9 @@ async function generatePrepareTabAsset(
   }
 
   const assetType = tab === "cover-letter" ? "coverletter" : "coldemail";
-  const contactName = tab === "cold-email" ? "Hiring Manager" : undefined;
   const availability = await checkApplicationAssetAvailability({
     type: assetType,
     ...baseParams,
-    ...(tab === "cold-email" ? { hirname: contactName } : {}),
   });
 
   if ("error_code" in availability) {
@@ -84,7 +82,6 @@ async function generatePrepareTabAsset(
     role: job.role,
     company: job.company,
     jobDescription: jd,
-    contactName,
     applicationId,
   });
 

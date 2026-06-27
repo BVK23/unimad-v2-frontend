@@ -2,20 +2,35 @@
 
 import React, { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState } from "react";
 import { formatUnibotStreamError, type FormattedUnibotStreamError } from "@/features/adk-chat/format-stream-error";
+import {
+  loadAcceptSnapshotsFromLocalStorage,
+  mergeAcceptSnapshots,
+  parseAcceptSnapshotsFromAdkState,
+  setAcceptSnapshotsCache,
+  getAcceptSnapshotsCache,
+} from "@/src/features/adk-chat/accept-snapshots";
 import type { ActiveSession } from "@/src/features/adk-chat/actions";
 import { loadSessionHistoryAction, pullSessionStateAction, rewindSessionAction } from "@/src/features/adk-chat/actions";
+import { agentMessageToChatMessage } from "@/src/features/adk-chat/agent-message-to-chat";
 import { applyAdkSessionStateToStores } from "@/src/features/adk-chat/apply-adk-session-state-to-stores";
+import { deriveActiveScope, deriveScopeFromRegistryRow, type ContentScope, type ScopeMatch } from "@/src/features/adk-chat/content-scope";
 import { backfillMainSessionTitleFromHistory } from "@/src/features/adk-chat/generate-main-session-title";
 import { useAdkSession } from "@/src/features/adk-chat/hooks/useAdkSession";
 import { useAdkStreamingManager } from "@/src/features/adk-chat/hooks/useAdkStreamingManager";
 import { hydrateLoadedTopicMessages } from "@/src/features/adk-chat/hydrate-loaded-topics";
 import { mergeSubSessionsIntoMainMessages, sortMainThreadChronologically } from "@/src/features/adk-chat/improve-topic-helpers";
+import { pruneRewindSessionMetadata } from "@/src/features/adk-chat/prune-rewind-session-metadata";
+import { reconcileStudioContentAfterRewind } from "@/src/features/adk-chat/reconcile-studio-after-rewind";
 import {
   filterMessagesExcludingIds,
   mergeLegacyAndSubTopics,
   reconstructLegacyTopicsFromMain,
 } from "@/src/features/adk-chat/reconstruct-legacy-topics";
+import { resolveDjangoRestoreTarget } from "@/src/features/adk-chat/resolve-django-restore-target";
+import { resolveAdkSessionOptionsForSessionId } from "@/src/features/adk-chat/resolve-sub-session-adk-app";
+import { revertDjangoContentAfterRewind } from "@/src/features/adk-chat/revert-django-content-after-rewind";
 import {
+  getReviewDecisionsCache,
   loadReviewDecisionsFromLocalStorage,
   mergeReviewDecisions,
   parseReviewDecisionsFromAdkState,
@@ -24,13 +39,15 @@ import {
 import { getRegistryRow, getSessionRegistry } from "@/src/features/adk-chat/session-registry";
 import { useAdkApplicationAssetReviewStore } from "@/src/features/adk-chat/stores/useAdkApplicationAssetReviewStore";
 import { useAdkContentGenReviewStore } from "@/src/features/adk-chat/stores/useAdkContentGenReviewStore";
+import { useAdkLinkedInReviewStore } from "@/src/features/adk-chat/stores/useAdkLinkedInReviewStore";
 import { useAdkPortfolioReviewStore } from "@/src/features/adk-chat/stores/useAdkPortfolioReviewStore";
 import { useAdkResumeReviewStore } from "@/src/features/adk-chat/stores/useAdkResumeReviewStore";
 import type { AgentMessage, ProcessedEvent } from "@/src/features/adk-chat/types";
 import { UNIBOT_AGENT_LOADING_EVENT } from "@/src/hooks/useUnibotAgentBusy";
 import type { ChatMessage } from "@/types";
 import { useQueryClient } from "@tanstack/react-query";
-import { usePathname } from "next/navigation";
+import { usePathname, useSearchParams } from "next/navigation";
+import { patchChatMessageInTree } from "./patch-chat-message";
 import { markEmptyAssistantStreamErrorInTree, resetAssistantTurnForRetryInTree } from "./set-chat-message-stream-error";
 import { updateChatMessageInTree } from "./update-chat-message";
 
@@ -41,19 +58,21 @@ const WELCOME_MESSAGE: ChatMessage = {
   timestamp: new Date(),
 };
 
-function parseAgentTimestamp(ts: Date | string | number): Date {
-  if (ts instanceof Date) return ts;
-  return new Date(ts);
-}
-
-function agentMessageToChatMessage(m: AgentMessage): ChatMessage {
-  return {
-    id: m.id,
-    role: m.type === "human" ? "user" : "model",
-    text: m.content,
-    timestamp: parseAgentTimestamp(m.timestamp as unknown as Date | string | number),
-    ...(m.invocationId ? { invocationId: m.invocationId } : {}),
-  };
+function collectAssistantIds(messages: ChatMessage[]): Set<string> {
+  const ids = new Set<string>();
+  for (const message of messages) {
+    if (message.role === "model") {
+      ids.add(message.id);
+    }
+    if (message.isTopic && Array.isArray(message.messages)) {
+      for (const nested of message.messages) {
+        if (nested.role === "model") {
+          ids.add(nested.id);
+        }
+      }
+    }
+  }
+  return ids;
 }
 
 export interface SendMainMessageOptions {
@@ -74,6 +93,7 @@ export interface AdkChatContextValue {
   sessionError: string | null;
   isLoadingHistory: boolean;
   isAgentLoading: boolean;
+  isSyncingContext: boolean;
   streamActivityLabel: string | null;
   messages: ChatMessage[];
   setMessages: React.Dispatch<React.SetStateAction<ChatMessage[]>>;
@@ -94,6 +114,8 @@ export interface AdkChatContextValue {
     revertEditorState: boolean;
     targetSessionId?: string;
     topicId?: string;
+    targetScope?: ContentScope;
+    scopeMatch?: ScopeMatch;
   }) => Promise<void>;
   isRewinding: boolean;
 }
@@ -105,7 +127,8 @@ export function AdkChatProvider({ userId, children }: { userId: string; children
   const [streamError, setStreamError] = useState<FormattedUnibotStreamError | null>(null);
   const [isLoadingHistory, setIsLoadingHistory] = useState(false);
   const [isRewinding, setIsRewinding] = useState(false);
-  const pathname = usePathname();
+  const pathname = usePathname() ?? "";
+  const searchParams = useSearchParams();
   const queryClient = useQueryClient();
   const clearStreamError = useCallback(() => setStreamError(null), []);
   const pendingSendRef = useRef<{
@@ -113,6 +136,17 @@ export function AdkChatProvider({ userId, children }: { userId: string; children
     text: string;
     excludeFromTitleGeneration?: boolean;
   } | null>(null);
+
+  const deriveCurrentActiveScope = useCallback(
+    (targetSessionId: string, sessionKind: "main" | "sub" = "main") =>
+      deriveActiveScope({
+        pathname,
+        searchParams,
+        sessionId: targetSessionId,
+        sessionKind,
+      }),
+    [pathname, searchParams]
+  );
 
   const {
     sessionId,
@@ -127,7 +161,6 @@ export function AdkChatProvider({ userId, children }: { userId: string; children
 
   const sessionIdRef = useRef(sessionId);
   sessionIdRef.current = sessionId;
-
   const onMessageUpdate = useCallback((am: AgentMessage) => {
     setMessages(prev => updateChatMessageInTree(prev, am.id, am.content));
   }, []);
@@ -143,7 +176,8 @@ export function AdkChatProvider({ userId, children }: { userId: string; children
   const markIncompleteAssistantTurn = useCallback((assistantId: string, err?: unknown) => {
     const hasResumeReview = useAdkResumeReviewStore.getState().reviewStack.some(card => card.assistantMessageId === assistantId);
     const hasPortfolioReview = useAdkPortfolioReviewStore.getState().reviewStack.some(card => card.assistantMessageId === assistantId);
-    if (hasResumeReview || hasPortfolioReview) {
+    const hasLinkedInReview = useAdkLinkedInReviewStore.getState().reviewStack.some(card => card.assistantMessageId === assistantId);
+    if (hasResumeReview || hasPortfolioReview || hasLinkedInReview) {
       return;
     }
 
@@ -152,6 +186,9 @@ export function AdkChatProvider({ userId, children }: { userId: string; children
         prev.find(m => m.id === assistantId && m.role === "model") ??
         prev.flatMap(m => m.messages ?? []).find(m => m.id === assistantId && m.role === "model");
       if (!assistantMsg || assistantMsg.text.trim().length > 0 || assistantMsg.isError) {
+        return prev;
+      }
+      if (assistantMsg.unimadJobCards?.jobs?.length || assistantMsg.unimadNavigation || assistantMsg.unimadLinkedInSuggestions) {
         return prev;
       }
 
@@ -167,8 +204,30 @@ export function AdkChatProvider({ userId, children }: { userId: string; children
     });
   }, []);
 
+  const onNavigationSuggestion = useCallback((assistantId: string, navigation: { path: string; label: string }) => {
+    setMessages(prev => patchChatMessageInTree(prev, assistantId, { unimadNavigation: navigation }));
+  }, []);
+
+  const onJobCardsSuggestion = useCallback(
+    (assistantId: string, payload: import("@/src/features/adk-chat/parse-unimad-job-cards").UnimadJobCardsPayload) => {
+      setMessages(prev => patchChatMessageInTree(prev, assistantId, { unimadJobCards: payload }));
+    },
+    []
+  );
+
+  const onLinkedInSuggestions = useCallback(
+    (
+      assistantId: string,
+      payload: import("@/src/features/adk-chat/parse-unimad-linkedin-suggestions").UnimadLinkedInSuggestionsPayload
+    ) => {
+      setMessages(prev => patchChatMessageInTree(prev, assistantId, { unimadLinkedInSuggestions: payload }));
+    },
+    []
+  );
+
   const {
     isLoading: isAgentLoading,
+    isSyncingContext,
     streamActivityLabel,
     submitMessage,
   } = useAdkStreamingManager({
@@ -177,6 +236,9 @@ export function AdkChatProvider({ userId, children }: { userId: string; children
     onMessageUpdate,
     onEventUpdate,
     onWebsiteCountUpdate,
+    onNavigationSuggestion,
+    onJobCardsSuggestion,
+    onLinkedInSuggestions,
   });
 
   useEffect(() => {
@@ -186,6 +248,7 @@ export function AdkChatProvider({ userId, children }: { userId: string; children
   useEffect(() => {
     useAdkResumeReviewStore.getState().clearAllReviews();
     useAdkPortfolioReviewStore.getState().clearAllReviews();
+    useAdkLinkedInReviewStore.getState().clearAllReviews();
     useAdkContentGenReviewStore.getState().clearAllReviews();
     useAdkApplicationAssetReviewStore.getState().clearAllReviews();
   }, [sessionId, userId]);
@@ -216,19 +279,26 @@ export function AdkChatProvider({ userId, children }: { userId: string; children
           const adkDecisions = parseReviewDecisionsFromAdkState(pullResult.state);
           const localDecisions = loadReviewDecisionsFromLocalStorage(userId, mainSessionIdForLoad);
           setReviewDecisionsCache(userId, mainSessionIdForLoad, mergeReviewDecisions(adkDecisions, localDecisions));
+          const adkSnapshots = parseAcceptSnapshotsFromAdkState(pullResult.state);
+          const localSnapshots = loadAcceptSnapshotsFromLocalStorage(userId, mainSessionIdForLoad);
+          setAcceptSnapshotsCache(userId, mainSessionIdForLoad, mergeAcceptSnapshots(adkSnapshots, localSnapshots));
         }
 
-        const result = await loadSessionHistoryAction(userId, historySessionId);
+        const historySessionOptions = isSubSession && meta ? resolveAdkSessionOptionsForSessionId(historySessionId) : undefined;
+
+        const result = await loadSessionHistoryAction(userId, historySessionId, historySessionOptions);
         if (cancelled) return;
 
         if (result.success) {
-          const mapped = result.messages.map(m =>
-            agentMessageToChatMessage({
-              ...m,
-              timestamp: parseAgentTimestamp(m.timestamp as unknown as Date | string | number),
-            })
-          );
-          let mainMessages = mapped.length > 0 ? mapped : [WELCOME_MESSAGE];
+          const mapped = result.messages.map(m => agentMessageToChatMessage(m));
+          const scopedMapped = mapped.map(message => {
+            if (message.role !== "user") return message;
+            if (isSubSession && meta) {
+              return { ...message, contentScope: deriveScopeFromRegistryRow(meta) };
+            }
+            return { ...message, contentScope: deriveCurrentActiveScope(mainSessionIdForLoad) };
+          });
+          let mainMessages = scopedMapped.length > 0 ? scopedMapped : [WELCOME_MESSAGE];
 
           if (!isSubSession) {
             const registry = getSessionRegistry();
@@ -242,7 +312,7 @@ export function AdkChatProvider({ userId, children }: { userId: string; children
             mainMessages = hydrateLoadedTopicMessages(mainMessages);
 
             if (result.messages.length > 0) {
-              void backfillMainSessionTitleFromHistory(loadSessionId, result.messages, refreshIfStillActive);
+              void backfillMainSessionTitleFromHistory(loadSessionId, result.messages, refreshIfStillActive, userId);
             }
 
             if (pathname.startsWith("/uniboard/studio")) {
@@ -264,7 +334,7 @@ export function AdkChatProvider({ userId, children }: { userId: string; children
     return () => {
       cancelled = true;
     };
-  }, [userId, sessionId, refreshSessions, pathname, queryClient]);
+  }, [deriveCurrentActiveScope, userId, sessionId, refreshSessions, pathname, queryClient]);
 
   const sendMainMessageNow = useCallback(
     async (text: string, activeSessionId: string, options?: SendMainMessageOptions): Promise<{ assistantId: string }> => {
@@ -286,6 +356,7 @@ export function AdkChatProvider({ userId, children }: { userId: string; children
           text,
           timestamp: new Date(),
           excludeFromTitleGeneration: options?.excludeFromTitleGeneration,
+          contentScope: deriveCurrentActiveScope(activeSessionId),
         };
         const assistantChat: ChatMessage = {
           id: assistantId,
@@ -297,8 +368,10 @@ export function AdkChatProvider({ userId, children }: { userId: string; children
       }
 
       try {
-        await submitMessage(text, { aiMessageId: assistantId });
-        markIncompleteAssistantTurn(assistantId);
+        const { hadAssistantText } = await submitMessage(text, { aiMessageId: assistantId });
+        if (!hadAssistantText) {
+          queueMicrotask(() => markIncompleteAssistantTurn(assistantId));
+        }
         return { assistantId };
       } catch (error) {
         const wrapped = error instanceof Error ? error : new Error(String(error));
@@ -306,7 +379,7 @@ export function AdkChatProvider({ userId, children }: { userId: string; children
         throw wrapped;
       }
     },
-    [userId, submitMessage, markIncompleteAssistantTurn]
+    [userId, submitMessage, markIncompleteAssistantTurn, deriveCurrentActiveScope]
   );
 
   const sendMainMessage = useCallback(
@@ -349,11 +422,13 @@ export function AdkChatProvider({ userId, children }: { userId: string; children
         throw new Error("Session not ready");
       }
       try {
-        await submitMessage(prompt, {
+        const { hadAssistantText } = await submitMessage(prompt, {
           aiMessageId: assistantMessageId,
           sessionIdOverride: options?.sessionIdOverride,
         });
-        markIncompleteAssistantTurn(assistantMessageId);
+        if (!hadAssistantText) {
+          markIncompleteAssistantTurn(assistantMessageId);
+        }
       } catch (error) {
         const wrapped = error instanceof Error ? error : new Error(String(error));
         Object.defineProperty(wrapped, "assistantMessageId", { value: assistantMessageId, enumerable: true });
@@ -372,6 +447,8 @@ export function AdkChatProvider({ userId, children }: { userId: string; children
       revertEditorState: boolean;
       targetSessionId?: string;
       topicId?: string;
+      targetScope?: ContentScope;
+      scopeMatch?: ScopeMatch;
     }): Promise<void> => {
       const targetSessionId = options.targetSessionId?.trim() || sessionId;
       if (!userId || !targetSessionId || !options.invocationId.trim()) {
@@ -380,36 +457,50 @@ export function AdkChatProvider({ userId, children }: { userId: string; children
 
       setIsRewinding(true);
       try {
-        const rewindResult = await rewindSessionAction(userId, targetSessionId, options.invocationId);
+        const adkSessionOptions = resolveAdkSessionOptionsForSessionId(targetSessionId);
+        const threadMessagesBeforeRewind = options.topicId
+          ? (messages.find(message => message.id === options.topicId)?.messages ?? [])
+          : messages.filter(message => !message.isTopic);
+        const previousAssistantIds = collectAssistantIds(messages);
+        const rewindResult = await rewindSessionAction(userId, targetSessionId, options.invocationId, adkSessionOptions);
         if (!rewindResult.success) {
           throw new Error(rewindResult.error ?? "Could not rewind this conversation.");
         }
 
-        const history = await loadSessionHistoryAction(userId, targetSessionId);
+        const history = await loadSessionHistoryAction(userId, targetSessionId, adkSessionOptions);
         if (!history.success) {
           throw new Error(history.error ?? "Could not reload conversation after rewind.");
         }
 
-        const mapped = history.messages.map(m =>
-          agentMessageToChatMessage({
-            ...m,
-            timestamp: parseAgentTimestamp(m.timestamp as unknown as Date | string | number),
-          })
-        );
+        const mapped = history.messages.map(m => agentMessageToChatMessage(m));
+        const targetRow = getRegistryRow(targetSessionId);
+        const scopedMapped = mapped.map(message => {
+          if (message.role !== "user") return message;
+          if (targetRow) {
+            return { ...message, contentScope: deriveScopeFromRegistryRow(targetRow) };
+          }
+          return { ...message, contentScope: deriveCurrentActiveScope(targetSessionId) };
+        });
 
+        let rewoundThreadMessages: ChatMessage[] = [];
+        let remainingMainMessages: ChatMessage[] = [];
+
+        let nextAssistantIds = new Set<string>();
         if (options.topicId) {
           setMessages(prev =>
             prev.map(topic =>
               topic.id === options.topicId
                 ? {
                     ...topic,
-                    messages: mapped,
+                    messages: scopedMapped,
                   }
                 : topic
             )
           );
+          rewoundThreadMessages = scopedMapped;
+          nextAssistantIds = collectAssistantIds(scopedMapped);
         } else {
-          let mainMessages = mapped.length > 0 ? mapped : [WELCOME_MESSAGE];
+          let mainMessages = scopedMapped.length > 0 ? scopedMapped : [WELCOME_MESSAGE];
           const meta = getRegistryRow(targetSessionId);
           if (meta?.kind !== "sub") {
             const registry = getSessionRegistry();
@@ -422,15 +513,87 @@ export function AdkChatProvider({ userId, children }: { userId: string; children
             mainMessages = sortMainThreadChronologically([...nonTopicMain, ...mergedTopics]);
             mainMessages = hydrateLoadedTopicMessages(mainMessages);
           }
+          remainingMainMessages = mainMessages;
           setMessages(mainMessages);
+          nextAssistantIds = collectAssistantIds(mainMessages);
+        }
+
+        const removedAssistantIds = new Set<string>();
+        previousAssistantIds.forEach(id => {
+          if (!nextAssistantIds.has(id)) {
+            removedAssistantIds.add(id);
+          }
+        });
+
+        const targetScope = options.targetScope ?? (targetRow ? deriveScopeFromRegistryRow(targetRow) : null);
+        const reviewMainSessionId = targetRow?.parent_adk_session_id?.trim() || sessionId;
+        const remainingMessages = options.topicId ? rewoundThreadMessages : remainingMainMessages.filter(message => !message.isTopic);
+        const shouldRevertDjango =
+          options.revertEditorState && options.scopeMatch === "full" && targetScope && removedAssistantIds.size > 0;
+
+        if (shouldRevertDjango) {
+          const restoreTarget = resolveDjangoRestoreTarget({
+            threadMessagesBeforeRewind,
+            remainingMessages,
+            removedAssistantIds,
+            acceptSnapshots: getAcceptSnapshotsCache(userId, reviewMainSessionId),
+            reviewDecisions: getReviewDecisionsCache(userId, reviewMainSessionId),
+            targetScope,
+            topicId: options.topicId,
+          });
+          if (restoreTarget) {
+            await revertDjangoContentAfterRewind({
+              target: restoreTarget,
+              userId,
+              mainSessionId: reviewMainSessionId,
+              queryClient,
+            });
+          }
         }
 
         if (options.revertEditorState) {
           useAdkResumeReviewStore.getState().clearAllReviews();
           useAdkPortfolioReviewStore.getState().clearAllReviews();
+          useAdkLinkedInReviewStore.getState().clearAllReviews();
           useAdkContentGenReviewStore.getState().clearAllReviews();
           useAdkApplicationAssetReviewStore.getState().clearAllReviews();
-          await applyAdkSessionStateToStores(userId, targetSessionId, pathname, queryClient);
+          if (removedAssistantIds.size > 0) {
+            await pruneRewindSessionMetadata(userId, reviewMainSessionId, removedAssistantIds);
+          }
+          const hydrateSessionId =
+            shouldRevertDjango &&
+            targetScope &&
+            (targetScope.domain === "application_asset" ||
+              targetScope.domain === "content_gen" ||
+              targetScope.domain === "resume" ||
+              targetScope.domain === "portfolio" ||
+              targetScope.domain === "linkedin")
+              ? reviewMainSessionId
+              : targetSessionId;
+          await applyAdkSessionStateToStores(userId, hydrateSessionId, pathname, queryClient, {
+            targetScope: options.targetScope ?? null,
+            forceStudioHydrate: true,
+            afterRewind: true,
+          });
+
+          if (rewoundThreadMessages.length > 0 && (targetScope?.domain === "application_asset" || targetScope?.domain === "content_gen")) {
+            reconcileStudioContentAfterRewind({
+              threadMessages: rewoundThreadMessages,
+              targetScope,
+              userId,
+              reviewMainSessionId,
+              pathname,
+            });
+          }
+        } else {
+          useAdkResumeReviewStore.getState().clearReviewsByAssistantIds(removedAssistantIds);
+          useAdkPortfolioReviewStore.getState().clearReviewsByAssistantIds(removedAssistantIds);
+          useAdkLinkedInReviewStore.getState().clearReviewsByAssistantIds(removedAssistantIds);
+          useAdkContentGenReviewStore.getState().clearReviewsByAssistantIds(removedAssistantIds);
+          useAdkApplicationAssetReviewStore.getState().clearReviewsByAssistantIds(removedAssistantIds);
+          if (removedAssistantIds.size > 0) {
+            await pruneRewindSessionMetadata(userId, reviewMainSessionId, removedAssistantIds);
+          }
         }
 
         clearStreamError();
@@ -438,7 +601,7 @@ export function AdkChatProvider({ userId, children }: { userId: string; children
         setIsRewinding(false);
       }
     },
-    [userId, sessionId, pathname, queryClient, clearStreamError]
+    [messages, userId, sessionId, pathname, queryClient, clearStreamError, deriveCurrentActiveScope]
   );
 
   const value = useMemo(
@@ -451,6 +614,7 @@ export function AdkChatProvider({ userId, children }: { userId: string; children
       sessionError,
       isLoadingHistory,
       isAgentLoading,
+      isSyncingContext,
       streamActivityLabel,
       messages,
       setMessages,
@@ -475,6 +639,7 @@ export function AdkChatProvider({ userId, children }: { userId: string; children
       sessionError,
       isLoadingHistory,
       isAgentLoading,
+      isSyncingContext,
       streamActivityLabel,
       messages,
       sendMainMessage,

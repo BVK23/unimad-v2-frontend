@@ -25,6 +25,7 @@ export function useCalculateAtsScore() {
         from_cache: result.from_cache,
         scored_at: result.scored_at,
         resume_updated_at: result.resume_updated_at,
+        score_stale: result.score_stale,
       };
     },
     onSuccess: (_data, variables) => {

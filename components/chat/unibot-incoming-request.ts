@@ -1,7 +1,7 @@
 /**
  * Payload for opening Unibot from resume editors (window "open-unibot" or lifted React state).
  */
-export type UnibotResumeSection = "summary" | "education" | "experience" | "projects" | "certifications" | "custom";
+export type UnibotResumeSection = "summary" | "education" | "experience" | "projects" | "skills" | "certifications" | "custom";
 
 /** LinkedIn ADK section keys (v2 sub-sessions); v1 uses free-text on main session. */
 export type UnibotLinkedInSection = "pic" | "cover" | "headline" | "about" | "experience" | "skills" | "connection" | "comment";
@@ -17,6 +17,8 @@ export type UnibotIncomingRequest =
       featureId?: string;
       section?: UnibotResumeSection | UnibotLinkedInSection;
       entryId?: string;
+      /** Resume wand: whether the target field already has content (agent reads via tools). */
+      hasContent?: boolean;
       /** Bumps when the wand is clicked so repeat improves on the same entry can run. */
       requestKey?: number;
     }
@@ -27,6 +29,11 @@ export type UnibotIncomingRequest =
       followUpText?: string;
       topicTitle?: string;
       reuseExistingTopic?: boolean;
+      /** Routes to linkedin_post draft sub-session; does not embed draft body in the prompt. */
+      improveDraft?: boolean;
+      /** Persisted ContentGen post id — scopes the sub-thread (one thread per post). */
+      assetId?: string;
+      funnel?: import("@/features/content-lab/api/adk-mappers").ContentGenFunnel;
       requestKey: number;
     };
 
@@ -44,7 +51,7 @@ export function incomingRequestSignature(req: UnibotIncomingRequest): string {
     return `section_review:${req.section}:${req.requestKey}`;
   }
   if (req.type === "content_gen_topic") {
-    return `content_gen_topic:${req.requestKey}`;
+    return `content_gen_topic:${req.assetId ?? ""}:${req.seedTopic ?? ""}:${req.improveDraft ? "improve" : "topic"}:${req.requestKey}`;
   }
   return [
     "improve",
@@ -52,6 +59,7 @@ export function incomingRequestSignature(req: UnibotIncomingRequest): string {
     req.featureId ?? "",
     req.section ?? "",
     req.entryId ?? "",
+    req.hasContent != null ? String(req.hasContent) : "",
     req.topicTitle ?? "",
     req.text,
     req.requestKey != null ? String(req.requestKey) : "",

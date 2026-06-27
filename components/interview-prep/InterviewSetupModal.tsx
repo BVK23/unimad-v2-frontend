@@ -249,6 +249,7 @@ const InterviewSetupModal: React.FC<InterviewSetupModalProps> = ({ initialContex
                     <span className="block text-sm font-semibold text-slate-900 dark:text-white">Guided questions</span>
                     <span className="mt-0.5 block text-xs text-slate-500">AI questions with live speech-to-text answers</span>
                   </button>
+                  {/* Gemini Live — temporarily disabled
                   <button
                     type="button"
                     disabled={busy}
@@ -260,6 +261,7 @@ const InterviewSetupModal: React.FC<InterviewSetupModalProps> = ({ initialContex
                     <span className="block text-sm font-semibold text-slate-900 dark:text-white">Live voice mock</span>
                     <span className="mt-0.5 block text-xs text-slate-500">Conversational AI interviewer (Gemini Live)</span>
                   </button>
+                  */}
                 </div>
               </div>
             </>

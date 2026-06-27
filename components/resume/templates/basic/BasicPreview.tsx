@@ -295,8 +295,21 @@ const BasicPreview: React.FC<BasicPreviewProps> = ({ data, previewScale = 1, isM
             .map((item, i) => (
               <div key={i} className="flex flex-col gap-[2pt] text-[#373737] mb-[4pt]">
                 {i === 0 && <SectionHeading title={customSection.title || "Custom Section"} />}
-                <div className="flex justify-between items-center w-full">
-                  {item.title && <span className="font-semibold text-[9pt]">{item.title}</span>}
+                <div className="flex flex-col gap-[2px] w-full">
+                  <div className="flex justify-between items-start w-full text-[9pt] font-semibold">
+                    {item.title && <span>{item.title}</span>}
+                    {item.startDate && (
+                      <span className="font-normal text-right shrink-0 ml-2">
+                        {formatDateMonthYear(item.startDate)} — {item.current ? "Present" : formatDateMonthYear(item.endDate)}
+                      </span>
+                    )}
+                  </div>
+                  {(item.subtitle || item.location) && (
+                    <div className="flex justify-between items-start w-full text-[9pt] font-semibold">
+                      {item.subtitle && <span>{item.subtitle}</span>}
+                      {item.location && <span className="font-normal text-right shrink-0 ml-2">{item.location}</span>}
+                    </div>
+                  )}
                 </div>
                 {item.description && (
                   <div className="text-[9pt] mt-[2px] leading-[1.4]">

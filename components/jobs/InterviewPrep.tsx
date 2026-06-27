@@ -4,7 +4,7 @@ import React, { useCallback, useEffect, useMemo, useRef, useState } from "react"
 import { ModalPortalOverlay } from "@/components/ui/ModalPortalOverlay";
 import { consumeInterviewLaunch } from "@/src/features/interview-prep/interview-launch";
 import {
-  analyzeVoiceInterview,
+  // analyzeVoiceInterview, // Gemini Live — temporarily disabled
   deleteInterviewSession,
   fetchInterviewSessions,
   startInterviewSession,
@@ -24,7 +24,8 @@ import InterviewAnalyzingView from "../interview-prep/InterviewAnalyzingView";
 import InterviewLaunchOverlay from "../interview-prep/InterviewLaunchOverlay";
 import InterviewReportView from "../interview-prep/InterviewReportView";
 import InterviewSetupModal from "../interview-prep/InterviewSetupModal";
-import VoiceInterviewSession from "../interview-prep/VoiceInterviewSession";
+
+// import VoiceInterviewSession from "../interview-prep/VoiceInterviewSession"; // Gemini Live — temporarily disabled
 
 type View = InterviewView;
 
@@ -78,6 +79,7 @@ const InterviewPrep: React.FC<InterviewPrepProps> = ({
     return "technical";
   });
   const [questions, setQuestions] = useState<InterviewQuestion[]>(launchPayload?.questions ?? []);
+  const [initialQuestionIndex, setInitialQuestionIndex] = useState(0);
   const launchContext = launchPayload?.context ?? initialContext;
   const [sessionMeta, setSessionMeta] = useState({
     company: launchContext?.company ?? "",
@@ -152,13 +154,16 @@ const InterviewPrep: React.FC<InterviewPrepProps> = ({
         jobDescription: payload.jobDescription,
       });
       setRoundType(payload.roundType);
+      setInitialQuestionIndex(0);
 
       try {
+        /* Gemini Live — temporarily disabled
         if (payload.mode === "live") {
           setInterviewId(null);
           navigate({ view: "voice", interviewId: null, round: payload.roundType, setup: null });
           return;
         }
+        */
 
         const result = await startInterviewSession({
           role: payload.role,
@@ -209,6 +214,7 @@ const InterviewPrep: React.FC<InterviewPrepProps> = ({
     });
   }, [autoStart, initialContext, handleStart, onAutoStartConsumed]);
 
+  /* Gemini Live — temporarily disabled
   const handleVoiceEnd = async (transcript: { role: "user" | "model"; text: string; timestamp?: number }[]) => {
     navigate({ view: "analyzing", setup: null });
     setIsAnalyzing(true);
@@ -240,6 +246,7 @@ const InterviewPrep: React.FC<InterviewPrepProps> = ({
       setIsAnalyzing(false);
     }
   };
+  */
 
   const handleDelete = async (id: string) => {
     try {
@@ -282,13 +289,16 @@ const InterviewPrep: React.FC<InterviewPrepProps> = ({
         jobDescription: opts.jobDescription,
       });
       setRoundType(opts.roundType);
+      setInitialQuestionIndex(0);
 
       try {
+        /* Gemini Live — temporarily disabled
         if (opts.mode === "live") {
           setInterviewId(opts.interviewId);
           navigate({ view: "voice", interviewId: opts.interviewId, round: opts.roundType, setup: null });
           return;
         }
+        */
 
         const result = await startInterviewSession({
           role: opts.role,
@@ -307,6 +317,31 @@ const InterviewPrep: React.FC<InterviewPrepProps> = ({
       } finally {
         setIsStarting(false);
       }
+    },
+    [navigate]
+  );
+
+  const handleResume = useCallback(
+    (opts: {
+      interviewId: string;
+      roundType: InterviewRoundType;
+      company: string;
+      role: string;
+      jobDescription: string;
+      questions: InterviewQuestion[];
+      initialQuestionIndex: number;
+    }) => {
+      setError(null);
+      setSessionMeta({
+        company: opts.company,
+        role: opts.role,
+        jobDescription: opts.jobDescription,
+      });
+      setRoundType(opts.roundType);
+      setInterviewId(opts.interviewId);
+      setQuestions(opts.questions);
+      setInitialQuestionIndex(opts.initialQuestionIndex);
+      navigate({ view: "active", interviewId: opts.interviewId, round: opts.roundType, setup: null });
     },
     [navigate]
   );
@@ -331,6 +366,7 @@ const InterviewPrep: React.FC<InterviewPrepProps> = ({
         company={sessionMeta.company}
         role={sessionMeta.role}
         questions={questions}
+        initialQuestionIndex={initialQuestionIndex}
         onEnd={goDashboard}
         onComplete={id => {
           setReportRoundType(roundType);
@@ -341,6 +377,7 @@ const InterviewPrep: React.FC<InterviewPrepProps> = ({
     );
   }
 
+  /* Gemini Live — temporarily disabled
   if (view === "voice") {
     return (
       <VoiceInterviewSession
@@ -356,6 +393,7 @@ const InterviewPrep: React.FC<InterviewPrepProps> = ({
       />
     );
   }
+  */
 
   if (view === "analyzing") {
     return <InterviewAnalyzingView />;
@@ -368,6 +406,7 @@ const InterviewPrep: React.FC<InterviewPrepProps> = ({
         roundType={reportRoundType}
         onBack={goDashboard}
         onRetake={handleRetake}
+        onResume={handleResume}
         isRetakeStarting={isStarting}
       />
     );
@@ -392,8 +431,9 @@ const InterviewPrep: React.FC<InterviewPrepProps> = ({
           </div>
           <h2 className="mb-4 text-4xl font-medium tracking-tight">Ace Your Next Interview</h2>
           <p className="mb-8 text-lg font-light leading-relaxed text-slate-400">
-            Practice screening, technical, or behavioral rounds tailored to your target company and job description. Choose guided questions
-            or a live voice mock interview.
+            Practice screening, technical, or behavioral rounds tailored to your target company and job description with guided AI questions
+            and live speech-to-text answers.
+            {/* or a live voice mock interview. — Gemini Live temporarily disabled */}
           </p>
           <button
             type="button"

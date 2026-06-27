@@ -8,8 +8,13 @@ import {
 import { applicationAssetTopicTitle } from "@/features/application-assets/api/applicationAssetDraftBootstrap";
 import type { ApplicationAssetApiType } from "@/features/application-assets/types";
 import type { ChatMessage } from "@/types";
-import { applicationAssetFeatureId, contentGenFeatureId } from "./resolve-feature-sub-session";
 import type { UnibotAdkSessionRow } from "./session-registry";
+import {
+  buildLinkedInPostContentKey,
+  buildLinkedInTopicContentKey,
+  buildStudioAssetContentKey,
+  resolveRegistryContentKey,
+} from "./sub-session-content-key";
 
 const APP_ASSET_BOOTSTRAP_PREFIX = /^Write the full (cover letter|cold email|referral)/i;
 const CONTENT_GEN_DRAFT_BOOTSTRAP_PREFIX = /^Write the full LinkedIn post draft/i;
@@ -22,15 +27,13 @@ export type LegacyTopicReconstruction = {
 };
 
 function registryHasContentGenSub(registry: UnibotAdkSessionRow[], mode: "topic" | "draft", topic?: string): boolean {
-  const featureId = contentGenFeatureId(topic, mode);
-  return registry.some(r => r.kind === "sub" && r.feature === "content_gen" && r.section === mode && (r.feature_id ?? "") === featureId);
+  const key = mode === "topic" ? buildLinkedInTopicContentKey(topic) : buildLinkedInPostContentKey({ topic });
+  return registry.some(r => r.kind === "sub" && resolveRegistryContentKey(r) === key);
 }
 
 function registryHasApplicationAssetSub(registry: UnibotAdkSessionRow[], assetType: string, role: string, company: string): boolean {
-  const featureId = applicationAssetFeatureId(role, company);
-  return registry.some(
-    r => r.kind === "sub" && r.feature === "application_asset" && r.section === assetType && (r.feature_id ?? "") === featureId
-  );
+  const key = buildStudioAssetContentKey({ assetType, role, company });
+  return registry.some(r => r.kind === "sub" && resolveRegistryContentKey(r) === key);
 }
 
 function inferAppAssetTypeFromBootstrap(text: string): ApplicationAssetApiType | null {

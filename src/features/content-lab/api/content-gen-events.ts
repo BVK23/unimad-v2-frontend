@@ -12,11 +12,14 @@ export type ApplyContentGenTopicDetail = {
   topic: string;
   funnel?: ContentGenFunnel;
   assetId?: string | null;
+  /** Brief highlight pulse on Studio topic input after chip click. */
+  flashInput?: boolean;
 };
 
 export type RequestContentGenDraftDetail = {
   topic: string;
   funnel?: ContentGenFunnel | null;
+  mood?: string | null;
 };
 
 export type ContentGenDraftReadyDetail = {
@@ -55,6 +58,13 @@ export type ContentGenPublishBlockedDetail = {
 
 export type ContentGenPublishFailedDetail = {
   message?: string;
+};
+
+export type OpenContentGenDraftDetail = {
+  topic: string;
+  funnel?: ContentGenFunnel;
+  mood?: string;
+  assetId?: string | null;
 };
 
 export const CONTENT_GEN_EVENTS = {

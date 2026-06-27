@@ -4,11 +4,12 @@ import React, { useEffect, useState } from "react";
 import { fetchInterviewDetail } from "@/src/features/interview-prep/server-actions/interview-actions";
 import type {
   InterviewDetailResponse,
+  InterviewQuestion,
   InterviewRoundData,
   InterviewRoundType,
   InterviewSessionMode,
 } from "@/src/features/interview-prep/types";
-import { ChevronRight, Loader2, RotateCcw } from "lucide-react";
+import { ChevronRight, Loader2, Play, RotateCcw } from "lucide-react";
 import InterviewRetakeModal, { type RetakeAction } from "./InterviewRetakeModal";
 
 interface InterviewReportViewProps {
@@ -23,6 +24,15 @@ interface InterviewReportViewProps {
     role: string;
     jobDescription: string;
   }) => void;
+  onResume?: (opts: {
+    interviewId: string;
+    roundType: InterviewRoundType;
+    company: string;
+    role: string;
+    jobDescription: string;
+    questions: InterviewQuestion[];
+    initialQuestionIndex: number;
+  }) => void;
   isRetakeStarting?: boolean;
 }
 
@@ -31,6 +41,7 @@ const InterviewReportView: React.FC<InterviewReportViewProps> = ({
   roundType,
   onBack,
   onRetake,
+  onResume,
   isRetakeStarting = false,
 }) => {
   const [detail, setDetail] = useState<InterviewDetailResponse | null>(null);
@@ -76,11 +87,14 @@ const InterviewReportView: React.FC<InterviewReportViewProps> = ({
 
   const activeRoundKey =
     roundType ??
-    (detail.active_round && detail.rounds_data[detail.active_round]?.status === "completed" ? detail.active_round : null) ??
+    detail.active_round ??
     detail.round_types.find(rt => detail.rounds_data[rt]?.status === "completed") ??
     detail.round_types[detail.round_types.length - 1];
 
   const roundData: InterviewRoundData | undefined = activeRoundKey ? detail.rounds_data[activeRoundKey] : undefined;
+  const isInProgress = roundData?.status === "in_progress";
+  const isCompleted = roundData?.status === "completed";
+  const isBusy = isRetakeStarting;
 
   const overallScore = roundData?.overall_score ?? 0;
   const questions = roundData?.questions ?? [];
@@ -100,6 +114,24 @@ const InterviewReportView: React.FC<InterviewReportViewProps> = ({
       jobDescription,
     });
     setShowRetakeModal(false);
+  };
+
+  const handleResume = () => {
+    if (!onResume || !activeRoundKey || !roundData) return;
+    const jobDescription = detail.job_description?.trim() || `${detail.role ?? ""} at ${detail.company ?? ""}`.trim();
+    const resumeQuestions = questions.map(q => ({ id: q.id, question: q.question }));
+    const firstUnansweredIndex = questions.findIndex(q => !q.answer?.trim());
+    const initialQuestionIndex = firstUnansweredIndex >= 0 ? firstUnansweredIndex : Math.max(0, questions.length - 1);
+
+    onResume({
+      interviewId,
+      roundType: activeRoundKey as InterviewRoundType,
+      company: detail.company ?? "",
+      role: detail.role ?? "",
+      jobDescription,
+      questions: resumeQuestions,
+      initialQuestionIndex,
+    });
   };
 
   return (
@@ -125,11 +157,33 @@ const InterviewReportView: React.FC<InterviewReportViewProps> = ({
             {activeRoundKey ? ` • ${activeRoundKey} round` : ""}
           </p>
         </div>
-        {onRetake && activeRoundKey && roundData?.status === "completed" && (
+        {onResume && activeRoundKey && isInProgress && (
+          <button
+            type="button"
+            onClick={handleResume}
+            disabled={isBusy}
+            className="flex items-center gap-2 rounded-xl bg-blue-600 px-4 py-2 text-sm font-medium text-white shadow-sm transition-colors hover:bg-blue-700 disabled:opacity-50"
+          >
+            {isRetakeStarting ? <Loader2 size={16} className="animate-spin" /> : <Play size={16} />}
+            Resume interview
+          </button>
+        )}
+        {onRetake && activeRoundKey && isInProgress && (
           <button
             type="button"
             onClick={() => setShowRetakeModal(true)}
-            disabled={isRetakeStarting}
+            disabled={isBusy}
+            className="flex items-center gap-2 rounded-xl border border-slate-200 bg-white px-4 py-2 text-sm font-medium text-slate-700 shadow-sm transition-colors hover:bg-slate-50 disabled:opacity-50 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-200 dark:hover:bg-slate-800"
+          >
+            {isRetakeStarting ? <Loader2 size={16} className="animate-spin" /> : <RotateCcw size={16} />}
+            Start over
+          </button>
+        )}
+        {onRetake && activeRoundKey && isCompleted && (
+          <button
+            type="button"
+            onClick={() => setShowRetakeModal(true)}
+            disabled={isBusy}
             className="flex items-center gap-2 rounded-xl border border-slate-200 bg-white px-4 py-2 text-sm font-medium text-slate-700 shadow-sm transition-colors hover:bg-slate-50 disabled:opacity-50 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-200 dark:hover:bg-slate-800"
           >
             {isRetakeStarting ? <Loader2 size={16} className="animate-spin" /> : <RotateCcw size={16} />}

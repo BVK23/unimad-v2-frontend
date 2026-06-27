@@ -1,6 +1,8 @@
 import {
   useGenerateApplicationAsset,
+  regenerateApplicationAssetDraft,
   type GenerateApplicationAssetResult,
+  type RegenerateApplicationAssetParams,
 } from "@/features/application-assets/hooks/useGenerateApplicationAsset";
 import { deleteReferral } from "../server-actions/referral-actions";
 import type { GenerateReferralParams } from "../types";
@@ -50,5 +52,7 @@ export function useGenerateReferral(options?: {
         application_id: params.application_id,
       }),
     replaceExistingAndGenerate,
+    regenerateAnother: (params: RegenerateApplicationAssetParams) =>
+      regenerateApplicationAssetDraft({ ...params, studioTopic: "referral" }),
   };
 }

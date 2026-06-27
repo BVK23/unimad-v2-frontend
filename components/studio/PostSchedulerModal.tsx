@@ -1,19 +1,25 @@
 "use client";
 
-import React, { useEffect, useMemo, useState } from "react";
+import React, { useEffect, useMemo, useState, useCallback, useRef } from "react";
 import { createPortal } from "react-dom";
+import { DocumentSaveStatusBar } from "@/components/application-assets/DocumentSaveStatusBar";
 import ProfilePictureWithFallback from "@/components/user-profile/ProfilePictureWithFallback";
+import { MIN_LINKEDIN_POST_CHARS, LINKEDIN_POST_TOO_SHORT_MESSAGE } from "@/features/linkedin/constants";
 import {
   formatSessionEndsDate,
   isLinkedInScheduleDateAllowed,
+  isScheduleDateSelectable,
+  isScheduleTimeSelectable,
   parseScheduleDateTime,
   resolveLinkedInPublishAccess,
-  sessionEndsAtInputMax,
+  toScheduleDateKey,
   type LinkedInPublishAccess,
 } from "@/features/linkedin/utils/linkedinPublishAccess";
 import { MODAL_OVERLAY_Z_CLASS } from "@/lib/ui/modal-overlay";
-import { X, Send, CheckCircle2, Edit2, Wand2 } from "lucide-react";
+import { useDocumentAutosave } from "@/src/hooks/useDocumentAutosave";
+import { X, Send, CheckCircle2, Wand2 } from "lucide-react";
 import { LinkedInPublishAccessNotice } from "./LinkedInPublishAccessNotice";
+import { LinkedInScheduleDateTimePicker } from "./LinkedInScheduleDateTimePicker";
 import StudioMediaPreviewImage from "./StudioMediaPreviewImage";
 
 export type LinkedinPreviewPendingItem = { id: string; objectUrl: string };
@@ -22,10 +28,14 @@ interface PostSchedulerModalProps {
   content: string;
   onClose: () => void;
   onPost: (finalContent: string, isScheduled: boolean, scheduleDate?: Date) => void | Promise<void>;
+  /** Debounced persist while editing draft in the modal. */
+  onPersistDraft?: (content: string) => Promise<void>;
+  /** Keep Studio preview in sync while typing. */
+  onContentDraftChange?: (content: string) => void;
   /** Opens content in the main preview (closes modal). */
   onEditToPreview?: (content: string) => void;
-  /** Close modal and start Unibot to improve the post draft. */
-  onImproveWithUnibot?: (content: string) => void;
+  /** Close modal and start Unibot to improve the post draft (draft body stays in session). */
+  onImproveWithUnibot?: () => void;
   authorName?: string;
   authorPictureUrls?: string[];
   authorHeadline?: string;
@@ -44,6 +54,8 @@ const PostSchedulerModal: React.FC<PostSchedulerModalProps> = ({
   content,
   onClose,
   onPost,
+  onPersistDraft,
+  onContentDraftChange,
   onEditToPreview,
   onImproveWithUnibot,
   authorName = "You",
@@ -57,11 +69,10 @@ const PostSchedulerModal: React.FC<PostSchedulerModalProps> = ({
   userId,
 }) => {
   const linkedInPublishAccess = linkedInPublishAccessProp ?? resolveLinkedInPublishAccess(null);
-  const [mode, setMode] = useState<"preview" | "edit">("preview");
   const [currentContent, setCurrentContent] = useState(content);
-  // const [postToLinkedin, setPostToLinkedin] = useState(true);
-  // const [postToUnimad, setPostToUnimad] = useState(false);
+  const editBaselineRef = useRef(content);
   const [isSubmitting, setIsSubmitting] = useState(false);
+  const [actionStatus, setActionStatus] = useState<string | null>(null);
   const [showSuccess, setShowSuccess] = useState(false);
   const [successMessage, setSuccessMessage] = useState("");
   const [errorToast, setErrorToast] = useState("");
@@ -79,17 +90,58 @@ const PostSchedulerModal: React.FC<PostSchedulerModalProps> = ({
   );
   const scheduleBeyondSession = Boolean(scheduleDateTime && !isLinkedInScheduleDateAllowed(scheduleDateTime, linkedInPublishAccess));
   const sessionEndsLabel = linkedInPublishAccess.sessionEndsAt ? formatSessionEndsDate(linkedInPublishAccess.sessionEndsAt) : undefined;
-  const dateInputMax = sessionEndsAtInputMax(linkedInPublishAccess.sessionEndsAt);
   const publishBlocked = !linkedInPublishAccess.canPost;
+  const contentTooShort = currentContent.trim().length < MIN_LINKEDIN_POST_CHARS;
+  const publishActionsDisabled = publishBlocked || contentTooShort;
   const confirmDisabled =
-    isSubmitting || showSuccess || publishBlocked || (isScheduling && (!scheduleDate || !scheduleTime || scheduleBeyondSession));
+    isSubmitting || showSuccess || publishActionsDisabled || (isScheduling && (!scheduleDate || !scheduleTime || scheduleBeyondSession));
+
+  const persistDraft = useCallback(async () => {
+    if (!onPersistDraft) return;
+    await onPersistDraft(currentContent);
+    editBaselineRef.current = currentContent;
+  }, [currentContent, onPersistDraft]);
+
+  const { hasPendingUnsavedChanges, isSaving, savedConfirmationVisible, markDirty, runSave, reset, acknowledgeSaved } = useDocumentAutosave(
+    {
+      enabled: Boolean(onPersistDraft),
+      onSave: persistDraft,
+    }
+  );
 
   useEffect(() => {
+    if (hasPendingUnsavedChanges || isSaving) return;
     setCurrentContent(content);
-  }, [content]);
+    editBaselineRef.current = content;
+  }, [content, hasPendingUnsavedChanges, isSaving]);
+
+  useEffect(() => {
+    if (!isScheduling || scheduleDate) return;
+    const start = new Date();
+    for (let offset = 0; offset < 366; offset += 1) {
+      const candidate = new Date(start);
+      candidate.setDate(start.getDate() + offset);
+      if (!isScheduleDateSelectable(candidate, linkedInPublishAccess)) continue;
+      setScheduleDate(toScheduleDateKey(candidate));
+      return;
+    }
+  }, [isScheduling, scheduleDate, linkedInPublishAccess]);
+
+  useEffect(() => {
+    if (!isScheduling || !scheduleDate || scheduleTime) return;
+    for (let hour = 0; hour < 24; hour += 1) {
+      for (const minute of ["00", "15", "30", "45"]) {
+        const time = `${String(hour).padStart(2, "0")}:${minute}`;
+        if (isScheduleTimeSelectable(scheduleDate, time, linkedInPublishAccess)) {
+          setScheduleTime(time);
+          return;
+        }
+      }
+    }
+  }, [isScheduling, scheduleDate, scheduleTime, linkedInPublishAccess]);
 
   const handleConfirm = async () => {
-    if (publishBlocked) return;
+    if (publishActionsDisabled) return;
     if (isScheduling && (!scheduleDate || !scheduleTime)) {
       return;
     }
@@ -99,20 +151,26 @@ const PostSchedulerModal: React.FC<PostSchedulerModalProps> = ({
       return;
     }
     setErrorToast("");
+    setActionStatus(null);
     setIsSubmitting(true);
     try {
+      if (onPersistDraft && hasPendingUnsavedChanges) {
+        await persistDraft();
+      }
       await Promise.resolve(onPost(currentContent, isScheduling, date));
-      setSuccessMessage(
-        isScheduling
-          ? "Scheduled perfectly. Your post will go live right on time."
-          : "You're live on LinkedIn. Your story is now out in the world."
-      );
+      const atLabel = new Date().toLocaleString(undefined, { dateStyle: "medium", timeStyle: "short" });
+      const statusLine = isScheduling
+        ? `Scheduled on LinkedIn for ${scheduleDateTime?.toLocaleString(undefined, { dateStyle: "medium", timeStyle: "short" }) ?? atLabel}`
+        : `Posted to LinkedIn at ${atLabel}`;
+      setActionStatus(statusLine);
+      acknowledgeSaved();
+      setSuccessMessage(isScheduling ? "Your post is scheduled." : "Your post is live on LinkedIn.");
       setShowSuccess(true);
       setTimeout(() => {
         setShowSuccess(false);
         setSuccessMessage("");
         onClose();
-      }, 1500);
+      }, 2200);
     } catch (e) {
       const message = e instanceof Error && e.message ? e.message : "We couldn't complete this action. Please try again.";
       setErrorToast(message);
@@ -122,279 +180,292 @@ const PostSchedulerModal: React.FC<PostSchedulerModalProps> = ({
     }
   };
 
+  const handleImproveDraft = () => {
+    onImproveWithUnibot?.();
+  };
+
+  const handleCancelEdits = () => {
+    const baseline = editBaselineRef.current;
+    setCurrentContent(baseline);
+    onContentDraftChange?.(baseline);
+    reset();
+  };
+
+  const handleSaveEdits = () => {
+    void runSave();
+  };
+
   const authorInitialsDisplay =
     authorInitials ?? (`${authorName.split(" ")[0]?.[0] ?? ""}${authorName.split(" ")[1]?.[0] ?? ""}`.toUpperCase() || "YO");
+
+  const renderPostAuthorHeader = () => (
+    <div className="mb-5 flex shrink-0 gap-3">
+      <div className="flex h-12 w-12 shrink-0 items-center justify-center overflow-hidden rounded-full bg-gradient-to-br from-brand-400 to-brand-500 text-sm font-medium text-white">
+        <ProfilePictureWithFallback urls={authorPictureUrls} initials={authorInitialsDisplay} alt={authorName} />
+      </div>
+      <div className="min-w-0">
+        <h3 className="truncate text-[15px] font-semibold text-slate-900 dark:text-white">{authorName}</h3>
+        <p className="line-clamp-2 text-[13px] text-slate-500">{authorHeadline}</p>
+        <div className="mt-0.5 flex items-center gap-1 text-xs text-slate-400">
+          <span>Now</span>
+          <span aria-hidden>•</span>
+          <span>🌐</span>
+        </div>
+      </div>
+    </div>
+  );
+
+  const renderLinkedInPostCard = () => (
+    <div className="scrollbar-on-hover flex min-h-0 flex-1 flex-col overflow-hidden rounded-2xl border border-slate-200/90 bg-white shadow-2xl shadow-black/20 dark:border-slate-700 dark:bg-slate-900">
+      <div className="flex min-h-0 flex-1 flex-col overflow-y-auto p-6">
+        {renderPostAuthorHeader()}
+        <textarea
+          value={currentContent}
+          onChange={e => {
+            const next = e.target.value;
+            setCurrentContent(next);
+            onContentDraftChange?.(next);
+            if (onPersistDraft) {
+              markDirty();
+            }
+          }}
+          className="scrollbar-on-hover min-h-[12rem] w-full flex-1 resize-none border-none bg-transparent p-0 font-sans text-[15px] leading-relaxed text-slate-800 outline-none placeholder:text-slate-400 dark:text-slate-200"
+          placeholder="Write your post content here..."
+        />
+        {linkedinPreviewPendingMedia.length > 0 || linkedinPreviewImages.length > 0 ? (
+          <div className="mt-4 grid grid-cols-2 gap-2">
+            {linkedinPreviewPendingMedia.map(p => (
+              <div key={p.id} className="relative overflow-hidden rounded-lg border border-amber-200 dark:border-amber-800">
+                <StudioMediaPreviewImage src={p.objectUrl} alt="" className="h-32 w-full object-cover" />
+                <span className="absolute bottom-1 left-1 rounded bg-amber-100/90 px-1 text-[10px] font-medium text-amber-900 dark:bg-amber-900/80 dark:text-amber-100">
+                  Pending upload
+                </span>
+              </div>
+            ))}
+            {linkedinPreviewImages.map(url => (
+              <StudioMediaPreviewImage
+                key={url}
+                src={url}
+                alt="LinkedIn media preview"
+                className="h-32 w-full rounded-lg border border-slate-200 object-cover dark:border-slate-700"
+              />
+            ))}
+          </div>
+        ) : null}
+      </div>
+    </div>
+  );
+
+  const renderFloatingPreviewColumn = () => (
+    <div className="flex w-full max-w-[min(92vw,36rem)] flex-col lg:h-[min(90vh,calc(100vh-2rem))] lg:max-w-[min(40vw,36rem)]">
+      {renderLinkedInPostCard()}
+      <button
+        type="button"
+        onClick={handleImproveDraft}
+        disabled={!onImproveWithUnibot || !currentContent.trim()}
+        className="mt-4 flex shrink-0 items-center justify-center gap-2 rounded-full border border-white/25 bg-white/10 px-6 py-3 text-sm font-medium text-white shadow-lg backdrop-blur-md transition-all hover:bg-white/20 disabled:pointer-events-none disabled:opacity-50 active:scale-[0.98]"
+      >
+        <Wand2 size={16} />
+        Improve with Unibot
+      </button>
+    </div>
+  );
 
   if (typeof document === "undefined") return null;
 
   return createPortal(
     <div
-      className={`fixed inset-0 ${MODAL_OVERLAY_Z_CLASS} flex items-center justify-center overflow-y-auto bg-black/60 p-4 backdrop-blur-sm animate-in fade-in duration-200`}
+      className={`fixed inset-0 ${MODAL_OVERLAY_Z_CLASS} overflow-y-auto bg-black/70 p-4 backdrop-blur-md animate-in fade-in duration-200 sm:p-6 lg:p-8`}
+      onClick={e => {
+        if (e.target === e.currentTarget && !isSubmitting && !showSuccess) {
+          onClose();
+        }
+      }}
     >
-      <div className="relative my-auto flex max-h-[min(90dvh,calc(100vh-2rem))] w-full max-w-2xl min-h-0 flex-col overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-2xl animate-in zoom-in-95 duration-200 dark:border-slate-800 dark:bg-slate-900">
-        {errorToast ? (
-          <div className="absolute right-4 top-4 z-30 animate-in slide-in-from-top-2 fade-in duration-200">
-            <div
-              role="status"
-              aria-live="polite"
-              className="max-w-[22rem] rounded-xl border border-rose-200 bg-rose-50 px-4 py-3 text-sm font-medium text-rose-700 shadow-lg dark:border-rose-900/40 dark:bg-rose-950/60 dark:text-rose-200"
-            >
-              {errorToast}
-            </div>
-          </div>
-        ) : null}
+      <div className="mx-auto flex min-h-full w-full max-w-[min(96vw,72rem)] items-center justify-center py-2">
+        <div className="flex w-full flex-col items-stretch gap-6 lg:flex-row lg:items-stretch lg:justify-center lg:gap-8">
+          {/* Left: floating LinkedIn preview — transparent, sits on backdrop */}
+          <div className="order-1 flex justify-center lg:justify-end">{renderFloatingPreviewColumn()}</div>
 
-        <div className="flex shrink-0 items-center justify-between border-b border-slate-100 bg-white p-6 dark:border-slate-800 dark:bg-slate-900">
-          <h2 className="font-sans text-xl font-semibold tracking-tight text-slate-900 dark:text-white">Review & Schedule</h2>
-          <button
-            type="button"
-            onClick={onClose}
-            disabled={isSubmitting || showSuccess}
-            className="rounded-full p-2 transition-colors hover:bg-slate-100 disabled:pointer-events-none disabled:opacity-60 dark:hover:bg-slate-800"
-            aria-label="Close"
-          >
-            <X size={20} className="text-slate-400 hover:text-slate-600" />
-          </button>
-        </div>
+          {/* Right: Review & Schedule panel */}
+          <div className="relative order-2 flex w-full max-w-md shrink-0 flex-col overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-2xl animate-in zoom-in-95 duration-200 dark:border-slate-800 dark:bg-slate-900 lg:h-[min(90vh,calc(100vh-2rem))]">
+            {errorToast ? (
+              <div className="absolute right-4 top-16 z-30 animate-in slide-in-from-top-2 fade-in duration-200">
+                <div
+                  role="status"
+                  aria-live="polite"
+                  className="max-w-[20rem] rounded-xl border border-rose-200 bg-rose-50 px-4 py-3 text-sm font-medium text-rose-700 shadow-lg dark:border-rose-900/40 dark:bg-rose-950/60 dark:text-rose-200"
+                >
+                  {errorToast}
+                </div>
+              </div>
+            ) : null}
 
-        <div className="min-h-0 flex-1 overflow-y-auto p-6">
-          {mode === "preview" ? (
-            <div className="group relative">
-              <div className="min-h-[16rem] rounded-xl border border-slate-200 bg-white p-6 shadow-sm dark:border-slate-800 dark:bg-slate-900">
-                <div className="mb-4 flex gap-3">
-                  <div className="flex h-10 w-10 shrink-0 items-center justify-center overflow-hidden rounded-full bg-gradient-to-br from-brand-400 to-brand-500 text-sm font-medium text-white">
-                    <ProfilePictureWithFallback urls={authorPictureUrls} initials={authorInitialsDisplay} alt={authorName} />
-                  </div>
-                  <div>
-                    <h3 className="text-sm font-medium text-slate-900 dark:text-white">{authorName}</h3>
-                    <p className="text-xs text-slate-500">{authorHeadline}</p>
-                    <div className="flex items-center gap-1 text-xs text-slate-400">
-                      <span>Now</span> • 🌐
-                    </div>
-                  </div>
-                </div>
-                <div className="max-h-52 overflow-y-auto whitespace-pre-wrap text-sm leading-relaxed text-slate-800 dark:text-slate-200">
-                  {currentContent}
-                </div>
-                {linkedinPreviewPendingMedia.length > 0 || linkedinPreviewImages.length > 0 ? (
-                  <div className="mt-4 grid grid-cols-2 gap-2">
-                    {linkedinPreviewPendingMedia.map(p => (
-                      <div key={p.id} className="relative overflow-hidden rounded-lg border border-amber-200 dark:border-amber-800">
-                        <StudioMediaPreviewImage src={p.objectUrl} alt="" className="h-32 w-full object-cover" />
-                        <span className="absolute bottom-1 left-1 rounded bg-amber-100/90 px-1 text-[10px] font-medium text-amber-900 dark:bg-amber-900/80 dark:text-amber-100">
-                          Pending upload
-                        </span>
-                      </div>
-                    ))}
-                    {linkedinPreviewImages.map(url => (
-                      <StudioMediaPreviewImage
-                        key={url}
-                        src={url}
-                        alt="LinkedIn media preview"
-                        className="h-32 w-full rounded-lg border border-slate-200 object-cover dark:border-slate-700"
-                      />
-                    ))}
+            <div className="flex shrink-0 items-center justify-between border-b border-slate-100 px-6 py-5 dark:border-slate-800">
+              <div>
+                <h2 className="font-sans text-xl font-semibold tracking-tight text-slate-900 dark:text-white">Review & Schedule</h2>
+                {onPersistDraft ? (
+                  <div className="mt-1 w-full">
+                    <DocumentSaveStatusBar
+                      variant="modal"
+                      hasPendingUnsavedChanges={hasPendingUnsavedChanges}
+                      isSaving={isSaving}
+                      savedConfirmationVisible={savedConfirmationVisible}
+                      onSaveNow={() => void handleSaveEdits()}
+                      onCancel={handleCancelEdits}
+                      visible={hasPendingUnsavedChanges || isSaving || savedConfirmationVisible}
+                    />
                   </div>
                 ) : null}
+                {actionStatus ? <p className="mt-1 text-xs font-medium text-emerald-600 dark:text-emerald-400">{actionStatus}</p> : null}
               </div>
-
-              <div className="pointer-events-none absolute inset-0 flex items-center justify-center rounded-xl bg-white/90 opacity-0 backdrop-blur-sm transition-all group-hover:pointer-events-auto group-hover:opacity-100 dark:bg-black/90">
-                <button
-                  type="button"
-                  onClick={() => {
-                    if (onEditToPreview) {
-                      onEditToPreview(currentContent);
-                    } else {
-                      setMode("edit");
-                    }
-                  }}
-                  className="pointer-events-auto flex translate-y-4 items-center gap-2 rounded-full bg-brand-600 px-6 py-3 font-medium text-white shadow-xl transition-all hover:bg-brand-700 active:scale-95 group-hover:translate-y-0"
-                >
-                  <Edit2 size={16} /> Edit Post Content
-                </button>
-              </div>
-            </div>
-          ) : (
-            <div className="relative overflow-hidden rounded-2xl border border-slate-200 bg-slate-50 p-1 transition-all focus-within:ring-2 focus-within:ring-brand-500/20 dark:border-slate-700 dark:bg-slate-900/50">
-              <textarea
-                value={currentContent}
-                onChange={e => setCurrentContent(e.target.value)}
-                className="h-64 w-full resize-none border-none bg-transparent p-6 font-sans text-base leading-relaxed text-slate-800 outline-none placeholder:text-slate-400 dark:text-slate-200"
-                placeholder="Write your post content here..."
-                autoFocus
-              />
-              <div className="absolute bottom-4 right-4 flex items-center gap-2">
-                <button
-                  type="button"
-                  onClick={() => onImproveWithUnibot?.(currentContent)}
-                  disabled={!onImproveWithUnibot || !currentContent.trim()}
-                  className="flex items-center gap-2 rounded-lg bg-brand-100 px-3 py-1.5 text-xs font-medium text-brand-700 transition-colors hover:bg-brand-200 disabled:pointer-events-none disabled:opacity-50 dark:bg-brand-900/30 dark:text-brand-300 dark:hover:bg-brand-900/50"
-                >
-                  <Wand2 size={14} /> Improve with Unibot
-                </button>
-                <button
-                  type="button"
-                  onClick={() => setMode("preview")}
-                  className="rounded-lg bg-brand-600 px-4 py-1.5 text-xs font-medium text-white shadow-sm transition-colors hover:bg-brand-700"
-                >
-                  Done
-                </button>
-              </div>
-            </div>
-          )}
-
-          <div className="mt-8 space-y-4">
-            {publishBlocked ? <LinkedInPublishAccessNotice access={linkedInPublishAccess} userId={userId} /> : null}
-
-            <div className="grid grid-cols-1 gap-4">
-              <div className="relative flex flex-col justify-between rounded-2xl border-2 border-brand-500 bg-brand-50/50 p-5 dark:bg-brand-900/10">
-                <div>
-                  <span className="mb-1 block text-base font-medium text-slate-900 dark:text-white">Post to LinkedIn</span>
-                  <span className="text-xs text-slate-500">Share with your professional network</span>
-                </div>
-                <div className="absolute right-4 top-1/2 flex h-6 w-6 -translate-y-1/2 scale-110 items-center justify-center rounded-full border-2 border-brand-600 bg-brand-600">
-                  <CheckCircle2 size={14} className="text-white" />
-                </div>
-              </div>
-
-              {/* Post to Unimad — commented until community publish API exists
-              <label
-                className={`relative flex cursor-pointer flex-col justify-between rounded-2xl border-2 p-5 transition-all ${
-                  postToUnimad
-                    ? "border-brand-500 bg-brand-50/50 dark:bg-brand-900/10"
-                    : "border-slate-100 bg-white hover:border-slate-300 dark:border-slate-800 dark:bg-slate-900"
-                }`}
+              <button
+                type="button"
+                onClick={onClose}
+                disabled={isSubmitting || showSuccess}
+                className="rounded-full p-2 transition-colors hover:bg-slate-100 disabled:pointer-events-none disabled:opacity-60 dark:hover:bg-slate-800"
+                aria-label="Close"
               >
-                <div>
-                  <span className="mb-1 block text-base font-medium text-slate-900 dark:text-white">Post to Unimad</span>
-                  <span className="text-xs text-slate-500">Share with the community</span>
-                </div>
-                <div
-                  className={`absolute right-4 top-1/2 flex h-6 w-6 -translate-y-1/2 items-center justify-center rounded-full border-2 transition-all ${
-                    postToUnimad ? "scale-110 border-brand-600 bg-brand-600" : "border-slate-300 dark:border-slate-600"
-                  }`}
-                >
-                  {postToUnimad ? <CheckCircle2 size={14} className="text-white" /> : null}
-                </div>
-                <input type="checkbox" className="hidden" checked={postToUnimad} onChange={e => setPostToUnimad(e.target.checked)} />
-              </label>
-
-              <div
-                aria-disabled
-                className="relative flex flex-col justify-between rounded-2xl border-2 border-slate-100 bg-slate-50/80 p-5 opacity-60 dark:border-slate-800 dark:bg-slate-900/60"
-              >
-                <div>
-                  <div className="mb-1 flex flex-wrap items-center gap-2">
-                    <span className="text-base font-medium text-slate-900 dark:text-white">Post to Unimad</span>
-                    <span className="rounded-full bg-slate-200 px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-slate-600 dark:bg-slate-800 dark:text-slate-400">
-                      Coming soon
-                    </span>
-                  </div>
-                  <span className="text-xs text-slate-500">Share with the community</span>
-                </div>
-                <div className="absolute right-4 top-1/2 flex h-6 w-6 -translate-y-1/2 items-center justify-center rounded-full border-2 border-slate-200 dark:border-slate-700" />
-              </div>
-              */}
+                <X size={20} className="text-slate-400 hover:text-slate-600" />
+              </button>
             </div>
 
-            <div className="rounded-2xl border border-slate-200 bg-slate-100 p-2 dark:border-slate-700 dark:bg-slate-900/80">
-              <div className="flex items-center justify-between rounded-xl p-4 transition-colors hover:bg-slate-200/60 dark:hover:bg-slate-800/60">
-                <span className="text-sm font-medium text-slate-800 dark:text-white">Schedule for later</span>
-                <button
-                  type="button"
-                  role="switch"
-                  aria-checked={isScheduling}
-                  disabled={!linkedInPublishAccess.canSchedule || publishBlocked}
-                  onClick={() => setIsScheduling(!isScheduling)}
-                  className={`h-7 w-12 cursor-pointer rounded-full p-1 transition-colors duration-300 disabled:cursor-not-allowed disabled:opacity-40 ${
-                    isScheduling ? "bg-brand-600" : "bg-slate-200 dark:bg-slate-700"
-                  }`}
-                >
-                  <span
-                    className={`block h-5 w-5 rounded-full bg-white shadow-sm transition-transform duration-300 ${
-                      isScheduling ? "translate-x-5" : "translate-x-0"
-                    }`}
-                  />
-                </button>
-              </div>
+            <div className="scrollbar-on-hover min-h-0 flex-1 overflow-y-auto px-6 py-5">
+              {contentTooShort ? (
+                <p className="mb-4 text-sm text-amber-700 dark:text-amber-300" role="status">
+                  {LINKEDIN_POST_TOO_SHORT_MESSAGE}
+                </p>
+              ) : null}
 
-              {isScheduling ? (
-                <div className="space-y-3 p-4 pt-0">
-                  <div className="grid animate-in fade-in slide-in-from-top-2 grid-cols-2 gap-3">
-                    <input
-                      type="date"
-                      value={scheduleDate}
-                      max={dateInputMax}
-                      onChange={e => setScheduleDate(e.target.value)}
-                      className={`rounded-xl border bg-white px-4 py-3 text-sm font-medium outline-none focus:ring-2 focus:ring-brand-500/20 dark:bg-slate-800 ${
-                        scheduleBeyondSession ? "border-amber-300 dark:border-amber-800" : "border-slate-200 dark:border-slate-600"
-                      }`}
-                    />
-                    <input
-                      type="time"
-                      value={scheduleTime}
-                      onChange={e => setScheduleTime(e.target.value)}
-                      className={`rounded-xl border bg-white px-4 py-3 text-sm font-medium outline-none focus:ring-2 focus:ring-brand-500/20 dark:bg-slate-800 ${
-                        scheduleBeyondSession ? "border-amber-300 dark:border-amber-800" : "border-slate-200 dark:border-slate-600"
-                      }`}
-                    />
-                  </div>
-                  {scheduleBeyondSession ? (
-                    <LinkedInPublishAccessNotice
-                      access={linkedInPublishAccess}
-                      userId={userId}
-                      variant="inline"
-                      scheduleBeyondSession
-                      sessionEndsLabel={sessionEndsLabel}
-                    />
-                  ) : null}
+              {publishBlocked ? (
+                <div className="mb-4">
+                  <LinkedInPublishAccessNotice access={linkedInPublishAccess} userId={userId} />
                 </div>
               ) : null}
-            </div>
-          </div>
-        </div>
 
-        <div className="flex shrink-0 justify-end gap-3 rounded-b-2xl border-t border-slate-100 bg-white p-6 dark:border-slate-800 dark:bg-slate-900">
-          <button
-            type="button"
-            onClick={onClose}
-            disabled={isSubmitting || showSuccess}
-            className="rounded-full px-6 py-3 text-sm font-medium text-slate-500 transition-colors hover:text-slate-700 disabled:pointer-events-none disabled:opacity-60 dark:text-slate-400 dark:hover:text-slate-200"
-          >
-            Cancel
-          </button>
-          <button
-            type="button"
-            onClick={() => void handleConfirm()}
-            disabled={confirmDisabled}
-            title={
-              publishBlocked
-                ? linkedInPublishAccess.blockReason === "connect"
-                  ? "Connect LinkedIn to post"
-                  : "Sign in with LinkedIn again to post"
-                : scheduleBeyondSession
-                  ? "Choose a date within your LinkedIn connection window"
-                  : undefined
-            }
-            className="flex items-center gap-2 rounded-xl bg-brand-600 px-8 py-3 text-sm font-medium text-white shadow-xl shadow-brand-500/20 transition-all hover:bg-brand-700 active:scale-95 disabled:pointer-events-none disabled:opacity-60"
-          >
-            {isSubmitting ? "Working…" : isScheduling ? "Schedule Post" : "Post Now"}
-            <Send size={16} className={isScheduling || isSubmitting ? "hidden" : ""} />
-          </button>
-        </div>
+              <div className={`space-y-4 ${contentTooShort ? "pointer-events-none opacity-50" : ""}`}>
+                <div
+                  className={`relative flex flex-col justify-between rounded-2xl border-2 p-5 transition-all ${
+                    isScheduling
+                      ? "border-slate-200 bg-slate-50/80 opacity-50 dark:border-slate-700 dark:bg-slate-900/40"
+                      : "border-brand-500 bg-brand-50/50 dark:bg-brand-900/10"
+                  }`}
+                  aria-disabled={isScheduling}
+                >
+                  <div>
+                    <span className="mb-1 block text-base font-medium text-slate-900 dark:text-white">Post to LinkedIn</span>
+                    <span className="text-xs text-slate-500">
+                      {isScheduling ? "Turn off scheduling to post immediately" : "Share with your professional network"}
+                    </span>
+                  </div>
+                  <div
+                    className={`absolute right-4 top-1/2 flex h-6 w-6 -translate-y-1/2 items-center justify-center rounded-full border-2 transition-all ${
+                      isScheduling ? "border-slate-300 dark:border-slate-600" : "scale-110 border-brand-600 bg-brand-600"
+                    }`}
+                  >
+                    {!isScheduling ? <CheckCircle2 size={14} className="text-white" /> : null}
+                  </div>
+                </div>
 
-        {showSuccess ? (
-          <div className="absolute inset-0 z-20 flex animate-in fade-in items-center justify-center bg-white/70 backdrop-blur-sm duration-200 dark:bg-black/40">
-            <div className="flex animate-in zoom-in-95 flex-col items-center gap-3 px-6 duration-300">
-              <div className="flex h-16 w-16 animate-pulse items-center justify-center rounded-full bg-brand-600 shadow-lg shadow-brand-500/30">
-                <CheckCircle2 size={34} className="text-white" />
+                <div
+                  className={`rounded-2xl border p-2 transition-all ${
+                    isScheduling
+                      ? "border-brand-400 bg-brand-50/60 ring-1 ring-brand-500/30 dark:border-brand-700 dark:bg-brand-950/30"
+                      : "border-slate-200 bg-slate-100 dark:border-slate-700 dark:bg-slate-900/80"
+                  }`}
+                >
+                  <div className="flex items-center justify-between rounded-xl p-4 transition-colors hover:bg-slate-200/40 dark:hover:bg-slate-800/40">
+                    <div>
+                      <span className="block text-sm font-medium text-slate-800 dark:text-white">Schedule for later</span>
+                      <span className="text-xs text-slate-500">Pick a date and time on LinkedIn</span>
+                    </div>
+                    <button
+                      type="button"
+                      role="switch"
+                      aria-checked={isScheduling}
+                      disabled={!linkedInPublishAccess.canSchedule || publishActionsDisabled}
+                      onClick={() => setIsScheduling(!isScheduling)}
+                      className={`h-7 w-12 shrink-0 cursor-pointer rounded-full p-1 transition-colors duration-300 disabled:cursor-not-allowed disabled:opacity-40 ${
+                        isScheduling ? "bg-brand-600" : "bg-slate-200 dark:bg-slate-700"
+                      }`}
+                    >
+                      <span
+                        className={`block h-5 w-5 rounded-full bg-white shadow-sm transition-transform duration-300 ${
+                          isScheduling ? "translate-x-5" : "translate-x-0"
+                        }`}
+                      />
+                    </button>
+                  </div>
+
+                  {isScheduling ? (
+                    <div className="space-y-3 px-2 pb-2 pt-0">
+                      <LinkedInScheduleDateTimePicker
+                        scheduleDate={scheduleDate}
+                        scheduleTime={scheduleTime}
+                        onScheduleDateChange={setScheduleDate}
+                        onScheduleTimeChange={setScheduleTime}
+                        linkedInPublishAccess={linkedInPublishAccess}
+                      />
+                      {scheduleBeyondSession ? (
+                        <LinkedInPublishAccessNotice
+                          access={linkedInPublishAccess}
+                          userId={userId}
+                          variant="inline"
+                          scheduleBeyondSession
+                          sessionEndsLabel={sessionEndsLabel}
+                        />
+                      ) : null}
+                    </div>
+                  ) : null}
+                </div>
               </div>
-              <p className="max-w-[22rem] text-center text-base font-semibold tracking-tight text-slate-900 dark:text-slate-50">
-                {successMessage}
-              </p>
             </div>
+
+            <div className="flex shrink-0 justify-end gap-3 border-t border-slate-100 px-6 py-5 dark:border-slate-800">
+              <button
+                type="button"
+                onClick={onClose}
+                disabled={isSubmitting || showSuccess}
+                className="rounded-full px-6 py-3 text-sm font-medium text-slate-500 transition-colors hover:text-slate-700 disabled:pointer-events-none disabled:opacity-60 dark:text-slate-400 dark:hover:text-slate-200"
+              >
+                Cancel
+              </button>
+              <button
+                type="button"
+                onClick={() => void handleConfirm()}
+                disabled={confirmDisabled}
+                title={
+                  contentTooShort
+                    ? LINKEDIN_POST_TOO_SHORT_MESSAGE
+                    : publishBlocked
+                      ? linkedInPublishAccess.blockReason === "connect"
+                        ? "Connect LinkedIn to post"
+                        : "Sign in with LinkedIn again to post"
+                      : scheduleBeyondSession
+                        ? "Choose a date within your LinkedIn connection window"
+                        : undefined
+                }
+                className="flex items-center gap-2 rounded-xl bg-brand-600 px-8 py-3 text-sm font-medium text-white shadow-xl shadow-brand-500/20 transition-all hover:bg-brand-700 active:scale-95 disabled:pointer-events-none disabled:opacity-60"
+              >
+                {isSubmitting ? (isScheduling ? "Scheduling…" : "Posting…") : isScheduling ? "Schedule Post" : "Post Now"}
+                <Send size={16} className={isScheduling || isSubmitting ? "hidden" : ""} />
+              </button>
+            </div>
+
+            {showSuccess ? (
+              <div className="absolute inset-0 z-20 flex animate-in fade-in items-center justify-center bg-white/80 backdrop-blur-sm duration-200 dark:bg-slate-900/80">
+                <div className="flex animate-in zoom-in-95 flex-col items-center gap-3 px-6 duration-300">
+                  <div className="flex h-16 w-16 animate-pulse items-center justify-center rounded-full bg-brand-600 shadow-lg shadow-brand-500/30">
+                    <CheckCircle2 size={34} className="text-white" />
+                  </div>
+                  <p className="max-w-[22rem] text-center text-base font-semibold tracking-tight text-slate-900 dark:text-slate-50">
+                    {successMessage}
+                  </p>
+                </div>
+              </div>
+            ) : null}
           </div>
-        ) : null}
+        </div>
       </div>
     </div>,
     document.body

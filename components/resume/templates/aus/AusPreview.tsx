@@ -278,34 +278,35 @@ const AusPreview: React.FC<AusPreviewProps> = ({ data, previewScale = 1, isModal
       const customSection = resume.customSections?.find(s => s.id === type);
       if (!customSection || !customSection.items || !customSection.items.some(item => !item.hidden)) return null;
 
+      const visibleItems = customSection.items.filter(d => !d.hidden);
+
       return (
         <div className="flex flex-col w-full gap-[4px]">
-          <SectionHeading title={customSection.title || "Custom Section"} />
           <div className="flex flex-col gap-2">
-            {customSection.items
-              .filter(d => !d.hidden)
-              .map((item, i) => (
-                <div key={i} className="flex flex-col gap-[2px] text-[#373737]">
-                  <div className="flex justify-between items-start w-full text-[12px]">
-                    <div className="flex flex-col gap-0.5">{item.title && <span className="font-medium">{item.title}</span>}</div>
+            {visibleItems.map((item, i) => (
+              <div key={i} className="flex flex-col gap-[2px] text-[#373737]" style={{ breakInside: i === 0 ? "avoid" : "auto" }}>
+                {i === 0 && <SectionHeading title={customSection.title || "Custom Section"} />}
+                <div className="flex justify-between items-start w-full text-[13px] font-medium">
+                  {item.title && <span>{item.title}</span>}
+                  {item.startDate && (
                     <span className="text-[#666666] text-[11px] font-normal text-right shrink-0 ml-2">
-                      {[
-                        item.location,
-                        item.startDate
-                          ? `${formatDateMonthYear(item.startDate)}${item.endDate ? ` - ${formatDateMonthYear(item.endDate)}` : ""}`
-                          : "",
-                      ]
-                        .filter(Boolean)
-                        .join(", ")}
+                      {formatDateMonthYear(item.startDate)} - {item.current ? "Present" : formatDateMonthYear(item.endDate)}
                     </span>
-                  </div>
-                  {item.description && (
-                    <div className="text-[12px] leading-relaxed mt-[2px] pl-[2px]">
-                      <HtmlDisplay content={item.description} />
-                    </div>
                   )}
                 </div>
-              ))}
+                {(item.subtitle || item.location) && (
+                  <div className="flex justify-between items-start w-full text-[12px] text-[#346DE0] font-normal">
+                    {item.subtitle && <span>{item.subtitle}</span>}
+                    {item.location && <span className="text-[#666666] font-semibold text-right shrink-0 ml-2">{item.location}</span>}
+                  </div>
+                )}
+                {item.description && (
+                  <div className="text-[12px] leading-relaxed mt-[2px] pl-[2px]">
+                    <HtmlDisplay content={item.description} />
+                  </div>
+                )}
+              </div>
+            ))}
           </div>
         </div>
       );

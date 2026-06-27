@@ -1,13 +1,19 @@
 "use server";
 
 import { convertAdkEventsToMessages } from "./message-converter";
-import { createSessionWithService, type SessionCreationResult } from "./services";
-import { getSessionWithEvents, listUserSessions, AdkSessionService } from "./session-history";
+import { createSessionWithService, type SessionCreationOptions, type SessionCreationResult } from "./services";
+import {
+  getSessionWithEvents,
+  listUserSessions,
+  AdkSessionService,
+  resolveEffectiveAdkAppForSession,
+  type AdkSessionServiceOptions,
+} from "./session-history";
 import type { AgentMessage, ProcessedEvent } from "./types";
 
-export async function createSessionAction(userId: string): Promise<SessionCreationResult> {
+export async function createSessionAction(userId: string, options?: SessionCreationOptions): Promise<SessionCreationResult> {
   try {
-    return await createSessionWithService(userId);
+    return await createSessionWithService(userId, options);
   } catch (error) {
     console.error("createSessionAction error:", error);
     return {
@@ -114,7 +120,11 @@ export async function fetchActiveSessionsAction(userId: string): Promise<Session
   }
 }
 
-export async function deleteSessionAction(userId: string, sessionId: string): Promise<SessionDeleteResult> {
+export async function deleteSessionAction(
+  userId: string,
+  sessionId: string,
+  options?: AdkSessionServiceOptions
+): Promise<SessionDeleteResult> {
   try {
     if (!userId || !sessionId) {
       return {
@@ -122,7 +132,7 @@ export async function deleteSessionAction(userId: string, sessionId: string): Pr
         error: "userId and sessionId are required",
       };
     }
-    await AdkSessionService.deleteSession(userId, sessionId);
+    await AdkSessionService.deleteSession(userId, sessionId, options);
     return { success: true };
   } catch (error) {
     console.error("deleteSessionAction error:", error);
@@ -141,9 +151,13 @@ export interface SessionHistoryResult {
   error?: string;
 }
 
-export async function loadSessionHistoryAction(userId: string, sessionId: string): Promise<SessionHistoryResult> {
+export async function loadSessionHistoryAction(
+  userId: string,
+  sessionId: string,
+  options?: AdkSessionServiceOptions
+): Promise<SessionHistoryResult> {
   try {
-    const sessionWithEvents = await getSessionWithEvents(userId, sessionId);
+    const sessionWithEvents = await getSessionWithEvents(userId, sessionId, options);
 
     if (!sessionWithEvents) {
       return {
@@ -207,6 +221,7 @@ export interface SessionStateSyncResult {
   success: boolean;
   patched: boolean;
   patchSupported: boolean;
+  effectiveAppName?: string;
   error?: string;
 }
 
@@ -219,7 +234,8 @@ export interface SessionStatePullResult {
 export async function syncSessionStateAction(
   userId: string,
   sessionId: string,
-  stateDelta: Record<string, unknown>
+  stateDelta: Record<string, unknown>,
+  options?: AdkSessionServiceOptions
 ): Promise<SessionStateSyncResult> {
   try {
     if (!userId || !sessionId) {
@@ -232,18 +248,22 @@ export async function syncSessionStateAction(
     }
 
     if (!stateDelta || Object.keys(stateDelta).length === 0) {
+      const effectiveAppName = await resolveEffectiveAdkAppForSession(userId, sessionId, options);
       return {
         success: true,
         patched: false,
         patchSupported: true,
+        effectiveAppName,
       };
     }
 
-    const patchResult = await AdkSessionService.patchSessionState(userId, sessionId, stateDelta);
+    const patchResult = await AdkSessionService.patchSessionState(userId, sessionId, stateDelta, options);
+    const effectiveAppName = await resolveEffectiveAdkAppForSession(userId, sessionId, options);
     return {
       success: !patchResult.error,
       patched: patchResult.patched,
       patchSupported: patchResult.patchSupported,
+      effectiveAppName,
       ...(patchResult.error ? { error: patchResult.error } : {}),
     };
   } catch (error) {
@@ -264,7 +284,8 @@ export interface SessionRewindResult {
 export async function rewindSessionAction(
   userId: string,
   sessionId: string,
-  rewindBeforeInvocationId: string
+  rewindBeforeInvocationId: string,
+  options?: AdkSessionServiceOptions
 ): Promise<SessionRewindResult> {
   try {
     if (!userId || !sessionId || !rewindBeforeInvocationId.trim()) {
@@ -274,7 +295,7 @@ export async function rewindSessionAction(
       };
     }
 
-    return await AdkSessionService.rewindSession(userId, sessionId, rewindBeforeInvocationId.trim());
+    return await AdkSessionService.rewindSession(userId, sessionId, rewindBeforeInvocationId.trim(), options);
   } catch (error) {
     return {
       success: false,
@@ -283,7 +304,11 @@ export async function rewindSessionAction(
   }
 }
 
-export async function pullSessionStateAction(userId: string, sessionId: string): Promise<SessionStatePullResult> {
+export async function pullSessionStateAction(
+  userId: string,
+  sessionId: string,
+  options?: AdkSessionServiceOptions
+): Promise<SessionStatePullResult> {
   try {
     if (!userId || !sessionId) {
       return {
@@ -293,7 +318,7 @@ export async function pullSessionStateAction(userId: string, sessionId: string):
       };
     }
 
-    const session = await AdkSessionService.getSession(userId, sessionId);
+    const session = await AdkSessionService.getSession(userId, sessionId, options);
     return {
       success: true,
       state: session?.state ?? null,

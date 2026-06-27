@@ -10,11 +10,23 @@
  * - Complete responses are used as termination signals (not displayed)
  * - When complete response matches accumulated text, streaming stops
  */
-import { flushSync } from "react-dom";
 import { createDebugLog } from "@/src/lib/adk/run-sse-common";
+import { parseJobCardsFromToolResponse } from "../parse-unimad-job-cards";
+import { parseLinkedInSuggestionsFromToolResponse } from "../parse-unimad-linkedin-suggestions";
+import { parseUnimadNavigationFromToolResponse } from "../parse-unimad-navigation";
 import type { AgentMessage, ProcessedEvent } from "../types";
+import { traceAdkActivity } from "./activity-trace";
 import { extractDataFromSSE } from "./sse-parser";
-import { isMutatingAdkTool, isMutatingResumeTool, labelForAgent, labelForMutatingToolResponse, labelForToolCall } from "./stream-activity";
+import {
+  isMutatingAdkTool,
+  isMutatingResumeTool,
+  labelForAgent,
+  labelForMutatingToolResponse,
+  labelForReadToolResponse,
+  labelForToolCall,
+  labelForTransferTarget,
+  toSnakeToolKey,
+} from "./stream-activity";
 import { StreamProcessingCallbacks } from "./types";
 
 function previewArgsForDevLog(args: Record<string, unknown> | undefined, max = 480): string {
@@ -51,47 +63,62 @@ export async function processSseEventData(
   callbacks: StreamProcessingCallbacks,
   accumulatedTextRef: { current: string },
   currentAgentRef: { current: string },
-  setCurrentAgent: (agent: string) => void
+  setCurrentAgent: (agent: string) => void,
+  activityDedupRef?: { current: Set<string> }
 ): Promise<void> {
-  const { textParts, thoughtParts, agent, functionCall, functionResponse } = extractDataFromSSE(jsonData);
+  const { textParts, thoughtParts, agent, transferToAgent, functionCall, functionResponse, partial, streamActivityHint } =
+    extractDataFromSSE(jsonData);
+
+  const emitActivityLabel = (label: string, meta?: { author?: string; tool?: string; transferTo?: string }, dedupKey?: string): void => {
+    if (!label.trim()) return;
+    if (dedupKey && activityDedupRef) {
+      if (activityDedupRef.current.has(dedupKey)) return;
+      activityDedupRef.current.add(dedupKey);
+    }
+    traceAdkActivity(label.trim(), meta);
+    callbacks.onStreamActivityHint?.({ label: label.trim() });
+  };
+
+  const applyTransferTarget = (target: string): void => {
+    const normalized = target.trim();
+    if (!normalized) return;
+    currentAgentRef.current = normalized;
+    setCurrentAgent(normalized);
+    emitActivityLabel(labelForTransferTarget(normalized), { transferTo: normalized }, `transfer:${normalized}`);
+  };
 
   // Use frontend-generated aiMessageId for consistent message correlation
   // Backend sends different IDs for each SSE event, which would create separate messages
   const actualMessageId = aiMessageId;
 
-  // Update current agent if changed
+  if (streamActivityHint) {
+    emitActivityLabel(streamActivityHint, { author: "unimad_progress" }, `progress:${streamActivityHint}`);
+  }
+
+  // Tool / handoff labels first — they are more specific than coordinator author labels.
+  if (functionCall) {
+    processFunctionCall(functionCall, actualMessageId, callbacks, emitActivityLabel);
+  }
+
+  if (functionResponse) {
+    processFunctionResponse(functionResponse, actualMessageId, callbacks, emitActivityLabel);
+  }
+
+  if (transferToAgent) {
+    applyTransferTarget(transferToAgent);
+  }
+
+  // Update current agent if changed (fallback when no tool label fired this event)
   if (agent && agent !== currentAgentRef.current) {
     currentAgentRef.current = agent;
     setCurrentAgent(agent);
     const agentLabel = labelForAgent(agent);
-    createDebugLog("ADK STREAM UX", "author → UI label", { rawAuthor: agent, uiLabel: agentLabel });
-    callbacks.onStreamActivityHint?.({ label: agentLabel });
-  }
-
-  // Process function calls
-  if (functionCall) {
-    processFunctionCall(functionCall, actualMessageId, callbacks);
-  }
-
-  // Process function responses
-  if (functionResponse) {
-    processFunctionResponse(functionResponse, actualMessageId, callbacks);
+    createDebugLog("ADK STREAM UX", "author → UI label", { rawAuthor: agent, uiLabel: agentLabel, partial });
+    emitActivityLabel(agentLabel, { author: agent }, `author:${agent}`);
   }
 
   // Process AI thoughts - show in timeline for transparency
-  console.log("🔍 [STREAM PROCESSOR] Checking for thoughts:", {
-    thoughtPartsLength: thoughtParts.length,
-    thoughtParts: thoughtParts.map(t => t.substring(0, 50) + "..."),
-    hasThoughts: thoughtParts.length > 0,
-  });
-
   if (thoughtParts.length > 0) {
-    console.log("🧠 [STREAM PROCESSOR] Processing thoughts:", {
-      thoughtCount: thoughtParts.length,
-      agent,
-      messageId: actualMessageId,
-    });
-
     processThoughts(
       thoughtParts,
       agent,
@@ -100,7 +127,7 @@ export async function processSseEventData(
       callbacks.onMessageUpdate // Create AI message so timeline has somewhere to attach
     );
   } else {
-    console.log("⚠️ [STREAM PROCESSOR] No thoughts to process");
+    // non-text ADK events handled elsewhere in the processor
   }
 
   // Process text content using OFFICIAL ADK TERMINATION SIGNAL PATTERN
@@ -119,7 +146,8 @@ export async function processSseEventData(
 function processFunctionCall(
   functionCall: { name: string; args: Record<string, unknown>; id: string },
   aiMessageId: string,
-  callbacks: StreamProcessingCallbacks
+  callbacks: StreamProcessingCallbacks,
+  emitActivityLabel: (label: string, meta?: { author?: string; tool?: string; transferTo?: string }, dedupKey?: string) => void
 ): void {
   const functionCallTitle = `Function Call: ${functionCall.name}`;
   createDebugLog("SSE HANDLER", "Adding Function Call timeline event:", functionCallTitle);
@@ -130,7 +158,7 @@ function processFunctionCall(
     uiLabel: toolUiLabel,
     argsPreview: previewArgsForDevLog(functionCall.args),
   });
-  callbacks.onStreamActivityHint?.({ label: toolUiLabel });
+  emitActivityLabel(toolUiLabel, { tool: functionCall.name }, `call:${functionCall.id || functionCall.name}`);
 
   callbacks.onEventUpdate(aiMessageId, {
     title: functionCallTitle,
@@ -157,7 +185,8 @@ function processFunctionResponse(
     id: string;
   },
   aiMessageId: string,
-  callbacks: StreamProcessingCallbacks
+  callbacks: StreamProcessingCallbacks,
+  emitActivityLabel: (label: string, meta?: { author?: string; tool?: string; transferTo?: string }, dedupKey?: string) => void
 ): void {
   const functionResponseTitle = `Function Response: ${functionResponse.name}`;
   createDebugLog("SSE HANDLER", "Adding Function Response timeline event:", functionResponseTitle);
@@ -174,7 +203,38 @@ function processFunctionResponse(
       mutatingResume: isMutatingResumeTool(functionResponse.name),
     });
     callbacks.onMutatingToolResponse?.(functionResponse.name, aiMessageId);
-    callbacks.onStreamActivityHint?.({ label: labelForMutatingToolResponse(functionResponse.name) });
+    emitActivityLabel(
+      labelForMutatingToolResponse(functionResponse.name),
+      undefined,
+      `response:${functionResponse.id || functionResponse.name}`
+    );
+  } else {
+    const readLabel = labelForReadToolResponse(functionResponse.name, functionResponse.response);
+    if (readLabel) {
+      emitActivityLabel(readLabel, { tool: functionResponse.name }, `read-response:${functionResponse.id || functionResponse.name}`);
+    }
+  }
+
+  if (toSnakeToolKey(functionResponse.name) === "suggest_unimad_navigation") {
+    const navigation = parseUnimadNavigationFromToolResponse(functionResponse.response);
+    if (navigation) {
+      callbacks.onNavigationSuggestion?.(aiMessageId, navigation);
+    }
+  }
+
+  const jobTool = toSnakeToolKey(functionResponse.name);
+  if (jobTool === "fetch_recommended_jobs" || jobTool === "search_jobs_for_user") {
+    const jobCards = parseJobCardsFromToolResponse(functionResponse.response);
+    if (jobCards) {
+      callbacks.onJobCardsSuggestion?.(aiMessageId, jobCards);
+    }
+  }
+
+  if (toSnakeToolKey(functionResponse.name) === "present_linkedin_suggestions") {
+    const linkedInSuggestions = parseLinkedInSuggestionsFromToolResponse(functionResponse.response);
+    if (linkedInSuggestions) {
+      callbacks.onLinkedInSuggestions?.(aiMessageId, linkedInSuggestions);
+    }
   }
 
   callbacks.onEventUpdate(aiMessageId, {
@@ -258,7 +318,7 @@ function processThoughts(
 
     // Create message for timeline attachment
     // NOTE: This will be updated by text content processing if text arrives
-    flushSync(() => {
+    queueMicrotask(() => {
       onMessageUpdate({
         type: "ai",
         content: "", // Empty initially - will be updated by text processing
@@ -284,7 +344,7 @@ function processThoughts(
 
     // Create separate timeline activity for each section
     sections.forEach(section => {
-      flushSync(() => {
+      queueMicrotask(() => {
         onEventUpdate(aiMessageId, {
           title: section.title ? `🤔 ${section.title}` : `🤔 ${agent} is thinking...`,
           data: { type: "thinking", content: section.content },
@@ -331,7 +391,7 @@ async function processTextContent(
         timestamp: new Date(),
       };
 
-      flushSync(() => {
+      queueMicrotask(() => {
         onMessageUpdate(finalMessage);
       });
 
@@ -349,8 +409,7 @@ async function processTextContent(
       timestamp: new Date(),
     };
 
-    // Force immediate update to prevent React batching
-    flushSync(() => {
+    queueMicrotask(() => {
       onMessageUpdate(updatedMessage);
     });
   }

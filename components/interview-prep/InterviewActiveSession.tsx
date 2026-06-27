@@ -12,6 +12,7 @@ interface InterviewActiveSessionProps {
   company: string;
   role: string;
   questions: InterviewQuestion[];
+  initialQuestionIndex?: number;
   onEnd: () => void;
   onComplete: (interviewId: string) => void;
 }
@@ -22,10 +23,11 @@ const InterviewActiveSession: React.FC<InterviewActiveSessionProps> = ({
   company,
   role,
   questions,
+  initialQuestionIndex = 0,
   onEnd,
   onComplete,
 }) => {
-  const [currentIndex, setCurrentIndex] = useState(0);
+  const [currentIndex, setCurrentIndex] = useState(initialQuestionIndex);
   const [transcript, setTranscript] = useState("");
   const [interimTranscript, setInterimTranscript] = useState("");
   const [isListening, setIsListening] = useState(false);
@@ -35,6 +37,7 @@ const InterviewActiveSession: React.FC<InterviewActiveSessionProps> = ({
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const recognitionRef = useRef<any>(null);
   const synthRef = useRef<SpeechSynthesis | null>(null);
+  const speakTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   const currentQuestion = questions[currentIndex];
 
@@ -45,6 +48,24 @@ const InterviewActiveSession: React.FC<InterviewActiveSessionProps> = ({
     utterance.rate = 1;
     synthRef.current.speak(utterance);
   }, []);
+
+  const stopSessionAudio = useCallback(() => {
+    if (speakTimeoutRef.current) {
+      clearTimeout(speakTimeoutRef.current);
+      speakTimeoutRef.current = null;
+    }
+    synthRef.current?.cancel();
+    if (typeof window !== "undefined") {
+      window.speechSynthesis?.cancel();
+    }
+    recognitionRef.current?.stop();
+    setIsListening(false);
+  }, []);
+
+  const handleEnd = () => {
+    stopSessionAudio();
+    onEnd();
+  };
 
   useEffect(() => {
     if (typeof window === "undefined") return;
@@ -94,11 +115,25 @@ const InterviewActiveSession: React.FC<InterviewActiveSessionProps> = ({
       recognitionRef.current = recognition;
     }
 
-    const t = setTimeout(() => {
-      if (questions[0]) speakQuestion(questions[0].question);
+    const startIndex = Math.min(Math.max(initialQuestionIndex, 0), Math.max(questions.length - 1, 0));
+    speakTimeoutRef.current = setTimeout(() => {
+      speakTimeoutRef.current = null;
+      if (questions[startIndex]) speakQuestion(questions[startIndex].question);
     }, 400);
-    return () => clearTimeout(t);
-  }, [questions, speakQuestion]);
+
+    return () => {
+      if (speakTimeoutRef.current) {
+        clearTimeout(speakTimeoutRef.current);
+        speakTimeoutRef.current = null;
+      }
+    };
+  }, [questions, speakQuestion, initialQuestionIndex]);
+
+  useEffect(() => {
+    return () => {
+      stopSessionAudio();
+    };
+  }, [stopSessionAudio]);
 
   const toggleMic = () => {
     if (!recognitionRef.current) {
@@ -125,9 +160,7 @@ const InterviewActiveSession: React.FC<InterviewActiveSessionProps> = ({
 
     setIsSaving(true);
     setError(null);
-    recognitionRef.current?.stop();
-    setIsListening(false);
-    synthRef.current?.cancel();
+    stopSessionAudio();
 
     const isLast = currentIndex >= questions.length - 1;
 
@@ -149,7 +182,10 @@ const InterviewActiveSession: React.FC<InterviewActiveSessionProps> = ({
       setCurrentIndex(nextIndex);
       setTranscript("");
       setInterimTranscript("");
-      setTimeout(() => speakQuestion(questions[nextIndex].question), 400);
+      speakTimeoutRef.current = setTimeout(() => {
+        speakTimeoutRef.current = null;
+        speakQuestion(questions[nextIndex].question);
+      }, 400);
     } catch (e) {
       setError(e instanceof Error ? e.message : "Failed to save answer");
     } finally {
@@ -157,17 +193,27 @@ const InterviewActiveSession: React.FC<InterviewActiveSessionProps> = ({
     }
   };
 
-  const displayTranscript = [transcript, interimTranscript].filter(Boolean).join(" ").trim();
+  const getTextareaValue = () => {
+    if (isListening || interimTranscript) {
+      return [transcript, interimTranscript].filter(Boolean).join(" ");
+    }
+    return transcript;
+  };
+
+  const handleTextareaChange = (e: React.ChangeEvent<HTMLTextAreaElement>) => {
+    setTranscript(e.target.value);
+    setInterimTranscript("");
+  };
 
   return (
-    <ModalPortalOverlay className="flex flex-col bg-[#0B1121] text-white">
+    <ModalPortalOverlay className="flex flex-col overflow-hidden bg-[#0B1121] text-white">
       <div className="pointer-events-none absolute inset-0 flex items-center justify-center opacity-30">
         <div
           className={`h-[600px] w-[600px] rounded-full bg-blue-600/20 blur-[120px] transition-all duration-300 ${isListening ? "scale-110 opacity-50" : "scale-100"}`}
         />
       </div>
 
-      <div className="relative z-20 flex items-center justify-between p-8">
+      <div className="relative z-20 flex shrink-0 items-center justify-between p-6 sm:p-8">
         <div className="flex items-center gap-3 opacity-60">
           <div className="h-2 w-2 animate-pulse rounded-full bg-red-500" />
           <span className="text-sm font-medium uppercase tracking-widest">
@@ -176,75 +222,81 @@ const InterviewActiveSession: React.FC<InterviewActiveSessionProps> = ({
         </div>
         <button
           type="button"
-          onClick={onEnd}
+          onClick={handleEnd}
           className="rounded-lg bg-white/10 px-4 py-2 text-sm font-medium transition-colors hover:bg-white/20"
         >
           End Interview
         </button>
       </div>
 
-      <div className="relative z-10 mx-auto flex w-full max-w-4xl flex-1 flex-col items-center justify-center p-8 text-center">
-        <span className="mb-2 text-xs font-medium uppercase tracking-widest text-blue-400">{role}</span>
-        <span className="mb-8 text-sm font-medium uppercase tracking-widest text-slate-400">
-          Question {currentIndex + 1} of {questions.length}
-        </span>
-        <h2 className="mb-16 text-3xl font-semibold leading-tight md:text-4xl">&quot;{currentQuestion?.question}&quot;</h2>
+      <div className="relative z-10 min-h-0 flex-1 overflow-y-auto overscroll-contain">
+        <div className="mx-auto flex w-full max-w-4xl flex-col items-center px-6 py-4 text-center sm:px-8 sm:py-6">
+          <span className="mb-2 text-xs font-medium uppercase tracking-widest text-blue-400">{role}</span>
+          <span className="mb-6 text-sm font-medium uppercase tracking-widest text-slate-400 sm:mb-8">
+            Question {currentIndex + 1} of {questions.length}
+          </span>
+          <h2 className="mb-8 text-2xl font-semibold leading-tight sm:mb-10 sm:text-3xl md:text-4xl">
+            &quot;{currentQuestion?.question}&quot;
+          </h2>
 
-        {isListening && (
-          <div className="mb-12 flex h-16 items-center justify-center gap-1.5">
-            {[...Array(10)].map((_, i) => (
-              <div
-                key={i}
-                className="w-1.5 animate-bounce rounded-full bg-blue-400"
-                style={{
-                  height: `${30 + Math.random() * 70}%`,
-                  animationDuration: `${0.5 + Math.random() * 0.5}s`,
-                }}
-              />
-            ))}
+          {isListening && (
+            <div className="mb-8 flex h-16 items-center justify-center gap-1.5 sm:mb-10">
+              {[...Array(10)].map((_, i) => (
+                <div
+                  key={i}
+                  className="w-1.5 animate-bounce rounded-full bg-blue-400"
+                  style={{
+                    height: `${30 + Math.random() * 70}%`,
+                    animationDuration: `${0.5 + Math.random() * 0.5}s`,
+                  }}
+                />
+              ))}
+            </div>
+          )}
+
+          <div className="relative w-full max-w-2xl rounded-2xl border border-white/10 bg-white/5 p-6 text-left backdrop-blur-sm sm:p-8">
+            <div className="absolute -top-3 left-6 rounded-md bg-blue-600 px-3 py-1 text-xs font-semibold uppercase tracking-wider shadow-lg">
+              You
+            </div>
+            <textarea
+              value={getTextareaValue()}
+              onChange={handleTextareaChange}
+              placeholder="Tap the mic to speak, or type your answer..."
+              rows={3}
+              className="min-h-[72px] w-full resize-none bg-transparent text-base leading-relaxed text-slate-200 outline-none placeholder:text-slate-500 sm:min-h-[80px] sm:text-lg"
+            />
           </div>
-        )}
+        </div>
+      </div>
 
-        <div className="relative mb-8 min-h-[140px] w-full max-w-2xl rounded-2xl border border-white/10 bg-white/5 p-8 text-left backdrop-blur-sm">
-          <div className="absolute -top-3 left-6 rounded-md bg-blue-600 px-3 py-1 text-xs font-semibold uppercase tracking-wider shadow-lg">
-            You
+      <div className="relative z-20 shrink-0 border-t border-white/10 bg-[#0B1121]/95 px-6 py-5 backdrop-blur-sm sm:px-8 sm:py-6">
+        <div className="mx-auto flex w-full max-w-4xl flex-col items-center">
+          {error && <p className="mb-4 text-center text-sm text-red-400">{error}</p>}
+
+          <div className="flex items-center gap-8">
+            <button
+              type="button"
+              onClick={toggleMic}
+              className={`flex h-16 w-16 items-center justify-center rounded-full text-3xl text-white shadow-2xl transition-all hover:scale-105 active:scale-95 sm:h-20 sm:w-20 ${
+                isListening ? "bg-red-500 ring-4 ring-red-500/30" : "bg-blue-600 hover:bg-blue-500"
+              }`}
+            >
+              {isListening ? <MicOff className="h-7 w-7 sm:h-8 sm:w-8" /> : <Mic className="h-7 w-7 sm:h-8 sm:w-8" />}
+            </button>
+            <button
+              type="button"
+              onClick={goToNext}
+              disabled={isSaving}
+              className="flex h-12 w-12 items-center justify-center rounded-full bg-white/10 transition-all hover:scale-105 hover:bg-white/20 disabled:opacity-50 sm:h-14 sm:w-14"
+              title="Next question"
+            >
+              {isSaving ? <Loader2 size={24} className="animate-spin" /> : <SkipForward size={24} />}
+            </button>
           </div>
-          <textarea
-            value={displayTranscript || transcript}
-            onChange={e => {
-              setTranscript(e.target.value);
-              setInterimTranscript("");
-            }}
-            placeholder="Tap the mic to speak, or type your answer..."
-            className="min-h-[80px] w-full resize-none bg-transparent text-lg leading-relaxed text-slate-200 outline-none placeholder:text-slate-500"
-          />
+          <p className="mt-4 text-center text-sm font-medium text-slate-500">
+            {isListening ? "Listening..." : "Tap microphone to answer, then skip to continue"}
+          </p>
         </div>
-
-        {error && <p className="mb-4 text-sm text-red-400">{error}</p>}
-
-        <div className="flex items-center gap-8">
-          <button
-            type="button"
-            onClick={toggleMic}
-            className={`flex h-20 w-20 items-center justify-center rounded-full text-3xl text-white shadow-2xl transition-all hover:scale-105 active:scale-95 ${
-              isListening ? "bg-red-500 ring-4 ring-red-500/30" : "bg-blue-600 hover:bg-blue-500"
-            }`}
-          >
-            {isListening ? <MicOff size={32} /> : <Mic size={32} />}
-          </button>
-          <button
-            type="button"
-            onClick={goToNext}
-            disabled={isSaving}
-            className="flex h-14 w-14 items-center justify-center rounded-full bg-white/10 transition-all hover:scale-105 hover:bg-white/20 disabled:opacity-50"
-            title="Next question"
-          >
-            {isSaving ? <Loader2 size={24} className="animate-spin" /> : <SkipForward size={24} />}
-          </button>
-        </div>
-        <p className="mt-8 text-sm font-medium text-slate-500">
-          {isListening ? "Listening..." : "Tap microphone to answer, then skip to continue"}
-        </p>
       </div>
     </ModalPortalOverlay>
   );

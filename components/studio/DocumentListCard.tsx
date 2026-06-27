@@ -9,14 +9,8 @@ interface DocumentListCardProps {
   isSelected?: boolean;
 }
 
-const stripPreview = (text: string) =>
-  text
-    .replace(/<br\s*\/?>/gi, "\n")
-    .replace(/<[^>]+>/g, "")
-    .trim();
-
 const DocumentListCard: React.FC<DocumentListCardProps> = ({ doc, onClick, onDelete, isSelected = false }) => {
-  const preview = stripPreview(doc.content);
+  const [roleTitle, companyName] = doc.title.includes(" @ ") ? doc.title.split(" @ ") : [doc.title, ""];
 
   return (
     <div
@@ -27,21 +21,41 @@ const DocumentListCard: React.FC<DocumentListCardProps> = ({ doc, onClick, onDel
       }`}
     >
       <button type="button" onClick={onClick} className="w-full p-3 pr-9 text-left">
-        <div
-          className={`mb-2 truncate text-[11px] font-medium ${
-            isSelected ? "text-brand-700 dark:text-brand-300" : "text-slate-500 dark:text-slate-400"
-          }`}
-        >
-          {doc.date}
-          {doc.status ? ` · ${doc.status}` : ""}
+        <div className="flex flex-col gap-0.5">
+          {companyName ? (
+            <>
+              <h4
+                className={`truncate text-sm font-medium ${isSelected ? "text-slate-900 dark:text-white" : "text-slate-800 dark:text-slate-100"}`}
+              >
+                {companyName.trim()}
+              </h4>
+              <p
+                className={`truncate text-[13px] ${isSelected ? "text-slate-700 dark:text-slate-200" : "text-slate-600 dark:text-slate-300"}`}
+              >
+                {roleTitle.trim()}
+              </p>
+            </>
+          ) : (
+            <h4
+              className={`truncate text-sm font-medium ${isSelected ? "text-slate-900 dark:text-white" : "text-slate-800 dark:text-slate-100"}`}
+            >
+              {doc.title}
+            </h4>
+          )}
+          {doc.contactName ? (
+            <p
+              className={`truncate text-[12px] ${isSelected ? "text-slate-600 dark:text-slate-300" : "text-slate-500 dark:text-slate-400"}`}
+            >
+              {doc.topic === "cold-email" ? `Hiring manager: ${doc.contactName}` : `Connection: ${doc.contactName}`}
+            </p>
+          ) : null}
+          <div
+            className={`mt-1 text-[11px] font-medium ${isSelected ? "text-brand-700 dark:text-brand-300" : "text-slate-500 dark:text-slate-400"}`}
+          >
+            {doc.date}
+            {doc.status ? ` · ${doc.status}` : ""}
+          </div>
         </div>
-        <p
-          className={`line-clamp-3 text-[13px] leading-snug ${
-            isSelected ? "text-slate-800 dark:text-slate-100" : "text-slate-700 dark:text-slate-200"
-          }`}
-        >
-          {preview}
-        </p>
       </button>
       {onDelete && (
         <StudioListDeleteButton

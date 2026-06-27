@@ -65,6 +65,21 @@ export type ApplicationAssetReviewAcceptedDetail = {
   assetId?: string | null;
 };
 
+export type ApplicationAssetOpenDraftDetail = {
+  assetType: ApplicationAssetApiType;
+  /** Django application-asset id (cover letter / cold email / referral type_id). */
+  assetId?: string;
+  applicationId?: string;
+  role: string;
+  company: string;
+  jobDescription: string;
+  contactName?: string;
+  /** Keep Studio preview + accepted content while a new ADK draft is generated. */
+  preserveExistingDraft?: boolean;
+  /** Same role/company/JD — generate a fresh draft without creating a new asset row. */
+  regenerateAnother?: boolean;
+};
+
 export type ApplicationAssetSelectionRefineDetail = {
   assetType: ApplicationAssetApiType;
   selectedText: string;

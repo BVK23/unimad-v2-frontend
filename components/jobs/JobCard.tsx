@@ -1,6 +1,7 @@
 "use client";
 
 import React from "react";
+import { Button } from "@/components/ui/Button";
 import { useOnboardingGate } from "@/features/onboarding/context/OnboardingGateContext";
 import { Clock } from "lucide-react";
 import { Job } from "../../types/jobs";
@@ -54,7 +55,7 @@ const JobCard: React.FC<JobCardProps> = ({
         </button>
       )}
 
-      <div className={`flex gap-4 ${hideButtons ? "mb-0" : "mb-4"}`}>
+      <div className="mb-0 flex gap-4">
         {/* Logo - Left */}
         <CompanyLogo
           logoUrl={job.logo}
@@ -98,7 +99,9 @@ const JobCard: React.FC<JobCardProps> = ({
       {/* Buttons - Conditional Render */}
       {!hideButtons && (
         <div className="mt-auto flex shrink-0 items-center gap-2 pt-3">
-          <button
+          <Button
+            variant="secondary"
+            size="sm"
             onClick={e => {
               e.stopPropagation();
               if (profileSetupRequired) {
@@ -108,23 +111,21 @@ const JobCard: React.FC<JobCardProps> = ({
               onPrepare(job);
             }}
             title={profileSetupRequired ? "Finish onboarding fully to prepare applications" : undefined}
-            className={`relative flex flex-1 items-center justify-center rounded-lg border border-slate-200 px-2 py-2 text-xs font-medium text-slate-700 transition-all active:scale-95 dark:border-slate-700 dark:text-slate-200 ${
-              profileSetupRequired
-                ? "cursor-not-allowed opacity-60 hover:bg-transparent dark:hover:bg-transparent"
-                : "hover:bg-slate-50 dark:hover:bg-slate-800"
-            }`}
+            disabled={profileSetupRequired}
+            className="relative flex-1 active:scale-95 disabled:cursor-not-allowed disabled:opacity-60"
           >
             {hasPreparedApplication ? "Continue" : "Prepare"}
             {showVpdPrompt && (
               <span className="absolute right-2 top-2 h-2 w-2 animate-pulse rounded-full bg-red-500 ring-2 ring-white dark:ring-slate-900" />
             )}
-          </button>
+          </Button>
           <button
+            type="button"
             onClick={e => {
               e.stopPropagation();
               if (onApply) onApply(job);
             }}
-            className="flex-1 bg-slate-900 dark:bg-white hover:bg-slate-800 hover:opacity-90 text-white dark:text-black py-2 px-2 rounded-lg text-xs font-medium transition-all active:scale-95 shadow-sm flex items-center justify-center gap-1.5"
+            className="flex flex-1 items-center justify-center gap-2 rounded-xl bg-brand-600 px-3 py-2 text-xs font-semibold text-white shadow-sm shadow-brand-500/20 transition-all hover:bg-brand-700 active:scale-95"
           >
             Apply Now
           </button>

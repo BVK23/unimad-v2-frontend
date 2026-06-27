@@ -523,15 +523,31 @@ const AusPDF: React.FC<{ data: ResumeData }> = ({ data }) => {
       const customSection = resume.customSections?.find(s => s.id === type);
       if (!customSection || !customSection.items || !customSection.items.some(item => !item.hidden)) return null;
 
+      const visibleItems = customSection.items.filter(d => !d.hidden);
+
       return (
         <View style={styles.sectionWrapper}>
-          <SectionHeading title={customSection.title || "Custom Section"} />
           <View style={{ ...styles.sectionContent, gap: TOKENS.spacing.md }}>
-            {customSection.items
-              .filter(d => !d.hidden)
-              .map((item, i) => (
-                // Each custom item is an anchor block — Title+Description stay together
-                <View key={i} style={{ display: "flex", flexDirection: "column", gap: 2 }} wrap={false}>
+            {visibleItems.map((item, i) => (
+              <View key={i} style={{ display: "flex", flexDirection: "column", gap: 2 }} wrap={false}>
+                {i === 0 && <SectionHeading title={customSection.title || "Custom Section"} />}
+                <View
+                  style={{
+                    display: "flex",
+                    flexDirection: "row",
+                    justifyContent: "space-between",
+                    alignItems: "center",
+                    fontSize: 9,
+                  }}
+                >
+                  <View>{item.title && <Text style={styles.entryLeft}>{item.title}</Text>}</View>
+                  {item.startDate && (
+                    <Text style={styles.entryRight}>
+                      {formatDateMonthYear(item.startDate)} - {item.current ? "Present" : formatDateMonthYear(item.endDate)}
+                    </Text>
+                  )}
+                </View>
+                {(item.subtitle || item.location) && (
                   <View
                     style={{
                       display: "flex",
@@ -541,35 +557,25 @@ const AusPDF: React.FC<{ data: ResumeData }> = ({ data }) => {
                       fontSize: 9,
                     }}
                   >
-                    <View>
-                      <Text style={styles.entryLeft}>{item.title}</Text>
-                    </View>
-                    <Text style={styles.entryRight}>
-                      {[
-                        item.location,
-                        item.startDate
-                          ? `${formatDateMonthYear(item.startDate)}${item.endDate ? ` - ${formatDateMonthYear(item.endDate)}` : ""}`
-                          : "",
-                      ]
-                        .filter(Boolean)
-                        .join(", ")}
-                    </Text>
+                    {item.subtitle && <Text style={{ color: TOKENS.colors.accent }}>{item.subtitle}</Text>}
+                    {item.location && <Text style={styles.entryRight}>{item.location}</Text>}
                   </View>
-                  {item.description && (
-                    <View style={{ marginTop: 2 }}>
-                      <HtmlRenderer
-                        html={item.description}
-                        style={{
-                          fontSize: 9,
-                          color: TOKENS.colors.text,
-                          lineHeight: 1.5,
-                          fontFamily: "Onest",
-                        }}
-                      />
-                    </View>
-                  )}
-                </View>
-              ))}
+                )}
+                {item.description && (
+                  <View style={{ marginTop: 2 }}>
+                    <HtmlRenderer
+                      html={item.description}
+                      style={{
+                        fontSize: 9,
+                        color: TOKENS.colors.text,
+                        lineHeight: 1.5,
+                        fontFamily: "Onest",
+                      }}
+                    />
+                  </View>
+                )}
+              </View>
+            ))}
           </View>
         </View>
       );

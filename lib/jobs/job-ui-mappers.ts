@@ -1,22 +1,13 @@
 import type { Application, ApplicationStatus } from "@/features/application-tracker/types";
 import type { BackendJob } from "@/features/jobs/types";
 import type { Job } from "@/types/jobs";
-
-function formatShortDate(iso: string | null | undefined): string | null {
-  if (!iso) return null;
-  try {
-    return new Intl.DateTimeFormat("en-US", { month: "short", day: "numeric" }).format(new Date(iso));
-  } catch {
-    return null;
-  }
-}
+import { formatRelativeTimeFromNow } from "@/utils/format-relative-time";
 
 /** Map a tracker application row to the shared Job card shape. */
 export function applicationToJob(app: Application): Job {
   const statusMap: ApplicationStatus | "offer" = app.status === "offered" ? "offer" : app.status;
-  const posted = formatShortDate(app.posted_at);
-  const created = formatShortDate(app.created_at);
-  const postedDate = app.applied_date || posted || created || "—";
+  const relativeSource = app.posted_at ?? app.created_at;
+  const postedDate = relativeSource ? formatRelativeTimeFromNow(relativeSource, "—") : app.applied_date || "—";
 
   return {
     id: app.application_id,
@@ -36,9 +27,7 @@ export function applicationToJob(app: Application): Job {
 /** Map a job-board API job to the shared Job card shape. */
 export function mapBackendJobToUi(job: BackendJob): Job {
   const dateSource = job.posted_at ?? job.fetched_at;
-  const postedLabel = dateSource
-    ? new Intl.DateTimeFormat("en-US", { month: "short", day: "numeric" }).format(new Date(dateSource))
-    : "Recently posted";
+  const postedLabel = formatRelativeTimeFromNow(dateSource);
 
   return {
     id: job.id,

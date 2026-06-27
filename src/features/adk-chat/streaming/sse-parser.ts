@@ -8,6 +8,29 @@
 import { extractStreamErrorFromSsePayload } from "../format-stream-error";
 import { ParsedSSEData, RawSSEData } from "./types";
 
+type NormalizedSseContent = {
+  parts?: Array<Record<string, unknown>>;
+};
+
+function normalizeSseContent(content: RawSSEData["content"]): NormalizedSseContent | null {
+  if (!content) return null;
+  if (typeof content === "string") {
+    try {
+      const parsed = JSON.parse(content) as unknown;
+      if (parsed && typeof parsed === "object" && "parts" in parsed && Array.isArray((parsed as NormalizedSseContent).parts)) {
+        return parsed as NormalizedSseContent;
+      }
+    } catch {
+      return null;
+    }
+    return null;
+  }
+  if (typeof content === "object" && content !== null && "parts" in content && Array.isArray(content.parts)) {
+    return content as NormalizedSseContent;
+  }
+  return null;
+}
+
 /**
  * Extracts and processes data from SSE JSON strings
  *
@@ -27,15 +50,6 @@ export function extractDataFromSSE(data: string): ParsedSSEData {
   try {
     const parsed: RawSSEData = JSON.parse(data);
 
-    console.log("📄 [SSE PARSER] Raw parsed JSON:", {
-      hasContent: !!parsed.content,
-      hasParts: !!(parsed.content && parsed.content.parts),
-      partsLength: parsed.content?.parts?.length || 0,
-      author: parsed.author,
-      id: parsed.id,
-      rawData: JSON.stringify(parsed, null, 2),
-    });
-
     let textParts: string[] = [];
     let agent = "";
     let functionCall = undefined;
@@ -46,56 +60,46 @@ export function extractDataFromSSE(data: string): ParsedSSEData {
 
     // Extract text from content.parts (separate thoughts from regular text)
     let thoughtParts: string[] = [];
-    if (parsed.content && parsed.content.parts) {
-      console.log("🔍 [SSE PARSER] Processing content.parts:", {
-        partsCount: parsed.content.parts.length,
-        parts: parsed.content.parts.map((part: { text?: string; thought?: boolean }, index: number) => ({
-          index,
-          hasText: !!part.text,
-          hasThought: !!part.thought,
-          thoughtValue: part.thought,
-          textPreview: part.text ? part.text.substring(0, 100) + "..." : "no text",
-        })),
-      });
+    const normalizedContent = normalizeSseContent(parsed.content);
+    if (normalizedContent?.parts) {
+      const parts = normalizedContent.parts;
 
       // ALWAYS filter out thoughts from main text content (like working /web/ project)
       // This ensures thoughts are processed separately as timeline activities
-      textParts = parsed.content.parts
+      textParts = parts
         .filter((part: { text?: string; thought?: boolean }) => part.text && !part.thought)
         .map((part: { text?: string }) => part.text!)
         .filter((text): text is string => text !== undefined);
 
       // Extract thoughts separately for timeline activities (for both backends)
-      thoughtParts = parsed.content.parts
+      thoughtParts = parts
         .filter((part: { text?: string; thought?: boolean }) => part.text && part.thought)
         .map((part: { text?: string }) => part.text!)
         .filter((text): text is string => text !== undefined);
 
-      console.log("🧠 [SSE PARSER] Thought extraction results:", {
-        thoughtPartsCount: thoughtParts.length,
-        textPartsCount: textParts.length,
-        thoughtPreviews: thoughtParts.map(t => t.substring(0, 50) + "..."),
-        textPreviews: textParts.map(t => t.substring(0, 50) + "..."),
-      });
-
-      // Check for function calls
-      const functionCallPart = parsed.content.parts.find((part: { functionCall?: unknown }) => part.functionCall);
-      if (functionCallPart) {
-        functionCall = functionCallPart.functionCall as {
-          name: string;
-          args: Record<string, unknown>;
-          id: string;
-        };
+      // Check for function calls (camelCase or snake_case from ADK / Agent Engine)
+      for (const part of parts) {
+        const rawCall =
+          (part as { functionCall?: unknown; function_call?: unknown }).functionCall ?? (part as { function_call?: unknown }).function_call;
+        if (rawCall && typeof rawCall === "object") {
+          functionCall = rawCall as { name: string; args: Record<string, unknown>; id: string };
+          break;
+        }
       }
 
       // Check for function responses
-      const functionResponsePart = parsed.content.parts.find((part: { functionResponse?: unknown }) => part.functionResponse);
-      if (functionResponsePart) {
-        functionResponse = functionResponsePart.functionResponse as {
-          name: string;
-          response: Record<string, unknown>;
-          id: string;
-        };
+      for (const part of parts) {
+        const rawResponse =
+          (part as { functionResponse?: unknown; function_response?: unknown }).functionResponse ??
+          (part as { function_response?: unknown }).function_response;
+        if (rawResponse && typeof rawResponse === "object") {
+          functionResponse = rawResponse as {
+            name: string;
+            response: Record<string, unknown>;
+            id: string;
+          };
+          break;
+        }
       }
     }
 
@@ -104,11 +108,30 @@ export function extractDataFromSSE(data: string): ParsedSSEData {
       agent = parsed.author;
     }
 
+    let transferToAgent: string | undefined;
+    const actions = parsed.actions;
+    if (actions && typeof actions === "object") {
+      const target = actions.transferToAgent ?? actions.transfer_to_agent;
+      if (typeof target === "string" && target.trim().length > 0) {
+        transferToAgent = target.trim();
+      }
+    }
+
+    const partial = parsed.partial === true;
+
+    const streamActivityHint =
+      typeof parsed.unimadStreamActivity === "string" && parsed.unimadStreamActivity.trim().length > 0
+        ? parsed.unimadStreamActivity.trim()
+        : undefined;
+
     return {
       messageId,
       textParts,
       thoughtParts,
       agent,
+      partial,
+      streamActivityHint,
+      transferToAgent,
       functionCall,
       functionResponse,
     };
@@ -138,6 +161,7 @@ function handleSSEParsingError(data: string, error: unknown): ParsedSSEData {
     textParts: [],
     thoughtParts: [],
     agent: "",
+    transferToAgent: undefined,
     functionCall: undefined,
     functionResponse: undefined,
   };

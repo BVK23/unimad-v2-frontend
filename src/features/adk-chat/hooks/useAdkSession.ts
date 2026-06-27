@@ -5,6 +5,7 @@ import type { ActiveSession } from "../actions";
 import { createSessionAction, deleteSessionAction, listSessionsAction, type SessionListResult } from "../actions";
 import { clearPersistedActiveSessionId, loadPersistedActiveSessionId, persistActiveSessionId } from "../active-session-persist";
 import { UNTITLED_THREAD_TITLE } from "../constants";
+import { findReusableUntitledMainSession } from "../main-session-activity";
 import type { UnibotSessionKind } from "../session-metadata";
 import { getRegistryRow, getSubsForMain, removeRegistrySessions, setSessionRegistry, upsertRegistryRow } from "../session-registry";
 import {
@@ -99,7 +100,7 @@ export interface UseAdkSessionReturn {
 export function useAdkSession(userId: string): UseAdkSessionReturn {
   const [sessionId, setSessionId] = useState("");
   const [sessions, setSessions] = useState<ActiveSession[]>([]);
-  const [isBootstrappingSession, setIsBootstrappingSession] = useState(false);
+  const [isBootstrappingSession, setIsBootstrappingSession] = useState(() => Boolean(userId));
   const [sessionError, setSessionError] = useState<string | null>(null);
   const prevUserIdRef = useRef<string>("");
 
@@ -142,12 +143,20 @@ export function useAdkSession(userId: string): UseAdkSessionReturn {
       setIsBootstrappingSession(true);
       setSessionError(null);
       try {
+        const reusableId = findReusableUntitledMainSession(userId, sessions);
+        if (reusableId) {
+          setSessionId(reusableId);
+          persistActiveSessionId(userId, reusableId);
+          return;
+        }
+
         const result = await createSessionAction(userId);
         if (result.success && result.sessionId) {
           const reg = await registerUnibotAdkSessionAction({
             adk_session_id: result.sessionId,
             kind: "main",
             title: UNTITLED_THREAD_TITLE,
+            content_key: `general:${result.sessionId}`,
           });
           if (reg.success && reg.session) {
             upsertRegistryRow(reg.session);
@@ -166,7 +175,7 @@ export function useAdkSession(userId: string): UseAdkSessionReturn {
         setIsBootstrappingSession(false);
       }
     },
-    [userId, refreshSessions]
+    [userId, refreshSessions, sessions]
   );
 
   const handleDeleteSession = useCallback(
@@ -218,6 +227,7 @@ export function useAdkSession(userId: string): UseAdkSessionReturn {
               adk_session_id: created.sessionId,
               kind: "main",
               title: UNTITLED_THREAD_TITLE,
+              content_key: `general:${created.sessionId}`,
             });
             setSessionId(created.sessionId);
             persistActiveSessionId(userId, created.sessionId);
@@ -275,6 +285,7 @@ export function useAdkSession(userId: string): UseAdkSessionReturn {
               adk_session_id: pickedId,
               kind: "main",
               title: UNTITLED_THREAD_TITLE,
+              content_key: `general:${pickedId}`,
             });
             if (!cancelled && reg.success && reg.session) {
               upsertRegistryRow(reg.session);
@@ -288,6 +299,7 @@ export function useAdkSession(userId: string): UseAdkSessionReturn {
               adk_session_id: created.sessionId,
               kind: "main",
               title: UNTITLED_THREAD_TITLE,
+              content_key: `general:${created.sessionId}`,
             });
             setSessionId(created.sessionId);
             persistActiveSessionId(userId, created.sessionId);

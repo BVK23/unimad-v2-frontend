@@ -14,10 +14,10 @@ const DEFAULT_UNIBOARD_REDIRECT = "resume";
 function SigninForm() {
   const router = useRouter();
   const searchParams = useSearchParams();
-  const redirect = searchParams.get("redirect") ?? DEFAULT_UNIBOARD_REDIRECT;
-  const unicoachClaim = searchParams.get("unicoach_claim");
-  const from = searchParams.get("from") ?? "";
-  const errorMessage = searchParams.get("message");
+  const redirect = searchParams?.get("redirect") ?? DEFAULT_UNIBOARD_REDIRECT;
+  const unicoachClaim = searchParams?.get("unicoach_claim");
+  const from = searchParams?.get("from") ?? "";
+  const errorMessage = searchParams?.get("message");
   const { isAuthenticated, isLoading } = useAuthStatus();
   const claimAttempted = useRef(false);
 

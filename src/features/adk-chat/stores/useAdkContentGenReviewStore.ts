@@ -60,6 +60,7 @@ export type AdkContentGenReviewState = {
   popReviewAfterDiscard: () => void;
 
   clearAllReviews: () => void;
+  clearReviewsByAssistantIds: (assistantIds: Iterable<string>) => void;
 };
 
 export const useAdkContentGenReviewStore = create<AdkContentGenReviewState>((set, get) => ({
@@ -149,5 +150,13 @@ export const useAdkContentGenReviewStore = create<AdkContentGenReviewState>((set
 
   clearAllReviews: () => {
     set({ reviewStack: [] });
+  },
+
+  clearReviewsByAssistantIds: assistantIds => {
+    const drop = new Set([...assistantIds].filter(Boolean));
+    if (drop.size === 0) return;
+    set(state => ({
+      reviewStack: state.reviewStack.filter(card => !card.assistantMessageId || !drop.has(card.assistantMessageId)),
+    }));
   },
 }));

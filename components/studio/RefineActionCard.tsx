@@ -7,18 +7,11 @@ type RefineActionCardProps = {
   meta: AssetActionMeta;
 };
 
-const ASSET_LABELS: Record<string, string> = {
-  coverletter: "Cover Letter",
-  coldemail: "Cold Email",
-  referral: "Referral",
-};
-
 const MAX_QUOTE_LENGTH = 120;
 
 const RefineActionCard = ({ meta }: RefineActionCardProps) => {
   const Icon = meta.kind === "preset" ? Wand2 : Pencil;
   const actionLabel = meta.presetLabel ?? "Custom edit";
-  const assetLabel = ASSET_LABELS[meta.assetType] ?? "Document";
   const truncatedQuote =
     meta.selectedText.length > MAX_QUOTE_LENGTH ? `${meta.selectedText.slice(0, MAX_QUOTE_LENGTH)}…` : meta.selectedText;
 
@@ -30,10 +23,7 @@ const RefineActionCard = ({ meta }: RefineActionCardProps) => {
             <Icon size={13} aria-hidden />
           </span>
           <div className="min-w-0 flex-1 pt-0.5">
-            <div className="flex flex-wrap items-center gap-x-1.5 gap-y-0.5">
-              <span className="text-xs font-semibold text-brand-700 dark:text-brand-300">{actionLabel}</span>
-              <span className="text-[10px] text-slate-400 dark:text-slate-500">on {assetLabel}</span>
-            </div>
+            <span className="text-xs font-semibold text-brand-700 dark:text-brand-300">{actionLabel}</span>
           </div>
         </div>
         <div className="mt-1.5 flex gap-2.5">

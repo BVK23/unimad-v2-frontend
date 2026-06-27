@@ -1,12 +1,10 @@
-import React, { useEffect, useRef, useState } from "react";
+import React, { useEffect, useMemo, useRef, useState } from "react";
 import JobUrlImportLoading from "@/components/jobs/JobUrlImportLoading";
-import ResumeCardActionsMenu from "@/components/resume/ResumeCardActionsMenu";
+import ResumeDashboardCard from "@/components/resume/ResumeDashboardCard";
 import ResumeGenerationOverlay from "@/components/resume/ResumeGenerationOverlay";
-import ResumePublishedBeacon from "@/components/resume/ResumePublishedBeacon";
-import ResumeThumbnail from "@/components/resume/ResumeThumbnail";
 import { ModalPortalOverlay } from "@/components/ui/ModalPortalOverlay";
 import { importJobFromUrl } from "@/features/jobs/server-actions/jobs-actions";
-import { useResumesList } from "@/features/resume/hooks/useResumesList";
+import { resumesListQueryKey, useResumesList } from "@/features/resume/hooks/useResumesList";
 import {
   duplicateResume,
   deleteResume,
@@ -16,28 +14,10 @@ import {
 } from "@/features/resume/server-actions/resume-actions";
 import { downloadResumePdf } from "@/features/resume/utils/downloadResumePdf";
 import { copyResumePublicLink, isResumePublished } from "@/features/resume/utils/resumePublish";
+import { buildResumeVersionMetadata } from "@/features/resume/utils/resumeVersionGroups";
 import { ResumeData } from "@/types";
 import { useQueryClient } from "@tanstack/react-query";
-import {
-  FileText,
-  Plus,
-  Clock,
-  MoreVertical,
-  FilePlus,
-  Upload,
-  FileType,
-  X,
-  Edit,
-  Copy,
-  Trash2,
-  Download,
-  Link,
-  Check,
-  ArrowLeft,
-  Loader2,
-  AlertCircle,
-  Link as LinkIcon,
-} from "lucide-react";
+import { FileText, Plus, FilePlus, Upload, FileType, X, ArrowLeft, Loader2, AlertCircle, Link as LinkIcon } from "lucide-react";
 
 type JdEntryMode = "url" | "manual";
 
@@ -81,22 +61,37 @@ const ResumeDashboard: React.FC<ResumeDashboardProps> = ({ onEditResume, onCreat
   const [duplicateResumeId, setDuplicateResumeId] = useState<string | null>(null);
   const [isUploadingFromFile, setIsUploadingFromFile] = useState(false);
   const [uploadError, setUploadError] = useState<string | null>(null);
+  const [newlyDuplicatedResumeId, setNewlyDuplicatedResumeId] = useState<string | null>(null);
+  const [duplicateToastMessage, setDuplicateToastMessage] = useState<string | null>(null);
   const isCreateFlowBusy = isGenerating || isUploadingFromFile || isImporting;
+  const scrollContainerRef = useRef<HTMLDivElement>(null);
+  const cardRefs = useRef<Map<string, HTMLDivElement>>(new Map());
+  const duplicateToastTimeoutRef = useRef<number | null>(null);
 
-  useEffect(() => {
-    return () => {
-      if (copiedLinkTimeoutRef.current) clearTimeout(copiedLinkTimeoutRef.current);
-    };
-  }, []);
+  const resumeVersionMetadata = useMemo(() => buildResumeVersionMetadata(resumes), [resumes]);
+  const sortedResumes = useMemo(() => [...resumes].sort((a, b) => b.lastModified.getTime() - a.lastModified.getTime()), [resumes]);
+
+  const handleSetCardRef = (id: string, element: HTMLDivElement | null) => {
+    if (element) {
+      cardRefs.current.set(id, element);
+      return;
+    }
+    cardRefs.current.delete(id);
+  };
+
+  const handleToggleMenu = (e: React.MouseEvent<HTMLButtonElement>, resumeId: string) => {
+    e.stopPropagation();
+    if (activeMenuId === resumeId) {
+      closeActionsMenu();
+      return;
+    }
+    setActiveMenuAnchor(e.currentTarget);
+    setActiveMenuId(resumeId);
+  };
 
   const closeActionsMenu = () => {
     setActiveMenuId(null);
     setActiveMenuAnchor(null);
-    setCopiedLinkResumeId(null);
-    if (copiedLinkTimeoutRef.current) {
-      clearTimeout(copiedLinkTimeoutRef.current);
-      copiedLinkTimeoutRef.current = null;
-    }
   };
 
   const resetJdState = () => {
@@ -160,7 +155,7 @@ const ResumeDashboard: React.FC<ResumeDashboardProps> = ({ onEditResume, onCreat
 
   const handleDuplicate = async (e: React.MouseEvent, resume: ResumeData) => {
     e.stopPropagation();
-    setActiveMenuId(null);
+    closeActionsMenu();
     setDuplicatingId(resume.id);
     try {
       const result = await duplicateResume(resume.id);
@@ -168,11 +163,65 @@ const ResumeDashboard: React.FC<ResumeDashboardProps> = ({ onEditResume, onCreat
         alert(result.error ?? "Failed to duplicate resume");
         return;
       }
-      queryClient.invalidateQueries({ queryKey: ["resumes"] });
+
+      await queryClient.refetchQueries({ queryKey: resumesListQueryKey, exact: true });
+
+      setNewlyDuplicatedResumeId(result.id);
+
+      const duplicatedTitle =
+        queryClient.getQueryData<ResumeData[]>(resumesListQueryKey)?.find(item => item.id === result.id)?.title ?? "Resume";
+      setDuplicateToastMessage(`Duplicated as "${duplicatedTitle}"`);
     } finally {
       setDuplicatingId(null);
     }
   };
+
+  useEffect(() => {
+    if (!duplicateToastMessage) {
+      return;
+    }
+
+    if (duplicateToastTimeoutRef.current) {
+      window.clearTimeout(duplicateToastTimeoutRef.current);
+    }
+
+    duplicateToastTimeoutRef.current = window.setTimeout(() => {
+      setDuplicateToastMessage(null);
+    }, 2400);
+
+    return () => {
+      if (duplicateToastTimeoutRef.current) {
+        window.clearTimeout(duplicateToastTimeoutRef.current);
+      }
+    };
+  }, [duplicateToastMessage]);
+
+  useEffect(() => {
+    if (!newlyDuplicatedResumeId) {
+      return;
+    }
+
+    const highlightTimeout = window.setTimeout(() => {
+      setNewlyDuplicatedResumeId(null);
+    }, 2500);
+
+    const cardElement = cardRefs.current.get(newlyDuplicatedResumeId);
+    const scrollContainer = scrollContainerRef.current;
+
+    if (cardElement && scrollContainer) {
+      const cardRect = cardElement.getBoundingClientRect();
+      const containerRect = scrollContainer.getBoundingClientRect();
+      const isFullyVisible = cardRect.top >= containerRect.top && cardRect.bottom <= containerRect.bottom;
+
+      if (!isFullyVisible) {
+        cardElement.scrollIntoView({ behavior: "smooth", block: "nearest" });
+      }
+    }
+
+    return () => {
+      window.clearTimeout(highlightTimeout);
+    };
+  }, [newlyDuplicatedResumeId, resumes]);
 
   const resetUploadState = () => {
     setUploadFile(null);
@@ -252,7 +301,7 @@ const ResumeDashboard: React.FC<ResumeDashboardProps> = ({ onEditResume, onCreat
 
   const handleDelete = async (e: React.MouseEvent, id: string) => {
     e.stopPropagation();
-    setActiveMenuId(null);
+    closeActionsMenu();
     const resumeToDelete = resumes.find(resume => resume.id === id);
     if (!resumeToDelete) return;
     setPendingDeleteResume({ id, title: resumeToDelete.title });
@@ -281,6 +330,7 @@ const ResumeDashboard: React.FC<ResumeDashboardProps> = ({ onEditResume, onCreat
       setBaseStatusMessage("Could not copy link to clipboard");
       return;
     }
+    closeActionsMenu();
     setCopiedLinkResumeId(resume.id);
     if (copiedLinkTimeoutRef.current) clearTimeout(copiedLinkTimeoutRef.current);
     copiedLinkTimeoutRef.current = setTimeout(() => {
@@ -294,7 +344,7 @@ const ResumeDashboard: React.FC<ResumeDashboardProps> = ({ onEditResume, onCreat
     if (resume.isBase) return;
     setBaseStatusMessage(null);
     setBaseStatusType(null);
-    setActiveMenuId(null);
+    closeActionsMenu();
     setSettingBaseId(resume.id);
     try {
       await setBaseResume(resume.id);
@@ -311,10 +361,7 @@ const ResumeDashboard: React.FC<ResumeDashboardProps> = ({ onEditResume, onCreat
 
   const handleDownload = async (e: React.MouseEvent, resume: ResumeData) => {
     e.stopPropagation();
-    setActiveMenuId(null);
-    setActiveMenuAnchor(null);
-    if (downloadingId) return;
-
+    closeActionsMenu();
     setDownloadingId(resume.id);
     try {
       await downloadResumePdf(resume);
@@ -374,11 +421,9 @@ const ResumeDashboard: React.FC<ResumeDashboardProps> = ({ onEditResume, onCreat
 
   return (
     <div
+      ref={scrollContainerRef}
       className="flex-1 bg-slate-50 h-full overflow-y-auto p-8 relative scrollbar-on-hover"
-      onClick={() => {
-        setActiveMenuId(null);
-        setActiveMenuAnchor(null);
-      }}
+      onClick={() => closeActionsMenu()}
     >
       <div className="max-w-6xl mx-auto">
         <div className="mb-8">
@@ -437,120 +482,29 @@ const ResumeDashboard: React.FC<ResumeDashboardProps> = ({ onEditResume, onCreat
 
           {/* Resume Cards */}
           {!isLoading &&
-            resumes.map(resume => (
-              <div
+            sortedResumes.map(resume => (
+              <ResumeDashboardCard
                 key={resume.id}
-                onClick={() => {
-                  if (activeMenuId !== null) return;
-                  onEditResume(resume);
-                }}
-                className={`
-                        bg-white rounded-xl shadow-sm hover:shadow-md border cursor-pointer transition-all hover:-translate-y-1 group relative
-                        ${activeMenuId === resume.id ? "ring-2 ring-brand-100 pointer-events-none" : "z-0"}
-                        ${resume.isBase ? "border-brand-300 ring-1 ring-brand-100" : "border-slate-200"}
-                    `}
-              >
-                {/* Preview (base badge renders inside ResumeThumbnail above scaled preview + hover layers) */}
-                <ResumeThumbnail resume={resume} />
-
-                {isResumePublished(resume) ? (
-                  <div className="pointer-events-none absolute left-3 top-3 z-[35] inline-flex items-center gap-1.5 rounded-full border border-green-200 bg-white/95 px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wider text-green-700 shadow-sm backdrop-blur-sm">
-                    <ResumePublishedBeacon label="Resume published" />
-                    Published
-                  </div>
-                ) : null}
-
-                {/* Info */}
-                <div className="p-4 rounded-b-xl relative">
-                  <div className="flex justify-between items-start">
-                    <div className="flex-1 min-w-0 pr-2">
-                      <h3 className="font-medium text-slate-900 mb-1 truncate">{resume.title}</h3>
-                      <div className="flex items-center gap-1.5 text-xs text-slate-500 mt-1">
-                        <Clock size={12} />
-                        <span>Edited {resume.lastModified.toLocaleDateString("en-US")}</span>
-                      </div>
-                    </div>
-
-                    <div className="relative pointer-events-auto">
-                      <button
-                        className={`p-1 rounded transition-colors ${activeMenuId === resume.id ? "bg-slate-100 text-slate-900" : "hover:bg-slate-100 text-slate-400 hover:text-slate-600"}`}
-                        onClick={e => {
-                          e.stopPropagation();
-                          if (activeMenuId === resume.id) {
-                            setActiveMenuId(null);
-                            setActiveMenuAnchor(null);
-                            return;
-                          }
-                          setActiveMenuAnchor(e.currentTarget);
-                          setActiveMenuId(resume.id);
-                        }}
-                      >
-                        <MoreVertical size={16} />
-                      </button>
-
-                      <ResumeCardActionsMenu open={activeMenuId === resume.id} anchorEl={activeMenuAnchor} onClose={closeActionsMenu}>
-                        <button
-                          onClick={e => {
-                            e.stopPropagation();
-                            setActiveMenuId(null);
-                            setActiveMenuAnchor(null);
-                            onEditResume(resume);
-                          }}
-                          className="w-full text-left px-4 py-2 text-sm text-slate-700 hover:bg-slate-50 hover:text-brand-600 flex items-center gap-2.5 transition-colors"
-                        >
-                          <Edit size={14} /> Edit
-                        </button>
-                        {!resume.isBase && (
-                          <button
-                            onClick={e => handleSetBaseResume(e, resume)}
-                            disabled={settingBaseId === resume.id}
-                            className="w-full text-left px-4 py-2 text-sm text-slate-700 hover:bg-slate-50 hover:text-brand-600 flex items-center gap-2.5 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
-                          >
-                            {settingBaseId === resume.id ? <Loader2 size={14} className="animate-spin" /> : null}{" "}
-                            {settingBaseId === resume.id ? "Setting…" : "Set as Base Resume"}
-                          </button>
-                        )}
-                        <button
-                          onClick={e => handleDuplicate(e, resume)}
-                          disabled={duplicatingId === resume.id}
-                          className="w-full text-left px-4 py-2 text-sm text-slate-700 hover:bg-slate-50 hover:text-brand-600 flex items-center gap-2.5 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
-                        >
-                          {duplicatingId === resume.id ? <Loader2 size={14} className="animate-spin" /> : <Copy size={14} />} Duplicate
-                        </button>
-                        {isResumePublished(resume) ? (
-                          <button
-                            onClick={e => void handleCopyLink(e, resume)}
-                            className={`w-full text-left px-4 py-2 text-sm flex items-center gap-2.5 transition-colors ${
-                              copiedLinkResumeId === resume.id
-                                ? "bg-brand-50 text-brand-600"
-                                : "text-slate-700 hover:bg-slate-50 hover:text-brand-600"
-                            }`}
-                          >
-                            {copiedLinkResumeId === resume.id ? <Check size={14} className="text-brand-600" /> : <Link size={14} />}
-                            {copiedLinkResumeId === resume.id ? "Copied" : "Copy Link"}
-                          </button>
-                        ) : null}
-                        <button
-                          onClick={e => void handleDownload(e, resume)}
-                          disabled={downloadingId === resume.id}
-                          className="w-full text-left px-4 py-2 text-sm text-slate-700 hover:bg-slate-50 hover:text-brand-600 flex items-center gap-2.5 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
-                        >
-                          {downloadingId === resume.id ? <Loader2 size={14} className="animate-spin" /> : <Download size={14} />}{" "}
-                          {downloadingId === resume.id ? "Preparing PDF…" : "Download"}
-                        </button>
-                        <div className="h-px bg-slate-100 my-1 mx-2"></div>
-                        <button
-                          onClick={e => handleDelete(e, resume.id)}
-                          disabled={deletingId === resume.id}
-                          className="w-full text-left px-4 py-2 text-sm text-red-600 hover:bg-red-50 hover:text-red-700 flex items-center gap-2.5 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
-                        >
-                          {deletingId === resume.id ? <Loader2 size={14} className="animate-spin" /> : <Trash2 size={14} />} Delete
-                        </button>
-                      </ResumeCardActionsMenu>
-                    </div>
-                  </div>
-                </div>
-              </div>
+                resume={resume}
+                versionMetadata={resumeVersionMetadata.get(resume.id)}
+                activeMenuId={activeMenuId}
+                menuAnchorEl={activeMenuId === resume.id ? activeMenuAnchor : null}
+                duplicatingId={duplicatingId}
+                deletingId={deletingId}
+                settingBaseId={settingBaseId}
+                newlyDuplicatedResumeId={newlyDuplicatedResumeId}
+                setCardRef={handleSetCardRef}
+                onEditResume={onEditResume}
+                onToggleMenu={handleToggleMenu}
+                onCloseMenu={closeActionsMenu}
+                onDuplicate={handleDuplicate}
+                onDelete={handleDelete}
+                onSetBaseResume={handleSetBaseResume}
+                onCopyLink={handleCopyLink}
+                onDownload={handleDownload}
+                copiedLinkResumeId={copiedLinkResumeId}
+                downloadingId={downloadingId}
+              />
             ))}
         </div>
       </div>
@@ -863,22 +817,6 @@ const ResumeDashboard: React.FC<ResumeDashboardProps> = ({ onEditResume, onCreat
         </ModalPortalOverlay>
       )}
 
-      {downloadingId && (
-        <ModalPortalOverlay
-          className="flex items-center justify-center bg-black/40 backdrop-blur-sm p-4 animate-in fade-in duration-200"
-          onClick={e => e.stopPropagation()}
-        >
-          <div
-            className="flex flex-col items-center gap-3 rounded-2xl border border-slate-100 bg-white px-10 py-8 shadow-2xl"
-            role="status"
-            aria-live="polite"
-          >
-            <Loader2 size={32} className="animate-spin text-brand-600" />
-            <p className="text-sm font-medium text-slate-700">Preparing PDF…</p>
-          </div>
-        </ModalPortalOverlay>
-      )}
-
       {pendingDeleteResume && (
         <ModalPortalOverlay
           className="flex items-center justify-center bg-black/50 backdrop-blur-sm p-4 animate-in fade-in duration-200"
@@ -925,6 +863,14 @@ const ResumeDashboard: React.FC<ResumeDashboardProps> = ({ onEditResume, onCreat
             </div>
           </div>
         </ModalPortalOverlay>
+      )}
+
+      {duplicateToastMessage && (
+        <div className="fixed bottom-8 left-1/2 -translate-x-1/2 z-50">
+          <div className="px-4 py-2 rounded-full bg-slate-900 text-white text-xs font-semibold shadow-2xl border border-white/10">
+            {duplicateToastMessage}
+          </div>
+        </div>
       )}
     </div>
   );

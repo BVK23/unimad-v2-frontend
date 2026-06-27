@@ -9,6 +9,7 @@ export interface UnibotAdkSessionRow {
   kind: UnibotSessionKind;
   parent_adk_session_id: string | null;
   title: string;
+  content_key: string | null;
   feature: string | null;
   feature_id: string | null;
   section: string | null;

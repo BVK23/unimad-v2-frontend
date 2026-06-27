@@ -4,6 +4,7 @@ import { ResumeData } from "../../../../types";
 import HtmlDisplay from "../../shared/HtmlDisplay";
 import ScaledA4PreviewShell from "../../shared/ScaledA4PreviewShell";
 import { parseDate } from "../../shared/dateUtils";
+import { deduplicateSectionOrder } from "../../shared/sectionOrderUtils";
 import { getGithubUrl, getLinkedinUrl, getPortfolioUrl } from "../../shared/urlUtils";
 
 interface MinimalPreviewProps {
@@ -14,8 +15,8 @@ interface MinimalPreviewProps {
 
 const MinimalPreview: React.FC<MinimalPreviewProps> = ({ data, previewScale, isModal = false }) => {
   const { profile, experience, education, skills, projects, certifications, customSections, sectionOrder } = data;
-  const isEducationSectionVisible = !sectionOrder.find(s => s.id === "education")?.hidden;
-  const isSkillsSectionVisible = !sectionOrder.find(s => s.id === "skills")?.hidden;
+  const orderedSections = deduplicateSectionOrder(sectionOrder);
+  const sidebarSectionIds = orderedSections.filter(s => !s.hidden && (s.id === "education" || s.id === "skills"));
   const mainSectionTitleClass =
     "font-bold text-slate-900 mb-[8px] text-[10pt] uppercase tracking-[0.8pt] border-b border-slate-200 pb-[3px]";
   const sidebarSectionTitleClass = "font-bold text-slate-900 mb-[6px] text-[10pt]";
@@ -122,33 +123,67 @@ const MinimalPreview: React.FC<MinimalPreviewProps> = ({ data, previewScale, isM
       default:
         const customSec = customSections.find(s => s.id === id);
         if (!customSec) return null;
+        const visibleItems = customSec.items.filter(i => !i.hidden);
         return (
           <section key={customSec.id} className="mb-[12px] last:mb-0">
-            <h3 className={mainSectionTitleClass}>{customSec.title}</h3>
-            <div>
-              {customSec.items
-                .filter(i => !i.hidden)
-                .map(item => (
-                  <div key={item.id} className="text-[9pt] text-slate-700 mb-[8px]">
-                    <div className="flex justify-between items-end mb-[2px]">
-                      {item.title && <span className="font-bold block text-slate-800 text-[10pt]">{item.title}</span>}
-                      {item.subtitle && <span className="text-[8pt] text-slate-500">{item.subtitle}</span>}
-                    </div>
-                    {item.hasDates && (item.startDate || item.endDate) ? (
-                      <div className="flex justify-between text-[8pt] text-slate-500 mb-[2px]">
-                        {item.hasLocation ? <span className="text-slate-400">{item.location}</span> : <span></span>}
-                        <span className="italic">{item.startDate && `${item.startDate}${item.endDate ? ` - ${item.endDate}` : ""}`}</span>
-                      </div>
-                    ) : item.hasLocation && item.location ? (
-                      <div className="text-[8pt] text-slate-400 mb-[2px]">{item.location}</div>
-                    ) : null}
-                    <HtmlDisplay content={item.description} className={bodyHtmlClass} variant="pdfTight" />
+            {visibleItems.map((item, idx) => (
+              <div key={item.id} className="text-[9pt] text-slate-700 mb-[8px]" style={{ breakInside: idx === 0 ? "avoid" : "auto" }}>
+                {idx === 0 && <h3 className={mainSectionTitleClass}>{customSec.title}</h3>}
+                <div className="flex justify-between items-end mb-[2px]">
+                  {item.title && <span className="font-bold block text-slate-800 text-[10pt]">{item.title}</span>}
+                  {item.subtitle && <span className="text-[8pt] text-slate-500">{item.subtitle}</span>}
+                </div>
+                {item.hasDates && (item.startDate || item.endDate) ? (
+                  <div className="flex justify-between text-[8pt] text-slate-500 mb-[2px]">
+                    {item.hasLocation ? <span className="text-slate-400">{item.location}</span> : <span></span>}
+                    <span className="italic">{item.startDate && `${item.startDate}${item.endDate ? ` - ${item.endDate}` : ""}`}</span>
                   </div>
-                ))}
-            </div>
+                ) : item.hasLocation && item.location ? (
+                  <div className="text-[8pt] text-slate-400 mb-[2px]">{item.location}</div>
+                ) : null}
+                <HtmlDisplay content={item.description} className={bodyHtmlClass} variant="pdfTight" />
+              </div>
+            ))}
           </section>
         );
     }
+  };
+
+  const renderSidebarSection = (id: string) => {
+    if (id === "education") {
+      return (
+        <section key="education" className="mb-[12px] last:mb-0">
+          <h3 className={sidebarSectionTitleClass}>Education</h3>
+          {education
+            .filter(e => !e.hidden)
+            .map(edu => (
+              <div key={edu.id} className="mb-[8px]">
+                <p className="font-semibold text-[10pt] text-slate-900">{edu.school}</p>
+                <p className="text-[9pt] text-slate-500 italic">{edu.degree}</p>
+                <p className="text-[8pt] text-slate-500">{edu.endDate}</p>
+                {edu.location && <p className="text-[8pt] text-slate-400">{edu.location}</p>}
+              </div>
+            ))}
+        </section>
+      );
+    }
+    if (id === "skills") {
+      return (
+        <section key="skills" className="mb-[12px] last:mb-0">
+          <h3 className={sidebarSectionTitleClass}>Skills</h3>
+          <div className="flex flex-col items-end">
+            {skills
+              .filter(s => !s.hidden)
+              .map(skill => (
+                <span key={skill.id} className="text-[9pt] text-slate-600 mb-[2px]">
+                  {skill.name}
+                </span>
+              ))}
+          </div>
+        </section>
+      );
+    }
+    return null;
   };
 
   return (
@@ -197,45 +232,10 @@ const MinimalPreview: React.FC<MinimalPreviewProps> = ({ data, previewScale, isM
 
       <div className="flex">
         <div className="w-[30%] text-right border-r border-slate-200 pr-[15px] space-y-[12px]">
-          {/* Fixed Sidebar: Education & Skills */}
-          {isEducationSectionVisible && (
-            <section className="mb-[12px] last:mb-0">
-              <h3 className={sidebarSectionTitleClass}>Education</h3>
-              {education
-                .filter(e => !e.hidden)
-                .map(edu => (
-                  <div key={edu.id} className="mb-[8px]">
-                    <p className="font-semibold text-[10pt] text-slate-900">{edu.school}</p>
-                    <p className="text-[9pt] text-slate-500 italic">{edu.degree}</p>
-                    <p className="text-[8pt] text-slate-500">{edu.endDate}</p>
-                    {edu.location && <p className="text-[8pt] text-slate-400">{edu.location}</p>}
-                  </div>
-                ))}
-            </section>
-          )}
-          {isSkillsSectionVisible && (
-            <section className="mb-[12px] last:mb-0">
-              <h3 className={sidebarSectionTitleClass}>Skills</h3>
-              <div className="flex flex-col items-end">
-                {skills
-                  .filter(s => !s.hidden)
-                  .map(skill => (
-                    <span key={skill.id} className="text-[9pt] text-slate-600 mb-[2px]">
-                      {skill.name}
-                    </span>
-                  ))}
-              </div>
-            </section>
-          )}
+          {sidebarSectionIds.map(s => renderSidebarSection(s.id))}
         </div>
         <div className="w-[70%] pl-[15px] space-y-[12px]">
-          {/* Reorderable Main Content */}
-          {sectionOrder
-            .filter(s => !s.hidden)
-            .map(s => {
-              if (s.id === "education" || s.id === "skills") return null;
-              return renderSectionMinimal(s.id);
-            })}
+          {orderedSections.filter(s => !s.hidden && s.id !== "education" && s.id !== "skills").map(s => renderSectionMinimal(s.id))}
         </div>
       </div>
     </ScaledA4PreviewShell>

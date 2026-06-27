@@ -21,8 +21,21 @@ function errorText(err: unknown): string {
 
 export function isRateLimitStreamError(err: unknown): boolean {
   const text = errorText(err);
-  return /\b429\b/.test(text) || /RESOURCE_EXHAUSTED/i.test(text) || /Resource exhausted/i.test(text) || /Too Many Requests/i.test(text);
+  if (/RESOURCE_EXHAUSTED/i.test(text) || /Resource exhausted/i.test(text) || /Too Many Requests/i.test(text)) {
+    return true;
+  }
+  if (!/\b429\b/.test(text)) {
+    return false;
+  }
+  // ADK model chunks include usageMetadata token counts (e.g. candidatesTokenCount: 429) — not HTTP 429.
+  if (/"usageMetadata"\s*:/.test(text) && /"candidatesTokenCount"\s*:\s*429\b/.test(text)) {
+    return false;
+  }
+  return true;
 }
+
+const isNormalAdkStreamEvent = (parsed: Record<string, unknown>): boolean =>
+  parsed.content != null || typeof parsed.author === "string" || typeof parsed.modelVersion === "string";
 
 /** Do not backoff-retry quota / rate-limit failures — show UI immediately. */
 export function isNonRetryableStreamError(err: unknown): boolean {
@@ -52,12 +65,15 @@ export function extractStreamErrorFromSsePayload(raw: string): Error | null {
     return null;
   }
 
-  if (isRateLimitStreamError(trimmed)) {
-    return new Error(trimmed);
-  }
-
   try {
     const parsed = JSON.parse(trimmed) as Record<string, unknown>;
+
+    // Normal ADK stream events (model chunks, tool calls) are not error envelopes.
+    if (isNormalAdkStreamEvent(parsed)) {
+      const nestedError = typeof parsed.error === "string" ? parsed.error.trim() : "";
+      return nestedError ? new Error(nestedError) : null;
+    }
+
     if (typeof parsed.error === "string" && parsed.error.trim()) {
       return new Error(parsed.error);
     }
@@ -70,7 +86,9 @@ export function extractStreamErrorFromSsePayload(raw: string): Error | null {
       return new Error(errorCode);
     }
   } catch {
-    /* not JSON — rate-limit patterns already checked on raw string */
+    if (isRateLimitStreamError(trimmed)) {
+      return new Error(trimmed);
+    }
   }
 
   return null;

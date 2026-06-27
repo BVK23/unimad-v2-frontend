@@ -1,5 +1,13 @@
 export type LinkedInSectionStatus = "good" | "warning" | "critical";
 
+export type LinkedInReanalysisMeta = {
+  isReanalysis: boolean;
+  changedSections: string[];
+  unchangedSections: string[];
+  summary: string;
+  sectionChanges?: Record<string, { changed?: boolean; field?: string }>;
+};
+
 export type LinkedInSectionAnalysis = {
   id: string;
   name: string;
@@ -18,6 +26,7 @@ export type LinkedInAnalyzeResult = {
   overallScore: number;
   sections: LinkedInSectionAnalysis[];
   topActions: string[];
+  reanalysisMeta?: LinkedInReanalysisMeta;
 };
 
 /** Scraped profile text from GET /api/linkedin/analysis/ profileContent. */

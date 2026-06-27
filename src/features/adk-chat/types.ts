@@ -11,6 +11,10 @@ export interface AgentMessage {
   invocationId?: string;
   agent?: string;
   timelineActivities?: TimelineActivity[];
+  /** Restored from persisted tool responses on session history load. */
+  unimadNavigation?: { path: string; label: string };
+  unimadJobCards?: import("./parse-unimad-job-cards").UnimadJobCardsPayload;
+  unimadLinkedInSuggestions?: import("./parse-unimad-linkedin-suggestions").UnimadLinkedInSuggestionsPayload;
 }
 
 export interface ProcessedEvent {

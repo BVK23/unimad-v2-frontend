@@ -162,10 +162,16 @@ const ClassicPreview: React.FC<ClassicPreviewProps> = ({ data, previewScale, isM
               .filter(i => !i.hidden)
               .map(item => (
                 <div key={item.id} className="text-[10pt] mb-[8px]">
-                  <div className="flex justify-between items-end mb-[2px]">
-                    {item.title && <div className="font-bold text-[10pt] text-slate-900 inline mr-2">{item.title}</div>}
-                    {item.subtitle && <div className="italic text-[10pt] text-slate-700">{item.subtitle}</div>}
+                  <div className="flex justify-between items-end mb-[2px] text-slate-900">
+                    {item.title && <span className="text-[10pt] font-semibold">{item.title}</span>}
+                    {item.startDate && (
+                      <span className={dateTextClass}>
+                        {parseDate(item.startDate)} – {item.current ? "Present" : parseDate(item.endDate)}
+                      </span>
+                    )}
                   </div>
+                  {item.subtitle && <div className="italic text-[10pt] text-slate-700 mb-[2px]">{item.subtitle}</div>}
+                  {item.location && <div className={locationTextClass}>{item.location}</div>}
                   <HtmlDisplay content={item.description} className={bodyHtmlClass} variant="pdfTight" />
                 </div>
               ))}

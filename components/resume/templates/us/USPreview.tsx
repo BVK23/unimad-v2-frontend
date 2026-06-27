@@ -51,23 +51,42 @@ const USPreview: React.FC<USPreviewProps> = ({ data, previewScale, isModal = fal
       const customSection = customSections?.find(s => s.id === id);
       if (!customSection || !customSection.items || !customSection.items.some(item => !item.hidden)) return null;
 
+      const visibleItems = customSection.items.filter(d => !d.hidden);
+
       return (
-        <section key={id} style={{ breakInside: "avoid" }}>
-          <SectionTitle>{customSection.title || "Custom Section"}</SectionTitle>
-          {customSection.items
-            .filter(d => !d.hidden)
-            .map((item, i) => (
-              <div key={i} style={{ marginBottom: `${ptToPx(8)}px` }}>
-                <h3 className="font-bold leading-none" style={{ fontSize: `${ptToPx(11)}px` }}>
-                  {item.title}
-                </h3>
-                {item.description && (
-                  <div style={{ marginTop: `${ptToPx(2)}px` }}>
-                    <HtmlDisplay content={item.description} />
-                  </div>
-                )}
+        <section key={id}>
+          {visibleItems.map((item, i) => (
+            <div key={i} style={{ marginBottom: `${ptToPx(8)}px`, breakInside: i === 0 ? "avoid" : "auto" }}>
+              {i === 0 && <SectionTitle>{customSection.title || "Custom Section"}</SectionTitle>}
+              <div className="flex justify-between items-start">
+                <div className="flex-1" style={{ paddingRight: `${ptToPx(8)}px` }}>
+                  {item.title && (
+                    <h3 className="font-bold block" style={{ fontSize: `${ptToPx(11)}px`, lineHeight: 1.15 }}>
+                      {item.title}
+                    </h3>
+                  )}
+                  {item.subtitle && (
+                    <p className="italic block" style={{ fontSize: `${ptToPx(10)}px`, marginTop: `${ptToPx(4)}px`, lineHeight: 1.15 }}>
+                      {item.subtitle}
+                    </p>
+                  )}
+                </div>
+                <div className="flex flex-col items-end gap-1 text-right" style={{ minWidth: `${ptToPx(90)}px` }}>
+                  {item.location && <span style={{ fontSize: `${ptToPx(9)}px`, color: "#333333", lineHeight: 1.15 }}>{item.location}</span>}
+                  {item.startDate && (
+                    <span style={{ fontSize: `${ptToPx(9)}px`, color: "#333333", lineHeight: 1.15 }}>
+                      {parseDate(item.startDate)} — {item.current ? "Present" : parseDate(item.endDate)}
+                    </span>
+                  )}
+                </div>
               </div>
-            ))}
+              {item.description && (
+                <div style={{ marginTop: `${ptToPx(4)}px` }}>
+                  <HtmlDisplay content={item.description} />
+                </div>
+              )}
+            </div>
+          ))}
         </section>
       );
     }

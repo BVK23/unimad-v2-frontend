@@ -41,7 +41,10 @@ export function buildStudioSearchParams(input: {
   return params;
 }
 
-export function parseStudioSearchParams(searchParams: URLSearchParams): StudioUrlState {
+export function parseStudioSearchParams(searchParams: { get(name: string): string | null } | null | undefined): StudioUrlState {
+  if (!searchParams) {
+    return { fromPrepareApplication: false };
+  }
   const type = searchParams.get("type")?.trim() || undefined;
   const jobId = searchParams.get("jobId")?.trim() || undefined;
   const legacyPrepare = searchParams.get("return") === "prepare";
@@ -70,11 +73,14 @@ export function buildResumePrepareHref(resumeId: string, jobId: string, navigate
   return `/uniboard/resume?${params.toString()}`;
 }
 
-export function parseResumePrepareSearchParams(searchParams: URLSearchParams): {
+export function parseResumePrepareSearchParams(searchParams: { get(name: string): string | null } | null | undefined): {
   resumeId?: string;
   jobId?: string;
   navigate?: PrepareNavigateTarget;
 } {
+  if (!searchParams) {
+    return {};
+  }
   return {
     resumeId: searchParams.get("id")?.trim() || undefined,
     jobId: searchParams.get("jobId")?.trim() || undefined,

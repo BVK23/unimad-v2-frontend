@@ -6,6 +6,7 @@ import { applicationHasAnyLinkedAsset, parseApplicationAssets } from "@/features
 import type { Application, ApplicationStatus, UpdateApplicationInput } from "@/features/application-tracker/types";
 import { useOnboardingGate } from "@/features/onboarding/context/OnboardingGateContext";
 import { MODAL_OVERLAY_Z_CLASS } from "@/lib/ui/modal-overlay";
+import { formatRelativeTimeFromNow } from "@/utils/format-relative-time";
 import { X, FileText, ExternalLink, Pencil, ChevronDown, CheckCircle2 } from "lucide-react";
 import { CompanyLogo } from "./CompanyLogo";
 
@@ -106,16 +107,10 @@ const ApplicationDetailsModal: React.FC<ApplicationDetailsModalProps> = ({
     }
   };
 
-  const formatShort = (iso: string) => new Intl.DateTimeFormat("en-US", { month: "short", day: "numeric" }).format(new Date(iso));
-
   const dateLabel = application.applied_date
     ? application.applied_date
-    : application.posted_at
-      ? formatShort(application.posted_at)
-      : application.created_at
-        ? formatShort(application.created_at)
-        : null;
-  const hasLocationOrDate = Boolean(application.location?.trim() || dateLabel);
+    : formatRelativeTimeFromNow(application.posted_at ?? application.created_at, "");
+  const hasLocationOrDate = Boolean(application.location?.trim() || (dateLabel && dateLabel !== ""));
   const applyUrl = application.apply_url;
 
   if (mode === "edit") {
@@ -349,6 +344,7 @@ const ApplicationDetailsModal: React.FC<ApplicationDetailsModalProps> = ({
             <FileText size={18} className="text-brand-500" /> {hasPreparedApplication ? "Continue Application" : "Prepare Application"}
           </button>
           <button
+            type="button"
             onClick={() => applyUrl && window.open(applyUrl, "_blank")}
             disabled={!applyUrl}
             className="flex flex-1 items-center justify-center gap-2 rounded-xl bg-brand-600 py-3 font-medium text-white shadow-lg shadow-brand-500/20 transition-all hover:bg-brand-700 active:scale-95 disabled:cursor-not-allowed disabled:opacity-50 disabled:shadow-none"

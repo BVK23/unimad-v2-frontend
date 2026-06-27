@@ -5,9 +5,14 @@
  * connection establishment, data streaming, error handling, and cleanup.
  */
 import { RefObject } from "react";
+import { buildRunSseFetchInit, isDirectAdkSseInDev, resolveAdkChatStreamUrl } from "@/src/lib/adk/client-run-sse";
 import { createDebugLog } from "@/src/lib/adk/run-sse-common";
+import { isAdkActivityTraceEnabled } from "./activity-trace";
 import { processSseEventData } from "./stream-processor";
 import { SSEConnectionState, StreamProcessingCallbacks, StreamingAPIPayload, ConnectionManagerOptions } from "./types";
+
+/** Next.js proxy in prod; optional direct ADK in dev (see NEXT_PUBLIC_ADK_SSE_DIRECT). */
+export const ADK_CHAT_STREAM_ENDPOINT = "/api/run_sse";
 
 /**
  * Manages SSE streaming connections
@@ -16,11 +21,13 @@ export class StreamingConnectionManager {
   private connectionState: SSEConnectionState = "idle";
   private retryFn: <T>(fn: () => Promise<T>) => Promise<T>;
   private endpoint: string;
+  private streamTiming: ConnectionManagerOptions["streamTiming"];
   private abortController: AbortController | null = null;
 
   constructor(options: ConnectionManagerOptions = {}) {
     this.retryFn = options.retryFn || (fn => fn());
-    this.endpoint = options.endpoint || "/api/run_sse";
+    this.endpoint = options.endpoint || ADK_CHAT_STREAM_ENDPOINT;
+    this.streamTiming = options.streamTiming;
   }
 
   /**
@@ -39,7 +46,7 @@ export class StreamingConnectionManager {
    * @param currentAgentRef - Reference to current agent state
    * @param setCurrentAgent - Agent state setter
    * @param setIsLoading - Loading state setter
-   * @returns Promise that resolves when streaming completes
+   * @returns Whether any assistant text was streamed into the bubble
    */
   public async submitMessage(
     apiPayload: StreamingAPIPayload,
@@ -49,26 +56,50 @@ export class StreamingConnectionManager {
     setCurrentAgent: (agent: string) => void,
     setIsLoading: (loading: boolean) => void,
     aiMessageId: string
-  ): Promise<void> {
+  ): Promise<boolean> {
     this.connectionState = "connecting";
     setIsLoading(true);
     accumulatedTextRef.current = "";
     currentAgentRef.current = "";
     this.abortController = new AbortController();
 
-    try {
-      createDebugLog("CONNECTION", "Sending API request with payload", apiPayload);
+    const streamUrl = resolveAdkChatStreamUrl();
+    const fetchInit = buildRunSseFetchInit(apiPayload);
 
+    try {
+      createDebugLog("CONNECTION", "Sending API request", {
+        endpoint: streamUrl,
+        directAdk: isDirectAdkSseInDev(),
+        apiPayload,
+      });
+      if (isDirectAdkSseInDev() && isAdkActivityTraceEnabled()) {
+        console.info(`[adk-activity] stream via direct ADK (${streamUrl}) — bypasses Next dev buffering`);
+      }
+
+      this.streamTiming?.onFetchStart?.();
+      const requestStartedAt = Date.now();
       const response = await this.retryFn(() =>
-        fetch(this.endpoint, {
-          method: "POST",
-          headers: {
-            "Content-Type": "application/json",
-          },
-          body: JSON.stringify(apiPayload),
+        fetch(streamUrl, {
+          ...fetchInit,
           signal: this.abortController?.signal,
         })
       );
+      const headersAt = Date.now();
+      if (isAdkActivityTraceEnabled()) {
+        const ttfbMs = headersAt - requestStartedAt;
+        console.info(
+          `[adk-activity] fetch headers +${ttfbMs}ms from fetch start | content-type=${response.headers.get("content-type") ?? "?"}`
+        );
+        if (ttfbMs > 3000) {
+          console.warn(
+            "[adk-activity] slow TTFB — HTTP headers arrived only when the run finished. " +
+              "Common causes: local antivirus/HTTPS inspection buffering POST SSE, gzip middleware, or Next dev. " +
+              "Try disabling AV SSL scan for localhost, confirm Content-Encoding: identity on /api/run_sse, " +
+              "or test with curl -N vs browser fetch on the same URL."
+          );
+        }
+      }
+      this.streamTiming?.onFetchResponse?.(response);
 
       if (!response.ok) {
         const errorBody = await response.text().catch(() => "");
@@ -79,10 +110,20 @@ export class StreamingConnectionManager {
       this.connectionState = "connected";
 
       // Handle SSE streaming with proper event processing
-      await this.handleSSEStream(response, aiMessageId, callbacks, accumulatedTextRef, currentAgentRef, setCurrentAgent);
+      await this.handleSSEStream(
+        response,
+        aiMessageId,
+        callbacks,
+        accumulatedTextRef,
+        currentAgentRef,
+        setCurrentAgent,
+        requestStartedAt,
+        headersAt
+      );
 
       this.connectionState = "idle";
       setIsLoading(false);
+      return accumulatedTextRef.current.trim().length > 0;
     } catch (error) {
       if ((error as Error).name === "AbortError") {
         this.connectionState = "closed";
@@ -96,6 +137,7 @@ export class StreamingConnectionManager {
       if ((error as Error).name !== "AbortError") {
         throw error;
       }
+      return accumulatedTextRef.current.trim().length > 0;
     } finally {
       this.abortController = null;
     }
@@ -144,7 +186,9 @@ export class StreamingConnectionManager {
     callbacks: StreamProcessingCallbacks,
     accumulatedTextRef: RefObject<string>,
     currentAgentRef: RefObject<string>,
-    setCurrentAgent: (agent: string) => void
+    setCurrentAgent: (agent: string) => void,
+    requestStartedAt: number,
+    headersAt: number
   ): Promise<void> {
     const contentType = response.headers.get("content-type") || "";
 
@@ -165,12 +209,26 @@ export class StreamingConnectionManager {
 
     createDebugLog("SSE START", "Beginning to process streaming response");
 
+    let firstSseChunkReported = false;
+    let browserChunkIndex = 0;
+    const activityDedupRef = { current: new Set<string>() };
+
     // Use recursive pump function instead of while(true) loop
     const pump = async (): Promise<void> => {
       const { done, value } = await reader.read();
 
       if (value) {
         const chunk = decoder.decode(value, { stream: true });
+        browserChunkIndex += 1;
+        if (!firstSseChunkReported) {
+          firstSseChunkReported = true;
+          this.streamTiming?.onFirstSseChunk?.();
+        }
+        if (isAdkActivityTraceEnabled() && browserChunkIndex <= 30) {
+          console.info(
+            `[adk-activity] browser chunk #${browserChunkIndex} +${Date.now() - requestStartedAt}ms from fetch | +${Date.now() - headersAt}ms from headers | bytes=${chunk.length}`
+          );
+        }
         lineBuffer += chunk;
         createDebugLog("SSE CHUNK", `Received ${chunk.length} bytes`);
       }
@@ -199,17 +257,25 @@ export class StreamingConnectionManager {
 
             // Process the event immediately for real-time updates
             try {
-              await processSseEventData(jsonDataToParse, aiMessageId, callbacks, accumulatedTextRef, currentAgentRef, setCurrentAgent);
-
-              // 🔑 CRITICAL: Force immediate UI update by yielding to event loop
-              // This prevents React from batching updates and ensures real-time streaming
-              await new Promise(resolve => setTimeout(resolve, 0));
+              await processSseEventData(
+                jsonDataToParse,
+                aiMessageId,
+                callbacks,
+                accumulatedTextRef,
+                currentAgentRef,
+                setCurrentAgent,
+                activityDedupRef
+              );
             } catch (error) {
               console.error("❌ [SSE ERROR] Failed to process SSE event:", error);
               console.error("❌ [SSE ERROR] Problematic JSON:", jsonDataToParse.substring(0, 500));
-              throw error;
+              // Keep streaming — one bad event must not abort the whole turn.
             }
             eventDataBuffer = ""; // Reset for next event
+            // One TCP chunk may contain many SSE events — yield so label presenter can paint.
+            await new Promise<void>(resolve => {
+              setTimeout(resolve, 0);
+            });
           }
         } else if (line.startsWith("data:")) {
           // Accumulate data lines for this event
@@ -229,15 +295,18 @@ export class StreamingConnectionManager {
           createDebugLog("SSE DISPATCH FINAL EVENT", jsonDataToParse.substring(0, 200) + "...");
 
           try {
-            await processSseEventData(jsonDataToParse, aiMessageId, callbacks, accumulatedTextRef, currentAgentRef, setCurrentAgent);
-
-            // 🔑 CRITICAL: Force immediate UI update by yielding to event loop
-            // This prevents React from batching updates and ensures real-time streaming
-            await new Promise(resolve => setTimeout(resolve, 0));
+            await processSseEventData(
+              jsonDataToParse,
+              aiMessageId,
+              callbacks,
+              accumulatedTextRef,
+              currentAgentRef,
+              setCurrentAgent,
+              activityDedupRef
+            );
           } catch (error) {
             console.error("❌ [SSE ERROR] Failed to process final SSE event:", error);
             console.error("❌ [SSE ERROR] Problematic JSON:", jsonDataToParse.substring(0, 500));
-            throw error;
           }
           eventDataBuffer = "";
         }

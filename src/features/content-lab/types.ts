@@ -7,6 +7,7 @@ export type ContentGenAssetItem = {
   datePosted?: string;
   dateScheduled?: string;
   images?: string[];
+  mood?: string;
   created_at?: string;
   taskId?: string;
 };

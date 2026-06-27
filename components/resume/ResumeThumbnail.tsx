@@ -3,7 +3,7 @@
 import React from "react";
 import { getTemplate } from "@/components/resume/templates";
 import type { ResumeData } from "@/types";
-import { FileText, Star } from "lucide-react";
+import { FileText, Layers, Star } from "lucide-react";
 
 interface ResumeThumbnailProps {
   resume: ResumeData;
@@ -11,11 +11,19 @@ interface ResumeThumbnailProps {
   previewScale?: number;
   className?: string;
   heightClass?: string;
+  versionBadgeLabel?: string | null;
 }
 
 const ResumeThumbnail = React.memo(
-  ({ resume, previewScale = 0.26, className = "", heightClass = "h-40" }: ResumeThumbnailProps) => {
+  ({ resume, previewScale = 0.26, className = "", heightClass = "h-40", versionBadgeLabel = null }: ResumeThumbnailProps) => {
     const templateRenderer = getTemplate(resume.templateId);
+
+    const versionBadge = versionBadgeLabel ? (
+      <div className="pointer-events-none absolute left-3 top-3 z-[35] inline-flex items-center gap-1.5 rounded-full border border-slate-200 bg-white/95 px-2.5 py-1 text-[10px] font-semibold text-slate-600 shadow-sm backdrop-blur-sm">
+        <Layers size={10} aria-hidden />
+        {versionBadgeLabel}
+      </div>
+    ) : null;
 
     if (!templateRenderer) {
       return (
@@ -24,6 +32,7 @@ const ResumeThumbnail = React.memo(
             <FileText size={18} />
             <span className="text-xs font-medium">Preview unavailable</span>
           </div>
+          {versionBadge}
           {resume.isBase && (
             <div className="pointer-events-none absolute right-3 top-3 z-[35] inline-flex items-center gap-1.5 rounded-full border border-brand-100 bg-white/95 px-2.5 py-1 text-[10px] font-bold uppercase tracking-wider text-brand-600 shadow-sm backdrop-blur-sm">
               <Star size={10} fill="currentColor" aria-hidden /> Base Resume
@@ -40,6 +49,7 @@ const ResumeThumbnail = React.memo(
             {templateRenderer.renderPreview(resume, { previewScale, isModal: false })}
           </div>
         </div>
+        {versionBadge}
         {resume.isBase && (
           <div className="pointer-events-none absolute right-3 top-3 z-[35] inline-flex items-center gap-1.5 rounded-full border border-brand-100 bg-white/95 px-2.5 py-1 text-[10px] font-bold uppercase tracking-wider text-brand-600 shadow-sm backdrop-blur-sm">
             <Star size={10} fill="currentColor" aria-hidden /> Base Resume
@@ -54,7 +64,8 @@ const ResumeThumbnail = React.memo(
     prev.resume.lastModified.getTime() === next.resume.lastModified.getTime() &&
     prev.resume.isBase === next.resume.isBase &&
     prev.resume.publishedAt === next.resume.publishedAt &&
-    prev.previewScale === next.previewScale
+    prev.previewScale === next.previewScale &&
+    prev.versionBadgeLabel === next.versionBadgeLabel
 );
 
 ResumeThumbnail.displayName = "ResumeThumbnail";

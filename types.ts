@@ -1,3 +1,5 @@
+import type { ContentScope } from "@/src/features/adk-chat/content-scope";
+
 // Portfolio & Content Types
 // Portfolio & Content Types
 export type ContentType =
@@ -136,6 +138,8 @@ export interface ChatMessage {
   // Topic / Context Support (improve sub-chats embedded in main transcript)
   isTopic?: boolean;
   topicTitle?: string;
+  /** Optional second line (e.g. role · company) for studio asset threads. */
+  topicSubtitle?: string;
   topicKind?: "content_gen" | "application_asset" | "improve";
   isExpanded?: boolean;
   messages?: ChatMessage[]; // Nested messages for this topic
@@ -148,6 +152,14 @@ export interface ChatMessage {
   errorKind?: "rate_limit" | "generic";
   /** Present on user messages created by selection quick-action or freeform refine. */
   assetActionMeta?: AssetActionMeta;
+  /** Derived content scope used for rewind safety checks. */
+  contentScope?: ContentScope;
+  /** Go-to-page button from `suggest_unimad_navigation` tool. */
+  unimadNavigation?: { path: string; label: string };
+  /** Compact job cards from `fetch_recommended_jobs` / `search_jobs_for_user`. */
+  unimadJobCards?: import("@/src/features/adk-chat/parse-unimad-job-cards").UnimadJobCardsPayload;
+  /** Copy-ready LinkedIn suggestion cards from `present_linkedin_suggestions`. */
+  unimadLinkedInSuggestions?: import("@/src/features/adk-chat/parse-unimad-linkedin-suggestions").UnimadLinkedInSuggestionsPayload;
   /** True when rebuilt from flat main-session history before sub-session migration. */
   legacyTopic?: boolean;
 }

@@ -4,9 +4,10 @@ export type ContentGenModalPost = {
   id: string;
   content: string;
   topic: string;
+  mood?: string;
   date: string;
   stats: string;
-  status: "Posted" | "Draft";
+  status: "Posted" | "Draft" | "Scheduled";
 };
 
 function formatAssetDate(a: ContentGenAssetItem): string {
@@ -35,10 +36,9 @@ function formatAssetDate(a: ContentGenAssetItem): string {
   return "—";
 }
 
-function modalFilterStatus(a: ContentGenAssetItem): "Posted" | "Draft" {
-  if (a.status === "Posted") {
-    return "Posted";
-  }
+function modalFilterStatus(a: ContentGenAssetItem): "Posted" | "Draft" | "Scheduled" {
+  if (a.status === "Posted") return "Posted";
+  if (a.status === "Scheduled") return "Scheduled";
   return "Draft";
 }
 
@@ -48,7 +48,8 @@ export function mapContentGenToModalPost(a: ContentGenAssetItem): ContentGenModa
   return {
     id: String(a.id),
     content,
-    topic: a.topic ?? "",
+    topic: a.topic?.trim() ?? "",
+    mood: a.mood?.trim() || undefined,
     date: formatAssetDate(a),
     stats: "—",
     status: modalFilterStatus(a),

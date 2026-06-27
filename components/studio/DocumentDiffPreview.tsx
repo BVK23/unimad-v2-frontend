@@ -3,13 +3,16 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import RichTextEditor from "@/components/RichTextEditor";
 import DiffRegionChipOverlay from "@/components/studio/DiffRegionChipOverlay";
+import DocumentReviewBottomBar from "@/components/studio/DocumentReviewBottomBar";
 import { documentPreviewBodyTypography } from "@/components/studio/StudioDocumentPreview";
+import { useApplicationAssetDiffReviewUiStore } from "@/features/application-assets/store/useApplicationAssetDiffReviewUiStore";
 import { type DiffRegion, buildReconciledHtml, reconcileAnchoredDraft } from "@/features/application-assets/utils/application-asset-diff";
 
 type DocumentDiffPreviewProps = {
   baselineDraft: string;
   proposedDraft: string;
   anchorSelectedText?: string;
+  reviewSessionKey?: string;
   onApply: (reconciledHtml: string) => void;
   onRevertAll: () => void;
   busy?: boolean;
@@ -17,11 +20,16 @@ type DocumentDiffPreviewProps = {
 };
 
 const DIFF_REGION_HIGHLIGHT_CLASS =
-  "diff-region-block block rounded-md my-1 px-3 py-2 font-serif bg-emerald-50/90 ring-1 ring-emerald-200/80 dark:bg-emerald-950/50 dark:ring-emerald-700/60";
+  "diff-region-block group/region block cursor-pointer rounded-md my-1 px-3 py-2 font-serif bg-blue-50/40 dark:bg-blue-900/20 transition-colors hover:bg-blue-100/50 dark:hover:bg-blue-900/30";
+
+const DIFF_REGION_ACTIVE_CLASS =
+  "diff-region-block group/region block cursor-pointer rounded-md my-1 px-3 py-2 font-serif bg-blue-100/50 border border-blue-200 dark:bg-blue-900/30 dark:border-blue-800 transition-colors";
 
 const DIFF_REGION_UNDONE_CLASS = "diff-region-block block rounded-md my-1 font-serif opacity-70";
+const DIFF_REGION_REMOVED_CLASS =
+  "diff-region-block group/region block cursor-pointer rounded-md my-1 px-3 py-2 font-serif bg-rose-50/90 ring-1 ring-rose-200/80 line-through decoration-rose-500/80 dark:bg-rose-950/40 dark:ring-rose-700/60";
 
-const buildReviewDisplayHtml = (regions: DiffRegion[], decisions: Record<string, "keep" | "undo">): string =>
+const buildReviewDisplayHtml = (regions: DiffRegion[], decisions: Record<string, "keep" | "undo">, activeRegionId: string | null): string =>
   regions
     .map(region => {
       if (region.kind === "unchanged") {
@@ -29,9 +37,10 @@ const buildReviewDisplayHtml = (regions: DiffRegion[], decisions: Record<string,
       }
       if (region.kind === "removed") {
         if (decisions[region.id] === "undo") {
-          return region.baselineHtml ?? "";
+          return `<div data-diff-region="${region.id}" class="${DIFF_REGION_UNDONE_CLASS}">${region.baselineHtml ?? ""}</div>`;
         }
-        return "";
+        const removedClass = region.id === activeRegionId ? DIFF_REGION_ACTIVE_CLASS : DIFF_REGION_REMOVED_CLASS;
+        return `<div data-diff-region="${region.id}" class="${removedClass}">${region.baselineHtml ?? ""}</div>`;
       }
 
       const isUndone = decisions[region.id] === "undo";
@@ -46,7 +55,8 @@ const buildReviewDisplayHtml = (regions: DiffRegion[], decisions: Record<string,
         return `<div data-diff-region="${region.id}" class="${DIFF_REGION_UNDONE_CLASS}">${inner}</div>`;
       }
 
-      return `<div data-diff-region="${region.id}" class="${DIFF_REGION_HIGHLIGHT_CLASS}">${inner}</div>`;
+      const highlightClass = region.id === activeRegionId ? DIFF_REGION_ACTIVE_CLASS : DIFF_REGION_HIGHLIGHT_CLASS;
+      return `<div data-diff-region="${region.id}" class="${highlightClass}">${inner}</div>`;
     })
     .filter(Boolean)
     .join("");
@@ -55,12 +65,24 @@ const DocumentDiffPreview = ({
   baselineDraft,
   proposedDraft,
   anchorSelectedText,
+  reviewSessionKey = "review",
   onApply,
   onRevertAll,
   busy = false,
   editorClassName = "",
 }: DocumentDiffPreviewProps) => {
   const scrollContainerRef = useRef<HTMLDivElement>(null);
+  const [hoveredRegionId, setHoveredRegionId] = useState<string | null>(null);
+
+  const decisions = useApplicationAssetDiffReviewUiStore(s => s.decisions);
+  const activeRegionId = useApplicationAssetDiffReviewUiStore(s => s.activeRegionId);
+  const initSession = useApplicationAssetDiffReviewUiStore(s => s.initSession);
+  const clearSession = useApplicationAssetDiffReviewUiStore(s => s.clearSession);
+  const setActiveRegionId = useApplicationAssetDiffReviewUiStore(s => s.setActiveRegionId);
+  const keepRegion = useApplicationAssetDiffReviewUiStore(s => s.keepRegion);
+  const undoRegion = useApplicationAssetDiffReviewUiStore(s => s.undoRegion);
+  const keepAll = useApplicationAssetDiffReviewUiStore(s => s.keepAll);
+  const undoAll = useApplicationAssetDiffReviewUiStore(s => s.undoAll);
 
   const { regions } = useMemo(
     () =>
@@ -73,40 +95,43 @@ const DocumentDiffPreview = ({
   );
 
   const changedRegions = useMemo(() => regions.filter(r => r.kind !== "unchanged"), [regions]);
+  const changedRegionIds = useMemo(() => changedRegions.map(r => r.id), [changedRegions]);
 
-  const [decisions, setDecisions] = useState<Record<string, "keep" | "undo">>({});
+  const changedRegionIdsKey = changedRegionIds.join(",");
 
-  const displayHtml = useMemo(() => buildReviewDisplayHtml(regions, decisions), [regions, decisions]);
-
-  const layoutKey = `${displayHtml.length}-${Object.keys(decisions).sort().join(",")}`;
-
-  const handleKeep = useCallback((regionId: string) => {
-    setDecisions(prev => ({ ...prev, [regionId]: "keep" }));
-  }, []);
-
-  const handleUndo = useCallback((regionId: string) => {
-    setDecisions(prev => ({ ...prev, [regionId]: "undo" }));
-  }, []);
-
-  const handleKeepAll = useCallback(() => {
-    const all: Record<string, "keep"> = {};
-    for (const r of changedRegions) {
-      all[r.id] = "keep";
+  useEffect(() => {
+    if (changedRegionIds.length === 0) {
+      clearSession();
+      return;
     }
-    setDecisions(all);
-  }, [changedRegions]);
+    initSession(reviewSessionKey, changedRegionIds);
+    return () => clearSession();
+  }, [reviewSessionKey, changedRegionIdsKey, changedRegionIds, initSession, clearSession]);
 
-  const handleUndoAll = useCallback(() => {
-    const all: Record<string, "undo"> = {};
-    for (const r of changedRegions) {
-      all[r.id] = "undo";
-    }
-    setDecisions(all);
-  }, [changedRegions]);
+  const displayHtml = useMemo(() => buildReviewDisplayHtml(regions, decisions, activeRegionId), [regions, decisions, activeRegionId]);
+
+  const layoutKey = `${displayHtml.length}-${Object.keys(decisions).sort().join(",")}-${activeRegionId ?? ""}`;
 
   const allDecided = changedRegions.length > 0 && changedRegions.every(r => decisions[r.id]);
-
   const decidedCount = changedRegions.filter(r => decisions[r.id]).length;
+
+  const handleHoverRegionChange = useCallback((regionId: string | null) => {
+    setHoveredRegionId(regionId);
+  }, []);
+
+  const resolveHoveredRegionId = useCallback(
+    (target: EventTarget | null) => {
+      if (!(target instanceof HTMLElement)) return null;
+      const regionEl = target.closest("[data-diff-region]") as HTMLElement | null;
+      const pillEl = target.closest("[data-diff-pill]") as HTMLElement | null;
+      const regionId = regionEl?.getAttribute("data-diff-region") ?? pillEl?.getAttribute("data-diff-pill") ?? null;
+      if (!regionId || !changedRegionIds.includes(regionId) || decisions[regionId]) {
+        return null;
+      }
+      return regionId;
+    },
+    [changedRegionIds, decisions]
+  );
 
   const handleApply = useCallback(() => {
     const html = buildReconciledHtml(regions, decisions);
@@ -116,79 +141,70 @@ const DocumentDiffPreview = ({
   useEffect(() => {
     const container = scrollContainerRef.current;
     if (!container) return;
-    const target = changedRegions.find(r => !decisions[r.id]);
-    if (!target) return;
-    const el = container.querySelector(`[data-diff-region="${target.id}"]`);
-    el?.scrollIntoView({ behavior: "smooth", block: "center" });
-  }, [changedRegions, decisions, layoutKey]);
 
-  const regionIdsForChips = changedRegions.map(r => r.id);
+    const scrollTargetId =
+      activeRegionId && changedRegionIds.includes(activeRegionId) ? activeRegionId : changedRegions.find(r => !decisions[r.id])?.id;
+
+    if (!scrollTargetId) return;
+    const el = container.querySelector(`[data-diff-region="${scrollTargetId}"]`);
+    el?.scrollIntoView({ behavior: "smooth", block: "center" });
+  }, [activeRegionId, changedRegions, changedRegionIds, decisions, layoutKey]);
+
+  const handleRegionClick = useCallback(
+    (e: React.MouseEvent<HTMLDivElement>) => {
+      const target = (e.target as HTMLElement).closest("[data-diff-region]") as HTMLElement | null;
+      if (!target) return;
+      const regionId = target.getAttribute("data-diff-region");
+      if (!regionId || !changedRegionIds.includes(regionId)) return;
+      if (decisions[regionId]) return;
+      setActiveRegionId(regionId);
+    },
+    [changedRegionIds, decisions, setActiveRegionId]
+  );
 
   return (
-    <div className="flex h-full min-h-0 flex-col">
-      <div ref={scrollContainerRef} className={`relative min-h-0 flex-1 overflow-y-auto p-12 ${documentPreviewBodyTypography}`}>
+    <div className="relative flex h-full min-h-[min(68vh,580px)] flex-col overflow-visible">
+      <div
+        ref={scrollContainerRef}
+        className={`relative min-h-0 flex-1 overflow-y-auto overflow-x-hidden p-12 pb-28 ${documentPreviewBodyTypography}`}
+        onClick={handleRegionClick}
+        onMouseOver={e => {
+          handleHoverRegionChange(resolveHoveredRegionId(e.target));
+        }}
+        onMouseLeave={e => {
+          const nextTarget = e.relatedTarget;
+          if (nextTarget instanceof Node && e.currentTarget.contains(nextTarget)) {
+            return;
+          }
+          handleHoverRegionChange(null);
+        }}
+        role="presentation"
+      >
         <RichTextEditor value={displayHtml} onChange={() => {}} forceExternalSync readOnly className={editorClassName} />
         <DiffRegionChipOverlay
           scrollContainerRef={scrollContainerRef}
-          regionIds={regionIdsForChips}
+          regionIds={changedRegionIds}
           decisions={decisions}
-          onKeep={handleKeep}
-          onUndo={handleUndo}
+          activeRegionId={activeRegionId}
+          hoveredRegionId={hoveredRegionId}
+          onHoverRegionChange={handleHoverRegionChange}
+          onKeep={keepRegion}
+          onUndo={undoRegion}
           busy={busy}
           layoutKey={layoutKey}
         />
       </div>
-
-      <div className="shrink-0 border-t border-slate-200 bg-slate-50/95 px-4 py-2.5 dark:border-slate-700 dark:bg-slate-900/90">
-        <div className="flex flex-wrap items-center justify-between gap-2">
-          <div className="flex items-center gap-3">
-            {changedRegions.length > 0 ? (
-              <>
-                <span className="text-xs text-slate-500 dark:text-slate-400">
-                  {decidedCount}/{changedRegions.length} reviewed
-                </span>
-                <button
-                  type="button"
-                  onClick={handleKeepAll}
-                  disabled={busy}
-                  className="text-[11px] font-medium text-brand-600 hover:text-brand-700 disabled:opacity-50 dark:text-brand-400"
-                >
-                  Keep all
-                </button>
-                <button
-                  type="button"
-                  onClick={handleUndoAll}
-                  disabled={busy}
-                  className="text-[11px] font-medium text-slate-500 hover:text-slate-700 disabled:opacity-50 dark:text-slate-400"
-                >
-                  Undo all
-                </button>
-              </>
-            ) : (
-              <span className="text-[11px] text-slate-500 dark:text-slate-400">Review highlighted edits above, then apply or revert.</span>
-            )}
-          </div>
-          <div className="flex items-center gap-2">
-            <button
-              type="button"
-              onClick={onRevertAll}
-              disabled={busy}
-              className="rounded-lg border border-slate-200 bg-white px-3 py-1.5 text-xs font-medium text-slate-700 hover:bg-slate-50 disabled:opacity-50 dark:border-slate-600 dark:bg-slate-800 dark:text-slate-200"
-            >
-              Revert all
-            </button>
-            <button
-              type="button"
-              onClick={handleApply}
-              disabled={busy || (changedRegions.length > 0 && !allDecided)}
-              className="rounded-lg bg-brand-600 px-3 py-1.5 text-xs font-medium text-white hover:bg-brand-700 disabled:opacity-50"
-              title={changedRegions.length > 0 && !allDecided ? "Review each change first" : undefined}
-            >
-              Apply
-            </button>
-          </div>
-        </div>
-      </div>
+      <DocumentReviewBottomBar
+        reviewedCount={decidedCount}
+        totalCount={changedRegions.length}
+        onKeepAll={keepAll}
+        onUndoAll={undoAll}
+        onRevertAll={onRevertAll}
+        onApply={handleApply}
+        busy={busy}
+        applyDisabled={changedRegions.length > 0 && !allDecided}
+        applyDisabledReason="Review each change first"
+      />
     </div>
   );
 };

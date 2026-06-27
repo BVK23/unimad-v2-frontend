@@ -1,5 +1,6 @@
 "use server";
 
+import { normalizeContactNameForDisplay } from "@/utils/normalizeContactName";
 import { cookies } from "next/headers";
 import type { ColdEmailAsset, GenerateColdEmailParams, UpdateColdEmailParams } from "../types";
 
@@ -47,9 +48,10 @@ async function authedFetch(path: string, options: RequestInit = {}): Promise<Res
 
 const ASSET_TYPE = "coldemail";
 
-const normalizeColdEmailAsset = (asset: ColdEmailAsset): ColdEmailAsset => ({
+const normalizeColdEmailAsset = (asset: ColdEmailAsset & { contact_name?: string }): ColdEmailAsset => ({
   ...asset,
   job_description: (asset.job_description ?? asset.jd ?? "").trim() || undefined,
+  hirname: normalizeContactNameForDisplay(asset.hirname ?? asset.managerName ?? asset.contact_name),
 });
 
 // ---------------------------------------------------------------------------

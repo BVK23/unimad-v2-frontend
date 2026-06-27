@@ -71,7 +71,7 @@ function JobsPageContent() {
     updateJobsUrl({ prepareJob: null, prepareTab: null });
   };
 
-  const openSetupOnMount = searchParams.get("setup") === "1";
+  const openSetupOnMount = searchParams?.get("setup") === "1";
 
   return (
     <>

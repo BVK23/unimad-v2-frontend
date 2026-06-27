@@ -1,9 +1,15 @@
 "use client";
 
+import type { Dispatch, SetStateAction } from "react";
+import { extractActionLabelFromRefineMessage } from "@/features/application-assets/api/asset-action-message";
+import { inferAssetActionMetaFromUserText } from "@/features/application-assets/api/inferAssetActionMetaFromUserText";
 import type { ChatMessage } from "@/types";
 import { loadSessionHistoryAction } from "./actions";
+import { agentMessageToChatMessage } from "./agent-message-to-chat";
+import { resolveAdkSessionOptionsForSessionId } from "./resolve-sub-session-adk-app";
 import { getSessionRegistry, setSessionRegistry, type UnibotAdkSessionRow } from "./session-registry";
-import type { AgentMessage } from "./types";
+import { resolveRegistryContentKey } from "./sub-session-content-key";
+import { deriveSubSessionDisplayTitle, deriveSubSessionSubtitle } from "./sub-session-titles";
 import { listUnibotAdkSessionsAction } from "./unibot-adk-session-actions";
 
 export function topicIdForSubSession(subAdkSessionId: string): string {
@@ -15,30 +21,100 @@ function parseTimestamp(ts: Date | string | number): Date {
   return new Date(ts);
 }
 
-function agentToChat(m: AgentMessage): ChatMessage {
-  return {
-    id: m.id,
-    role: m.type === "human" ? "user" : "model",
-    text: m.content,
-    timestamp: parseTimestamp(m.timestamp as unknown as Date | string | number),
-    ...(m.invocationId ? { invocationId: m.invocationId } : {}),
-  };
-}
-
 /** Load ADK sub-session history into nested topic messages (chronological). */
 export async function loadSubSessionChatMessages(userId: string, subAdkSessionId: string): Promise<ChatMessage[]> {
-  const result = await loadSessionHistoryAction(userId, subAdkSessionId);
+  const result = await loadSessionHistoryAction(userId, subAdkSessionId, resolveAdkSessionOptionsForSessionId(subAdkSessionId));
   if (!result.success || result.messages.length === 0) return [];
   return result.messages.map(m =>
-    agentToChat({
+    agentMessageToChatMessage({
       ...m,
       timestamp: parseTimestamp(m.timestamp as unknown as Date | string | number),
     })
   );
 }
 
+function normalizeUserTextForInvocationMatch(text: string): string {
+  const { textWithoutMarker } = extractActionLabelFromRefineMessage(text.trim());
+  return textWithoutMarker.trim();
+}
+
+/** Copy ADK invocation ids onto live topic user bubbles (matched by order or normalized text). */
+export function mergeInvocationIdsIntoTopicNestedMessages(localNested: ChatMessage[], loadedFromAdk: ChatMessage[]): ChatMessage[] {
+  const adkUsers = loadedFromAdk.filter(m => m.role === "user" && m.invocationId);
+  if (adkUsers.length === 0) return localNested;
+
+  const localUsers = localNested.filter(m => m.role === "user");
+  const useIndexMatch = localUsers.length === adkUsers.length;
+  const usedAdkIndices = new Set<number>();
+  let userOrdinal = 0;
+
+  return localNested.map(msg => {
+    if (msg.role !== "user") return msg;
+
+    let fromAdk: ChatMessage | undefined;
+    if (useIndexMatch) {
+      fromAdk = adkUsers[userOrdinal];
+    } else {
+      const norm = normalizeUserTextForInvocationMatch(msg.text ?? "");
+      const matchIndex = adkUsers.findIndex(
+        (adk, i) => !usedAdkIndices.has(i) && normalizeUserTextForInvocationMatch(adk.text ?? "") === norm
+      );
+      if (matchIndex >= 0) {
+        usedAdkIndices.add(matchIndex);
+        fromAdk = adkUsers[matchIndex];
+      } else {
+        fromAdk = adkUsers[userOrdinal];
+      }
+    }
+    userOrdinal++;
+
+    if (!fromAdk?.invocationId || msg.invocationId === fromAdk.invocationId) return msg;
+    return { ...msg, invocationId: fromAdk.invocationId };
+  });
+}
+
+function enrichNestedUserActionMeta(messages: ChatMessage[]): ChatMessage[] {
+  return messages.map(sub => {
+    if (sub.role !== "user" || sub.assetActionMeta || !sub.text?.trim()) return sub;
+    const meta = inferAssetActionMetaFromUserText(sub.text);
+    return meta ? { ...sub, assetActionMeta: meta } : sub;
+  });
+}
+
+/** After a live sub-session stream, patch invocation ids so rewind hover works. */
+export async function syncTopicUserInvocationIdsFromAdk(
+  userId: string,
+  subAdkSessionId: string,
+  topicId: string,
+  setMessages: Dispatch<SetStateAction<ChatMessage[]>>
+): Promise<void> {
+  const loaded = await loadSubSessionChatMessages(userId, subAdkSessionId);
+  if (loaded.length === 0) return;
+
+  setMessages(prev =>
+    prev.map(topic => {
+      if (topic.id !== topicId || !topic.isTopic || !topic.messages?.length) return topic;
+      const merged = mergeInvocationIdsIntoTopicNestedMessages(topic.messages, loaded);
+      return { ...topic, messages: enrichNestedUserActionMeta(merged) };
+    })
+  );
+}
+
 export function findImproveTopic(messages: ChatMessage[], subAdkSessionId: string): ChatMessage | undefined {
   return messages.find(m => m.isTopic && m.subSessionAdkId === subAdkSessionId);
+}
+
+/** Find a loaded topic card whose registry sub-session matches the canonical content key. */
+export function findTopicByContentKey(messages: ChatMessage[], contentKey: string): ChatMessage | undefined {
+  const key = contentKey.trim();
+  if (!key) return undefined;
+  const registry = getSessionRegistry();
+  const match = registry.find(row => {
+    if (row.kind !== "sub") return false;
+    return resolveRegistryContentKey(row) === key;
+  });
+  if (!match) return undefined;
+  return findImproveTopic(messages, match.adk_session_id);
 }
 
 function subsForMain(mainSessionId: string, registry = getSessionRegistry()): UnibotAdkSessionRow[] {
@@ -55,9 +131,17 @@ export function sortMainThreadChronologically(messages: ChatMessage[]): ChatMess
   return welcome ? [welcome, ...rest] : rest;
 }
 
-function topicKindForSub(sub: UnibotAdkSessionRow): ChatMessage["topicKind"] | undefined {
-  if (sub.feature === "content_gen") return "content_gen";
-  if (sub.feature === "application_asset") return "application_asset";
+export function topicKindForSub(sub: UnibotAdkSessionRow): ChatMessage["topicKind"] | undefined {
+  const feature = (sub.feature ?? "").toLowerCase();
+  if (feature === "content_gen" || feature === "linkedin_post" || feature === "linkedin_topic") {
+    return "content_gen";
+  }
+  if (feature === "application_asset" || feature === "coverletter" || feature === "coldemail" || feature === "referral") {
+    return "application_asset";
+  }
+  if (feature === "linkedin" || feature === "resume") {
+    return "improve";
+  }
   return undefined;
 }
 
@@ -81,10 +165,12 @@ export async function mergeSubSessionsIntoMainMessages(
   if (subs.length === 0) return mainMessages;
 
   const existingSubIds = new Set(mainMessages.filter(m => m.isTopic && m.subSessionAdkId).map(m => m.subSessionAdkId as string));
+  const existingTopicIds = new Set(mainMessages.filter(m => m.isTopic).map(m => m.id));
 
   const topicBlocks: ChatMessage[] = [];
   for (const sub of subs) {
-    if (existingSubIds.has(sub.adk_session_id)) continue;
+    const topicId = topicIdForSubSession(sub.adk_session_id);
+    if (existingSubIds.has(sub.adk_session_id) || existingTopicIds.has(topicId)) continue;
     const nested = await loadSubSessionChatMessages(userId, sub.adk_session_id);
     topicBlocks.push({
       id: topicIdForSubSession(sub.adk_session_id),
@@ -93,7 +179,8 @@ export async function mergeSubSessionsIntoMainMessages(
       timestamp: sub.created_at ? new Date(sub.created_at) : new Date(),
       isTopic: true,
       topicKind: topicKindForSub(sub),
-      topicTitle: sub.title,
+      topicTitle: deriveSubSessionDisplayTitle(sub),
+      topicSubtitle: deriveSubSessionSubtitle(sub),
       isExpanded: false,
       subSessionAdkId: sub.adk_session_id,
       messages: nested,

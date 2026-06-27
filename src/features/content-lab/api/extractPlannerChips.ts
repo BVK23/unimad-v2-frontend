@@ -63,6 +63,21 @@ export type PlannerChips = {
   actions: ContentGenPlannerAction[];
 };
 
+/** Default angle chips per funnel — shown when the agent greets but omits JSON affirmations. */
+export const FUNNEL_ANGLE_CHIP_EXAMPLES: Record<ContentGenFunnel, string[]> = {
+  top: ["A contrarian take in my field", "A framework I use at work", "A lesson from a recent project", "Myths vs reality in my domain"],
+  middle: ["A turning point in my career", "Behind the scenes of a project", "A failure that taught me something", "Why I chose this path"],
+  bottom: ["What I'm looking for next", "Problems I love solving", "A recent win recruiters should notice", "What makes me a strong hire"],
+};
+
+const ANGLE_PICKER_PROMPT_RE =
+  /\b(which of these angles|which angle|what direction|what kind of (?:post|topic|story)|resonates most|sparks your interest)\b/i;
+
+export const looksLikeAnglePickerPrompt = (botMessage: string): boolean => {
+  const visible = stripPlannerJsonFromMessage(botMessage).trim();
+  return visible.length > 0 && ANGLE_PICKER_PROMPT_RE.test(visible);
+};
+
 export const parsePlannerChips = (botMessage: string): PlannerChips => {
   const merged: PlannerChips = { topics: [], affirmations: [], actions: [] };
   JSON_FENCE_REGEX.lastIndex = 0;
@@ -123,6 +138,23 @@ export const parsePlannerChips = (botMessage: string): PlannerChips => {
 
 export const messageHasPlannerChips = (botMessage: string): boolean => {
   const { topics, affirmations, actions } = parsePlannerChips(botMessage);
+  return topics.length > 0 || affirmations.length > 0 || actions.length > 0;
+};
+
+/** UI chip detection — includes funnel fallback when the agent omitted JSON affirmations. */
+export const parsePlannerChipsWithFallback = (botMessage: string, funnel?: ContentGenFunnel | null): PlannerChips => {
+  const parsed = parsePlannerChips(botMessage);
+  if (parsed.topics.length > 0 || parsed.affirmations.length > 0 || parsed.actions.length > 0) {
+    return parsed;
+  }
+  if (funnel && looksLikeAnglePickerPrompt(botMessage)) {
+    return { topics: [], affirmations: [...FUNNEL_ANGLE_CHIP_EXAMPLES[funnel]], actions: [] };
+  }
+  return parsed;
+};
+
+export const messageShowsTopicPickerChips = (botMessage: string, funnel?: ContentGenFunnel | null): boolean => {
+  const { topics, affirmations, actions } = parsePlannerChipsWithFallback(botMessage, funnel);
   return topics.length > 0 || affirmations.length > 0 || actions.length > 0;
 };
 

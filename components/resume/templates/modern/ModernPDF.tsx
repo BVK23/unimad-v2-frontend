@@ -292,32 +292,31 @@ const ModernPDF: React.FC<ModernPDFProps> = ({ data }) => {
       default:
         const customSec = customSections.find(s => s.id === id);
         if (!customSec) return null;
+        const visibleItems = customSec.items.filter(i => !i.hidden);
         return (
           <View key={customSec.id} style={styles.section}>
-            <Text style={styles.sectionTitle}>{customSec.title}</Text>
-            {customSec.items
-              .filter(i => !i.hidden)
-              .map(item => (
-                <View key={item.id} style={styles.experienceItem}>
-                  <View style={styles.rowBetween}>
-                    {item.title && <Text style={styles.role}>{item.title}</Text>}
-                    {item.subtitle && <Text style={styles.date}>{item.subtitle}</Text>}
-                  </View>
-                  {(item.hasDates || item.hasLocation) && (
-                    <View style={styles.rowBetween}>
-                      {item.hasLocation ? <Text style={styles.location}>{item.location}</Text> : <Text></Text>}
-                      {item.hasDates && (
-                        <Text style={styles.date}>
-                          {parseDate(item.startDate)}
-                          {item.startDate ? " - " : ""}
-                          {item.current ? "Present" : item.endDate ? parseDate(item.endDate) : ""}
-                        </Text>
-                      )}
-                    </View>
-                  )}
-                  <HtmlRenderer html={item.description} style={styles.description} />
+            {visibleItems.map((item, idx) => (
+              <View key={item.id} style={styles.experienceItem} wrap={false}>
+                {idx === 0 && <Text style={styles.sectionTitle}>{customSec.title}</Text>}
+                <View style={styles.rowBetween}>
+                  {item.title && <Text style={styles.role}>{item.title}</Text>}
+                  {item.subtitle && <Text style={styles.date}>{item.subtitle}</Text>}
                 </View>
-              ))}
+                {(item.hasDates || item.hasLocation) && (
+                  <View style={styles.rowBetween}>
+                    {item.hasLocation ? <Text style={styles.location}>{item.location}</Text> : <Text></Text>}
+                    {item.hasDates && (
+                      <Text style={styles.date}>
+                        {parseDate(item.startDate)}
+                        {item.startDate ? " - " : ""}
+                        {item.current ? "Present" : item.endDate ? parseDate(item.endDate) : ""}
+                      </Text>
+                    )}
+                  </View>
+                )}
+                <HtmlRenderer html={item.description} style={styles.description} />
+              </View>
+            ))}
           </View>
         );
     }

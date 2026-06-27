@@ -116,7 +116,8 @@ const TiptapEditor: React.FC<TiptapEditorProps> = ({
                   detail: {
                     type: "improve",
                     improveType: "resume",
-                    text: text || "Please help me improve this section.",
+                    text: "",
+                    hasContent: text.length > 0,
                     feature: "resume",
                     featureId: unibotImproveTarget.resumeId,
                     section: unibotImproveTarget.section,

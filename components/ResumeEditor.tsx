@@ -7,7 +7,7 @@ import { PanelResizeHandle } from "@/components/ui/PanelResizeHandle";
 import { DOCUMENT_SAVED_CONFIRMATION_MS } from "@/constants/documentAutosave";
 import { EMPTY_PDF_HIGHLIGHT_MAP } from "@/features/adk-chat/adkResumeHighlightDiff";
 import { useAdkResumeReviewStore } from "@/features/adk-chat/stores/useAdkResumeReviewStore";
-import { mapAtsScoreToViewModel } from "@/features/resume/api/mapAtsScoreToViewModel";
+import { formatAtsDeltaLabel, mapAtsScoreToViewModel } from "@/features/resume/api/mapAtsScoreToViewModel";
 import { mapFrontendResumeToBackend } from "@/features/resume/api/mappers";
 import { useCalculateAtsScore } from "@/features/resume/hooks/useCalculateAtsScore";
 import { useDebouncedResumePreview } from "@/features/resume/hooks/useDebouncedResumePreview";
@@ -845,6 +845,7 @@ const ResumeEditor: React.FC<ResumeEditorProps> = ({
   const atsVm = atsMutationVm ?? cachedAtsVm;
   const atsCalcCount = atsMutationVm?.ats_calc_count ?? (atsCache?.ok ? atsCache.ats_calc_count : 0);
   const atsScoredAt = atsMutationVm?.scored_at ?? (atsCache?.ok ? atsCache.scored_at : null);
+  const atsScoreStale = atsMutationVm?.score_stale ?? (atsCache?.ok ? atsCache.score_stale : false);
   const atsResumeUpdatedAt =
     atsMutationVm?.resume_updated_at ?? (atsCache?.ok ? atsCache.resume_updated_at : null) ?? resume.lastModified.toISOString();
 
@@ -857,6 +858,13 @@ const ResumeEditor: React.FC<ResumeEditorProps> = ({
 
   const atsPillScore = atsVm?.score;
   const atsScoreQuote = useMemo(() => getAtsScoreQuote(atsPillScore ?? 0), [atsPillScore]);
+  const atsDeltaLabel = useMemo(() => formatAtsDeltaLabel(atsVm?.deltaOverall), [atsVm?.deltaOverall]);
+  const atsDeltaTone =
+    atsVm?.deltaOverall != null && atsVm.deltaOverall > 0
+      ? "text-green-600 dark:text-green-400"
+      : atsVm?.deltaOverall != null && atsVm.deltaOverall < 0
+        ? "text-red-600 dark:text-red-400"
+        : "text-slate-500";
   const atsTone = scoreTone(atsPillScore ?? 0);
   const atsScoreClass = atsTone === "green" ? "text-green-600" : atsTone === "yellow" ? "text-yellow-600" : "text-red-600";
   const atsBarClass = atsTone === "green" ? "bg-green-500" : atsTone === "yellow" ? "bg-yellow-500" : "bg-red-500";
@@ -1669,13 +1677,13 @@ const ResumeEditor: React.FC<ResumeEditorProps> = ({
       <div
         className={`absolute right-0 flex items-center transition-all duration-300 ${hasPendingUnsavedChanges && !isSaving ? "translate-y-0 opacity-100" : "pointer-events-none -translate-y-4 opacity-0"}`}
       >
-        <span className="mr-2 whitespace-nowrap text-xs font-medium text-amber-600 dark:text-amber-400">Unsaved changes</span>
+        <span className="mr-2 whitespace-nowrap text-xs font-medium text-slate-500 dark:text-slate-400">Unsaved changes</span>
         <button
           type="button"
           onClick={() => void runSave("manual")}
           className="cursor-pointer whitespace-nowrap text-xs font-semibold text-brand-600 hover:text-brand-700 hover:underline dark:text-brand-400"
         >
-          Save now
+          save
         </button>
       </div>
     </div>
@@ -3204,7 +3212,22 @@ const ResumeEditor: React.FC<ResumeEditorProps> = ({
                         <>
                           {atsVm.scoringMode === "jd_blended" && atsVm.generalScore != null && atsVm.jdMatchScore != null ? (
                             <p className="mt-3 text-xs text-slate-500 dark:text-slate-400">
-                              Resume quality {atsVm.generalScore}/100 · Job match {atsVm.jdMatchScore}/100
+                              Resume quality {atsVm.generalScore}/100
+                              {atsVm.deltaGeneral != null && atsVm.deltaGeneral !== 0 ? (
+                                <span className={atsVm.deltaGeneral > 0 ? "text-green-600" : "text-red-600"}>
+                                  {" "}
+                                  ({atsVm.deltaGeneral > 0 ? "+" : ""}
+                                  {atsVm.deltaGeneral})
+                                </span>
+                              ) : null}{" "}
+                              · Job match {atsVm.jdMatchScore}/100
+                              {atsVm.deltaJdMatch != null && atsVm.deltaJdMatch !== 0 ? (
+                                <span className={atsVm.deltaJdMatch > 0 ? "text-green-600" : "text-red-600"}>
+                                  {" "}
+                                  ({atsVm.deltaJdMatch > 0 ? "+" : ""}
+                                  {atsVm.deltaJdMatch})
+                                </span>
+                              ) : null}
                             </p>
                           ) : atsVm.scoringMode === "general_only" ? (
                             <p className="mt-3 text-xs text-slate-500 dark:text-slate-400">General resume quality score</p>
@@ -3222,10 +3245,15 @@ const ResumeEditor: React.FC<ResumeEditorProps> = ({
                       )}
                     </div>
                     <div className="flex flex-col items-end gap-2 flex-shrink-0">
-                      <span className="font-semibold text-5xl text-slate-900 dark:text-white tabular-nums">
-                        {atsScorePending && !atsVm ? "—" : atsVm != null ? atsVm.score : "—"}
-                        {atsVm != null && <span className="text-2xl text-slate-500 dark:text-slate-400 font-medium">/100</span>}
-                      </span>
+                      <div className="flex flex-col items-end">
+                        <span className="font-semibold text-5xl text-slate-900 dark:text-white tabular-nums">
+                          {atsScorePending && !atsVm ? "—" : atsVm != null ? atsVm.score : "—"}
+                          {atsVm != null && <span className="text-2xl text-slate-500 dark:text-slate-400 font-medium">/100</span>}
+                        </span>
+                        {atsVm?.hasComparison && atsDeltaLabel ? (
+                          <span className={`mt-1 text-sm font-medium tabular-nums ${atsDeltaTone}`}>{atsDeltaLabel}</span>
+                        ) : null}
+                      </div>
                       <button
                         type="button"
                         onClick={() => void handleRecalculate()}
@@ -3250,6 +3278,20 @@ const ResumeEditor: React.FC<ResumeEditorProps> = ({
                     </div>
                   </div>
                 </div>
+
+                {atsScoreStale && atsVm && !atsScorePending && (
+                  <div className="mx-8 flex items-start gap-3 rounded-lg border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-900 dark:border-amber-900/50 dark:bg-amber-950/40 dark:text-amber-200">
+                    <AlertCircle size={18} className="mt-0.5 flex-shrink-0" />
+                    <p>This score uses older criteria. Recalculate for the latest rubric.</p>
+                  </div>
+                )}
+
+                {atsVm?.comparisonResetReason === "jd_changed" && !atsScorePending && (
+                  <div className="mx-8 flex items-start gap-3 rounded-lg border border-sky-200 bg-sky-50 px-4 py-3 text-sm text-sky-900 dark:border-sky-900/50 dark:bg-sky-950/40 dark:text-sky-200">
+                    <AlertCircle size={18} className="mt-0.5 flex-shrink-0" />
+                    <p>{atsVm.comparisonMessage ?? "Job description changed — previous match scores aren't comparable."}</p>
+                  </div>
+                )}
 
                 {recalcError && (
                   <div className="mx-8 flex items-start gap-3 rounded-lg border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-800 dark:border-red-900/50 dark:bg-red-950/40 dark:text-red-200">
@@ -3293,6 +3335,69 @@ const ResumeEditor: React.FC<ResumeEditorProps> = ({
 
                   {!atsScorePending && !atsScoreError && atsVm && (
                     <>
+                      {atsVm.hasComparison ? (
+                        <div className="rounded-xl border border-slate-200 dark:border-slate-800 bg-slate-50/80 dark:bg-slate-800/40 p-4 space-y-4">
+                          <h4 className="text-xs font-medium text-slate-400 uppercase tracking-wider">Changes since last score</h4>
+                          {atsVm.scoreChangeSummary ? (
+                            <p className="text-sm text-slate-700 dark:text-slate-300 leading-relaxed">{atsVm.scoreChangeSummary}</p>
+                          ) : null}
+                          {atsVm.improvementsAddressed.length > 0 ? (
+                            <div>
+                              <p className="text-xs font-medium text-green-700 dark:text-green-400 mb-2">Addressed</p>
+                              <ul className="space-y-2">
+                                {atsVm.improvementsAddressed.map((item, i) => (
+                                  <li key={i} className="flex items-start gap-2 text-sm text-slate-700 dark:text-slate-300">
+                                    <Check size={16} className="mt-0.5 flex-shrink-0 text-green-600" />
+                                    <span>{item}</span>
+                                  </li>
+                                ))}
+                              </ul>
+                            </div>
+                          ) : null}
+                          {atsVm.improvementsStillOpen.length > 0 ? (
+                            <div>
+                              <p className="text-xs font-medium text-amber-700 dark:text-amber-400 mb-2">Still open</p>
+                              <ul className="space-y-2">
+                                {atsVm.improvementsStillOpen.map((item, i) => (
+                                  <li key={i} className="flex items-start gap-2 text-sm text-slate-700 dark:text-slate-300">
+                                    <AlertCircle size={16} className="mt-0.5 flex-shrink-0 text-amber-500" />
+                                    <span>{item}</span>
+                                  </li>
+                                ))}
+                              </ul>
+                            </div>
+                          ) : null}
+                          {atsVm.keywordsResolved.length > 0 || atsVm.keywordsStillMissing.length > 0 ? (
+                            <div className="space-y-2">
+                              {atsVm.keywordsResolved.length > 0 ? (
+                                <div className="flex flex-wrap gap-2">
+                                  {atsVm.keywordsResolved.map(keyword => (
+                                    <span
+                                      key={`resolved-${keyword}`}
+                                      className="rounded-full bg-green-100 px-2.5 py-1 text-xs font-medium text-green-800 dark:bg-green-900/40 dark:text-green-300"
+                                    >
+                                      {keyword}
+                                    </span>
+                                  ))}
+                                </div>
+                              ) : null}
+                              {atsVm.keywordsStillMissing.length > 0 ? (
+                                <div className="flex flex-wrap gap-2">
+                                  {atsVm.keywordsStillMissing.map(keyword => (
+                                    <span
+                                      key={`missing-${keyword}`}
+                                      className="rounded-full bg-slate-200 px-2.5 py-1 text-xs font-medium text-slate-600 dark:bg-slate-700 dark:text-slate-300"
+                                    >
+                                      {keyword}
+                                    </span>
+                                  ))}
+                                </div>
+                              ) : null}
+                            </div>
+                          ) : null}
+                        </div>
+                      ) : null}
+
                       <div>
                         <h4 className="text-xs font-medium text-slate-400 uppercase tracking-wider mb-3">Improvements Needed</h4>
                         {atsVm.improvements.length > 0 ? (

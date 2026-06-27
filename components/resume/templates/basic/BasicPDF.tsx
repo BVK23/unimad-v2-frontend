@@ -395,15 +395,21 @@ const SectionRenderer = ({ resume, type, highlights }: { resume: ResumeData; typ
                 wrap={false}
               >
                 {i === 0 && <SectionHeading title={customSection.title || "Custom Section"} />}
-                <View
-                  style={{
-                    display: "flex",
-                    flexDirection: "row",
-                    justifyContent: "space-between",
-                    alignItems: "center",
-                  }}
-                >
-                  <View>{item.title && <Text style={{ fontWeight: 600 }}>{item.title}</Text>}</View>
+                <View style={styles.entryHeader}>
+                  <View style={styles.entryRow}>
+                    {item.title && <Text style={styles.entryLeft}>{item.title}</Text>}
+                    {item.startDate && (
+                      <Text style={styles.entryRight}>
+                        {formatDateMonthYear(item.startDate)} — {item.current ? "Present" : formatDateMonthYear(item.endDate)}
+                      </Text>
+                    )}
+                  </View>
+                  {(item.subtitle || item.location) && (
+                    <View style={styles.entryRow}>
+                      {item.subtitle && <Text style={styles.entryLeft}>{item.subtitle}</Text>}
+                      {item.location && <Text style={styles.entryRight}>{item.location}</Text>}
+                    </View>
+                  )}
                 </View>
                 {item.description && (
                   <View style={styles.descriptionWrapper}>

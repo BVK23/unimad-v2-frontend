@@ -278,9 +278,15 @@ const ClassicPDF: React.FC<ClassicPDFProps> = ({ data }) => {
               .map(item => (
                 <View key={item.id} style={styles.experienceItem}>
                   <View style={styles.rowBetween}>
-                    {item.title && <Text style={styles.role}>{item.title}</Text>}
-                    {item.subtitle && <Text style={{ ...styles.degree, fontStyle: "italic" }}>{item.subtitle}</Text>}
+                    {item.title && <Text style={styles.company}>{item.title}</Text>}
+                    {item.startDate && (
+                      <Text style={styles.date}>
+                        {parseDate(item.startDate)} – {item.current ? "Present" : parseDate(item.endDate)}
+                      </Text>
+                    )}
                   </View>
+                  {item.subtitle && <Text style={styles.roleItalic}>{item.subtitle}</Text>}
+                  {item.location && <Text style={styles.location}>{item.location}</Text>}
                   <HtmlRenderer html={item.description} style={styles.description} />
                 </View>
               ))}

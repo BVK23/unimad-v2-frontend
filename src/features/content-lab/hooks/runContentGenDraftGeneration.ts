@@ -17,6 +17,7 @@ export type ContentGenPendingMedia = {
 export type RunContentGenDraftParams = {
   topic: string;
   funnel: ContentGenFunnel | null;
+  mood?: string | null;
   pendingMedia: ContentGenPendingMedia[];
   existingImages: string[];
   uploadContentGenMedia: (file: File, category: "linkedin-post") => Promise<{ url: string }>;
@@ -82,7 +83,7 @@ export const runContentGenDraftGeneration = async (params: RunContentGenDraftPar
   if (shouldUseAdkContentGenDraft()) {
     window.dispatchEvent(
       new CustomEvent(CONTENT_GEN_EVENTS.openDraft, {
-        detail: { topic: params.topic, funnel: params.funnel },
+        detail: { topic: params.topic, funnel: params.funnel, mood: params.mood },
       })
     );
     throw new Error(ADK_DRAFT_PENDING_ERROR);

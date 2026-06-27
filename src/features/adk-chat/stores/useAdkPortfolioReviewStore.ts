@@ -37,6 +37,7 @@ export type AdkPortfolioReviewState = {
   markReviewAccepted: () => void;
   getBaselinePortfolio: () => PortfolioData | null;
   clearAllReviews: () => void;
+  clearReviewsByAssistantIds: (assistantIds: Iterable<string>) => void;
   popReviewAfterDiscard: () => void;
 
   registerSaveHandler: (portfolioId: string, fn: () => Promise<void>) => void;
@@ -94,6 +95,14 @@ export const useAdkPortfolioReviewStore = create<AdkPortfolioReviewState>((set, 
 
   clearAllReviews: () => {
     set({ reviewStack: [] });
+  },
+
+  clearReviewsByAssistantIds: assistantIds => {
+    const drop = new Set([...assistantIds].filter(Boolean));
+    if (drop.size === 0) return;
+    set(state => ({
+      reviewStack: state.reviewStack.filter(card => !card.assistantMessageId || !drop.has(card.assistantMessageId)),
+    }));
   },
 
   popReviewAfterDiscard: () => {

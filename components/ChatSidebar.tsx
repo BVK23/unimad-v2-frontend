@@ -2,39 +2,64 @@
 
 import React, { useState, useEffect, useRef, useCallback, useMemo } from "react";
 import { createPortal } from "react-dom";
+import { AdkDraftReviewDecisionStatus } from "@/components/chat/AdkDraftReviewDecisionStatus";
+import { AdkRewindConfirmDialog } from "@/components/chat/AdkRewindConfirmDialog";
+import ApplicationAssetReviewStepperCard from "@/components/studio/ApplicationAssetReviewStepperCard";
 import { PanelResizeHandle } from "@/components/ui/PanelResizeHandle";
-import { syncSessionStateAction } from "@/features/adk-chat/actions";
+import { syncSessionStateAction, pullSessionStateAction } from "@/features/adk-chat/actions";
+import { buildContentGenContentKey } from "@/features/adk-chat/content-scope";
 import { formatUnibotStreamError, type FormattedUnibotStreamError } from "@/features/adk-chat/format-stream-error";
 import { generateMainSessionTitleIfNeeded } from "@/features/adk-chat/generate-main-session-title";
+import { useReviewDecisions } from "@/features/adk-chat/hooks/useReviewDecisions";
 import { resolveImproveSubSession } from "@/features/adk-chat/improve-sub-session";
 import {
   findImproveTopic,
   insertTopicInMainThread,
   loadSubSessionChatMessages,
+  syncTopicUserInvocationIdsFromAdk,
   topicIdForSubSession,
+  topicKindForSub,
 } from "@/features/adk-chat/improve-topic-helpers";
+import { markMainSessionHasUserPrompt } from "@/features/adk-chat/main-session-activity";
+import { persistAcceptSnapshotForSession } from "@/features/adk-chat/persist-accept-snapshot";
 import { persistReviewDecisionForSession } from "@/features/adk-chat/persist-review-decision";
 import { isHandoffPromptForTitle } from "@/features/adk-chat/pick-title-source-prompt";
+import { resolveAdkSessionOptionsForSessionId } from "@/features/adk-chat/resolve-sub-session-adk-app";
+import {
+  buildContentGenSnapshotPayload,
+  buildLinkedInSnapshotPayload,
+  buildPortfolioSnapshotPayload,
+  buildResumeSnapshotPayload,
+} from "@/features/adk-chat/revert-django-content-after-rewind";
+import type { ReviewDecision, ReviewDecisionsMap } from "@/features/adk-chat/review-decisions";
 import { getSessionDisplayName, getSessionMeta, groupSessionsForSidebar } from "@/features/adk-chat/session-metadata";
 import { useAdkApplicationAssetReviewStore } from "@/features/adk-chat/stores/useAdkApplicationAssetReviewStore";
 import { useAdkContentGenReviewStore } from "@/features/adk-chat/stores/useAdkContentGenReviewStore";
+import { useAdkLinkedInReviewStore, type AdkLinkedInReviewCard } from "@/features/adk-chat/stores/useAdkLinkedInReviewStore";
 import { useAdkPortfolioReviewStore, type AdkPortfolioReviewCard } from "@/features/adk-chat/stores/useAdkPortfolioReviewStore";
 import { useAdkResumeReviewStore, type AdkReviewCard } from "@/features/adk-chat/stores/useAdkResumeReviewStore";
+import { syncAdkContentStateOnAccept } from "@/features/adk-chat/sync-adk-content-on-accept";
 import {
   isStreamingMachineReadablePayloadOnly,
   stripMachineReadablePayloadFromMessage,
 } from "@/features/adk-chat/utils/strip-machine-readable-payload";
 import {
   APPLICATION_ASSET_EVENTS,
+  type ApplicationAssetOpenDraftDetail,
   type ApplicationAssetOpenImproveDetail,
   type ApplicationAssetSelectionFreeformDetail,
   type ApplicationAssetSelectionRefineDetail,
 } from "@/features/application-assets/api/application-asset-events";
+import { APPLICATION_ASSET_MIN_DRAFT_CHARS } from "@/features/application-assets/api/applicationAssetDraftConfig";
 import {
   messageHasApplicationAssetDraft,
   stripApplicationAssetDraftFromMessage,
 } from "@/features/application-assets/api/applicationAssetDraftDisplay";
-import { IMPROVE_WITH_UNIBOT_ACTION_LABEL, withPersistedActionLabel } from "@/features/application-assets/api/asset-action-message";
+import {
+  extractActionLabelFromRefineMessage,
+  IMPROVE_WITH_UNIBOT_ACTION_LABEL,
+  withPersistedActionLabel,
+} from "@/features/application-assets/api/asset-action-message";
 import { offerApplicationAssetDraftReview } from "@/features/application-assets/api/offerApplicationAssetDraftReview";
 import {
   APPLICATION_ASSET_SELECTION_PRESETS,
@@ -45,8 +70,10 @@ import {
   type ApplicationAssetSelectionPreset,
 } from "@/features/application-assets/config/selection-presets";
 import { useApplicationAssetReviewActions } from "@/features/application-assets/hooks/useApplicationAssetReviewActions";
+import { useApplicationAssetDiffReviewUiStore } from "@/features/application-assets/store/useApplicationAssetDiffReviewUiStore";
 import { useApplicationAssetStudioStore } from "@/features/application-assets/store/useApplicationAssetStudioStore";
 import type { ApplicationAssetApiType } from "@/features/application-assets/types";
+import { extractApplicationAssetDraftFromSessionState } from "@/features/application-assets/utils/extractApplicationAssetDraftFromSessionState";
 import type { ContentGenFunnel } from "@/features/content-lab/api/adk-mappers";
 import type { ContentGenPlannerAction } from "@/features/content-lab/api/content-gen-events";
 import { CONTENT_GEN_EVENTS, CONTENT_GEN_PUBLISH_BLOCKED_MESSAGE } from "@/features/content-lab/api/content-gen-events";
@@ -57,10 +84,12 @@ import {
   messageHasContentGenDraft,
 } from "@/features/content-lab/api/contentGenDraftDisplay";
 import { isValidContentGenTopicTitle } from "@/features/content-lab/api/contentGenTopicUtils";
+import { extractContentGenDraftFromAdkState } from "@/features/content-lab/api/extractContentGenDraftFromAdkState";
 import {
   extractConfirmedTopicFromThread,
   inferFunnelFromChipLabel,
   messageHasPlannerChips,
+  messageShowsTopicPickerChips,
   stripPlannerJsonFromMessage,
 } from "@/features/content-lab/api/extractPlannerChips";
 import { offerContentGenDraftReview } from "@/features/content-lab/api/offerContentGenDraftReview";
@@ -74,6 +103,7 @@ import {
   successMessageForPublishResult,
 } from "@/features/content-lab/hooks/runContentGenPublishFromChat";
 import { runDjangoContentGenDraftFallback } from "@/features/content-lab/hooks/runDjangoContentGenDraftFallback";
+import { createContentGenShell } from "@/features/content-lab/server-actions/content-lab-actions";
 import { useContentGenStudioStore } from "@/features/content-lab/store/useContentGenStudioStore";
 import { buildAdkPortfolioDataMap, buildAdkPortfolioStateDelta } from "@/features/portfolio/api/mappers";
 import { portfolioQueryKey } from "@/features/portfolio/hooks/usePortfolio";
@@ -82,10 +112,75 @@ import { buildAdkResumeDataMap } from "@/features/resume/api/mappers";
 import { resumeByIdQueryKey } from "@/features/resume/hooks/useResume";
 import { useResumeStore } from "@/features/resume/store/useResumeStore";
 import { MODAL_OVERLAY_Z_CLASS } from "@/lib/ui/modal-overlay";
-import { UNTITLED_THREAD_TITLE } from "@/src/features/adk-chat/constants";
+import { isUntitledMainSessionTitle, UNTITLED_THREAD_TITLE } from "@/src/features/adk-chat/constants";
+import {
+  deriveActiveScope,
+  deriveScopeFromRegistryRow,
+  deriveScopeFromTopicKind,
+  getContentScopeFeatureLabel,
+  getContentScopeRedirectLabel,
+  getRedirectPathForScope,
+  resolveRewindRedirectScope,
+  scopesMatch,
+  type ContentScope,
+  type ScopeMatch,
+} from "@/src/features/adk-chat/content-scope";
 import { ensureApplicationAssetTopicSubSession, ensureContentGenTopicSubSession } from "@/src/features/adk-chat/ensure-topic-sub-session";
+import {
+  resolveApplicationAssetReviewNavTarget,
+  resolveContentGenReviewNavTarget,
+  resolveLinkedInReviewNavTarget,
+  resolvePortfolioReviewNavTarget,
+  resolveResumeReviewNavTarget,
+} from "@/src/features/adk-chat/resolve-review-nav-target";
+import {
+  isSubThreadNavTargetActive,
+  resolveSubThreadNavTarget,
+  type SubThreadNavTarget,
+} from "@/src/features/adk-chat/resolve-sub-thread-navigation";
+import { assessRewindStateRevert } from "@/src/features/adk-chat/rewind-state-divergence";
 import { getRegistryRow, upsertRegistryRow } from "@/src/features/adk-chat/session-registry";
+import { buildLinkedInImproveContentKey, buildResumeImproveContentKey } from "@/src/features/adk-chat/sub-session-content-key";
+import {
+  buildLinkedInImproveTitle,
+  buildLinkedInPostTitle,
+  buildLinkedInTopicPickerTitle,
+  buildResumeImproveTitle,
+  displayTitleForSubSession,
+  deriveSubSessionSubtitle,
+} from "@/src/features/adk-chat/sub-session-titles";
+import {
+  APPLICATION_ASSET_IMPROVE_NUDGE,
+  CONTENT_GEN_IMPROVE_NUDGE,
+  CONTENT_GEN_TOPIC_PICKER_NUDGE,
+  findContentGenTopicPickerId,
+  findLatestTopicPickerWandFunnel,
+  findPendingReviewInTopic,
+  findTopicPickerTurnForFunnel,
+  isContentGenTopicPickerTitle,
+  LINKEDIN_IMPROVE_NUDGE,
+  RESUME_IMPROVE_NUDGE,
+  type UnibotActionHighlightTarget,
+} from "@/src/features/adk-chat/unibot-action-item-guard";
 import { registerUnibotAdkSessionAction } from "@/src/features/adk-chat/unibot-adk-session-actions";
+import {
+  buildAdkLinkedInStateDelta,
+  mapLinkedInSessionProfileToSnapshot,
+  mapSnapshotToLinkedInSessionProfile,
+} from "@/src/features/linkedin/api/adk-mappers";
+import { LINKEDIN_ADK_PROFILE_KEY } from "@/src/features/linkedin/constants";
+import { linkedinAnalysisQueryKey } from "@/src/features/linkedin/hooks/useLinkedInAnalysis";
+import type { LinkedInAnalysisSnapshot } from "@/src/features/linkedin/types";
+import {
+  buildResumeImproveAgentMessage,
+  buildResumeImproveDisplayMessage,
+  resumeImproveUserDisplayText,
+} from "@/src/features/resume/api/resume-improve-prompts";
+import {
+  streamActivityLabelForMessage,
+  useStreamingStatusLabel,
+  useUnibotStreamActivityLabel,
+} from "@/src/hooks/useUnibotStreamActivityLabel";
 import { growTextareaToFit, resetTextareaHeight } from "@/utils/textarea-autosize";
 import { useQueryClient } from "@tanstack/react-query";
 import {
@@ -100,28 +195,46 @@ import {
   Plus,
   Search,
   Trash2,
-  Undo2,
   X,
   Check,
 } from "lucide-react";
-import { usePathname } from "next/navigation";
+import { usePathname, useRouter, useSearchParams } from "next/navigation";
 import type { AssetActionMeta, ChatMessage } from "../types";
 import Logo from "./Logo";
 import UnimadUMark from "./UnimadUMark";
 import { useAdkChatContext } from "./chat/AdkChatProvider";
-import { AdkRewindConfirmDialog } from "./chat/AdkRewindConfirmDialog";
 import { ContentGenDraftReviewChips } from "./chat/ContentGenDraftReviewChips";
 import { ContentGenTopicChips } from "./chat/ContentGenTopicChips";
 import { FormattedAgentMessage } from "./chat/FormattedAgentMessage";
+import { SubThreadGoToAssetLink } from "./chat/SubThreadGoToAssetLink";
+import { UnibotActionItemHighlight } from "./chat/UnibotActionItemHighlight";
 import { UnibotErrorBubble } from "./chat/UnibotErrorBubble";
+import { UnibotJobCardStrip } from "./chat/UnibotJobCardStrip";
+import { UnibotLinkedInSuggestionCards } from "./chat/UnibotLinkedInSuggestionCards";
+import { UnibotEditableUserBubble, UnibotUserMessageToolbar } from "./chat/UnibotUserMessageToolbar";
+import { UnimadNavigationChip } from "./chat/UnimadNavigationChip";
 import {
   applicationAssetImproveTopicTitle,
+  applicationAssetTopicSubtitle,
   applicationAssetTopicTitle,
   buildApplicationAssetDraftBootstrap,
+  resolveApplicationAssetTopicDisplaySubtitle,
 } from "./chat/application-asset-topic";
-import { buildContentGenDraftBootstrap, buildContentGenTopicBootstrap, contentGenTopicUserDisplayText } from "./chat/content-gen-topic";
+import {
+  buildContentGenDraftBootstrap,
+  buildContentGenImproveBootstrap,
+  buildContentGenTopicBootstrap,
+  buildContentGenTopicUserDisplay,
+  contentGenTopicUserDisplayText,
+  resolveFunnelForPlannerModelMessage,
+} from "./chat/content-gen-topic";
 import { resetAssistantTurnForRetryInTree } from "./chat/set-chat-message-stream-error";
-import { type UnibotIncomingRequest, incomingRequestSignature, UNIBOT_SECTION_REVIEW_PROMPTS } from "./chat/unibot-incoming-request";
+import {
+  type UnibotIncomingRequest,
+  type UnibotResumeSection,
+  incomingRequestSignature,
+  UNIBOT_SECTION_REVIEW_PROMPTS,
+} from "./chat/unibot-incoming-request";
 import RefineActionCard from "./studio/RefineActionCard";
 
 interface ChatSidebarProps {
@@ -139,6 +252,17 @@ function newId(prefix: string): string {
   return `${prefix}-${Date.now()}-${Math.random().toString(36).slice(2, 9)}`;
 }
 
+function chatMessagesScrollFingerprint(messages: ChatMessage[]): string {
+  const lines: string[] = [];
+  for (const m of messages) {
+    lines.push(`${m.id}|${m.role}|${m.text ?? ""}|${m.isError ? 1 : 0}`);
+    for (const sub of m.messages ?? []) {
+      lines.push(`>${sub.id}|${sub.role}|${sub.text ?? ""}|${sub.isError ? 1 : 0}`);
+    }
+  }
+  return lines.join("\n");
+}
+
 type AdkReviewCardLike = {
   id: string;
   bannerTitle: string;
@@ -151,6 +275,9 @@ function AdkReviewCardBlock({
   sessionReady,
   onAccept,
   onDiscard,
+  hideActions = false,
+  actionsOutOfContext = false,
+  onBlockedAction,
 }: {
   card: AdkReviewCardLike;
   isActive: boolean;
@@ -158,7 +285,20 @@ function AdkReviewCardBlock({
   sessionReady: boolean;
   onAccept: () => void;
   onDiscard: () => void;
+  hideActions?: boolean;
+  actionsOutOfContext?: boolean;
+  onBlockedAction?: () => void;
 }) {
+  const actionsDisabled = adkReviewBusy || !sessionReady || actionsOutOfContext;
+  const runAction = (action: () => void) => {
+    if (actionsOutOfContext) {
+      onBlockedAction?.();
+      return;
+    }
+    if (actionsDisabled) return;
+    action();
+  };
+
   return (
     <div
       className={`mt-2 w-full max-w-[95%] rounded-xl border px-3 py-2.5 shadow-sm transition-opacity ${
@@ -169,32 +309,79 @@ function AdkReviewCardBlock({
     >
       <p className="text-[12px] font-semibold text-slate-800 dark:text-slate-100">{card.bannerTitle}</p>
       {isActive ? (
-        <div className="mt-2.5 flex flex-wrap gap-2">
-          <button
-            type="button"
-            disabled={adkReviewBusy || !sessionReady}
-            onClick={() => void onAccept()}
-            className="rounded-lg bg-emerald-600 px-3 py-1.5 text-[12px] font-medium text-white hover:bg-emerald-700 disabled:opacity-50"
-          >
-            <span className="inline-flex items-center gap-1.5">
-              {adkReviewBusy ? <Loader2 size={14} className="animate-spin" /> : null}
-              Accept
-            </span>
-          </button>
-          <button
-            type="button"
-            disabled={adkReviewBusy || !sessionReady}
-            onClick={() => void onDiscard()}
-            className="rounded-lg border border-slate-200 bg-white px-3 py-1.5 text-[12px] font-medium text-slate-700 hover:bg-slate-50 dark:border-white/10 dark:bg-slate-900 dark:text-slate-200 dark:hover:bg-white/5 disabled:opacity-50"
-          >
-            Discard
-          </button>
-        </div>
+        hideActions ? null : (
+          <div className="mt-2.5 flex flex-wrap gap-2">
+            <button
+              type="button"
+              disabled={actionsDisabled}
+              onClick={() => runAction(onAccept)}
+              className="rounded-lg bg-emerald-600 px-3 py-1.5 text-[12px] font-medium text-white hover:bg-emerald-700 disabled:cursor-not-allowed disabled:opacity-50"
+            >
+              <span className="inline-flex items-center gap-1.5">
+                {adkReviewBusy ? <Loader2 size={14} className="animate-spin" /> : null}
+                Accept
+              </span>
+            </button>
+            <button
+              type="button"
+              disabled={actionsDisabled}
+              onClick={() => runAction(onDiscard)}
+              className="rounded-lg border border-slate-200 bg-white px-3 py-1.5 text-[12px] font-medium text-slate-700 hover:bg-slate-50 dark:border-white/10 dark:bg-slate-900 dark:text-slate-200 dark:hover:bg-white/5 disabled:cursor-not-allowed disabled:opacity-50"
+            >
+              Discard
+            </button>
+          </div>
+        )
       ) : (
         <p className="mt-1.5 text-[11px] leading-snug text-slate-500 dark:text-slate-400">
           Replaced by a newer edit. Use the latest review below to accept or discard.
         </p>
       )}
+    </div>
+  );
+}
+
+function ResolvedReviewDecisionStatus({
+  messageId,
+  reviewDecisions,
+  hasPendingReview,
+}: {
+  messageId: string;
+  reviewDecisions: ReviewDecisionsMap;
+  hasPendingReview: boolean;
+}) {
+  const decision = reviewDecisions[messageId];
+  const [visible, setVisible] = useState(false);
+  const mountedRef = useRef(false);
+  const prevDecisionRef = useRef<ReviewDecision | undefined>(undefined);
+
+  useEffect(() => {
+    if (!mountedRef.current) {
+      mountedRef.current = true;
+      prevDecisionRef.current = decision;
+      return;
+    }
+    /* eslint-disable react-hooks/set-state-in-effect -- flash review decision chip when status changes */
+    if (hasPendingReview || !decision) {
+      setVisible(false);
+      prevDecisionRef.current = decision;
+      return;
+    }
+    if (prevDecisionRef.current !== decision) {
+      prevDecisionRef.current = decision;
+      setVisible(true);
+      const timer = window.setTimeout(() => setVisible(false), 2200);
+      return () => window.clearTimeout(timer);
+    }
+    /* eslint-enable react-hooks/set-state-in-effect */
+  }, [decision, hasPendingReview, messageId]);
+
+  if (!visible || !decision) {
+    return null;
+  }
+  return (
+    <div className="mt-0.5 flex w-full max-w-[95%] justify-end pe-0.5">
+      <AdkDraftReviewDecisionStatus decision={decision} />
     </div>
   );
 }
@@ -206,6 +393,7 @@ const ChatSidebar: React.FC<ChatSidebarProps> = ({ incomingRequest, onRequestHan
     sendMainMessage,
     sendTopicMessage,
     isAgentLoading,
+    isSyncingContext,
     streamActivityLabel,
     sessionReady,
     userId,
@@ -224,13 +412,49 @@ const ChatSidebar: React.FC<ChatSidebarProps> = ({ incomingRequest, onRequestHan
     rewindToMessage,
     isRewinding,
   } = useAdkChatContext();
+  const liveStreamActivity = useUnibotStreamActivityLabel();
+  const streamingStatusLabel = useStreamingStatusLabel({
+    isAgentLoading,
+    isSyncingContext,
+    streamActivityLabel,
+  });
 
-  const [pendingRewind, setPendingRewind] = useState<{
+  const [editingUserMessage, setEditingUserMessage] = useState<{
+    messageKey: string;
+    messageId: string;
+    invocationId: string;
+    targetSessionId: string;
+    topicId?: string;
+    draftText: string;
+    previewText: string;
+    scopeMatch: ScopeMatch;
+    messageScope?: ContentScope;
+    assetActionMeta?: AssetActionMeta;
+  } | null>(null);
+
+  type UserMessageRewindContext = {
     invocationId: string;
     previewText: string;
     targetSessionId: string;
     topicId?: string;
-  } | null>(null);
+    scopeMatch: ScopeMatch;
+    messageScope?: ContentScope;
+  };
+
+  type PendingRewindConfirm =
+    | {
+        mode: "delete";
+        ctx: UserMessageRewindContext;
+      }
+    | {
+        mode: "edit";
+        ctx: UserMessageRewindContext;
+        editDraftText: string;
+        assetActionMeta?: AssetActionMeta;
+      };
+
+  const [pendingRewindConfirm, setPendingRewindConfirm] = useState<PendingRewindConfirm | null>(null);
+  const pendingRewindConfirmRef = useRef<PendingRewindConfirm | null>(null);
 
   const [input, setInput] = useState("");
   const mainInputRef = useRef<HTMLTextAreaElement>(null);
@@ -242,50 +466,170 @@ const ChatSidebar: React.FC<ChatSidebarProps> = ({ incomingRequest, onRequestHan
   const [sidebarWidth, setSidebarWidth] = useState(SIDEBAR_DEFAULT_WIDTH_PX);
   const [isResizing, setIsResizing] = useState(false);
   const canRewind = sessionReady && !isAgentLoading && !isLoadingHistory && !isRewinding;
+  const pathname = usePathname() ?? "";
+  const router = useRouter();
+  const searchParams = useSearchParams();
 
-  const openRewindDialog = useCallback(
+  const deriveCurrentScope = useCallback(
+    (targetSessionId: string, sessionKind: "main" | "sub" = "main"): ContentScope =>
+      deriveActiveScope({
+        pathname,
+        searchParams,
+        sessionId: targetSessionId,
+        sessionKind,
+        applicationAsset: {
+          assetId: useApplicationAssetStudioStore.getState().assetId,
+          role: useApplicationAssetStudioStore.getState().role,
+          company: useApplicationAssetStudioStore.getState().company,
+        },
+        contentGen: {
+          assetId: useContentGenStudioStore.getState().assetId,
+          topic: useContentGenStudioStore.getState().topic,
+        },
+      }),
+    [pathname, searchParams]
+  );
+
+  const isReviewNavActive = useCallback(
+    (target: SubThreadNavTarget) => isSubThreadNavTargetActive(target, pathname, searchParams),
+    [pathname, searchParams]
+  );
+
+  const buildUserMessageRewindContext = useCallback(
     (message: ChatMessage, targetSessionId: string, topicId?: string) => {
-      if (!message.invocationId || !canRewind) return;
-      setPendingRewind({
+      if (!message.invocationId || !canRewind) return null;
+      const targetRow = getRegistryRow(targetSessionId);
+      const messageScope =
+        targetRow?.kind === "sub"
+          ? deriveScopeFromRegistryRow(targetRow)
+          : (message.contentScope ??
+            (targetRow
+              ? deriveScopeFromRegistryRow(targetRow)
+              : deriveScopeFromTopicKind({
+                  topicKind: topicId ? messages.find(m => m.id === topicId)?.topicKind : undefined,
+                  subSessionAdkId: targetSessionId,
+                })));
+      const activeScope = deriveCurrentScope(targetSessionId, targetRow?.kind ?? "main");
+      const scopeMatch = messageScope ? scopesMatch(activeScope, messageScope) : "full";
+      return {
         invocationId: message.invocationId,
         previewText: message.text,
         targetSessionId,
         topicId,
-      });
+        scopeMatch,
+        messageScope: messageScope ?? undefined,
+      };
     },
-    [canRewind]
+    [canRewind, deriveCurrentScope, messages]
   );
 
-  const handleRewindConfirm = useCallback(
-    async (revertEditorState: boolean) => {
-      if (!pendingRewind) return;
-      try {
-        await rewindToMessage({
-          invocationId: pendingRewind.invocationId,
-          previewText: pendingRewind.previewText,
-          revertEditorState,
-          targetSessionId: pendingRewind.targetSessionId,
-          topicId: pendingRewind.topicId,
-        });
-      } catch (err) {
-        setStreamError(formatUnibotStreamError(err, { source: "rewind" }));
-      } finally {
-        setPendingRewind(null);
-      }
+  const runUserMessageRewind = useCallback(
+    async (ctx: UserMessageRewindContext, options: { revertEditorState: boolean }) => {
+      await rewindToMessage({
+        invocationId: ctx.invocationId,
+        previewText: ctx.previewText,
+        revertEditorState: options.revertEditorState,
+        targetSessionId: ctx.targetSessionId,
+        topicId: ctx.topicId,
+        targetScope: ctx.messageScope,
+        scopeMatch: ctx.scopeMatch,
+      });
     },
-    [pendingRewind, rewindToMessage, setStreamError]
+    [rewindToMessage]
+  );
+
+  const openRewindConfirm = useCallback((payload: PendingRewindConfirm) => {
+    pendingRewindConfirmRef.current = payload;
+    setPendingRewindConfirm(payload);
+  }, []);
+
+  const closeRewindConfirm = useCallback(() => {
+    pendingRewindConfirmRef.current = null;
+    setPendingRewindConfirm(null);
+  }, []);
+
+  const handleDeleteUserMessage = useCallback(
+    (message: ChatMessage, targetSessionId: string, topicId?: string) => {
+      const ctx = buildUserMessageRewindContext(message, targetSessionId, topicId);
+      if (!ctx) return;
+      const messageKey = `${topicId ?? "main"}:${message.id}`;
+      setEditingUserMessage(prev => (prev?.messageKey === messageKey ? null : prev));
+      openRewindConfirm({ mode: "delete", ctx });
+    },
+    [buildUserMessageRewindContext, openRewindConfirm]
+  );
+
+  const handleSubmitEditedUserMessage = useCallback(() => {
+    const edit = editingUserMessage;
+    if (!edit) return;
+    const trimmed = edit.draftText.trim();
+    if (!trimmed) return;
+    openRewindConfirm({
+      mode: "edit",
+      ctx: {
+        invocationId: edit.invocationId,
+        previewText: edit.previewText,
+        targetSessionId: edit.targetSessionId,
+        topicId: edit.topicId,
+        scopeMatch: edit.scopeMatch,
+        messageScope: edit.messageScope,
+      },
+      editDraftText: trimmed,
+      assetActionMeta: edit.assetActionMeta,
+    });
+  }, [editingUserMessage, openRewindConfirm]);
+
+  const handleStartEditUserMessage = useCallback(
+    (message: ChatMessage, targetSessionId: string, topicId: string | undefined, editText: string) => {
+      if (message.assetActionMeta) {
+        return;
+      }
+      const ctx = buildUserMessageRewindContext(message, targetSessionId, topicId);
+      if (!ctx) return;
+      setEditingUserMessage({
+        messageKey: `${topicId ?? "main"}:${message.id}`,
+        messageId: message.id,
+        invocationId: ctx.invocationId,
+        targetSessionId: ctx.targetSessionId,
+        topicId: ctx.topicId,
+        draftText: editText,
+        previewText: ctx.previewText,
+        scopeMatch: ctx.scopeMatch,
+        messageScope: ctx.messageScope,
+        assetActionMeta: message.assetActionMeta,
+      });
+    },
+    [buildUserMessageRewindContext]
   );
 
   const [historyPanelOpen, setHistoryPanelOpen] = useState(false);
   const [historySearchQuery, setHistorySearchQuery] = useState("");
   const [allChatsOpen, setAllChatsOpen] = useState(true);
-  const [pendingDeleteSession, setPendingDeleteSession] = useState<{ id: string; title: string } | null>(null);
+  const [pendingDeleteSession, setPendingDeleteSession] = useState<
+    { kind: "main"; id: string; title: string } | { kind: "sub"; topicId: string; title: string; subAdkSessionId?: string } | null
+  >(null);
   const [isDeletingSession, setIsDeletingSession] = useState(false);
   const [topicInputs, setTopicInputs] = useState<{ [key: string]: string }>({});
   const [improveReplyTopicId, setImproveReplyTopicId] = useState<string | null>(null);
   const lastIncomingSigRef = useRef<string | null>(null);
   const pendingRetryRef = useRef<{ text: string; topicId?: string; botMsgId?: string } | null>(null);
   const contentGenFunnelRef = useRef<ContentGenFunnel | null>(null);
+  const syncContentGenFunnel = useCallback((funnel: ContentGenFunnel) => {
+    contentGenFunnelRef.current = funnel;
+    useContentGenStudioStore.getState().syncFromStudio({ funnel });
+  }, []);
+  /** Per assistant message id — affirmation/topic chip labels already used (hide from UI). */
+  const contentGenDismissedChipsRef = useRef<Set<string>>(new Set());
+  const actionItemNudgeShownRef = useRef<Set<string>>(new Set());
+  const topicPickerWandSpamCountRef = useRef<Map<string, number>>(new Map());
+  const [highlightedActionItem, setHighlightedActionItem] = useState<UnibotActionHighlightTarget | null>(null);
+  const [highlightedGoToHref, setHighlightedGoToHref] = useState<string | null>(null);
+  const nudgeGoToFeature = useCallback((href: string) => {
+    setHighlightedGoToHref(href);
+    window.setTimeout(() => {
+      setHighlightedGoToHref(prev => (prev === href ? null : prev));
+    }, 2200);
+  }, []);
   const contentGenAppliedTopicRef = useRef<string | null>(null);
   const contentGenAdkDraftJobRef = useRef<{
     topicId: string;
@@ -306,17 +650,19 @@ const ChatSidebar: React.FC<ChatSidebarProps> = ({ incomingRequest, onRequestHan
   const contentGenAcceptedBotMsgIdRef = useRef<string | null>(null);
   const [isContentGenPublishing, setIsContentGenPublishing] = useState(false);
   const [contentGenPublishActivity, setContentGenPublishActivity] = useState<Record<string, string>>({});
+  const contentGenOpenDraftInFlightRef = useRef<string | null>(null);
   const queryClient = useQueryClient();
+
   const adkReviewStack = useAdkResumeReviewStore(s => s.reviewStack);
   const adkActiveReviewId = useAdkResumeReviewStore(s => s.reviewStack.at(-1)?.id ?? null);
   const adkPortfolioReviewStack = useAdkPortfolioReviewStore(s => s.reviewStack);
   const adkPortfolioActiveReviewId = useAdkPortfolioReviewStore(s => s.reviewStack.at(-1)?.id ?? null);
+  const adkLinkedInReviewStack = useAdkLinkedInReviewStore(s => s.reviewStack);
+  const adkLinkedInActiveReviewId = useAdkLinkedInReviewStore(s => s.reviewStack.at(-1)?.id ?? null);
   const adkContentGenReviewStack = useAdkContentGenReviewStore(s => s.reviewStack);
   const adkContentGenActiveReviewId = useAdkContentGenReviewStore(s => s.reviewStack.at(-1)?.id ?? null);
   const adkApplicationAssetReviewStack = useAdkApplicationAssetReviewStore(s => s.reviewStack);
   const adkApplicationAssetActiveReviewId = useAdkApplicationAssetReviewStore(s => s.reviewStack.at(-1)?.id ?? null);
-  const pathname = usePathname();
-
   const reviewMainSessionId = useMemo(() => {
     if (!sessionId) return "";
     const row = getRegistryRow(sessionId);
@@ -325,6 +671,7 @@ const ChatSidebar: React.FC<ChatSidebarProps> = ({ incomingRequest, onRequestHan
     }
     return sessionId;
   }, [sessionId]);
+  const reviewDecisions = useReviewDecisions(userId, reviewMainSessionId);
 
   const [adkReviewBusy, setAdkReviewBusy] = useState(false);
   const {
@@ -332,6 +679,7 @@ const ChatSidebar: React.FC<ChatSidebarProps> = ({ incomingRequest, onRequestHan
     acceptApplicationAssetReview,
     discardApplicationAssetReview,
   } = useApplicationAssetReviewActions({ userId, mainSessionId: reviewMainSessionId });
+  const diffReviewUiActive = useApplicationAssetDiffReviewUiStore(s => Boolean(s.sessionId && s.regionIds.length > 0));
   const [selectionQuoteContext, setSelectionQuoteContext] = useState<{
     assetType: ApplicationAssetApiType;
     selectedText: string;
@@ -344,6 +692,7 @@ const ChatSidebar: React.FC<ChatSidebarProps> = ({ incomingRequest, onRequestHan
   } | null>(null);
   const [selectionSentPill, setSelectionSentPill] = useState<string | null>(null);
   const selectionSentPillTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const seededTitlePromptByMainIdRef = useRef<Record<string, string>>({});
 
   useEffect(() => {
     sidebarWidthRef.current = sidebarWidth;
@@ -478,7 +827,13 @@ const ChatSidebar: React.FC<ChatSidebarProps> = ({ incomingRequest, onRequestHan
   );
 
   const tryOfferApplicationAssetDraftReview = useCallback(
-    (botMessage: string, assistantMessageId: string, assetTypeOverride?: ApplicationAssetApiType, threadMessages?: ChatMessage[]) => {
+    (
+      botMessage: string,
+      assistantMessageId: string,
+      assetTypeOverride?: ApplicationAssetApiType,
+      threadMessages?: ChatMessage[],
+      proposedDraftOverride?: string
+    ) => {
       const studio = useApplicationAssetStudioStore.getState();
       const offered = offerApplicationAssetDraftReview({
         botMessage,
@@ -488,6 +843,8 @@ const ChatSidebar: React.FC<ChatSidebarProps> = ({ incomingRequest, onRequestHan
         threadMessages,
         userId,
         sessionId: reviewMainSessionId,
+        proposedDraftOverride,
+        forceStudioPreview: proposedDraftOverride ? true : undefined,
       });
       if (offered) {
         applicationAssetLastSyncedBotIdRef.current = assistantMessageId;
@@ -497,14 +854,83 @@ const ChatSidebar: React.FC<ChatSidebarProps> = ({ incomingRequest, onRequestHan
     [pathname, userId, reviewMainSessionId]
   );
 
+  const applicationAssetTurnAlreadySatisfied = useCallback((assistantMessageId: string): boolean => {
+    if (applicationAssetLastSyncedBotIdRef.current === assistantMessageId) {
+      return true;
+    }
+    const reviewCard = useAdkApplicationAssetReviewStore.getState().getActiveCard();
+    return reviewCard?.assistantMessageId === assistantMessageId;
+  }, []);
+
+  const tryOfferApplicationAssetDraftWithSessionFallback = useCallback(
+    async (params: {
+      botMessage: string;
+      assistantMessageId: string;
+      assetTypeOverride?: ApplicationAssetApiType;
+      threadMessages?: ChatMessage[];
+      subSessionAdkId?: string | null;
+    }): Promise<boolean> => {
+      if (applicationAssetTurnAlreadySatisfied(params.assistantMessageId)) {
+        return true;
+      }
+
+      let offered = tryOfferApplicationAssetDraftReview(
+        params.botMessage,
+        params.assistantMessageId,
+        params.assetTypeOverride,
+        params.threadMessages
+      );
+      if (offered) {
+        return true;
+      }
+
+      const subAdkId = params.subSessionAdkId?.trim();
+      if (!userId || !subAdkId) {
+        return false;
+      }
+
+      const pulled = await pullSessionStateAction(userId, subAdkId, resolveAdkSessionOptionsForSessionId(subAdkId));
+      const sessionDraft = pulled.success && pulled.state ? extractApplicationAssetDraftFromSessionState(pulled.state).trim() : "";
+      if (!sessionDraft) {
+        return false;
+      }
+
+      offered = tryOfferApplicationAssetDraftReview(
+        params.botMessage,
+        params.assistantMessageId,
+        params.assetTypeOverride,
+        params.threadMessages,
+        sessionDraft
+      );
+      if (offered) {
+        return true;
+      }
+
+      if (useApplicationAssetStudioStore.getState().draftPreview.trim().length >= APPLICATION_ASSET_MIN_DRAFT_CHARS) {
+        window.dispatchEvent(new CustomEvent(APPLICATION_ASSET_EVENTS.draftStreamComplete));
+        return true;
+      }
+
+      return applicationAssetTurnAlreadySatisfied(params.assistantMessageId);
+    },
+    [applicationAssetTurnAlreadySatisfied, tryOfferApplicationAssetDraftReview, userId]
+  );
+
   const tryOfferContentGenDraftReview = useCallback(
-    (botMessage: string, assistantMessageId: string, topicOverride?: string, threadMessages?: ChatMessage[]) => {
+    (
+      botMessage: string,
+      assistantMessageId: string,
+      topicOverride?: string,
+      threadMessages?: ChatMessage[],
+      proposedDraftOverride?: string
+    ) => {
       const studio = useContentGenStudioStore.getState();
       const offered = offerContentGenDraftReview({
         botMessage,
         assistantMessageId,
         pathname,
         topicOverride,
+        proposedDraftOverride,
         appliedTopicRef: contentGenAppliedTopicRef.current,
         funnelOverride: contentGenFunnelRef.current ?? studio.funnel,
         threadMessages,
@@ -539,93 +965,125 @@ const ChatSidebar: React.FC<ChatSidebarProps> = ({ incomingRequest, onRequestHan
 
   useEffect(() => {
     const onOpenDraft = (e: Event) => {
-      const d = (e as CustomEvent<{ topic?: string; funnel?: ContentGenFunnel }>).detail;
+      const d = (e as CustomEvent<{ topic?: string; funnel?: ContentGenFunnel; mood?: string; assetId?: string | null }>).detail;
       const topic = d?.topic?.trim();
       if (!topic || !userId || !sessionReady) {
         return;
       }
+      const assetId = d?.assetId?.trim() || useContentGenStudioStore.getState().assetId?.trim() || null;
+      const mainId = reviewMainSessionId || sessionId;
+      const draftKey = `${mainId}:${assetId ?? `topic:${topic}`}`;
+      if (contentGenOpenDraftInFlightRef.current === draftKey) {
+        return;
+      }
+      contentGenOpenDraftInFlightRef.current = draftKey;
+
       contentGenFunnelRef.current = d.funnel ?? null;
+      if (d.mood?.trim()) {
+        useContentGenStudioStore.getState().syncFromStudio({ mood: d.mood.trim() });
+      }
       setIsCollapsed(false);
 
-      const topicId = newId("topic");
-      const bootstrap = buildContentGenDraftBootstrap(topic);
-      const initialUserMsg: ChatMessage = {
-        id: newId("u"),
-        role: "user",
-        text: bootstrap,
-        timestamp: new Date(),
-      };
-      const botMsgId = typeof crypto !== "undefined" && crypto.randomUUID ? crypto.randomUUID() : newId("bot");
-      const placeholderMsg: ChatMessage = {
-        id: botMsgId,
-        role: "model",
-        text: "",
-        timestamp: new Date(),
-      };
-      const newTopic: ChatMessage = {
-        id: topicId,
-        role: "model",
-        text: "",
-        timestamp: new Date(),
-        isTopic: true,
-        topicKind: "content_gen",
-        topicTitle: "LinkedIn Draft",
-        isExpanded: true,
-        messages: [initialUserMsg, placeholderMsg],
-      };
-
-      contentGenAdkDraftJobRef.current = {
-        topicId,
-        botMsgId,
-        topic,
-        funnel: d.funnel ?? null,
-      };
-
-      setMessages(prev => [...prev, newTopic]);
-
       void (async () => {
+        let topicId = "";
+        let botMsgId = "";
+        let initialUserText = "";
         try {
           if (isAgentLoading || isLoadingHistory) {
             return;
           }
-          const mainId = reviewMainSessionId || sessionId;
+          const funnel = d.funnel ?? contentGenFunnelRef.current ?? useContentGenStudioStore.getState().funnel;
           const sub = await ensureContentGenTopicSubSession({
             userId,
             mainAdkSessionId: mainId,
             mode: "draft",
             topic,
-            title: `LinkedIn Draft · ${topic}`,
+            assetId,
+            title: buildLinkedInPostTitle(topic),
           });
-          const subAdkId = sub?.subAdkSessionId;
-          const stableTopicId = sub?.stableTopicId ?? topicId;
-          if (sub) {
-            setMessages(prev =>
-              prev.map(m =>
-                m.id === topicId
+          if (!sub?.subAdkSessionId) {
+            throw new Error("Could not open a draft thread for this topic.");
+          }
+
+          topicId = sub.stableTopicId;
+          const subAdkId = sub.subAdkSessionId;
+          const bootstrap = buildContentGenDraftBootstrap(topic);
+          initialUserText = bootstrap;
+          const initialUserMsg: ChatMessage = {
+            id: newId("u"),
+            role: "user",
+            text: bootstrap,
+            timestamp: new Date(),
+            contentScope: deriveCurrentScope(mainId),
+          };
+          botMsgId = typeof crypto !== "undefined" && crypto.randomUUID ? crypto.randomUUID() : newId("bot");
+          const placeholderMsg: ChatMessage = {
+            id: botMsgId,
+            role: "model",
+            text: "",
+            timestamp: new Date(),
+          };
+
+          setMessages(prev => {
+            const existing = findImproveTopic(prev, subAdkId) ?? prev.find(m => m.isTopic && m.id === topicId);
+            if (existing) {
+              return prev.map(m =>
+                m.id === existing.id
                   ? {
                       ...m,
-                      id: stableTopicId,
-                      subSessionAdkId: sub.subAdkSessionId,
+                      isExpanded: true,
+                      subSessionAdkId: subAdkId,
                       topicTitle: sub.title,
+                      messages: [...(m.messages ?? []), initialUserMsg, placeholderMsg],
                     }
                   : m
-              )
-            );
-            if (contentGenAdkDraftJobRef.current?.topicId === topicId) {
-              contentGenAdkDraftJobRef.current = {
-                ...contentGenAdkDraftJobRef.current,
-                topicId: stableTopicId,
-              };
+              );
             }
+            const newTopic: ChatMessage = {
+              id: topicId,
+              role: "model",
+              text: "",
+              timestamp: new Date(),
+              isTopic: true,
+              topicKind: "content_gen",
+              topicTitle: sub.title,
+              isExpanded: true,
+              subSessionAdkId: subAdkId,
+              messages: [initialUserMsg, placeholderMsg],
+            };
+            return insertTopicInMainThread(prev, newTopic);
+          });
+
+          contentGenAdkDraftJobRef.current = {
+            topicId,
+            botMsgId,
+            topic,
+            funnel: funnel ?? null,
+          };
+
+          try {
+            const shell = await createContentGenShell(topic, { funnel: funnel ?? undefined, mood: d.mood });
+            window.dispatchEvent(
+              new CustomEvent(CONTENT_GEN_EVENTS.applyTopic, {
+                detail: { topic, funnel: funnel ?? undefined, assetId: shell.id },
+              })
+            );
+          } catch (shellErr) {
+            console.warn("Content gen topic shell create failed (draft may still preview in Studio):", shellErr);
           }
-          await sendTopicMessage(initialUserMsg.text, botMsgId, subAdkId ? { sessionIdOverride: subAdkId } : undefined);
+
+          await sendTopicMessage(initialUserText, botMsgId, {
+            sessionIdOverride: subAdkId,
+          });
         } catch (err) {
           const job = contentGenAdkDraftJobRef.current;
           contentGenAdkDraftJobRef.current = null;
-          handleStreamFailure(err, { text: initialUserMsg.text, topicId, botMsgId });
+          handleStreamFailure(err, { text: initialUserText, topicId, botMsgId });
           if (job) {
             void attemptContentGenDjangoFallback(job.topic, job.funnel);
           }
+        } finally {
+          contentGenOpenDraftInFlightRef.current = null;
         }
       })();
     };
@@ -634,6 +1092,7 @@ const ChatSidebar: React.FC<ChatSidebarProps> = ({ incomingRequest, onRequestHan
     return () => window.removeEventListener(CONTENT_GEN_EVENTS.openDraft, onOpenDraft);
   }, [
     attemptContentGenDjangoFallback,
+    deriveCurrentScope,
     handleStreamFailure,
     isAgentLoading,
     isLoadingHistory,
@@ -648,56 +1107,31 @@ const ChatSidebar: React.FC<ChatSidebarProps> = ({ incomingRequest, onRequestHan
   useEffect(() => {
     const onOpenApplicationAssetDraft = (e: Event) => {
       // Chat-only: opens a collapsible ADK topic when the user starts from natural language in Unibot.
-      const d = (
-        e as CustomEvent<{
-          assetType: ApplicationAssetApiType;
-          assetId?: string;
-          role: string;
-          company: string;
-          jobDescription: string;
-          contactName?: string;
-        }>
-      ).detail;
+      const d = (e as CustomEvent<ApplicationAssetOpenDraftDetail>).detail;
       if (!d?.assetType || !userId || !sessionReady) {
         return;
       }
       setIsCollapsed(false);
 
-      const topicId = newId("topic");
-      const bootstrap = buildApplicationAssetDraftBootstrap(d.assetType, d.role, d.company, d.jobDescription, d.contactName);
-      const initialUserMsg: ChatMessage = {
-        id: newId("u"),
-        role: "user",
-        text: bootstrap,
-        timestamp: new Date(),
-      };
-      const botMsgId = typeof crypto !== "undefined" && crypto.randomUUID ? crypto.randomUUID() : newId("bot");
-      const placeholderMsg: ChatMessage = {
-        id: botMsgId,
-        role: "model",
-        text: "",
-        timestamp: new Date(),
-      };
-      const newTopic: ChatMessage = {
-        id: topicId,
-        role: "model",
-        text: "",
-        timestamp: new Date(),
-        isTopic: true,
-        topicKind: "application_asset",
-        topicTitle: applicationAssetTopicTitle(d.assetType, d.company, d.role),
-        isExpanded: true,
-        messages: [initialUserMsg, placeholderMsg],
-      };
-
-      applicationAssetAdkDraftJobRef.current = {
-        topicId,
-        botMsgId,
+      const studioPatch = {
         assetType: d.assetType,
-        assetId: d.assetId?.trim() || undefined,
+        assetId: d.assetId?.trim() || null,
+        applicationId: d.applicationId?.trim() || null,
+        role: d.role,
+        company: d.company,
+        jobDescription: d.jobDescription,
+        contactName: d.contactName ?? "",
+        ...(d.preserveExistingDraft
+          ? {}
+          : {
+              draftPreview: "",
+              acceptedContent: "",
+            }),
       };
-
-      setMessages(prev => [...prev, newTopic]);
+      useApplicationAssetStudioStore.getState().syncFromStudio(studioPatch);
+      if (d.regenerateAnother) {
+        useApplicationAssetStudioStore.getState().setRegenerateAnotherInFlight(true);
+      }
 
       void (async () => {
         try {
@@ -705,7 +1139,7 @@ const ChatSidebar: React.FC<ChatSidebarProps> = ({ incomingRequest, onRequestHan
             return;
           }
           const mainId = reviewMainSessionId || sessionId;
-          const topicTitle = applicationAssetTopicTitle(d.assetType, d.company, d.role);
+          const topicTitle = applicationAssetTopicTitle(d.assetType, d.company, d.role, d.assetId);
           const sub = await ensureApplicationAssetTopicSubSession({
             userId,
             mainAdkSessionId: mainId,
@@ -715,33 +1149,84 @@ const ChatSidebar: React.FC<ChatSidebarProps> = ({ incomingRequest, onRequestHan
             assetId: d.assetId,
             title: topicTitle,
           });
-          const subAdkId = sub?.subAdkSessionId;
-          const stableTopicId = sub?.stableTopicId ?? topicId;
-          if (sub) {
+          if (!sub?.subAdkSessionId) {
+            throw new Error("Could not open a draft thread for this application asset.");
+          }
+
+          const bootstrap = buildApplicationAssetDraftBootstrap(d.assetType, d.role, d.company, d.jobDescription, d.contactName, {
+            regenerateAnother: d.regenerateAnother,
+          });
+          const existing = findImproveTopic(messages, sub.subAdkSessionId);
+          const topicId = sub.stableTopicId;
+          const initialUserMsg: ChatMessage = {
+            id: newId("u"),
+            role: "user",
+            text: bootstrap,
+            timestamp: new Date(),
+            contentScope: deriveCurrentScope(mainId),
+          };
+          const botMsgId = typeof crypto !== "undefined" && crypto.randomUUID ? crypto.randomUUID() : newId("bot");
+          const placeholderMsg: ChatMessage = {
+            id: botMsgId,
+            role: "model",
+            text: "",
+            timestamp: new Date(),
+          };
+
+          applicationAssetAdkDraftJobRef.current = {
+            topicId,
+            botMsgId,
+            assetType: d.assetType,
+            assetId: d.assetId?.trim() || undefined,
+          };
+
+          if (existing) {
             setMessages(prev =>
               prev.map(m =>
-                m.id === topicId
+                m.id === existing.id
                   ? {
                       ...m,
-                      id: stableTopicId,
+                      isExpanded: true,
                       subSessionAdkId: sub.subAdkSessionId,
                       topicTitle: sub.title,
+                      topicSubtitle: applicationAssetTopicSubtitle(d.company, d.role),
+                      messages: [...(m.messages ?? []), initialUserMsg, placeholderMsg],
                     }
                   : m
               )
             );
-            if (applicationAssetAdkDraftJobRef.current?.topicId === topicId) {
-              applicationAssetAdkDraftJobRef.current = {
-                ...applicationAssetAdkDraftJobRef.current,
-                topicId: stableTopicId,
-              };
-            }
+          } else {
+            const newTopic: ChatMessage = {
+              id: topicId,
+              role: "model",
+              text: "",
+              timestamp: new Date(),
+              isTopic: true,
+              topicKind: "application_asset",
+              topicTitle: sub.title ?? topicTitle,
+              topicSubtitle: applicationAssetTopicSubtitle(d.company, d.role),
+              isExpanded: true,
+              subSessionAdkId: sub.subAdkSessionId,
+              messages: [initialUserMsg, placeholderMsg],
+            };
+            setMessages(prev => insertTopicInMainThread(prev, newTopic));
           }
-          await sendTopicMessage(initialUserMsg.text, botMsgId, subAdkId ? { sessionIdOverride: subAdkId } : undefined);
+
+          await sendTopicMessage(bootstrap, botMsgId, {
+            sessionIdOverride: sub.subAdkSessionId,
+          });
         } catch (err) {
           const job = applicationAssetAdkDraftJobRef.current;
           applicationAssetAdkDraftJobRef.current = null;
-          handleStreamFailure(err, { text: initialUserMsg.text, topicId, botMsgId });
+          useApplicationAssetStudioStore.getState().setRegenerateAnotherInFlight(false);
+          handleStreamFailure(err, {
+            text: job
+              ? buildApplicationAssetDraftBootstrap(d.assetType, d.role, d.company, d.jobDescription, d.contactName, {
+                  regenerateAnother: d.regenerateAnother,
+                })
+              : "",
+            topicId: job?.topicId,
+          });
         }
       })();
     };
@@ -749,6 +1234,7 @@ const ChatSidebar: React.FC<ChatSidebarProps> = ({ incomingRequest, onRequestHan
     window.addEventListener(APPLICATION_ASSET_EVENTS.openDraft, onOpenApplicationAssetDraft);
     return () => window.removeEventListener(APPLICATION_ASSET_EVENTS.openDraft, onOpenApplicationAssetDraft);
   }, [
+    deriveCurrentScope,
     handleStreamFailure,
     isAgentLoading,
     isLoadingHistory,
@@ -757,6 +1243,7 @@ const ChatSidebar: React.FC<ChatSidebarProps> = ({ incomingRequest, onRequestHan
     sessionId,
     sessionReady,
     setMessages,
+    messages,
     userId,
   ]);
 
@@ -772,12 +1259,21 @@ const ChatSidebar: React.FC<ChatSidebarProps> = ({ incomingRequest, onRequestHan
 
     const streamJustCompleted = wasAgentLoading && !isAgentLoading;
 
+    if (!streamJustCompleted) {
+      return;
+    }
+
     if (useApplicationAssetStudioStore.getState().selectionRefineLoading) {
       useApplicationAssetStudioStore.getState().setSelectionRefineLoading(false);
     }
 
-    if (!streamJustCompleted) {
-      return;
+    if (userId) {
+      for (const card of messages) {
+        if (!card.isTopic || !card.subSessionAdkId || !card.messages?.some(m => m.role === "user")) {
+          continue;
+        }
+        void syncTopicUserInvocationIdsFromAdk(userId, card.subSessionAdkId, card.id, setMessages);
+      }
     }
 
     const aaJob = applicationAssetAdkDraftJobRef.current;
@@ -786,7 +1282,7 @@ const ChatSidebar: React.FC<ChatSidebarProps> = ({ incomingRequest, onRequestHan
       const botMsg = topicCard?.messages?.find(m => m.id === aaJob.botMsgId);
       applicationAssetAdkDraftJobRef.current = null;
 
-      if (botMsg?.isError || !botMsg?.text?.trim()) {
+      if (botMsg?.isError) {
         window.dispatchEvent(
           new CustomEvent(APPLICATION_ASSET_EVENTS.draftFailed, {
             detail: { message: "Draft generation failed. Please try again." },
@@ -795,14 +1291,22 @@ const ChatSidebar: React.FC<ChatSidebarProps> = ({ incomingRequest, onRequestHan
         return;
       }
 
-      const offered = tryOfferApplicationAssetDraftReview(botMsg.text, aaJob.botMsgId, aaJob.assetType);
-      if (!offered) {
-        window.dispatchEvent(
-          new CustomEvent(APPLICATION_ASSET_EVENTS.draftFailed, {
-            detail: { message: "Could not read the generated draft. Please try again." },
-          })
-        );
-      }
+      void (async () => {
+        const offered = await tryOfferApplicationAssetDraftWithSessionFallback({
+          botMessage: botMsg?.text ?? "",
+          assistantMessageId: aaJob.botMsgId,
+          assetTypeOverride: aaJob.assetType,
+          threadMessages: topicCard?.messages,
+          subSessionAdkId: topicCard?.subSessionAdkId,
+        });
+        if (!offered) {
+          window.dispatchEvent(
+            new CustomEvent(APPLICATION_ASSET_EVENTS.draftFailed, {
+              detail: { message: "Could not read the generated draft. Please try again." },
+            })
+          );
+        }
+      })();
       return;
     }
 
@@ -810,6 +1314,7 @@ const ChatSidebar: React.FC<ChatSidebarProps> = ({ incomingRequest, onRequestHan
     if (job) {
       const topicCard = messages.find(m => m.id === job.topicId && m.topicKind === "content_gen");
       const botMsg = topicCard?.messages?.find(m => m.id === job.botMsgId);
+      const subAdkId = topicCard?.subSessionAdkId;
       contentGenAdkDraftJobRef.current = null;
 
       if (botMsg?.isError || !botMsg?.text?.trim()) {
@@ -817,9 +1322,33 @@ const ChatSidebar: React.FC<ChatSidebarProps> = ({ incomingRequest, onRequestHan
         return;
       }
 
-      if (!tryOfferContentGenDraftReview(botMsg.text, job.botMsgId, job.topic, topicCard?.messages)) {
-        void attemptContentGenDjangoFallback(job.topic, job.funnel);
-      }
+      void (async () => {
+        let offered = tryOfferContentGenDraftReview(botMsg.text, job.botMsgId, job.topic, topicCard?.messages);
+        if (!offered && userId && subAdkId) {
+          const pulled = await pullSessionStateAction(userId, subAdkId, resolveAdkSessionOptionsForSessionId(subAdkId));
+          const sessionDraft = pulled.success && pulled.state ? extractContentGenDraftFromAdkState(pulled.state) : null;
+          if (sessionDraft?.draft) {
+            offered = tryOfferContentGenDraftReview(
+              botMsg.text,
+              job.botMsgId,
+              sessionDraft.topic || job.topic,
+              topicCard?.messages,
+              sessionDraft.draft
+            );
+          }
+        }
+        if (!offered) {
+          if (shouldForceDjangoContentGenDraft()) {
+            void attemptContentGenDjangoFallback(job.topic, job.funnel);
+            return;
+          }
+          window.dispatchEvent(
+            new CustomEvent(CONTENT_GEN_EVENTS.draftFailed, {
+              detail: { message: "Could not read the generated draft. Please try again." },
+            })
+          );
+        }
+      })();
       return;
     }
 
@@ -842,16 +1371,31 @@ const ChatSidebar: React.FC<ChatSidebarProps> = ({ incomingRequest, onRequestHan
         if (!lastBot?.id || contentGenLastSyncedBotIdRef.current === lastBot.id) {
           continue;
         }
-        tryOfferContentGenDraftReview(lastBot.text, lastBot.id, undefined, threadMessages);
+        void (async () => {
+          let offered = tryOfferContentGenDraftReview(lastBot.text, lastBot.id, undefined, threadMessages);
+          const subAdkId = card.subSessionAdkId;
+          if (!offered && userId && subAdkId) {
+            const pulled = await pullSessionStateAction(userId, subAdkId, resolveAdkSessionOptionsForSessionId(subAdkId));
+            const sessionDraft = pulled.success && pulled.state ? extractContentGenDraftFromAdkState(pulled.state) : null;
+            if (sessionDraft?.draft) {
+              offered = tryOfferContentGenDraftReview(lastBot.text, lastBot.id, sessionDraft.topic, threadMessages, sessionDraft.draft);
+            }
+          }
+        })();
         continue;
       }
       if (card.topicKind === "application_asset") {
         const threadMessages = card.messages ?? [];
-        const lastBot = [...threadMessages].reverse().find(m => m.role === "model" && m.text?.trim() && !m.isError);
+        const lastBot = [...threadMessages].reverse().find(m => m.role === "model" && !m.isError);
         if (!lastBot?.id || applicationAssetLastSyncedBotIdRef.current === lastBot.id) {
           continue;
         }
-        tryOfferApplicationAssetDraftReview(lastBot.text, lastBot.id, undefined, threadMessages);
+        void tryOfferApplicationAssetDraftWithSessionFallback({
+          botMessage: lastBot.text ?? "",
+          assistantMessageId: lastBot.id,
+          threadMessages,
+          subSessionAdkId: card.subSessionAdkId,
+        });
       }
     }
   }, [
@@ -859,8 +1403,11 @@ const ChatSidebar: React.FC<ChatSidebarProps> = ({ incomingRequest, onRequestHan
     isAgentLoading,
     isLoadingHistory,
     messages,
+    setMessages,
     tryOfferApplicationAssetDraftReview,
+    tryOfferApplicationAssetDraftWithSessionFallback,
     tryOfferContentGenDraftReview,
+    userId,
   ]);
 
   const groupedSessions = useMemo(() => (userId ? groupSessionsForSidebar(userId, sessions) : []), [userId, sessions]);
@@ -883,7 +1430,13 @@ const ChatSidebar: React.FC<ChatSidebarProps> = ({ incomingRequest, onRequestHan
     const out: { id: string; title: string; subtitle?: string }[] = [];
     for (const m of messages) {
       if (m.isTopic && m.topicTitle) {
-        out.push({ id: m.id, title: m.topicTitle, subtitle: "Improve thread" });
+        const subRow = m.subSessionAdkId ? getRegistryRow(m.subSessionAdkId) : undefined;
+        out.push({
+          id: m.id,
+          title: displayTitleForSubSession(subRow, m.topicTitle),
+          subtitle:
+            m.topicSubtitle ?? (subRow ? deriveSubSessionSubtitle(subRow) : m.topicKind === "improve" ? "Improve thread" : undefined),
+        });
       }
     }
     return out.reverse();
@@ -893,12 +1446,15 @@ const ChatSidebar: React.FC<ChatSidebarProps> = ({ incomingRequest, onRequestHan
     const topicSubIds = new Set(messages.filter(m => m.isTopic && m.subSessionAdkId).map(m => m.subSessionAdkId as string));
     return thisSessionSubs
       .filter(s => !topicSubIds.has(s.id))
-      .map(s => ({
-        topicId: topicIdForSubSession(s.id),
-        subAdkSessionId: s.id,
-        title: s.title,
-        subtitle: "Improve thread" as const,
-      }));
+      .map(s => {
+        const row = getRegistryRow(s.id);
+        return {
+          topicId: topicIdForSubSession(s.id),
+          subAdkSessionId: s.id,
+          title: row ? displayTitleForSubSession(row) : s.title,
+          subtitle: row ? deriveSubSessionSubtitle(row) : ("Improve thread" as const),
+        };
+      });
   }, [messages, thisSessionSubs]);
 
   const thisSessionListEntries = useMemo(() => {
@@ -926,18 +1482,224 @@ const ChatSidebar: React.FC<ChatSidebarProps> = ({ incomingRequest, onRequestHan
     return thisSessionListEntries.filter(row => row.title.toLowerCase().includes(q) || (row.subtitle?.toLowerCase().includes(q) ?? false));
   }, [thisSessionListEntries, historySearchQuery]);
 
+  const historyPanelLayout = useMemo(() => {
+    const subCount = thisSessionListEntries.length;
+    if (subCount === 0) {
+      return {
+        panelMaxHeight: "min(240px, 42vh)",
+        thisSessionMaxHeight: undefined as string | undefined,
+        allChatsMaxHeight: "min(180px, 30vh)",
+      };
+    }
+    if (subCount <= 2) {
+      return {
+        panelMaxHeight: "min(360px, 54vh)",
+        thisSessionMaxHeight: "min(128px, 20vh)",
+        allChatsMaxHeight: "min(140px, 22vh)",
+      };
+    }
+    if (subCount <= 4) {
+      return {
+        panelMaxHeight: "min(440px, 62vh)",
+        thisSessionMaxHeight: "min(200px, 30vh)",
+        allChatsMaxHeight: "min(120px, 18vh)",
+      };
+    }
+    return {
+      panelMaxHeight: "min(520px, 70vh)",
+      thisSessionMaxHeight: "min(260px, 38vh)",
+      allChatsMaxHeight: "min(120px, 16vh)",
+    };
+  }, [thisSessionListEntries.length]);
+
+  const findContentGenTopicId = useCallback((): string | null => {
+    for (let i = messages.length - 1; i >= 0; i--) {
+      const m = messages[i];
+      if (m?.isTopic && m.topicKind === "content_gen") {
+        return m.id;
+      }
+    }
+    return null;
+  }, [messages]);
+
+  const isActionItemHighlighted = useCallback(
+    (topicId: string, messageId: string, kind: UnibotActionHighlightTarget["kind"]) =>
+      highlightedActionItem?.topicId === topicId && highlightedActionItem?.messageId === messageId && highlightedActionItem?.kind === kind,
+    [highlightedActionItem]
+  );
+
+  const handleActionItemSpamGuard = useCallback(
+    (params: {
+      topicId: string;
+      actionMessageId: string;
+      kind: UnibotActionHighlightTarget["kind"];
+      nudgeKey: string;
+      nudgeText: string;
+    }) => {
+      shouldStickToBottomRef.current = false;
+      setMessages(prev => prev.map(m => (m.id === params.topicId && m.isTopic ? { ...m, isExpanded: true } : m)));
+      setImproveReplyTopicId(params.topicId);
+      setIsCollapsed(false);
+
+      if (!actionItemNudgeShownRef.current.has(params.nudgeKey)) {
+        actionItemNudgeShownRef.current.add(params.nudgeKey);
+        const nudgeMsg: ChatMessage = {
+          id: newId("nudge"),
+          role: "model",
+          text: params.nudgeText,
+          timestamp: new Date(),
+          excludeFromTitleGeneration: true,
+        };
+        setMessages(prev =>
+          prev.map(m => (m.id === params.topicId && m.isTopic ? { ...m, messages: [...(m.messages || []), nudgeMsg] } : m))
+        );
+      }
+
+      setHighlightedActionItem({
+        topicId: params.topicId,
+        messageId: params.actionMessageId,
+        kind: params.kind,
+      });
+      window.setTimeout(() => {
+        setHighlightedActionItem(current =>
+          current?.topicId === params.topicId && current.messageId === params.actionMessageId ? null : current
+        );
+      }, 4500);
+
+      requestAnimationFrame(() => {
+        const el = messagesScrollRef.current?.querySelector(`[data-unibot-action-highlight="${params.actionMessageId}"]`);
+        el?.scrollIntoView({ behavior: "smooth", block: "nearest" });
+      });
+    },
+    [setMessages]
+  );
+
+  const messagesScrollFingerprintRef = useRef("");
+  const shouldStickToBottomRef = useRef(true);
+  const prevLoadingHistoryRef = useRef(isLoadingHistory);
+
+  const scrollChatMessageIntoView = useCallback((messageId: string, block: ScrollLogicalPosition = "nearest") => {
+    requestAnimationFrame(() => {
+      const root = messagesScrollRef.current;
+      if (!root) return;
+      const el =
+        root.querySelector(`[data-unibot-message-id="${messageId}"]`) ??
+        root.querySelector(`[data-unibot-action-highlight="${messageId}"]`);
+      el?.scrollIntoView({ behavior: "smooth", block });
+    });
+  }, []);
+
+  const pulseTopicPickerHighlight = useCallback(
+    (topicId: string, actionMessageId: string) => {
+      setHighlightedActionItem({
+        topicId,
+        messageId: actionMessageId,
+        kind: "planner_chips",
+      });
+      window.setTimeout(() => {
+        setHighlightedActionItem(current => (current?.topicId === topicId && current.messageId === actionMessageId ? null : current));
+      }, 4500);
+      scrollChatMessageIntoView(actionMessageId, "center");
+    },
+    [scrollChatMessageIntoView]
+  );
+
+  const clearTopicPickerSpamCounts = useCallback((topicId: string) => {
+    for (const key of [...topicPickerWandSpamCountRef.current.keys()]) {
+      if (key === topicId || key.startsWith(`${topicId}:`)) {
+        topicPickerWandSpamCountRef.current.delete(key);
+      }
+    }
+  }, []);
+
+  const topicPickerSpamKey = (topicId: string, funnel: ContentGenFunnel | null | undefined) => (funnel ? `${topicId}:${funnel}` : topicId);
+
+  const handleTopicPickerFunnelRevisit = useCallback(
+    (topicId: string, actionMessageId: string) => {
+      shouldStickToBottomRef.current = false;
+      setMessages(prevMsgs => prevMsgs.map(m => (m.id === topicId && m.isTopic ? { ...m, isExpanded: true } : m)));
+      setImproveReplyTopicId(topicId);
+      setIsCollapsed(false);
+      pulseTopicPickerHighlight(topicId, actionMessageId);
+    },
+    [pulseTopicPickerHighlight, setMessages]
+  );
+
+  const handleTopicPickerWandSpam = useCallback(
+    (topicId: string, actionMessageId: string, funnel: ContentGenFunnel | null) => {
+      shouldStickToBottomRef.current = false;
+      const spamKey = topicPickerSpamKey(topicId, funnel);
+      const prev = topicPickerWandSpamCountRef.current.get(spamKey) ?? 0;
+      const next = prev + 1;
+      topicPickerWandSpamCountRef.current.set(spamKey, next);
+
+      setMessages(prevMsgs => prevMsgs.map(m => (m.id === topicId && m.isTopic ? { ...m, isExpanded: true } : m)));
+      setImproveReplyTopicId(topicId);
+      setIsCollapsed(false);
+
+      if (next === 1) {
+        const nudgeMsg: ChatMessage = {
+          id: newId("nudge"),
+          role: "model",
+          text: CONTENT_GEN_TOPIC_PICKER_NUDGE,
+          timestamp: new Date(),
+          excludeFromTitleGeneration: true,
+        };
+        setMessages(prevMsgs =>
+          prevMsgs.map(m => (m.id === topicId && m.isTopic ? { ...m, messages: [...(m.messages || []), nudgeMsg] } : m))
+        );
+      }
+
+      pulseTopicPickerHighlight(topicId, actionMessageId);
+    },
+    [pulseTopicPickerHighlight, setMessages]
+  );
+
   const openImproveSubTopic = useCallback(
-    async (subAdkSessionId: string, title: string, promptText: string) => {
+    async (subAdkSessionId: string, title: string, displayText: string, agentText: string) => {
       const topicId = topicIdForSubSession(subAdkSessionId);
       const existing = findImproveTopic(messages, subAdkSessionId);
+      const subRow = getRegistryRow(subAdkSessionId);
+
+      if (existing) {
+        const pendingReview =
+          findPendingReviewInTopic(existing, adkReviewStack, adkActiveReviewId) ??
+          findPendingReviewInTopic(existing, adkLinkedInReviewStack, adkLinkedInActiveReviewId) ??
+          findPendingReviewInTopic(existing, adkApplicationAssetReviewStack, adkApplicationAssetActiveReviewId) ??
+          findPendingReviewInTopic(existing, adkContentGenReviewStack, adkContentGenActiveReviewId) ??
+          findPendingReviewInTopic(existing, adkPortfolioReviewStack, adkPortfolioActiveReviewId);
+
+        if (pendingReview) {
+          const feature = (subRow?.feature ?? "").toLowerCase();
+          const nudgeText =
+            feature === "linkedin"
+              ? LINKEDIN_IMPROVE_NUDGE
+              : feature === "application_asset" || feature === "coverletter" || feature === "coldemail" || feature === "referral"
+                ? APPLICATION_ASSET_IMPROVE_NUDGE
+                : feature === "linkedin_post" || feature === "content_gen" || feature === "linkedin_topic"
+                  ? CONTENT_GEN_IMPROVE_NUDGE
+                  : RESUME_IMPROVE_NUDGE;
+          handleActionItemSpamGuard({
+            topicId: existing.id,
+            actionMessageId: pendingReview.messageId,
+            kind: "review_card",
+            nudgeKey: `improve:${existing.id}:${subAdkSessionId}`,
+            nudgeText,
+          });
+          return;
+        }
+      }
 
       if (!existing) {
         const nested = await loadSubSessionChatMessages(userId, subAdkSessionId);
+        const subRow = getRegistryRow(subAdkSessionId);
         const userMsg: ChatMessage = {
           id: newId("u"),
           role: "user",
-          text: promptText,
+          text: displayText,
           timestamp: new Date(),
+          excludeFromTitleGeneration: true,
+          contentScope: subRow ? deriveScopeFromRegistryRow(subRow) : deriveCurrentScope(subAdkSessionId, "sub"),
         };
         const botMsgId = typeof crypto !== "undefined" && crypto.randomUUID ? crypto.randomUUID() : newId("bot");
         const placeholderMsg: ChatMessage = {
@@ -952,6 +1714,7 @@ const ChatSidebar: React.FC<ChatSidebarProps> = ({ incomingRequest, onRequestHan
           text: "",
           timestamp: new Date(),
           isTopic: true,
+          topicKind: subRow ? topicKindForSub(subRow) : undefined,
           topicTitle: title,
           isExpanded: true,
           subSessionAdkId: subAdkSessionId,
@@ -959,12 +1722,12 @@ const ChatSidebar: React.FC<ChatSidebarProps> = ({ incomingRequest, onRequestHan
         };
         setMessages(prev => insertTopicInMainThread(prev, newTopic));
         setImproveReplyTopicId(topicId);
-        pendingRetryRef.current = { text: promptText, topicId, botMsgId };
+        pendingRetryRef.current = { text: agentText, topicId, botMsgId };
         try {
-          await sendTopicMessage(promptText, botMsgId, { sessionIdOverride: subAdkSessionId });
+          await sendTopicMessage(agentText, botMsgId, { sessionIdOverride: subAdkSessionId });
           pendingRetryRef.current = null;
         } catch (err) {
-          handleStreamFailure(err, { text: promptText, topicId, botMsgId });
+          handleStreamFailure(err, { text: agentText, topicId, botMsgId });
         }
         return;
       }
@@ -972,8 +1735,10 @@ const ChatSidebar: React.FC<ChatSidebarProps> = ({ incomingRequest, onRequestHan
       const userMsg: ChatMessage = {
         id: newId("u"),
         role: "user",
-        text: promptText,
+        text: displayText,
         timestamp: new Date(),
+        excludeFromTitleGeneration: true,
+        contentScope: subRow ? deriveScopeFromRegistryRow(subRow) : deriveCurrentScope(subAdkSessionId, "sub"),
       };
       const botMsgId = typeof crypto !== "undefined" && crypto.randomUUID ? crypto.randomUUID() : newId("bot");
       const placeholderMsg: ChatMessage = {
@@ -985,9 +1750,11 @@ const ChatSidebar: React.FC<ChatSidebarProps> = ({ incomingRequest, onRequestHan
 
       setMessages(prev =>
         prev.map(msg =>
-          msg.id === topicId && msg.isTopic
+          msg.id === existing.id && msg.isTopic
             ? {
                 ...msg,
+                id: topicId,
+                subSessionAdkId: subAdkSessionId,
                 topicTitle: title,
                 isExpanded: true,
                 messages: [...(msg.messages || []), userMsg, placeholderMsg],
@@ -996,26 +1763,34 @@ const ChatSidebar: React.FC<ChatSidebarProps> = ({ incomingRequest, onRequestHan
         )
       );
       setImproveReplyTopicId(topicId);
-      pendingRetryRef.current = { text: promptText, topicId, botMsgId };
+      pendingRetryRef.current = { text: agentText, topicId, botMsgId };
       try {
-        await sendTopicMessage(promptText, botMsgId, { sessionIdOverride: subAdkSessionId });
+        await sendTopicMessage(agentText, botMsgId, { sessionIdOverride: subAdkSessionId });
         pendingRetryRef.current = null;
       } catch (err) {
-        handleStreamFailure(err, { text: promptText, topicId, botMsgId });
+        handleStreamFailure(err, { text: agentText, topicId, botMsgId });
       }
     },
-    [messages, userId, setMessages, sendTopicMessage, handleStreamFailure]
+    [
+      deriveCurrentScope,
+      messages,
+      userId,
+      setMessages,
+      sendTopicMessage,
+      handleStreamFailure,
+      handleActionItemSpamGuard,
+      adkReviewStack,
+      adkActiveReviewId,
+      adkLinkedInReviewStack,
+      adkLinkedInActiveReviewId,
+      adkApplicationAssetReviewStack,
+      adkApplicationAssetActiveReviewId,
+      adkContentGenReviewStack,
+      adkContentGenActiveReviewId,
+      adkPortfolioReviewStack,
+      adkPortfolioActiveReviewId,
+    ]
   );
-
-  const findContentGenTopicId = useCallback((): string | null => {
-    for (let i = messages.length - 1; i >= 0; i--) {
-      const m = messages[i];
-      if (m?.isTopic && m.topicKind === "content_gen") {
-        return m.id;
-      }
-    }
-    return null;
-  }, [messages]);
 
   useEffect(() => {
     const req = incomingRequest;
@@ -1056,32 +1831,73 @@ const ChatSidebar: React.FC<ChatSidebarProps> = ({ incomingRequest, onRequestHan
 
     if (req.type === "content_gen_topic") {
       const followUp = req.followUpText?.trim();
-      const topicTitle = req.topicTitle?.trim() || (followUp ? "Improve LinkedIn Post" : "LinkedIn Topic");
+      const topicTitle =
+        req.topicTitle?.trim() || (followUp ? buildLinkedInPostTitle(req.seedTopic ?? "") : buildLinkedInTopicPickerTitle());
+      const studioFunnel = useContentGenStudioStore.getState().funnel;
+      const resolvedFunnel = req.funnel ?? studioFunnel ?? contentGenFunnelRef.current ?? "top";
+      contentGenFunnelRef.current = resolvedFunnel;
+      useContentGenStudioStore.getState().syncFromStudio({
+        funnel: resolvedFunnel,
+        topic: req.seedTopic?.trim() || useContentGenStudioStore.getState().topic,
+      });
 
-      if (followUp) {
-        const inferred = inferFunnelFromChipLabel(followUp);
-        if (inferred) {
-          contentGenFunnelRef.current = inferred;
-        }
-      } else {
-        contentGenFunnelRef.current = null;
-      }
+      if (req.improveDraft) {
+        const studio = useContentGenStudioStore.getState();
+        const topic = req.seedTopic?.trim() || studio.topic.trim();
+        const assetId = req.assetId?.trim() || studio.assetId?.trim() || null;
+        useContentGenStudioStore.getState().syncFromStudio({
+          topic: topic || studio.topic,
+          assetId,
+        });
+        const displayText = CONTENT_GEN_IMPROVE_KICKOFF_USER_MESSAGE;
+        const agentText = buildContentGenImproveBootstrap();
+        const improveTitle = buildLinkedInPostTitle(topic);
 
-      const initialText = followUp ?? buildContentGenTopicBootstrap(req.seedTopic);
-      const existingTopicId = req.reuseExistingTopic !== false && followUp ? findContentGenTopicId() : null;
-
-      if (existingTopicId) {
         void (async () => {
           try {
             if (!userId || !sessionReady || isAgentLoading || isLoadingHistory) {
               return;
             }
-            const topicId = existingTopicId;
+            const mainId = reviewMainSessionId || sessionId;
+            const sub = await ensureContentGenTopicSubSession({
+              userId,
+              mainAdkSessionId: mainId,
+              mode: "draft",
+              topic: topic || undefined,
+              assetId,
+              title: improveTitle,
+            });
+            if (!sub?.subAdkSessionId) {
+              throw new Error("Could not open a draft thread for this post.");
+            }
+            await openImproveSubTopic(sub.subAdkSessionId, sub.title ?? improveTitle, displayText, agentText);
+          } catch (err) {
+            handleStreamFailure(err, { text: agentText });
+          }
+        })();
+        return;
+      }
+
+      const agentText = followUp ?? buildContentGenTopicBootstrap(req.seedTopic, resolvedFunnel);
+      const displayText = followUp?.trim() || buildContentGenTopicUserDisplay(resolvedFunnel);
+      const existingPickerId = findContentGenTopicPickerId(messages);
+
+      if (existingPickerId && followUp) {
+        void (async () => {
+          try {
+            if (!userId || !sessionReady || isAgentLoading || isLoadingHistory) {
+              return;
+            }
+            const topicId = existingPickerId;
+            const topicRow = messages.find(m => m.id === topicId && m.isTopic);
             const userMsg: ChatMessage = {
               id: newId("u"),
               role: "user",
-              text: initialText,
+              text: displayText,
               timestamp: new Date(),
+              contentScope: topicRow?.subSessionAdkId
+                ? deriveCurrentScope(topicRow.subSessionAdkId, "sub")
+                : deriveCurrentScope(reviewMainSessionId || sessionId),
             };
             const botMsgId = typeof crypto !== "undefined" && crypto.randomUUID ? crypto.randomUUID() : newId("bot");
             const placeholderMsg: ChatMessage = {
@@ -1102,13 +1918,80 @@ const ChatSidebar: React.FC<ChatSidebarProps> = ({ incomingRequest, onRequestHan
                   : msg
               )
             );
-            pendingRetryRef.current = { text: initialText, topicId, botMsgId };
-            const topicRow = messages.find(m => m.id === topicId && m.isTopic);
+            shouldStickToBottomRef.current = true;
+            pendingRetryRef.current = { text: agentText, topicId, botMsgId };
             const subAdkId = topicRow?.subSessionAdkId;
-            await sendTopicMessage(initialText, botMsgId, subAdkId ? { sessionIdOverride: subAdkId } : undefined);
+            await sendTopicMessage(agentText, botMsgId, subAdkId ? { sessionIdOverride: subAdkId } : undefined);
             pendingRetryRef.current = null;
           } catch (err) {
-            handleStreamFailure(err, { text: initialText, topicId: existingTopicId });
+            handleStreamFailure(err, { text: agentText, topicId: existingPickerId });
+          }
+        })();
+        return;
+      }
+
+      if (existingPickerId && !followUp) {
+        if (isAgentLoading || isLoadingHistory) {
+          return;
+        }
+        const topicCard = messages.find(m => m.id === existingPickerId && m.isTopic);
+        const funnelTurn = findTopicPickerTurnForFunnel(topicCard, resolvedFunnel, contentGenDismissedChipsRef.current);
+
+        if (funnelTurn) {
+          const latestWandFunnel = findLatestTopicPickerWandFunnel(topicCard);
+          const isFunnelRevisit = latestWandFunnel != null && latestWandFunnel !== resolvedFunnel;
+
+          if (isFunnelRevisit) {
+            handleTopicPickerFunnelRevisit(existingPickerId, funnelTurn.modelMessageId);
+            return;
+          }
+
+          handleTopicPickerWandSpam(existingPickerId, funnelTurn.modelMessageId, resolvedFunnel);
+          return;
+        }
+
+        void (async () => {
+          try {
+            if (!userId || !sessionReady || isAgentLoading || isLoadingHistory) {
+              return;
+            }
+            const topicId = existingPickerId;
+            const topicRow = messages.find(m => m.id === topicId && m.isTopic);
+            const userMsg: ChatMessage = {
+              id: newId("u"),
+              role: "user",
+              text: displayText,
+              timestamp: new Date(),
+              contentScope: topicRow?.subSessionAdkId
+                ? deriveCurrentScope(topicRow.subSessionAdkId, "sub")
+                : deriveCurrentScope(reviewMainSessionId || sessionId),
+            };
+            const botMsgId = typeof crypto !== "undefined" && crypto.randomUUID ? crypto.randomUUID() : newId("bot");
+            const placeholderMsg: ChatMessage = {
+              id: botMsgId,
+              role: "model",
+              text: "",
+              timestamp: new Date(),
+            };
+            setMessages(prev =>
+              prev.map(msg =>
+                msg.id === topicId && msg.isTopic
+                  ? {
+                      ...msg,
+                      topicTitle,
+                      isExpanded: true,
+                      messages: [...(msg.messages || []), userMsg, placeholderMsg],
+                    }
+                  : msg
+              )
+            );
+            shouldStickToBottomRef.current = true;
+            pendingRetryRef.current = { text: agentText, topicId, botMsgId };
+            const subAdkId = topicRow?.subSessionAdkId;
+            await sendTopicMessage(agentText, botMsgId, subAdkId ? { sessionIdOverride: subAdkId } : undefined);
+            pendingRetryRef.current = null;
+          } catch (err) {
+            handleStreamFailure(err, { text: agentText, topicId: existingPickerId });
           }
         })();
         return;
@@ -1118,8 +2001,9 @@ const ChatSidebar: React.FC<ChatSidebarProps> = ({ incomingRequest, onRequestHan
       const initialUserMsg: ChatMessage = {
         id: newId("u"),
         role: "user",
-        text: initialText,
+        text: displayText,
         timestamp: new Date(),
+        contentScope: deriveCurrentScope(reviewMainSessionId || sessionId),
       };
       const botMsgId = typeof crypto !== "undefined" && crypto.randomUUID ? crypto.randomUUID() : newId("bot");
       const placeholderMsg: ChatMessage = {
@@ -1141,6 +2025,7 @@ const ChatSidebar: React.FC<ChatSidebarProps> = ({ incomingRequest, onRequestHan
       };
 
       setMessages(prev => [...prev, newTopic]);
+      shouldStickToBottomRef.current = true;
 
       void (async () => {
         try {
@@ -1151,7 +2036,7 @@ const ChatSidebar: React.FC<ChatSidebarProps> = ({ incomingRequest, onRequestHan
           const sub = await ensureContentGenTopicSubSession({
             userId,
             mainAdkSessionId: mainId,
-            mode: followUp ? "draft" : "topic",
+            mode: "topic",
             topic: req.seedTopic,
             title: topicTitle,
           });
@@ -1171,11 +2056,11 @@ const ChatSidebar: React.FC<ChatSidebarProps> = ({ incomingRequest, onRequestHan
               )
             );
           }
-          pendingRetryRef.current = { text: initialText, topicId: stableTopicId, botMsgId };
-          await sendTopicMessage(initialText, botMsgId, subAdkId ? { sessionIdOverride: subAdkId } : undefined);
+          pendingRetryRef.current = { text: agentText, topicId: stableTopicId, botMsgId };
+          await sendTopicMessage(agentText, botMsgId, subAdkId ? { sessionIdOverride: subAdkId } : undefined);
           pendingRetryRef.current = null;
         } catch (err) {
-          handleStreamFailure(err, { text: initialText, topicId, botMsgId });
+          handleStreamFailure(err, { text: agentText, topicId, botMsgId });
         }
       })();
       return;
@@ -1183,8 +2068,23 @@ const ChatSidebar: React.FC<ChatSidebarProps> = ({ incomingRequest, onRequestHan
 
     const isImproveSubSession = Boolean(req.featureId && req.section) && (req.improveType === "resume" || req.improveType === "linkedin");
 
+    const resumeSection = req.improveType === "resume" && req.section ? (req.section as UnibotResumeSection) : undefined;
+    const resumePromptInput =
+      resumeSection != null
+        ? {
+            section: resumeSection,
+            hasContent: req.hasContent ?? req.text.trim().length > 0,
+            entryId: req.entryId,
+          }
+        : null;
+    const resumeDisplayText = resumePromptInput ? buildResumeImproveDisplayMessage(resumePromptInput) : "";
+    const resumeAgentText = resumePromptInput ? buildResumeImproveAgentMessage(resumePromptInput) : "";
+
     const promptText =
-      req.improveType === "linkedin" ? req.text.trim() : `Please improve the following text for my resume:\n\n"${req.text}"`;
+      req.improveType === "linkedin"
+        ? req.text.trim()
+        : resumeAgentText || `Please improve the following text for my resume:\n\n"${req.text}"`;
+    const improveDisplayText = req.improveType === "linkedin" ? promptText : resumeDisplayText || promptText;
 
     void (async () => {
       try {
@@ -1197,6 +2097,7 @@ const ChatSidebar: React.FC<ChatSidebarProps> = ({ incomingRequest, onRequestHan
               adk_session_id: mainId,
               kind: "main",
               title: UNTITLED_THREAD_TITLE,
+              content_key: `general:${mainId}`,
             });
             if (regMain.session) upsertRegistryRow(regMain.session);
           }
@@ -1208,14 +2109,57 @@ const ChatSidebar: React.FC<ChatSidebarProps> = ({ incomingRequest, onRequestHan
             featureId: req.featureId,
             section: req.section,
             entryId: req.entryId,
+            contentKey:
+              req.improveType === "linkedin"
+                ? buildLinkedInImproveContentKey(req.featureId, req.section, req.entryId)
+                : buildResumeImproveContentKey(req.featureId, req.section, req.entryId),
+            title:
+              req.improveType === "linkedin"
+                ? buildLinkedInImproveTitle(req.section)
+                : req.topicTitle?.trim() || buildResumeImproveTitle(req.section),
           });
 
           if (!resolved.success || !resolved.adkSessionId) {
             throw new Error(resolved.error ?? "Could not open improve chat");
           }
 
+          const existingImproveTopic = findImproveTopic(messages, resolved.adkSessionId);
+          if (existingImproveTopic) {
+            const pendingReview =
+              findPendingReviewInTopic(existingImproveTopic, adkReviewStack, adkActiveReviewId) ??
+              findPendingReviewInTopic(existingImproveTopic, adkLinkedInReviewStack, adkLinkedInActiveReviewId) ??
+              findPendingReviewInTopic(existingImproveTopic, adkApplicationAssetReviewStack, adkApplicationAssetActiveReviewId) ??
+              findPendingReviewInTopic(existingImproveTopic, adkContentGenReviewStack, adkContentGenActiveReviewId) ??
+              findPendingReviewInTopic(existingImproveTopic, adkPortfolioReviewStack, adkPortfolioActiveReviewId);
+
+            if (pendingReview) {
+              const nudgeText =
+                req.improveType === "linkedin"
+                  ? LINKEDIN_IMPROVE_NUDGE
+                  : req.feature === "application_asset"
+                    ? APPLICATION_ASSET_IMPROVE_NUDGE
+                    : RESUME_IMPROVE_NUDGE;
+              handleActionItemSpamGuard({
+                topicId: existingImproveTopic.id,
+                actionMessageId: pendingReview.messageId,
+                kind: "review_card",
+                nudgeKey: `improve:${existingImproveTopic.id}:${resolved.adkSessionId}`,
+                nudgeText,
+              });
+              return;
+            }
+          }
+
           await refreshSessions();
-          await openImproveSubTopic(resolved.adkSessionId, resolved.title ?? "Resume · Content improvement", promptText);
+          await openImproveSubTopic(
+            resolved.adkSessionId,
+            resolved.title ??
+              (req.improveType === "linkedin"
+                ? buildLinkedInImproveTitle(req.section)
+                : (req.topicTitle ?? buildResumeImproveTitle(req.section))),
+            improveDisplayText,
+            promptText
+          );
         } else {
           setImproveReplyTopicId(null);
           await sendMainMessage(promptText, { excludeFromTitleGeneration: true });
@@ -1242,6 +2186,20 @@ const ChatSidebar: React.FC<ChatSidebarProps> = ({ incomingRequest, onRequestHan
     isLoadingHistory,
     setMessages,
     findContentGenTopicId,
+    deriveCurrentScope,
+    handleActionItemSpamGuard,
+    handleTopicPickerWandSpam,
+    handleTopicPickerFunnelRevisit,
+    adkReviewStack,
+    adkActiveReviewId,
+    adkLinkedInReviewStack,
+    adkLinkedInActiveReviewId,
+    adkApplicationAssetReviewStack,
+    adkApplicationAssetActiveReviewId,
+    adkContentGenReviewStack,
+    adkContentGenActiveReviewId,
+    adkPortfolioReviewStack,
+    adkPortfolioActiveReviewId,
   ]);
 
   useEffect(() => {
@@ -1249,31 +2207,64 @@ const ChatSidebar: React.FC<ChatSidebarProps> = ({ incomingRequest, onRequestHan
     if (!messages.some(m => m.id === improveReplyTopicId && m.isTopic)) setImproveReplyTopicId(null);
   }, [messages, improveReplyTopicId]);
 
-  const improveContextTopic = useMemo(() => messages.find(m => m.id === improveReplyTopicId && m.isTopic), [messages, improveReplyTopicId]);
+  const improveContextTopic = useMemo(() => {
+    const topic = messages.find(m => m.id === improveReplyTopicId && m.isTopic);
+    if (!topic) return undefined;
+    const subRow = topic.subSessionAdkId ? getRegistryRow(topic.subSessionAdkId) : undefined;
+    return {
+      ...topic,
+      topicTitle: displayTitleForSubSession(subRow, topic.topicTitle),
+    };
+  }, [messages, improveReplyTopicId]);
 
-  // Standard chat ordering: oldest at the top, newest at the bottom, with the
-  // scroll viewport pinned to the latest message. The newest-first reverse
-  // from the designer commit was inverting both new chats and history, so we
-  // drop it and scroll to the bottom on each update.
-  const scrollToLatest = () => {
+  // Pin to bottom when message content changes — not when sub-thread expand/collapse toggles.
+  const scrollToLatest = useCallback(() => {
     requestAnimationFrame(() => {
       const el = messagesScrollRef.current;
       if (el) el.scrollTop = el.scrollHeight;
     });
-  };
+  }, []);
 
   useEffect(() => {
-    scrollToLatest();
-  }, [
-    messages,
-    isCollapsed,
-    adkReviewStack,
-    adkActiveReviewId,
-    adkPortfolioReviewStack,
-    adkPortfolioActiveReviewId,
-    adkContentGenReviewStack,
-    adkContentGenActiveReviewId,
-  ]);
+    const el = messagesScrollRef.current;
+    if (!el) return;
+
+    const onScroll = () => {
+      const nearBottom = el.scrollHeight - el.scrollTop - el.clientHeight < 140;
+      shouldStickToBottomRef.current = nearBottom;
+    };
+    el.addEventListener("scroll", onScroll, { passive: true });
+    return () => el.removeEventListener("scroll", onScroll);
+  }, []);
+
+  useEffect(() => {
+    const el = messagesScrollRef.current;
+    if (!el) return;
+
+    const fp = chatMessagesScrollFingerprint(messages);
+    const contentChanged = fp !== messagesScrollFingerprintRef.current;
+    messagesScrollFingerprintRef.current = fp;
+
+    if (!contentChanged) return;
+
+    if (shouldStickToBottomRef.current || isAgentLoading) {
+      scrollToLatest();
+    }
+  }, [messages, isAgentLoading, scrollToLatest]);
+
+  useEffect(() => {
+    if (isAgentLoading) {
+      shouldStickToBottomRef.current = true;
+    }
+  }, [isAgentLoading]);
+
+  useEffect(() => {
+    if (prevLoadingHistoryRef.current && !isLoadingHistory) {
+      shouldStickToBottomRef.current = true;
+      scrollToLatest();
+    }
+    prevLoadingHistoryRef.current = isLoadingHistory;
+  }, [isLoadingHistory, scrollToLatest]);
 
   useEffect(() => {
     if (!historyPanelOpen) return;
@@ -1313,12 +2304,39 @@ const ChatSidebar: React.FC<ChatSidebarProps> = ({ incomingRequest, onRequestHan
     return topicPlaceholder || mainPlaceholder;
   }, [isAgentLoading, isContentGenPublishing, messages]);
 
+  /** Footer spinner is redundant once the assistant bubble already shows user-visible text. */
+  const hasVisibleStreamingAssistantText = useMemo(() => {
+    if (!isAgentLoading) return false;
+    const hasUserVisibleModelText = (text: string | undefined, isError?: boolean) => {
+      if (isError || !text?.trim()) return false;
+      return !isStreamingMachineReadablePayloadOnly(text);
+    };
+    return messages.some(
+      msg =>
+        (!msg.isTopic && msg.role === "model" && hasUserVisibleModelText(msg.text, msg.isError)) ||
+        (msg.isTopic && (msg.messages ?? []).some(sub => sub.role === "model" && hasUserVisibleModelText(sub.text, sub.isError)))
+    );
+  }, [isAgentLoading, messages]);
+
   const handleAdkAccept = useCallback(async () => {
     const card = useAdkResumeReviewStore.getState().getActiveCard();
+    const baseline = useAdkResumeReviewStore.getState().getBaselineResume();
     setAdkReviewBusy(true);
     try {
       await useAdkResumeReviewStore.getState().acceptAndSave();
-      if (card?.assistantMessageId && userId && reviewMainSessionId) {
+      if (card?.assistantMessageId && userId && reviewMainSessionId && baseline) {
+        const postResume = useResumeStore.getState().resumeData[card.resumeId] ?? baseline;
+        const prePayload = buildResumeSnapshotPayload(baseline);
+        const postPayload = buildResumeSnapshotPayload(postResume);
+        await persistAcceptSnapshotForSession(userId, reviewMainSessionId, {
+          domain: "resume",
+          contentKey: `resume:${card.resumeId}`,
+          assistantMessageId: card.assistantMessageId,
+          preAcceptPayload: prePayload,
+          postAcceptPayload: postPayload,
+          acceptedAt: new Date().toISOString(),
+        });
+        await syncAdkContentStateOnAccept(userId, reviewMainSessionId, postPayload);
         await persistReviewDecisionForSession(userId, reviewMainSessionId, card.assistantMessageId, "accepted");
       }
     } catch (err) {
@@ -1360,10 +2378,23 @@ const ChatSidebar: React.FC<ChatSidebarProps> = ({ incomingRequest, onRequestHan
 
   const handleAdkPortfolioAccept = useCallback(async () => {
     const card = useAdkPortfolioReviewStore.getState().getActiveCard();
+    const baseline = useAdkPortfolioReviewStore.getState().getBaselinePortfolio();
     setAdkReviewBusy(true);
     try {
       await useAdkPortfolioReviewStore.getState().acceptAndSave();
-      if (card?.assistantMessageId && userId && reviewMainSessionId) {
+      if (card?.assistantMessageId && userId && reviewMainSessionId && baseline) {
+        const postPortfolio = usePortfolioStore.getState().portfolioData[card.portfolioId] ?? baseline;
+        const prePayload = buildPortfolioSnapshotPayload(baseline);
+        const postPayload = buildPortfolioSnapshotPayload(postPortfolio);
+        await persistAcceptSnapshotForSession(userId, reviewMainSessionId, {
+          domain: "portfolio",
+          contentKey: `portfolio:${card.portfolioId}`,
+          assistantMessageId: card.assistantMessageId,
+          preAcceptPayload: prePayload,
+          postAcceptPayload: postPayload,
+          acceptedAt: new Date().toISOString(),
+        });
+        await syncAdkContentStateOnAccept(userId, reviewMainSessionId, postPayload);
         await persistReviewDecisionForSession(userId, reviewMainSessionId, card.assistantMessageId, "accepted");
       }
     } catch (err) {
@@ -1393,6 +2424,31 @@ const ChatSidebar: React.FC<ChatSidebarProps> = ({ incomingRequest, onRequestHan
         if (card.assistantMessageId) {
           contentGenAcceptedBotMsgIdRef.current = card.assistantMessageId;
           if (userId && reviewMainSessionId) {
+            const contentKey = buildContentGenContentKey({
+              assetId: result.assetId,
+              topic: card.topic,
+            });
+            const prePayload = buildContentGenSnapshotPayload({
+              content: card.baselineDraft,
+              topic: card.baselineTopic || card.topic,
+              funnel: card.baselineFunnel,
+              assetId: card.baselineAssetId,
+            });
+            const postPayload = buildContentGenSnapshotPayload({
+              content: card.proposedDraft,
+              topic: card.topic,
+              funnel: card.funnel,
+              assetId: result.assetId,
+            });
+            await persistAcceptSnapshotForSession(userId, reviewMainSessionId, {
+              domain: "content_gen",
+              contentKey,
+              assistantMessageId: card.assistantMessageId,
+              preAcceptPayload: prePayload,
+              postAcceptPayload: postPayload,
+              acceptedAt: new Date().toISOString(),
+            });
+            await syncAdkContentStateOnAccept(userId, reviewMainSessionId, postPayload);
             await persistReviewDecisionForSession(userId, reviewMainSessionId, card.assistantMessageId, "accepted");
           }
         }
@@ -1483,6 +2539,7 @@ const ChatSidebar: React.FC<ChatSidebarProps> = ({ incomingRequest, onRequestHan
         role: "user",
         text: userText,
         timestamp: new Date(),
+        contentScope: deriveCurrentScope(reviewMainSessionId || sessionId),
       };
       const botMsgId = typeof crypto !== "undefined" && crypto.randomUUID ? crypto.randomUUID() : newId("bot");
       const placeholderMsg: ChatMessage = { id: botMsgId, role: "model", text: "", timestamp: new Date() };
@@ -1543,7 +2600,7 @@ const ChatSidebar: React.FC<ChatSidebarProps> = ({ incomingRequest, onRequestHan
         })
       );
     },
-    [appendContentGenPublishHint, setContentGenPublishBotText, setMessages]
+    [appendContentGenPublishHint, deriveCurrentScope, reviewMainSessionId, sessionId, setContentGenPublishBotText, setMessages]
   );
 
   const handleAdkPortfolioDiscard = useCallback(async () => {
@@ -1578,6 +2635,94 @@ const ChatSidebar: React.FC<ChatSidebarProps> = ({ incomingRequest, onRequestHan
     }
   }, [queryClient, reviewMainSessionId, sessionId, userId]);
 
+  const linkedInReviewContentKey = useCallback((card: AdkLinkedInReviewCard): string => {
+    const section = (Object.keys(card.highlights)[0] ?? "profile").trim().toLowerCase();
+    if (section === "profile") return "linkedin:profile";
+    return buildLinkedInImproveContentKey(LINKEDIN_ADK_PROFILE_KEY, section);
+  }, []);
+
+  const handleAdkLinkedInAccept = useCallback(async () => {
+    const card = useAdkLinkedInReviewStore.getState().getActiveCard();
+    const baseline = useAdkLinkedInReviewStore.getState().getBaselineProfile();
+    setAdkReviewBusy(true);
+    try {
+      await useAdkLinkedInReviewStore.getState().acceptAndSave();
+      if (card?.assistantMessageId && userId && reviewMainSessionId && baseline) {
+        const snapshot = queryClient.getQueryData<LinkedInAnalysisSnapshot | null>(linkedinAnalysisQueryKey);
+        const postProfile = snapshot ? mapSnapshotToLinkedInSessionProfile(snapshot) : baseline;
+        const prePayload = buildLinkedInSnapshotPayload(card.profileKey, baseline);
+        const postPayload = buildLinkedInSnapshotPayload(card.profileKey, postProfile);
+        await persistAcceptSnapshotForSession(userId, reviewMainSessionId, {
+          domain: "linkedin",
+          contentKey: linkedInReviewContentKey(card),
+          assistantMessageId: card.assistantMessageId,
+          preAcceptPayload: prePayload,
+          postAcceptPayload: postPayload,
+          acceptedAt: new Date().toISOString(),
+        });
+        await syncAdkContentStateOnAccept(userId, reviewMainSessionId, postPayload);
+        await persistReviewDecisionForSession(userId, reviewMainSessionId, card.assistantMessageId, "accepted");
+      }
+    } catch (err) {
+      console.error("ADK LinkedIn accept failed:", err);
+    } finally {
+      setAdkReviewBusy(false);
+    }
+  }, [linkedInReviewContentKey, queryClient, reviewMainSessionId, userId]);
+
+  const handleAdkLinkedInDiscard = useCallback(async () => {
+    const card = useAdkLinkedInReviewStore.getState().getActiveCard();
+    const baseline = useAdkLinkedInReviewStore.getState().getBaselineProfile();
+    if (!baseline || !userId || !sessionId) return;
+    setAdkReviewBusy(true);
+    try {
+      const previousSnapshot = queryClient.getQueryData<LinkedInAnalysisSnapshot | null>(linkedinAnalysisQueryKey);
+      const restoredSnapshot = mapLinkedInSessionProfileToSnapshot(baseline, previousSnapshot);
+      queryClient.setQueryData(linkedinAnalysisQueryKey, restoredSnapshot);
+      const subSessionId = messages
+        .filter(m => m.isTopic && m.subSessionAdkId)
+        .find(m => m.messages?.some(sub => sub.id === card?.assistantMessageId))?.subSessionAdkId;
+      const targetSessionId = subSessionId ?? sessionId;
+      await syncSessionStateAction(userId, targetSessionId, buildAdkLinkedInStateDelta(restoredSnapshot));
+      if (card?.assistantMessageId && reviewMainSessionId) {
+        await persistReviewDecisionForSession(userId, reviewMainSessionId, card.assistantMessageId, "discarded");
+      }
+      useAdkLinkedInReviewStore.getState().popReviewAfterDiscard();
+    } catch (err) {
+      console.error("ADK LinkedIn discard failed:", err);
+    } finally {
+      setAdkReviewBusy(false);
+    }
+  }, [messages, queryClient, reviewMainSessionId, sessionId, userId]);
+
+  const maybeGenerateMainSessionTitleFromThreadPrompt = useCallback(
+    (prompt: string) => {
+      const mainId = reviewMainSessionId || sessionId;
+      if (!mainId) {
+        return;
+      }
+
+      const row = getRegistryRow(mainId);
+      if (row?.title && !isUntitledMainSessionTitle(row.title)) {
+        delete seededTitlePromptByMainIdRef.current[mainId];
+        return;
+      }
+
+      const { textWithoutMarker } = extractActionLabelFromRefineMessage(prompt);
+      const trimmed = textWithoutMarker.trim();
+      if (!trimmed || isHandoffPromptForTitle(trimmed)) {
+        return;
+      }
+
+      if (!seededTitlePromptByMainIdRef.current[mainId]) {
+        seededTitlePromptByMainIdRef.current[mainId] = trimmed;
+      }
+      const seededPrompt = seededTitlePromptByMainIdRef.current[mainId];
+      void generateMainSessionTitleIfNeeded(mainId, seededPrompt, refreshSessions, userId);
+    },
+    [reviewMainSessionId, sessionId, refreshSessions]
+  );
+
   const sendUserMessageToTopic = useCallback(
     async (topicId: string, text: string, actionMeta?: AssetActionMeta) => {
       const trimmed = text.trim();
@@ -1590,26 +2735,34 @@ const ChatSidebar: React.FC<ChatSidebarProps> = ({ incomingRequest, onRequestHan
       if (topic && !subAdkId && userId && reviewMainSessionId) {
         if (topic.topicKind === "application_asset") {
           const studio = useApplicationAssetStudioStore.getState();
+          const topicRow = topic.subSessionAdkId ? getRegistryRow(topic.subSessionAdkId) : undefined;
+          const topicAssetType =
+            (actionMeta?.assetType as ApplicationAssetApiType | undefined) ??
+            (topicRow?.section as ApplicationAssetApiType | null) ??
+            studio.assetType ??
+            "coverletter";
           const sub = await ensureApplicationAssetTopicSubSession({
             userId,
             mainAdkSessionId: reviewMainSessionId,
-            assetType: studio.assetType ?? "coverletter",
+            assetType: topicAssetType,
             role: studio.role,
             company: studio.company,
             assetId: studio.assetId,
-            title: topic.topicTitle ?? applicationAssetTopicTitle(studio.assetType ?? "coverletter", studio.company, studio.role),
+            title: topic.topicTitle ?? applicationAssetTopicTitle(topicAssetType, studio.company, studio.role, studio.assetId),
           });
           if (sub) {
             subAdkId = sub.subAdkSessionId;
             effectiveTopicId = sub.stableTopicId;
           }
         } else if (topic.topicKind === "content_gen") {
+          const studio = useContentGenStudioStore.getState();
           const sub = await ensureContentGenTopicSubSession({
             userId,
             mainAdkSessionId: reviewMainSessionId,
             mode: topic.topicTitle?.includes("Topic") ? "topic" : "draft",
-            topic: topic.topicTitle,
-            title: topic.topicTitle ?? "LinkedIn Draft",
+            topic: studio.topic || topic.topicTitle,
+            assetId: studio.assetId,
+            title: topic.topicTitle ?? buildLinkedInPostTitle(studio.topic),
           });
           if (sub) {
             subAdkId = sub.subAdkSessionId;
@@ -1624,6 +2777,10 @@ const ChatSidebar: React.FC<ChatSidebarProps> = ({ incomingRequest, onRequestHan
         text: outboundText,
         timestamp: new Date(),
         assetActionMeta: actionMeta,
+        contentScope:
+          topic && (subAdkId || topic.subSessionAdkId)
+            ? deriveCurrentScope(subAdkId ?? topic.subSessionAdkId ?? reviewMainSessionId ?? sessionId, "sub")
+            : deriveCurrentScope(reviewMainSessionId || sessionId),
       };
       const botMsgId = typeof crypto !== "undefined" && crypto.randomUUID ? crypto.randomUUID() : newId("bot");
       const placeholderMsg: ChatMessage = { id: botMsgId, role: "model", text: "", timestamp: new Date() };
@@ -1652,22 +2809,101 @@ const ChatSidebar: React.FC<ChatSidebarProps> = ({ incomingRequest, onRequestHan
       try {
         await sendTopicMessage(outboundText, botMsgId, subAdkId ? { sessionIdOverride: subAdkId } : undefined);
         pendingRetryRef.current = null;
+        maybeGenerateMainSessionTitleFromThreadPrompt(outboundText);
+        if (userId && subAdkId) {
+          void syncTopicUserInvocationIdsFromAdk(userId, subAdkId, effectiveTopicId, setMessages);
+        }
       } catch (err) {
         handleStreamFailure(err, { text: outboundText, topicId: effectiveTopicId, botMsgId });
       }
     },
-    [canSend, messages, sendTopicMessage, handleStreamFailure, setMessages, userId, reviewMainSessionId]
+    [
+      canSend,
+      deriveCurrentScope,
+      messages,
+      sendTopicMessage,
+      handleStreamFailure,
+      setMessages,
+      userId,
+      reviewMainSessionId,
+      sessionId,
+      maybeGenerateMainSessionTitleFromThreadPrompt,
+    ]
   );
 
-  const findApplicationAssetTopicId = useCallback((): string | null => {
-    for (let i = messages.length - 1; i >= 0; i--) {
-      const m = messages[i];
-      if (m?.isTopic && m.topicKind === "application_asset") {
-        return m.id;
+  const handleConfirmRewind = useCallback(
+    async (options: { revertEditorState: boolean; redirectAfterRewind?: boolean }) => {
+      const pending = pendingRewindConfirmRef.current;
+      if (!pending) return;
+
+      closeRewindConfirm();
+
+      try {
+        await runUserMessageRewind(pending.ctx, { revertEditorState: options.revertEditorState });
+
+        if (pending.mode === "edit") {
+          setEditingUserMessage(null);
+          if (pending.ctx.topicId) {
+            await sendUserMessageToTopic(pending.ctx.topicId, pending.editDraftText, pending.assetActionMeta);
+          } else {
+            await sendMainMessage(pending.editDraftText);
+          }
+        }
+
+        if (options.redirectAfterRewind) {
+          const redirectScope = resolveRewindRedirectScope(pending.ctx.targetSessionId, pending.ctx.messageScope);
+          const path = getRedirectPathForScope(redirectScope);
+          if (path) router.push(path);
+        }
+      } catch (err) {
+        setStreamError(formatUnibotStreamError(err, { source: "rewind" }));
       }
-    }
-    return null;
-  }, [messages]);
+    },
+    [closeRewindConfirm, runUserMessageRewind, sendUserMessageToTopic, sendMainMessage, setStreamError, router]
+  );
+
+  const renderEditableUserMessage = useCallback(
+    (message: ChatMessage, targetSessionId: string, topicId: string | undefined, displayText: string, bubbleClassName: string) => {
+      const messageKey = `${topicId ?? "main"}:${message.id}`;
+      const isEditing = editingUserMessage?.messageKey === messageKey;
+
+      if (isEditing && editingUserMessage) {
+        return (
+          <UnibotEditableUserBubble
+            value={editingUserMessage.draftText}
+            disabled={isRewinding || isAgentLoading}
+            onChange={draftText => setEditingUserMessage(prev => (prev ? { ...prev, draftText } : prev))}
+            onSubmit={() => void handleSubmitEditedUserMessage()}
+            onCancel={() => setEditingUserMessage(null)}
+          />
+        );
+      }
+
+      return (
+        <>
+          <div className={bubbleClassName}>
+            <span className="whitespace-pre-wrap">{displayText}</span>
+          </div>
+          {message.invocationId ? (
+            <UnibotUserMessageToolbar
+              disabled={!canRewind}
+              onEdit={() => handleStartEditUserMessage(message, targetSessionId, topicId, displayText || message.text)}
+              onDelete={() => void handleDeleteUserMessage(message, targetSessionId, topicId)}
+            />
+          ) : null}
+        </>
+      );
+    },
+    [
+      canRewind,
+      editingUserMessage,
+      handleDeleteUserMessage,
+      handleStartEditUserMessage,
+      handleSubmitEditedUserMessage,
+      isAgentLoading,
+      isRewinding,
+    ]
+  );
 
   const sendApplicationAssetRefinement = useCallback(
     async (message: string, assetType: ApplicationAssetApiType, actionMeta?: AssetActionMeta, options?: { topicTitle?: string }) => {
@@ -1679,20 +2915,50 @@ const ChatSidebar: React.FC<ChatSidebarProps> = ({ incomingRequest, onRequestHan
 
       const outboundText = withPersistedActionLabel(message, actionMeta?.presetLabel);
 
-      const existingTopicId = findApplicationAssetTopicId();
-      if (existingTopicId) {
-        await sendUserMessageToTopic(existingTopicId, message, actionMeta);
+      const studio = useApplicationAssetStudioStore.getState();
+      const mainId = reviewMainSessionId || sessionId;
+      const sub = await ensureApplicationAssetTopicSubSession({
+        userId,
+        mainAdkSessionId: mainId,
+        assetType,
+        role: studio.role,
+        company: studio.company,
+        assetId: studio.assetId,
+        title: options?.topicTitle ?? applicationAssetTopicTitle(assetType, studio.company, studio.role, studio.assetId),
+      });
+      if (!sub?.subAdkSessionId) {
+        useApplicationAssetStudioStore.getState().setSelectionRefineLoading(false);
+        throw new Error("Could not open a draft thread for this application asset.");
+      }
+
+      const existingTopic = findImproveTopic(messages, sub.subAdkSessionId);
+      if (existingTopic) {
+        const pendingReview = findPendingReviewInTopic(existingTopic, adkApplicationAssetReviewStack, adkApplicationAssetActiveReviewId);
+        if (pendingReview) {
+          useApplicationAssetStudioStore.getState().setSelectionRefineLoading(false);
+          handleActionItemSpamGuard({
+            topicId: existingTopic.id,
+            actionMessageId: pendingReview.messageId,
+            kind: "review_card",
+            nudgeKey: `application_asset_improve:${existingTopic.id}`,
+            nudgeText: APPLICATION_ASSET_IMPROVE_NUDGE,
+          });
+          return;
+        }
+        const topicSubtitle = applicationAssetTopicSubtitle(studio.company, studio.role);
+        setMessages(prev => prev.map(m => (m.id === existingTopic.id ? { ...m, topicSubtitle, isExpanded: true } : m)));
+        await sendUserMessageToTopic(existingTopic.id, message, actionMeta);
         return;
       }
 
-      const studio = useApplicationAssetStudioStore.getState();
-      const topicId = newId("topic");
+      const topicId = sub.stableTopicId;
       const userMsg: ChatMessage = {
         id: newId("u"),
         role: "user",
         text: outboundText,
         timestamp: new Date(),
         assetActionMeta: actionMeta,
+        contentScope: deriveCurrentScope(reviewMainSessionId || sessionId),
       };
       const botMsgId = typeof crypto !== "undefined" && crypto.randomUUID ? crypto.randomUUID() : newId("bot");
       const placeholderMsg: ChatMessage = {
@@ -1706,19 +2972,6 @@ const ChatSidebar: React.FC<ChatSidebarProps> = ({ incomingRequest, onRequestHan
         botMsgId,
         assetType,
       };
-      const newTopic: ChatMessage = {
-        id: topicId,
-        role: "model",
-        text: "",
-        timestamp: new Date(),
-        isTopic: true,
-        topicKind: "application_asset",
-        topicTitle: options?.topicTitle ?? applicationAssetTopicTitle(assetType, studio.company, studio.role),
-        isExpanded: true,
-        messages: [userMsg, placeholderMsg],
-      };
-
-      setMessages(prev => [...prev, newTopic]);
 
       try {
         if (isAgentLoading || isLoadingHistory) {
@@ -1726,41 +2979,49 @@ const ChatSidebar: React.FC<ChatSidebarProps> = ({ incomingRequest, onRequestHan
           return;
         }
         pendingRetryRef.current = { text: outboundText, topicId, botMsgId };
-        const mainId = reviewMainSessionId || sessionId;
-        const topicTitle = options?.topicTitle ?? applicationAssetTopicTitle(assetType, studio.company, studio.role);
-        const sub = await ensureApplicationAssetTopicSubSession({
-          userId,
-          mainAdkSessionId: mainId,
-          assetType,
-          role: studio.role,
-          company: studio.company,
-          assetId: studio.assetId,
-          title: topicTitle,
-        });
-        const subAdkId = sub?.subAdkSessionId;
-        const stableTopicId = sub?.stableTopicId ?? topicId;
-        if (sub) {
-          setMessages(prev =>
-            prev.map(m =>
-              m.id === topicId
+        const topicTitle = options?.topicTitle ?? applicationAssetTopicTitle(assetType, studio.company, studio.role, studio.assetId);
+        const subAdkId = sub.subAdkSessionId;
+        const stableTopicId = sub.stableTopicId;
+        setMessages(prev => {
+          const alreadyOpen = prev.some(m => m.id === stableTopicId && m.isTopic);
+          if (alreadyOpen) {
+            return prev.map(m =>
+              m.id === stableTopicId
                 ? {
                     ...m,
-                    id: stableTopicId,
-                    subSessionAdkId: sub.subAdkSessionId,
-                    topicTitle: sub.title,
+                    subSessionAdkId: subAdkId,
+                    topicTitle: sub.title ?? topicTitle,
+                    topicSubtitle: applicationAssetTopicSubtitle(studio.company, studio.role),
+                    isExpanded: true,
+                    messages: [...(m.messages ?? []), userMsg, placeholderMsg],
                   }
                 : m
-            )
-          );
-          if (applicationAssetAdkDraftJobRef.current?.topicId === topicId) {
-            applicationAssetAdkDraftJobRef.current = {
-              ...applicationAssetAdkDraftJobRef.current,
-              topicId: stableTopicId,
-            };
+            );
           }
+          const newTopic: ChatMessage = {
+            id: stableTopicId,
+            role: "model",
+            text: "",
+            timestamp: new Date(),
+            isTopic: true,
+            topicKind: "application_asset",
+            topicTitle: sub.title ?? topicTitle,
+            topicSubtitle: applicationAssetTopicSubtitle(studio.company, studio.role),
+            isExpanded: true,
+            subSessionAdkId: subAdkId,
+            messages: [userMsg, placeholderMsg],
+          };
+          return insertTopicInMainThread(prev, newTopic);
+        });
+        if (applicationAssetAdkDraftJobRef.current?.topicId === topicId) {
+          applicationAssetAdkDraftJobRef.current = {
+            ...applicationAssetAdkDraftJobRef.current,
+            topicId: stableTopicId,
+          };
         }
-        await sendTopicMessage(outboundText, botMsgId, subAdkId ? { sessionIdOverride: subAdkId } : undefined);
+        await sendTopicMessage(outboundText, botMsgId, { sessionIdOverride: subAdkId });
         pendingRetryRef.current = null;
+        maybeGenerateMainSessionTitleFromThreadPrompt(outboundText);
       } catch (err) {
         useApplicationAssetStudioStore.getState().setSelectionRefineLoading(false);
         handleStreamFailure(err, { text: outboundText, topicId, botMsgId });
@@ -1769,7 +3030,7 @@ const ChatSidebar: React.FC<ChatSidebarProps> = ({ incomingRequest, onRequestHan
     [
       userId,
       sessionReady,
-      findApplicationAssetTopicId,
+      messages,
       sendUserMessageToTopic,
       setMessages,
       isAgentLoading,
@@ -1778,6 +3039,11 @@ const ChatSidebar: React.FC<ChatSidebarProps> = ({ incomingRequest, onRequestHan
       sessionId,
       sendTopicMessage,
       handleStreamFailure,
+      deriveCurrentScope,
+      maybeGenerateMainSessionTitleFromThreadPrompt,
+      adkApplicationAssetReviewStack,
+      adkApplicationAssetActiveReviewId,
+      handleActionItemSpamGuard,
     ]
   );
 
@@ -1799,12 +3065,14 @@ const ChatSidebar: React.FC<ChatSidebarProps> = ({ incomingRequest, onRequestHan
         return;
       }
       const store = useApplicationAssetStudioStore.getState();
+      const baselineDraft = d.baselineDraft?.trim() || store.acceptedContent.trim() || store.draftPreview.trim();
       store.clearSelection();
       store.setPendingRefineContext({
         assetType: d.assetType,
         selectedText: d.selectedText,
         presetLabel: d.presetLabel,
         kind: "preset",
+        baselineDraft,
       });
       showSelectionSentPill(d.presetLabel);
       const meta: AssetActionMeta = {
@@ -1824,11 +3092,13 @@ const ChatSidebar: React.FC<ChatSidebarProps> = ({ incomingRequest, onRequestHan
       }
       setIsCollapsed(false);
       const store = useApplicationAssetStudioStore.getState();
+      const baselineDraft = d.baselineDraft?.trim() || store.acceptedContent.trim() || store.draftPreview.trim();
       store.clearSelection();
       store.setPendingRefineContext({
         assetType: d.assetType,
         selectedText: d.selectedText.trim(),
         kind: "freeform",
+        baselineDraft,
       });
       setSelectionQuoteContext({ assetType: d.assetType, selectedText: d.selectedText.trim() });
     };
@@ -1861,7 +3131,7 @@ const ChatSidebar: React.FC<ChatSidebarProps> = ({ incomingRequest, onRequestHan
           prompt: message,
         };
         void sendApplicationAssetRefinement(message, d.assetType, meta, {
-          topicTitle: applicationAssetImproveTopicTitle(d.assetType),
+          topicTitle: applicationAssetImproveTopicTitle(d.assetType, d.assetId),
         });
         return;
       }
@@ -2012,7 +3282,8 @@ const ChatSidebar: React.FC<ChatSidebarProps> = ({ incomingRequest, onRequestHan
         pendingRetryRef.current = { text: textToSend, botMsgId: assistantMsgId };
         pendingRetryRef.current = null;
         if (!isHandoffPromptForTitle(textToSend)) {
-          void generateMainSessionTitleIfNeeded(mainId, textToSend, refreshSessions);
+          markMainSessionHasUserPrompt(userId, mainId);
+          void generateMainSessionTitleIfNeeded(mainId, textToSend, refreshSessions, userId);
         }
       } catch (err) {
         const fromErr =
@@ -2035,6 +3306,7 @@ const ChatSidebar: React.FC<ChatSidebarProps> = ({ incomingRequest, onRequestHan
       handleContentGenPublishIntent,
       currentMainSessionId,
       sessionId,
+      userId,
       refreshSessions,
       setMessages,
       setInput,
@@ -2125,6 +3397,30 @@ const ChatSidebar: React.FC<ChatSidebarProps> = ({ incomingRequest, onRequestHan
     }
   };
 
+  const onDeleteSubThread = async (item: { topicId: string; subAdkSessionId?: string }) => {
+    if (!canUseHistory || isAgentLoading) return;
+    setIsDeletingSession(true);
+    try {
+      const subId = item.subAdkSessionId?.trim();
+      if (subId) {
+        if (sessionId === subId && currentMainSessionId) {
+          await handleSessionSwitch(currentMainSessionId);
+        }
+        await handleDeleteSession(subId);
+      }
+      setMessages(prev => prev.filter(m => m.id !== item.topicId));
+      if (improveReplyTopicId === item.topicId) {
+        setImproveReplyTopicId(null);
+      }
+      setPendingDeleteSession(null);
+      await refreshSessions();
+    } catch {
+      /* sessionError surfaced by provider */
+    } finally {
+      setIsDeletingSession(false);
+    }
+  };
+
   const sendTopicCardMessage = useCallback(
     async (topicId: string, text: string) => {
       if (!text.trim() || !canSend) return;
@@ -2161,7 +3457,11 @@ const ChatSidebar: React.FC<ChatSidebarProps> = ({ incomingRequest, onRequestHan
             if (shouldForceDjangoContentGenDraft()) {
               window.dispatchEvent(
                 new CustomEvent(CONTENT_GEN_EVENTS.requestDraft, {
-                  detail: { topic: resolvedTopic, funnel },
+                  detail: {
+                    topic: resolvedTopic,
+                    funnel,
+                    mood: useContentGenStudioStore.getState().mood,
+                  },
                 })
               );
               return;
@@ -2175,6 +3475,9 @@ const ChatSidebar: React.FC<ChatSidebarProps> = ({ incomingRequest, onRequestHan
         role: "user",
         text: text.trim(),
         timestamp: new Date(),
+        contentScope: topicCard?.subSessionAdkId
+          ? deriveCurrentScope(topicCard.subSessionAdkId, "sub")
+          : deriveCurrentScope(reviewMainSessionId || sessionId),
       };
 
       const botMsgId = typeof crypto !== "undefined" && crypto.randomUUID ? crypto.randomUUID() : newId("bot");
@@ -2200,46 +3503,68 @@ const ChatSidebar: React.FC<ChatSidebarProps> = ({ incomingRequest, onRequestHan
 
       pendingRetryRef.current = { text: text.trim(), topicId, botMsgId };
       try {
-        await sendTopicMessage(text.trim(), botMsgId);
+        const subAdkId = topicCard?.subSessionAdkId?.trim();
+        await sendTopicMessage(text.trim(), botMsgId, subAdkId ? { sessionIdOverride: subAdkId } : undefined);
         pendingRetryRef.current = null;
       } catch (err) {
         handleStreamFailure(err, { text: text.trim(), topicId, botMsgId });
       }
     },
-    [canSend, handleContentGenPublishIntent, messages, sendTopicMessage, handleStreamFailure, setMessages]
+    [
+      canSend,
+      deriveCurrentScope,
+      handleContentGenPublishIntent,
+      messages,
+      sendTopicMessage,
+      handleStreamFailure,
+      setMessages,
+      reviewMainSessionId,
+      sessionId,
+    ]
   );
 
   const handleContentGenImprove = useCallback(
     async (topicId: string | null) => {
-      const kickoff = CONTENT_GEN_IMPROVE_KICKOFF_USER_MESSAGE;
-      const resolvedTopicId = topicId ?? [...messages].reverse().find(m => m.isTopic && m.topicKind === "content_gen")?.id ?? null;
-
-      if (resolvedTopicId) {
-        await sendTopicCardMessage(resolvedTopicId, kickoff);
+      const agentText = buildContentGenImproveBootstrap();
+      if (topicId) {
+        await sendTopicCardMessage(topicId, agentText);
         return;
       }
 
-      try {
-        await sendMainMessage(kickoff);
-      } catch (err) {
-        handleStreamFailure(err, { text: kickoff });
-      }
+      window.dispatchEvent(
+        new CustomEvent(CONTENT_GEN_EVENTS.openTopic, {
+          detail: { improveDraft: true, requestKey: Date.now() },
+        })
+      );
     },
-    [messages, sendTopicCardMessage, sendMainMessage, handleStreamFailure]
+    [sendTopicCardMessage]
   );
 
   const handleApplyContentGenTopic = useCallback(
-    (topicId: string, title: string, funnel: ContentGenFunnel | null) => {
+    (topicId: string, title: string, funnel: ContentGenFunnel | null, assistantMessageId?: string) => {
       contentGenAppliedTopicRef.current = title.trim();
-      const resolvedFunnel = funnel ?? contentGenFunnelRef.current ?? undefined;
+      clearTopicPickerSpamCounts(topicId);
+      const topicCard = messages.find(m => m.id === topicId && m.isTopic);
+      const turnFunnel =
+        funnel ??
+        (assistantMessageId ? resolveFunnelForPlannerModelMessage(topicCard, assistantMessageId) : null) ??
+        contentGenFunnelRef.current;
+      if (turnFunnel) {
+        syncContentGenFunnel(turnFunnel);
+      }
+      const resolvedFunnel = turnFunnel ?? undefined;
+      if (assistantMessageId) {
+        contentGenDismissedChipsRef.current.add(assistantMessageId);
+      }
+      setHighlightedActionItem(null);
       window.dispatchEvent(
         new CustomEvent(CONTENT_GEN_EVENTS.applyTopic, {
-          detail: { topic: title, funnel: resolvedFunnel },
+          detail: { topic: title, funnel: resolvedFunnel, flashInput: true },
         })
       );
       setMessages(prev => prev.map(msg => (msg.id === topicId ? { ...msg, isExpanded: false } : msg)));
     },
-    [setMessages]
+    [setMessages, clearTopicPickerSpamCounts, syncContentGenFunnel, messages]
   );
 
   const handleContentGenAction = useCallback(
@@ -2275,7 +3600,7 @@ const ChatSidebar: React.FC<ChatSidebarProps> = ({ incomingRequest, onRequestHan
         );
         window.dispatchEvent(
           new CustomEvent(CONTENT_GEN_EVENTS.requestDraft, {
-            detail: { topic, funnel },
+            detail: { topic, funnel, mood: useContentGenStudioStore.getState().mood },
           })
         );
         return;
@@ -2294,42 +3619,54 @@ const ChatSidebar: React.FC<ChatSidebarProps> = ({ incomingRequest, onRequestHan
   );
 
   const handleContentGenAffirmation = useCallback(
-    (topicId: string, label: string) => {
-      const inferred = inferFunnelFromChipLabel(label);
-      if (inferred) {
-        contentGenFunnelRef.current = inferred;
+    (topicId: string, label: string, assistantMessageId?: string, funnel?: ContentGenFunnel | null) => {
+      clearTopicPickerSpamCounts(topicId);
+      const topicCard = messages.find(m => m.id === topicId && m.isTopic);
+      const turnFunnel = funnel ?? (assistantMessageId ? resolveFunnelForPlannerModelMessage(topicCard, assistantMessageId) : null);
+      if (turnFunnel) {
+        syncContentGenFunnel(turnFunnel);
+      }
+      if (assistantMessageId) {
+        contentGenDismissedChipsRef.current.add(assistantMessageId);
+        setMessages(prev => [...prev]);
       }
       void sendTopicCardMessage(topicId, label);
     },
-    [sendTopicCardMessage]
+    [sendTopicCardMessage, setMessages, clearTopicPickerSpamCounts, syncContentGenFunnel, messages]
   );
 
-  const handleMainContentGenAffirmation = useCallback((label: string) => {
-    const inferred = inferFunnelFromChipLabel(label);
-    if (inferred) {
-      contentGenFunnelRef.current = inferred;
-      const studioTopic = useContentGenStudioStore.getState().topic;
+  const handleMainContentGenAffirmation = useCallback(
+    (label: string, assistantMessageId?: string) => {
+      if (assistantMessageId) {
+        contentGenDismissedChipsRef.current.add(assistantMessageId);
+        setMessages(prev => [...prev]);
+      }
+      const funnel = useContentGenStudioStore.getState().funnel ?? contentGenFunnelRef.current ?? "top";
+      contentGenFunnelRef.current = funnel;
       window.dispatchEvent(
-        new CustomEvent(CONTENT_GEN_EVENTS.applyTopic, {
-          detail: { topic: studioTopic, funnel: inferred },
+        new CustomEvent(CONTENT_GEN_EVENTS.openTopic, {
+          detail: { followUpText: label, funnel, requestKey: Date.now() },
         })
       );
-    }
-    window.dispatchEvent(
-      new CustomEvent(CONTENT_GEN_EVENTS.openTopic, {
-        detail: { followUpText: label, requestKey: Date.now() },
-      })
-    );
-  }, []);
+    },
+    [setMessages]
+  );
 
-  const handleMainApplyContentGenTopic = useCallback((title: string, funnel: ContentGenFunnel | null) => {
-    const resolvedFunnel = funnel ?? contentGenFunnelRef.current ?? undefined;
-    window.dispatchEvent(
-      new CustomEvent(CONTENT_GEN_EVENTS.applyTopic, {
-        detail: { topic: title, funnel: resolvedFunnel },
-      })
-    );
-  }, []);
+  const handleMainApplyContentGenTopic = useCallback(
+    (title: string, funnel: ContentGenFunnel | null, assistantMessageId?: string) => {
+      const resolvedFunnel = funnel ?? contentGenFunnelRef.current ?? undefined;
+      if (assistantMessageId) {
+        contentGenDismissedChipsRef.current.add(assistantMessageId);
+        setMessages(prev => [...prev]);
+      }
+      window.dispatchEvent(
+        new CustomEvent(CONTENT_GEN_EVENTS.applyTopic, {
+          detail: { topic: title, funnel: resolvedFunnel, flashInput: true },
+        })
+      );
+    },
+    [setMessages]
+  );
 
   const handleTopicSend = async (topicId: string) => {
     const topicInput = topicInputs[topicId];
@@ -2461,27 +3798,50 @@ const ChatSidebar: React.FC<ChatSidebarProps> = ({ incomingRequest, onRequestHan
     document.addEventListener("pointercancel", onUp);
   };
 
+  const rewindStateAssessment = pendingRewindConfirm
+    ? assessRewindStateRevert(pendingRewindConfirm.ctx.messageScope, pendingRewindConfirm.ctx.scopeMatch)
+    : null;
+
+  const rewindConfirmDialog = pendingRewindConfirm ? (
+    <AdkRewindConfirmDialog
+      open
+      mode={pendingRewindConfirm.mode}
+      previewText={pendingRewindConfirm.mode === "edit" ? pendingRewindConfirm.editDraftText : pendingRewindConfirm.ctx.previewText}
+      isSubmitting={isRewinding}
+      scopeMatch={pendingRewindConfirm.ctx.scopeMatch}
+      featureLabel={getContentScopeFeatureLabel(pendingRewindConfirm.ctx.messageScope)}
+      redirectTargetLabel={getContentScopeRedirectLabel(pendingRewindConfirm.ctx.messageScope)}
+      canOfferStateRevert={rewindStateAssessment?.canOfferStateRevert ?? false}
+      showHeavyWorkWarning={rewindStateAssessment?.showHeavyWorkWarning ?? false}
+      onClose={closeRewindConfirm}
+      onConfirm={options => void handleConfirmRewind(options)}
+    />
+  ) : null;
+
   if (isCollapsed) {
     return (
-      <div className="relative flex h-full w-16 shrink-0 flex-col items-center border-r border-slate-200 bg-white py-4 transition-all duration-300 dark:border-white/5 dark:bg-slate-950 z-20">
-        <button
-          type="button"
-          onClick={() => setIsCollapsed(false)}
-          className="mb-2 flex h-16 w-full items-center justify-center rounded-lg text-brand-600 transition-colors hover:bg-slate-50 dark:text-brand-400 dark:hover:bg-slate-800"
-          aria-label="Expand Unibot sidebar"
-        >
-          <UnimadUMark size={26} />
-        </button>
-        <button
-          type="button"
-          onClick={() => setIsCollapsed(false)}
-          className="p-3 text-slate-400 hover:text-slate-600 dark:hover:text-slate-200 hover:bg-slate-50 dark:hover:bg-slate-800 rounded-xl"
-          aria-label="Expand sidebar"
-        >
-          <Maximize2 size={20} />
-        </button>
-        <PanelResizeHandle onPointerDown={startResizeFromCollapsed} label="Drag to resize Unibot" />
-      </div>
+      <>
+        {rewindConfirmDialog}
+        <div className="relative flex h-full w-16 shrink-0 flex-col items-center border-r border-slate-200 bg-white py-4 transition-all duration-300 dark:border-white/5 dark:bg-slate-950 z-20">
+          <button
+            type="button"
+            onClick={() => setIsCollapsed(false)}
+            className="mb-2 flex h-16 w-full items-center justify-center rounded-lg text-brand-600 transition-colors hover:bg-slate-50 dark:text-brand-400 dark:hover:bg-slate-800"
+            aria-label="Expand Unibot sidebar"
+          >
+            <UnimadUMark size={26} />
+          </button>
+          <button
+            type="button"
+            onClick={() => setIsCollapsed(false)}
+            className="p-3 text-slate-400 hover:text-slate-600 dark:hover:text-slate-200 hover:bg-slate-50 dark:hover:bg-slate-800 rounded-xl"
+            aria-label="Expand sidebar"
+          >
+            <Maximize2 size={20} />
+          </button>
+          <PanelResizeHandle onPointerDown={startResizeFromCollapsed} label="Drag to resize Unibot" />
+        </div>
+      </>
     );
   }
 
@@ -2514,9 +3874,35 @@ const ChatSidebar: React.FC<ChatSidebarProps> = ({ incomingRequest, onRequestHan
           </p>
         )}
 
-        {messages.map(msg => {
+        {(() => {
+          const seenTopicIds = new Set<string>();
+          return messages.filter(msg => {
+            if (!msg.isTopic) return true;
+            if (seenTopicIds.has(msg.id)) return false;
+            seenTopicIds.add(msg.id);
+            return true;
+          });
+        })().map(msg => {
           if (msg.isTopic) {
             const expanded = msg.isExpanded !== false;
+            const subRow = msg.subSessionAdkId ? getRegistryRow(msg.subSessionAdkId) : undefined;
+            const displayTitle = displayTitleForSubSession(subRow, msg.topicTitle);
+            const studio = useApplicationAssetStudioStore.getState();
+            const displaySubtitle =
+              msg.topicKind === "application_asset"
+                ? resolveApplicationAssetTopicDisplaySubtitle({
+                    topicSubtitle: msg.topicSubtitle,
+                    subRow,
+                    studioRole: studio.role,
+                    studioCompany: studio.company,
+                    studioAssetId: studio.assetId,
+                  })
+                : (msg.topicSubtitle ?? (subRow ? deriveSubSessionSubtitle(subRow) : undefined));
+            const goTarget = subRow ? resolveSubThreadNavTarget(subRow) : null;
+            const showGoToAsset = expanded && goTarget != null && !isSubThreadNavTargetActive(goTarget, pathname, searchParams);
+            const nudgeTopicGoTo = () => {
+              if (goTarget) nudgeGoToFeature(goTarget.href);
+            };
             return (
               <div
                 key={msg.id}
@@ -2528,8 +3914,16 @@ const ChatSidebar: React.FC<ChatSidebarProps> = ({ incomingRequest, onRequestHan
                   aria-expanded={expanded}
                   className="group -mx-1 flex w-full items-center justify-between gap-2 rounded-lg px-1 py-2 text-left transition-colors hover:bg-slate-50 dark:hover:bg-slate-800/60"
                 >
-                  <span className="truncate text-xs font-medium uppercase tracking-wide text-slate-500 transition-colors group-hover:text-brand-600 dark:text-slate-400">
-                    {msg.topicTitle}
+                  <span
+                    className="truncate text-xs font-medium uppercase tracking-wide text-slate-500 transition-colors group-hover:text-brand-600 dark:text-slate-400"
+                    title={displaySubtitle}
+                  >
+                    {displayTitle}
+                    {displaySubtitle ? (
+                      <span className="mt-0.5 block truncate text-[10px] font-normal normal-case tracking-normal text-slate-400 dark:text-slate-500">
+                        {displaySubtitle}
+                      </span>
+                    ) : null}
                   </span>
                   {expanded ? (
                     <ChevronUp
@@ -2548,16 +3942,26 @@ const ChatSidebar: React.FC<ChatSidebarProps> = ({ incomingRequest, onRequestHan
 
                 {expanded && (
                   <div className="mt-2">
+                    {showGoToAsset && goTarget ? (
+                      <SubThreadGoToAssetLink
+                        target={goTarget}
+                        highlighted={highlightedGoToHref === goTarget.href}
+                        onNavigate={href => router.push(href)}
+                      />
+                    ) : null}
                     <div className="space-y-4 mb-3">
                       {msg.messages?.map(subMsg => {
                         const isContentGen = msg.topicKind === "content_gen";
                         const isApplicationAsset = msg.topicKind === "application_asset";
+                        const improveSubRow = msg.subSessionAdkId ? getRegistryRow(msg.subSessionAdkId) : undefined;
+                        const isResumeImprove = msg.topicKind === "improve" && improveSubRow?.feature === "resume";
                         const subHasDraft =
                           isContentGen && subMsg.role === "model" && Boolean(subMsg.text && messageHasContentGenDraft(subMsg.text));
+                        const plannerTurnFunnel = resolveFunnelForPlannerModelMessage(msg, subMsg.id) ?? contentGenFunnelRef.current;
                         const subHasPlanner =
                           isContentGen &&
                           subMsg.role === "model" &&
-                          Boolean(subMsg.text && messageHasPlannerChips(subMsg.text) && !subHasDraft);
+                          Boolean(subMsg.text && messageShowsTopicPickerChips(subMsg.text, plannerTurnFunnel) && !subHasDraft);
                         const modelVisibleText =
                           subMsg.role === "model" && subMsg.text
                             ? isContentGen
@@ -2574,39 +3978,50 @@ const ChatSidebar: React.FC<ChatSidebarProps> = ({ incomingRequest, onRequestHan
                           subMsg.role === "user" && subMsg.text
                             ? isContentGen
                               ? contentGenTopicUserDisplayText(subMsg.text)
-                              : subMsg.text
+                              : isResumeImprove
+                                ? resumeImproveUserDisplayText(
+                                    subMsg.text,
+                                    improveSubRow?.section ?? undefined,
+                                    improveSubRow?.entry_id || undefined
+                                  )
+                                : subMsg.text
                             : "";
                         const showModelBubble =
                           subMsg.role === "model" &&
-                          (modelVisibleText || !subMsg.text || isStreamingMachineReadablePayloadOnly(subMsg.text));
+                          (Boolean(modelVisibleText) ||
+                            (!(subHasPlanner || subHasDraft) && (!subMsg.text || isStreamingMachineReadablePayloadOnly(subMsg.text))));
                         const showUserBubble = subMsg.role === "user" && userVisibleText;
                         const hasActionCard = subMsg.role === "user" && subMsg.assetActionMeta;
 
                         return (
-                          <div key={subMsg.id} className={`flex flex-col gap-1 ${subMsg.role === "user" ? "items-end" : "items-start"}`}>
+                          <div
+                            key={subMsg.id}
+                            data-unibot-message-id={subMsg.id}
+                            className={`flex flex-col gap-1 ${subMsg.role === "user" ? "items-end" : "items-start"}`}
+                          >
                             {subMsg.isError ? (
                               <UnibotErrorBubble message={subMsg} onRetry={retryFailedStream} />
                             ) : hasActionCard ? (
-                              <RefineActionCard meta={subMsg.assetActionMeta!} />
+                              <div className="group flex max-w-full flex-col items-end">
+                                <RefineActionCard meta={subMsg.assetActionMeta!} />
+                                {subMsg.invocationId ? (
+                                  <UnibotUserMessageToolbar
+                                    showEdit={false}
+                                    disabled={!canRewind}
+                                    onDelete={() => void handleDeleteUserMessage(subMsg, msg.subSessionAdkId ?? sessionId, msg.id)}
+                                  />
+                                ) : null}
+                              </div>
                             ) : showModelBubble || showUserBubble ? (
                               subMsg.role === "user" && showUserBubble ? (
                                 <div className="group flex max-w-full flex-col items-end">
-                                  {subMsg.invocationId ? (
-                                    <button
-                                      type="button"
-                                      onClick={() => openRewindDialog(subMsg, msg.subSessionAdkId ?? sessionId, msg.id)}
-                                      disabled={!canRewind}
-                                      title="Rewind to here"
-                                      aria-label="Rewind to here"
-                                      className="mb-0.5 inline-flex items-center gap-1 rounded-md px-1.5 py-0.5 text-[11px] text-slate-400 opacity-0 transition-opacity hover:text-brand-600 group-hover:opacity-100 disabled:opacity-30"
-                                    >
-                                      <Undo2 size={12} aria-hidden />
-                                      <span>Rewind</span>
-                                    </button>
-                                  ) : null}
-                                  <div className="rounded-2xl rounded-tr-sm bg-slate-50 px-3 py-2 text-[13px] leading-relaxed text-slate-800 dark:bg-white/5 dark:text-slate-100">
-                                    <span className="whitespace-pre-wrap">{userVisibleText}</span>
-                                  </div>
+                                  {renderEditableUserMessage(
+                                    subMsg,
+                                    msg.subSessionAdkId ?? sessionId,
+                                    msg.id,
+                                    userVisibleText,
+                                    "rounded-2xl rounded-tr-sm bg-slate-50 px-3 py-2 text-[13px] leading-relaxed text-slate-800 dark:bg-white/5 dark:text-slate-100"
+                                  )}
                                 </div>
                               ) : (
                                 <div className="text-[13px] py-2 px-3 leading-relaxed text-slate-600 dark:text-slate-300">
@@ -2615,46 +4030,179 @@ const ChatSidebar: React.FC<ChatSidebarProps> = ({ incomingRequest, onRequestHan
                                   ) : (
                                     <div className="flex items-center gap-2 text-slate-400">
                                       <Loader2 size={14} className="animate-spin shrink-0" />
-                                      <span>{contentGenPublishActivity[subMsg.id] ?? streamActivityLabel ?? "Thinking…"}</span>
+                                      <span>
+                                        {contentGenPublishActivity[subMsg.id] ??
+                                          streamActivityLabelForMessage(subMsg.id, liveStreamActivity, streamActivityLabel, {
+                                            agentLoading: isAgentLoading,
+                                            isSyncingContext,
+                                            waitingLabel: streamingStatusLabel,
+                                          })}
+                                      </span>
                                     </div>
                                   )}
                                 </div>
                               )
                             ) : null}
                             {subHasPlanner ? (
-                              <ContentGenTopicChips
-                                botMessage={subMsg.text!}
-                                topicId={msg.id}
-                                activeFunnel={contentGenFunnelRef.current}
-                                onAffirmationClick={(label, _f) => handleContentGenAffirmation(msg.id, label)}
-                                onUseTopic={(title, funnel) => handleApplyContentGenTopic(msg.id, title, funnel)}
-                                onActionClick={handleContentGenAction}
+                              <UnibotActionItemHighlight
+                                active={isActionItemHighlighted(msg.id, subMsg.id, "planner_chips")}
+                                messageId={subMsg.id}
+                              >
+                                <ContentGenTopicChips
+                                  botMessage={subMsg.text!}
+                                  topicId={msg.id}
+                                  activeFunnel={plannerTurnFunnel}
+                                  chipsDismissed={contentGenDismissedChipsRef.current.has(subMsg.id)}
+                                  onAffirmationClick={(label, _f) =>
+                                    handleContentGenAffirmation(msg.id, label, subMsg.id, plannerTurnFunnel)
+                                  }
+                                  onUseTopic={(title, funnel) =>
+                                    handleApplyContentGenTopic(msg.id, title, funnel ?? plannerTurnFunnel, subMsg.id)
+                                  }
+                                  onActionClick={action => {
+                                    contentGenDismissedChipsRef.current.add(subMsg.id);
+                                    setMessages(prev => [...prev]);
+                                    handleContentGenAction(action, msg.id);
+                                  }}
+                                />
+                              </UnibotActionItemHighlight>
+                            ) : null}
+                            {subMsg.role === "model" && subMsg.unimadNavigation ? (
+                              <UnimadNavigationChip navigation={subMsg.unimadNavigation} onNavigate={path => router.push(path)} />
+                            ) : null}
+                            {subMsg.role === "model" && subMsg.unimadJobCards ? (
+                              <UnibotJobCardStrip payload={subMsg.unimadJobCards} onSeeMore={path => router.push(path)} />
+                            ) : null}
+                            {subMsg.role === "model" && subMsg.unimadLinkedInSuggestions ? (
+                              <UnibotLinkedInSuggestionCards
+                                payload={subMsg.unimadLinkedInSuggestions}
+                                wideLayout={subMsg.unimadLinkedInSuggestions.section === "about"}
                               />
                             ) : null}
                             {subMsg.role === "model" &&
                             adkContentGenReviewStack.some(
                               c => c.assistantMessageId === subMsg.id && c.id === adkContentGenActiveReviewId
                             ) ? (
-                              <ContentGenDraftReviewChips
-                                disabled={adkReviewBusy || !sessionReady}
-                                onAccept={() => void handleContentGenAccept()}
-                                onImprove={() => void handleContentGenImprove(msg.id)}
-                              />
+                              <UnibotActionItemHighlight
+                                active={isActionItemHighlighted(msg.id, subMsg.id, "review_card")}
+                                messageId={subMsg.id}
+                              >
+                                <ContentGenDraftReviewChips
+                                  disabled={adkReviewBusy || !sessionReady}
+                                  actionsOutOfContext={showGoToAsset}
+                                  onAccept={() => void handleContentGenAccept()}
+                                  onImprove={() => void handleContentGenImprove(msg.id)}
+                                  onBlockedAction={nudgeTopicGoTo}
+                                />
+                              </UnibotActionItemHighlight>
                             ) : null}
                             {subMsg.role === "model" &&
                               adkApplicationAssetReviewStack
                                 .filter(c => c.assistantMessageId === subMsg.id)
                                 .map(card => (
-                                  <AdkReviewCardBlock
+                                  <UnibotActionItemHighlight
                                     key={card.id}
-                                    card={card}
-                                    isActive={card.id === adkApplicationAssetActiveReviewId}
-                                    adkReviewBusy={applicationAssetReviewBusy}
-                                    sessionReady={sessionReady}
-                                    onAccept={() => void acceptApplicationAssetReview()}
-                                    onDiscard={discardApplicationAssetReview}
-                                  />
+                                    active={
+                                      card.id === adkApplicationAssetActiveReviewId &&
+                                      isActionItemHighlighted(msg.id, subMsg.id, "review_card")
+                                    }
+                                    messageId={subMsg.id}
+                                  >
+                                    <AdkReviewCardBlock
+                                      card={card}
+                                      isActive={card.id === adkApplicationAssetActiveReviewId}
+                                      adkReviewBusy={applicationAssetReviewBusy}
+                                      sessionReady={sessionReady}
+                                      onAccept={() => void acceptApplicationAssetReview()}
+                                      onDiscard={discardApplicationAssetReview}
+                                      hideActions={diffReviewUiActive}
+                                      actionsOutOfContext={showGoToAsset}
+                                      onBlockedAction={nudgeTopicGoTo}
+                                    />
+                                  </UnibotActionItemHighlight>
                                 ))}
+                            {subMsg.role === "model" &&
+                              adkLinkedInReviewStack
+                                .filter(c => c.assistantMessageId === subMsg.id)
+                                .map((card: AdkLinkedInReviewCard) => (
+                                  <UnibotActionItemHighlight
+                                    key={card.id}
+                                    active={
+                                      card.id === adkLinkedInActiveReviewId && isActionItemHighlighted(msg.id, subMsg.id, "review_card")
+                                    }
+                                    messageId={subMsg.id}
+                                  >
+                                    <AdkReviewCardBlock
+                                      card={card}
+                                      isActive={card.id === adkLinkedInActiveReviewId}
+                                      adkReviewBusy={adkReviewBusy}
+                                      sessionReady={sessionReady}
+                                      onAccept={handleAdkLinkedInAccept}
+                                      onDiscard={handleAdkLinkedInDiscard}
+                                      actionsOutOfContext={showGoToAsset}
+                                      onBlockedAction={nudgeTopicGoTo}
+                                    />
+                                  </UnibotActionItemHighlight>
+                                ))}
+                            {subMsg.role === "model" &&
+                              adkReviewStack
+                                .filter(c => c.assistantMessageId === subMsg.id)
+                                .map(card => (
+                                  <UnibotActionItemHighlight
+                                    key={card.id}
+                                    active={card.id === adkActiveReviewId && isActionItemHighlighted(msg.id, subMsg.id, "review_card")}
+                                    messageId={subMsg.id}
+                                  >
+                                    <AdkReviewCardBlock
+                                      card={card}
+                                      isActive={card.id === adkActiveReviewId}
+                                      adkReviewBusy={adkReviewBusy}
+                                      sessionReady={sessionReady}
+                                      onAccept={handleAdkAccept}
+                                      onDiscard={handleAdkDiscard}
+                                      actionsOutOfContext={showGoToAsset}
+                                      onBlockedAction={nudgeTopicGoTo}
+                                    />
+                                  </UnibotActionItemHighlight>
+                                ))}
+                            {subMsg.role === "model" &&
+                              adkPortfolioReviewStack
+                                .filter(c => c.assistantMessageId === subMsg.id)
+                                .map((card: AdkPortfolioReviewCard) => (
+                                  <UnibotActionItemHighlight
+                                    key={card.id}
+                                    active={
+                                      card.id === adkPortfolioActiveReviewId && isActionItemHighlighted(msg.id, subMsg.id, "review_card")
+                                    }
+                                    messageId={subMsg.id}
+                                  >
+                                    <AdkReviewCardBlock
+                                      card={card}
+                                      isActive={card.id === adkPortfolioActiveReviewId}
+                                      adkReviewBusy={adkReviewBusy}
+                                      sessionReady={sessionReady}
+                                      onAccept={handleAdkPortfolioAccept}
+                                      onDiscard={handleAdkPortfolioDiscard}
+                                      actionsOutOfContext={showGoToAsset}
+                                      onBlockedAction={nudgeTopicGoTo}
+                                    />
+                                  </UnibotActionItemHighlight>
+                                ))}
+                            {subMsg.role === "model" && msg.topicKind !== "content_gen" ? (
+                              <ResolvedReviewDecisionStatus
+                                messageId={subMsg.id}
+                                reviewDecisions={reviewDecisions}
+                                hasPendingReview={
+                                  adkContentGenReviewStack.some(
+                                    c => c.assistantMessageId === subMsg.id && c.id === adkContentGenActiveReviewId
+                                  ) ||
+                                  adkApplicationAssetReviewStack.some(c => c.assistantMessageId === subMsg.id) ||
+                                  adkReviewStack.some(c => c.assistantMessageId === subMsg.id) ||
+                                  adkPortfolioReviewStack.some(c => c.assistantMessageId === subMsg.id) ||
+                                  adkLinkedInReviewStack.some(c => c.assistantMessageId === subMsg.id)
+                                }
+                              />
+                            ) : null}
                           </div>
                         );
                       })}
@@ -2723,31 +4271,33 @@ const ChatSidebar: React.FC<ChatSidebarProps> = ({ incomingRequest, onRequestHan
                 <UnibotErrorBubble message={msg} onRetry={retryFailedStream} />
               ) : msg.role === "user" && msg.text ? (
                 <div className="group flex max-w-[90%] flex-col items-end">
-                  {msg.invocationId ? (
-                    <button
-                      type="button"
-                      onClick={() => openRewindDialog(msg, sessionId)}
-                      disabled={!canRewind}
-                      title="Rewind to here"
-                      aria-label="Rewind to here"
-                      className="mb-0.5 inline-flex items-center gap-1 rounded-md px-1.5 py-0.5 text-[11px] text-slate-400 opacity-0 transition-opacity hover:text-brand-600 group-hover:opacity-100 disabled:opacity-30"
-                    >
-                      <Undo2 size={12} aria-hidden />
-                      <span>Rewind</span>
-                    </button>
-                  ) : null}
-                  <div className="rounded-2xl rounded-tr-sm bg-slate-100 px-4 py-3 text-[13px] leading-relaxed text-slate-900 dark:bg-white/5 dark:text-slate-100">
-                    <span className="whitespace-pre-wrap">{msg.text}</span>
-                  </div>
+                  {renderEditableUserMessage(
+                    msg,
+                    sessionId,
+                    undefined,
+                    msg.text,
+                    "rounded-2xl rounded-tr-sm bg-slate-100 px-4 py-3 text-[13px] leading-relaxed text-slate-900 dark:bg-white/5 dark:text-slate-100"
+                  )}
                 </div>
               ) : (
                 <div className="max-w-full bg-transparent px-1 text-[13px] leading-relaxed text-slate-600 dark:text-slate-300">
                   {msg.role === "model" && mainModelVisible ? (
                     <FormattedAgentMessage content={mainModelVisible} />
-                  ) : msg.role === "model" && (!msg.text || isStreamingMachineReadablePayloadOnly(msg.text)) ? (
+                  ) : msg.role === "model" &&
+                    !mainPlannerPayload &&
+                    !mainHasDraft &&
+                    !mainHasAppAssetDraft &&
+                    (!msg.text || isStreamingMachineReadablePayloadOnly(msg.text)) ? (
                     <div className="flex items-center gap-2 text-slate-400 px-1">
                       <Loader2 size={14} className="animate-spin shrink-0" />
-                      <span>{contentGenPublishActivity[msg.id] ?? streamActivityLabel ?? "Thinking…"}</span>
+                      <span>
+                        {contentGenPublishActivity[msg.id] ??
+                          streamActivityLabelForMessage(msg.id, liveStreamActivity, streamActivityLabel, {
+                            agentLoading: isAgentLoading,
+                            isSyncingContext,
+                            waitingLabel: streamingStatusLabel,
+                          })}
+                      </span>
                     </div>
                   ) : null}
                 </div>
@@ -2756,127 +4306,290 @@ const ChatSidebar: React.FC<ChatSidebarProps> = ({ incomingRequest, onRequestHan
                 <ContentGenTopicChips
                   botMessage={mainPlannerPayload}
                   activeFunnel={contentGenFunnelRef.current}
-                  onAffirmationClick={label => handleMainContentGenAffirmation(label)}
-                  onUseTopic={(title, funnel) => handleMainApplyContentGenTopic(title, funnel)}
-                  onActionClick={handleContentGenAction}
+                  chipsDismissed={contentGenDismissedChipsRef.current.has(msg.id)}
+                  onAffirmationClick={label => handleMainContentGenAffirmation(label, msg.id)}
+                  onUseTopic={(title, funnel) => handleMainApplyContentGenTopic(title, funnel, msg.id)}
+                  onActionClick={action => {
+                    contentGenDismissedChipsRef.current.add(msg.id);
+                    setMessages(prev => [...prev]);
+                    handleContentGenAction(action);
+                  }}
+                />
+              ) : null}
+              {msg.role === "model" && msg.unimadNavigation ? (
+                <UnimadNavigationChip navigation={msg.unimadNavigation} onNavigate={path => router.push(path)} />
+              ) : null}
+              {msg.role === "model" && msg.unimadJobCards ? (
+                <UnibotJobCardStrip payload={msg.unimadJobCards} onSeeMore={path => router.push(path)} />
+              ) : null}
+              {msg.role === "model" && msg.unimadLinkedInSuggestions ? (
+                <UnibotLinkedInSuggestionCards
+                  payload={msg.unimadLinkedInSuggestions}
+                  wideLayout={msg.unimadLinkedInSuggestions.section === "about"}
                 />
               ) : null}
               {msg.role === "model" &&
               adkContentGenReviewStack.some(c => c.assistantMessageId === msg.id && c.id === adkContentGenActiveReviewId) ? (
                 <ContentGenDraftReviewChips
                   disabled={adkReviewBusy || !sessionReady}
+                  actionsOutOfContext={!isReviewNavActive(resolveContentGenReviewNavTarget())}
                   onAccept={() => void handleContentGenAccept()}
                   onImprove={() => void handleContentGenImprove(null)}
+                  onBlockedAction={() => nudgeGoToFeature(resolveContentGenReviewNavTarget().href)}
                 />
               ) : null}
               {msg.role === "model" &&
                 adkApplicationAssetReviewStack
                   .filter(c => c.assistantMessageId === msg.id)
-                  .map(card => (
-                    <AdkReviewCardBlock
-                      key={card.id}
-                      card={card}
-                      isActive={card.id === adkApplicationAssetActiveReviewId}
-                      adkReviewBusy={applicationAssetReviewBusy}
-                      sessionReady={sessionReady}
-                      onAccept={() => void acceptApplicationAssetReview()}
-                      onDiscard={discardApplicationAssetReview}
-                    />
-                  ))}
+                  .map(card => {
+                    const nav = resolveApplicationAssetReviewNavTarget({
+                      assetType: card.assetType,
+                      assetId: useApplicationAssetStudioStore.getState().assetId,
+                    });
+                    const outOfContext = !isReviewNavActive(nav);
+                    return (
+                      <AdkReviewCardBlock
+                        key={card.id}
+                        card={card}
+                        isActive={card.id === adkApplicationAssetActiveReviewId}
+                        adkReviewBusy={applicationAssetReviewBusy}
+                        sessionReady={sessionReady}
+                        onAccept={() => void acceptApplicationAssetReview()}
+                        onDiscard={discardApplicationAssetReview}
+                        hideActions={diffReviewUiActive}
+                        actionsOutOfContext={outOfContext}
+                        onBlockedAction={() => nudgeGoToFeature(nav.href)}
+                      />
+                    );
+                  })}
               {msg.role === "model" &&
                 adkReviewStack
                   .filter(c => c.assistantMessageId === msg.id)
-                  .map(card => (
-                    <AdkReviewCardBlock
-                      key={card.id}
-                      card={card}
-                      isActive={card.id === adkActiveReviewId}
-                      adkReviewBusy={adkReviewBusy}
-                      sessionReady={sessionReady}
-                      onAccept={handleAdkAccept}
-                      onDiscard={handleAdkDiscard}
-                    />
-                  ))}
+                  .map(card => {
+                    const nav = resolveResumeReviewNavTarget(card);
+                    const outOfContext = !isReviewNavActive(nav);
+                    return (
+                      <AdkReviewCardBlock
+                        key={card.id}
+                        card={card}
+                        isActive={card.id === adkActiveReviewId}
+                        adkReviewBusy={adkReviewBusy}
+                        sessionReady={sessionReady}
+                        onAccept={handleAdkAccept}
+                        onDiscard={handleAdkDiscard}
+                        actionsOutOfContext={outOfContext}
+                        onBlockedAction={() => nudgeGoToFeature(nav.href)}
+                      />
+                    );
+                  })}
               {msg.role === "model" &&
                 adkPortfolioReviewStack
                   .filter(c => c.assistantMessageId === msg.id)
-                  .map((card: AdkPortfolioReviewCard) => (
-                    <AdkReviewCardBlock
-                      key={card.id}
-                      card={card}
-                      isActive={card.id === adkPortfolioActiveReviewId}
-                      adkReviewBusy={adkReviewBusy}
-                      sessionReady={sessionReady}
-                      onAccept={handleAdkPortfolioAccept}
-                      onDiscard={handleAdkPortfolioDiscard}
-                    />
-                  ))}
+                  .map((card: AdkPortfolioReviewCard) => {
+                    const nav = resolvePortfolioReviewNavTarget(card);
+                    const outOfContext = !isReviewNavActive(nav);
+                    return (
+                      <AdkReviewCardBlock
+                        key={card.id}
+                        card={card}
+                        isActive={card.id === adkPortfolioActiveReviewId}
+                        adkReviewBusy={adkReviewBusy}
+                        sessionReady={sessionReady}
+                        onAccept={handleAdkPortfolioAccept}
+                        onDiscard={handleAdkPortfolioDiscard}
+                        actionsOutOfContext={outOfContext}
+                        onBlockedAction={() => nudgeGoToFeature(nav.href)}
+                      />
+                    );
+                  })}
+              {msg.role === "model" &&
+                adkLinkedInReviewStack
+                  .filter(c => c.assistantMessageId === msg.id)
+                  .map((card: AdkLinkedInReviewCard) => {
+                    const nav = resolveLinkedInReviewNavTarget(card);
+                    const outOfContext = !isReviewNavActive(nav);
+                    return (
+                      <AdkReviewCardBlock
+                        key={card.id}
+                        card={card}
+                        isActive={card.id === adkLinkedInActiveReviewId}
+                        adkReviewBusy={adkReviewBusy}
+                        sessionReady={sessionReady}
+                        onAccept={handleAdkLinkedInAccept}
+                        onDiscard={handleAdkLinkedInDiscard}
+                        actionsOutOfContext={outOfContext}
+                        onBlockedAction={() => nudgeGoToFeature(nav.href)}
+                      />
+                    );
+                  })}
+              {msg.role === "model" ? (
+                <ResolvedReviewDecisionStatus
+                  messageId={msg.id}
+                  reviewDecisions={reviewDecisions}
+                  hasPendingReview={
+                    adkContentGenReviewStack.some(c => c.assistantMessageId === msg.id && c.id === adkContentGenActiveReviewId) ||
+                    adkApplicationAssetReviewStack.some(c => c.assistantMessageId === msg.id) ||
+                    adkReviewStack.some(c => c.assistantMessageId === msg.id) ||
+                    adkPortfolioReviewStack.some(c => c.assistantMessageId === msg.id) ||
+                    adkLinkedInReviewStack.some(c => c.assistantMessageId === msg.id)
+                  }
+                />
+              ) : null}
             </div>
           );
         })}
 
         {(adkReviewStack.some(c => !c.assistantMessageId) ||
           adkPortfolioReviewStack.some(c => !c.assistantMessageId) ||
+          adkLinkedInReviewStack.some(c => !c.assistantMessageId) ||
           adkContentGenReviewStack.some(c => !c.assistantMessageId) ||
           adkApplicationAssetReviewStack.some(c => !c.assistantMessageId)) && (
           <div className="flex flex-col gap-2 items-start pl-1">
             {adkReviewStack
               .filter(c => !c.assistantMessageId)
-              .map(card => (
-                <AdkReviewCardBlock
-                  key={card.id}
-                  card={card}
-                  isActive={card.id === adkActiveReviewId}
-                  adkReviewBusy={adkReviewBusy}
-                  sessionReady={sessionReady}
-                  onAccept={handleAdkAccept}
-                  onDiscard={handleAdkDiscard}
-                />
-              ))}
+              .map(card => {
+                const nav = resolveResumeReviewNavTarget(card);
+                const outOfContext = !isReviewNavActive(nav);
+                return (
+                  <div key={card.id} className="w-full max-w-[95%]">
+                    {outOfContext ? (
+                      <SubThreadGoToAssetLink
+                        target={nav}
+                        highlighted={highlightedGoToHref === nav.href}
+                        onNavigate={href => router.push(href)}
+                      />
+                    ) : null}
+                    <AdkReviewCardBlock
+                      card={card}
+                      isActive={card.id === adkActiveReviewId}
+                      adkReviewBusy={adkReviewBusy}
+                      sessionReady={sessionReady}
+                      onAccept={handleAdkAccept}
+                      onDiscard={handleAdkDiscard}
+                      actionsOutOfContext={outOfContext}
+                      onBlockedAction={() => nudgeGoToFeature(nav.href)}
+                    />
+                  </div>
+                );
+              })}
             {adkPortfolioReviewStack
               .filter(c => !c.assistantMessageId)
-              .map((card: AdkPortfolioReviewCard) => (
-                <AdkReviewCardBlock
-                  key={card.id}
-                  card={card}
-                  isActive={card.id === adkPortfolioActiveReviewId}
-                  adkReviewBusy={adkReviewBusy}
-                  sessionReady={sessionReady}
-                  onAccept={handleAdkPortfolioAccept}
-                  onDiscard={handleAdkPortfolioDiscard}
-                />
-              ))}
+              .map((card: AdkPortfolioReviewCard) => {
+                const nav = resolvePortfolioReviewNavTarget(card);
+                const outOfContext = !isReviewNavActive(nav);
+                return (
+                  <div key={card.id} className="w-full max-w-[95%]">
+                    {outOfContext ? (
+                      <SubThreadGoToAssetLink
+                        target={nav}
+                        highlighted={highlightedGoToHref === nav.href}
+                        onNavigate={href => router.push(href)}
+                      />
+                    ) : null}
+                    <AdkReviewCardBlock
+                      card={card}
+                      isActive={card.id === adkPortfolioActiveReviewId}
+                      adkReviewBusy={adkReviewBusy}
+                      sessionReady={sessionReady}
+                      onAccept={handleAdkPortfolioAccept}
+                      onDiscard={handleAdkPortfolioDiscard}
+                      actionsOutOfContext={outOfContext}
+                      onBlockedAction={() => nudgeGoToFeature(nav.href)}
+                    />
+                  </div>
+                );
+              })}
+            {adkLinkedInReviewStack
+              .filter(c => !c.assistantMessageId)
+              .map((card: AdkLinkedInReviewCard) => {
+                const nav = resolveLinkedInReviewNavTarget(card);
+                const outOfContext = !isReviewNavActive(nav);
+                return (
+                  <div key={card.id} className="w-full max-w-[95%]">
+                    {outOfContext ? (
+                      <SubThreadGoToAssetLink
+                        target={nav}
+                        highlighted={highlightedGoToHref === nav.href}
+                        onNavigate={href => router.push(href)}
+                      />
+                    ) : null}
+                    <AdkReviewCardBlock
+                      card={card}
+                      isActive={card.id === adkLinkedInActiveReviewId}
+                      adkReviewBusy={adkReviewBusy}
+                      sessionReady={sessionReady}
+                      onAccept={handleAdkLinkedInAccept}
+                      onDiscard={handleAdkLinkedInDiscard}
+                      actionsOutOfContext={outOfContext}
+                      onBlockedAction={() => nudgeGoToFeature(nav.href)}
+                    />
+                  </div>
+                );
+              })}
             {adkContentGenReviewStack.some(c => !c.assistantMessageId && c.id === adkContentGenActiveReviewId) ? (
-              <ContentGenDraftReviewChips
-                disabled={adkReviewBusy || !sessionReady}
-                onAccept={() => void handleContentGenAccept()}
-                onImprove={() => void handleContentGenImprove(null)}
-              />
+              <div className="w-full max-w-[95%]">
+                {!isReviewNavActive(resolveContentGenReviewNavTarget()) ? (
+                  <SubThreadGoToAssetLink
+                    target={resolveContentGenReviewNavTarget()}
+                    highlighted={highlightedGoToHref === resolveContentGenReviewNavTarget().href}
+                    onNavigate={href => router.push(href)}
+                  />
+                ) : null}
+                <ContentGenDraftReviewChips
+                  disabled={adkReviewBusy || !sessionReady}
+                  actionsOutOfContext={!isReviewNavActive(resolveContentGenReviewNavTarget())}
+                  onAccept={() => void handleContentGenAccept()}
+                  onImprove={() => void handleContentGenImprove(null)}
+                  onBlockedAction={() => nudgeGoToFeature(resolveContentGenReviewNavTarget().href)}
+                />
+              </div>
             ) : null}
             {adkApplicationAssetReviewStack
               .filter(c => !c.assistantMessageId)
-              .map(card => (
-                <AdkReviewCardBlock
-                  key={card.id}
-                  card={card}
-                  isActive={card.id === adkApplicationAssetActiveReviewId}
-                  adkReviewBusy={applicationAssetReviewBusy}
-                  sessionReady={sessionReady}
-                  onAccept={() => void acceptApplicationAssetReview()}
-                  onDiscard={discardApplicationAssetReview}
-                />
-              ))}
+              .map(card => {
+                const nav = resolveApplicationAssetReviewNavTarget({
+                  assetType: card.assetType,
+                  assetId: useApplicationAssetStudioStore.getState().assetId,
+                });
+                const outOfContext = !isReviewNavActive(nav);
+                return (
+                  <div key={card.id} className="w-full max-w-[95%]">
+                    {outOfContext ? (
+                      <SubThreadGoToAssetLink
+                        target={nav}
+                        highlighted={highlightedGoToHref === nav.href}
+                        onNavigate={href => router.push(href)}
+                      />
+                    ) : null}
+                    <AdkReviewCardBlock
+                      card={card}
+                      isActive={card.id === adkApplicationAssetActiveReviewId}
+                      adkReviewBusy={applicationAssetReviewBusy}
+                      sessionReady={sessionReady}
+                      onAccept={() => void acceptApplicationAssetReview()}
+                      onDiscard={discardApplicationAssetReview}
+                      hideActions={diffReviewUiActive}
+                      actionsOutOfContext={outOfContext}
+                      onBlockedAction={() => nudgeGoToFeature(nav.href)}
+                    />
+                  </div>
+                );
+              })}
           </div>
         )}
 
-        {isAgentLoading && !hasInlineStreamingPlaceholder && (
+        {isAgentLoading && !hasInlineStreamingPlaceholder && !hasVisibleStreamingAssistantText && (
           <div className="flex flex-col gap-1 items-start pl-1">
             <div className="text-[13px] text-slate-400 flex items-center gap-2 px-1">
               <Loader2 size={14} className="animate-spin" />
-              <span>{streamActivityLabel ?? "Thinking…"}</span>
+              <span>{streamingStatusLabel}</span>
             </div>
           </div>
         )}
+      </div>
+
+      <div className="shrink-0 px-4">
+        <ApplicationAssetReviewStepperCard />
       </div>
 
       <div className="p-4 bg-slate-50 dark:bg-slate-950 border-t border-slate-100 dark:border-white/5">
@@ -2941,7 +4654,11 @@ const ChatSidebar: React.FC<ChatSidebarProps> = ({ incomingRequest, onRequestHan
                 </span>
                 <button
                   type="button"
-                  onClick={() => setSelectionQuoteContext(null)}
+                  onClick={() => {
+                    setSelectionQuoteContext(null);
+                    useApplicationAssetStudioStore.getState().clearRefineAnchor();
+                    useApplicationAssetStudioStore.getState().setPendingRefineContext(null);
+                  }}
                   className="shrink-0 rounded-full p-0.5"
                   aria-label="Clear selected quote"
                 >
@@ -3018,7 +4735,8 @@ const ChatSidebar: React.FC<ChatSidebarProps> = ({ incomingRequest, onRequestHan
               </button>
               {historyPanelOpen && (
                 <div
-                  className="absolute bottom-full left-0 right-0 z-40 mb-2 max-h-[min(320px,50vh)] w-[min(280px,90vw)] overflow-hidden rounded-xl border border-slate-200 bg-white shadow-lg dark:border-slate-600 dark:bg-slate-900"
+                  className="absolute bottom-full left-0 right-0 z-40 mb-2 flex w-[min(300px,92vw)] flex-col overflow-hidden rounded-xl border border-slate-200 bg-white shadow-lg dark:border-slate-600 dark:bg-slate-900"
+                  style={{ maxHeight: historyPanelLayout.panelMaxHeight }}
                   role="dialog"
                   aria-label="Chat history"
                 >
@@ -3042,27 +4760,52 @@ const ChatSidebar: React.FC<ChatSidebarProps> = ({ incomingRequest, onRequestHan
                           />
                         </div>
                       </div>
-                      <ul className="max-h-[min(120px,18vh)] overflow-y-auto p-1.5">
+                      <ul
+                        className="scrollbar-on-hover min-h-0 flex-1 overflow-y-auto p-1.5"
+                        style={historyPanelLayout.thisSessionMaxHeight ? { maxHeight: historyPanelLayout.thisSessionMaxHeight } : undefined}
+                      >
                         {filteredThisSessionList.map(row => {
                           const active = improveReplyTopicId === row.id;
                           return (
                             <li key={row.id}>
-                              <button
-                                type="button"
-                                className={`w-full rounded-lg px-2 py-1.5 text-left text-[12px] hover:bg-slate-50 dark:hover:bg-slate-800/80 ${
+                              <div
+                                className={`group flex items-start gap-1 rounded-lg hover:bg-slate-50 dark:hover:bg-slate-800/80 ${
                                   active ? "bg-slate-100 dark:bg-white/10" : ""
                                 }`}
-                                onClick={() => {
-                                  if (row.subAdkSessionId) {
-                                    void selectImproveSubFromRegistry(row.subAdkSessionId, row.title);
-                                  } else {
-                                    selectImproveTopic(row.id);
-                                  }
-                                }}
                               >
-                                <span className="line-clamp-2 font-medium">{row.title}</span>
-                                {row.subtitle ? <span className="text-[10px] text-slate-400">{row.subtitle}</span> : null}
-                              </button>
+                                <button
+                                  type="button"
+                                  className="min-w-0 flex-1 rounded-lg px-2 py-1.5 text-left text-[12px]"
+                                  onClick={() => {
+                                    if (row.subAdkSessionId) {
+                                      void selectImproveSubFromRegistry(row.subAdkSessionId, row.title);
+                                    } else {
+                                      selectImproveTopic(row.id);
+                                    }
+                                  }}
+                                >
+                                  <span className="line-clamp-2 font-medium">{row.title}</span>
+                                  {row.subtitle ? <span className="block text-[10px] text-slate-400">{row.subtitle}</span> : null}
+                                </button>
+                                <button
+                                  type="button"
+                                  onClick={e => {
+                                    e.stopPropagation();
+                                    setPendingDeleteSession({
+                                      kind: "sub",
+                                      topicId: row.id,
+                                      title: row.title,
+                                      subAdkSessionId: row.subAdkSessionId,
+                                    });
+                                  }}
+                                  disabled={isAgentLoading}
+                                  className="mt-1 shrink-0 rounded-md p-1.5 text-slate-400 opacity-0 transition-all hover:bg-red-50 hover:text-red-500 group-hover:opacity-100 disabled:opacity-20 dark:hover:bg-red-500/10"
+                                  title="Delete sub-thread"
+                                  aria-label={`Delete ${row.title}`}
+                                >
+                                  <Trash2 size={13} />
+                                </button>
+                              </div>
                             </li>
                           );
                         })}
@@ -3074,7 +4817,11 @@ const ChatSidebar: React.FC<ChatSidebarProps> = ({ incomingRequest, onRequestHan
                   >
                     <p className="text-[10px] font-semibold uppercase tracking-wide text-slate-400">All chats</p>
                   </div>
-                  <ul className="scrollbar-on-hover max-h-[min(140px,22vh)] overflow-y-auto py-1" role="listbox">
+                  <ul
+                    className="scrollbar-on-hover min-h-0 overflow-y-auto py-1"
+                    style={{ maxHeight: historyPanelLayout.allChatsMaxHeight }}
+                    role="listbox"
+                  >
                     {groupedSessions.length === 0 && <li className="px-3 py-2 text-[11px] text-slate-400">No other chats yet</li>}
                     {groupedSessions.map(group => {
                       const activeMain =
@@ -3106,7 +4853,7 @@ const ChatSidebar: React.FC<ChatSidebarProps> = ({ incomingRequest, onRequestHan
                                 type="button"
                                 onClick={e => {
                                   e.stopPropagation();
-                                  setPendingDeleteSession({ id: group.id, title: group.title });
+                                  setPendingDeleteSession({ kind: "main", id: group.id, title: group.title });
                                 }}
                                 disabled={isAgentLoading}
                                 className="opacity-0 group-hover:opacity-100 p-1.5 rounded-md text-slate-400 hover:text-red-500 hover:bg-red-50 dark:hover:bg-red-500/10 transition-all disabled:opacity-20"
@@ -3166,7 +4913,7 @@ const ChatSidebar: React.FC<ChatSidebarProps> = ({ incomingRequest, onRequestHan
             <div className="w-full max-w-md rounded-2xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 shadow-2xl overflow-hidden">
               <div className="flex items-center justify-between p-5 border-b border-slate-100 dark:border-slate-800">
                 <h2 id="delete-chat-session-title" className="text-base font-semibold text-slate-900 dark:text-white">
-                  Delete chat session?
+                  {pendingDeleteSession.kind === "sub" ? "Delete sub-thread?" : "Delete chat session?"}
                 </h2>
                 <button
                   type="button"
@@ -3181,8 +4928,17 @@ const ChatSidebar: React.FC<ChatSidebarProps> = ({ incomingRequest, onRequestHan
 
               <div className="p-5">
                 <p className="text-[13px] text-slate-600 dark:text-slate-300 leading-relaxed">
-                  This will delete <span className="font-medium text-slate-900 dark:text-slate-100">{pendingDeleteSession.title}</span> from
-                  your chat history.
+                  {pendingDeleteSession.kind === "sub" ? (
+                    <>
+                      This will remove <span className="font-medium text-slate-900 dark:text-slate-100">{pendingDeleteSession.title}</span>{" "}
+                      from this session&apos;s sub-threads.
+                    </>
+                  ) : (
+                    <>
+                      This will delete <span className="font-medium text-slate-900 dark:text-slate-100">{pendingDeleteSession.title}</span>{" "}
+                      from your chat history.
+                    </>
+                  )}
                 </p>
                 <p className="text-[12px] text-slate-400 mt-2">This action cannot be undone.</p>
               </div>
@@ -3198,7 +4954,11 @@ const ChatSidebar: React.FC<ChatSidebarProps> = ({ incomingRequest, onRequestHan
                 </button>
                 <button
                   type="button"
-                  onClick={() => void onDeleteSession(pendingDeleteSession.id)}
+                  onClick={() =>
+                    void (pendingDeleteSession.kind === "sub"
+                      ? onDeleteSubThread(pendingDeleteSession)
+                      : onDeleteSession(pendingDeleteSession.id))
+                  }
                   disabled={isDeletingSession}
                   className="inline-flex items-center gap-2 px-3 py-2 text-[12px] font-medium rounded-lg bg-red-600 hover:bg-red-700 text-white transition-colors disabled:opacity-50"
                 >
@@ -3211,15 +4971,7 @@ const ChatSidebar: React.FC<ChatSidebarProps> = ({ incomingRequest, onRequestHan
           document.body
         )}
 
-      <AdkRewindConfirmDialog
-        open={pendingRewind !== null}
-        previewText={pendingRewind?.previewText ?? ""}
-        isSubmitting={isRewinding}
-        onClose={() => {
-          if (!isRewinding) setPendingRewind(null);
-        }}
-        onConfirm={revertEditorState => void handleRewindConfirm(revertEditorState)}
-      />
+      {rewindConfirmDialog}
     </div>
   );
 };

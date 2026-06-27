@@ -1,31 +1,58 @@
 "use client";
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { flushSync } from "react-dom";
+import { syncSessionStateAction } from "@/features/adk-chat/actions";
 import { buildAdkApplicationAssetStateDelta } from "@/features/application-assets/api/adk-mappers";
 import { useApplicationAssetStudioStore } from "@/features/application-assets/store/useApplicationAssetStudioStore";
 import { STUDIO_TOPIC_TO_API_TYPE, type ApplicationAssetStudioTopic } from "@/features/application-assets/types";
+import type { Application } from "@/features/application-tracker/types";
 import { buildAdkContentGenStateDelta } from "@/features/content-lab/api/adk-mappers";
 import { useContentGenStudioStore } from "@/features/content-lab/store/useContentGenStudioStore";
 import { buildAdkPortfolioDataMap, buildAdkPortfolioStateDelta, mapAdkPortfolioDataMapToFrontend } from "@/features/portfolio/api/mappers";
 import { portfolioQueryKey } from "@/features/portfolio/hooks/usePortfolio";
 import { usePortfolioStore } from "@/features/portfolio/store/usePortfolioStore";
-import { buildAdkLinkedInStateDelta } from "@/src/features/linkedin/api/adk-mappers";
+import { applyMutatingToolSessionPull } from "@/src/features/adk-chat/apply-mutating-tool-session-pull";
+import { deriveActiveScope, deriveScopeFromRegistryRow, type ContentScope } from "@/src/features/adk-chat/content-scope";
+import { resolveActiveResumeIdForPatch } from "@/src/features/adk-chat/resolve-active-resume-id";
+import { resolveAdkSessionOptionsForSessionId } from "@/src/features/adk-chat/resolve-sub-session-adk-app";
+import { noteAdkSessionSynced } from "@/src/features/adk-chat/rewind-state-divergence";
+import { getRegistryRow } from "@/src/features/adk-chat/session-registry";
+import { isAdkActivityTraceEnabled } from "@/src/features/adk-chat/streaming/activity-trace";
+import {
+  buildAdkLinkedInStateDelta,
+  mapSnapshotToLinkedInSessionProfile,
+  type LinkedInSessionProfile,
+} from "@/src/features/linkedin/api/adk-mappers";
 import { linkedinAnalysisQueryKey, useLinkedInAnalysis } from "@/src/features/linkedin/hooks/useLinkedInAnalysis";
 import type { LinkedInAnalysisSnapshot } from "@/src/features/linkedin/types";
 import { buildAdkResumeDataMap, buildAdkResumeStateDelta, mapAdkResumeDataMapToFrontend } from "@/src/features/resume/api/mappers";
 import { resumeByIdQueryKey } from "@/src/features/resume/hooks/useResume";
+import { resumesListQueryKey } from "@/src/features/resume/hooks/useResumesList";
 import { useResumeStore } from "@/src/features/resume/store/useResumeStore";
+import { UNIBOT_AGENT_LOADING_EVENT, UNIBOT_STREAM_ACTIVITY_EVENT, type UnibotStreamActivityDetail } from "@/src/hooks/useUnibotAgentBusy";
 import type { PortfolioData, ResumeData } from "@/types";
 import { useQueryClient } from "@tanstack/react-query";
 import { usePathname, useSearchParams } from "next/navigation";
-import { pullSessionStateAction, syncSessionStateAction } from "../actions";
 import { checkAdkRequestRateLimit, ADK_REQUEST_RATE_LIMIT_MESSAGE } from "../adk-request-rate-limit";
-import { computeAdkPortfolioReviewFromDiff } from "../adkPortfolioHighlightDiff";
-import { computeAdkReviewFromDiff } from "../adkResumeHighlightDiff";
-import { useAdkPortfolioReviewStore } from "../stores/useAdkPortfolioReviewStore";
-import { useAdkResumeReviewStore } from "../stores/useAdkResumeReviewStore";
-import { isMutatingPortfolioTool, isMutatingResumeTool } from "../streaming/stream-activity";
+import {
+  isMutatingApplicationAssetTool,
+  isMutatingContentGenTool,
+  isMutatingLinkedInTool,
+  isMutatingPortfolioTool,
+  isMutatingResumeTool,
+  completionMessageForMutatingTool,
+  resolveContentGenActivityLabelHint,
+} from "../streaming/stream-activity";
+import {
+  createStreamActivityHeartbeat,
+  resolveStreamHeartbeatLabels,
+  type StreamActivityHeartbeat,
+} from "../streaming/stream-activity-heartbeat";
+import { createStreamActivityPresenter, type StreamActivityPresenter } from "../streaming/stream-activity-presenter";
+import { clearStreamActivitySnapshot, setStreamActivitySnapshot } from "../streaming/stream-activity-store";
 import type { AgentMessage, ProcessedEvent } from "../types";
+import { isStreamingMachineReadablePayloadOnly } from "../utils/strip-machine-readable-payload";
 import { useAdkStreaming } from "./useAdkStreaming";
 import { useBackendHealth } from "./useBackendHealth";
 
@@ -36,6 +63,12 @@ export interface UseAdkStreamingManagerParams {
   onEventUpdate: (messageId: string, event: ProcessedEvent) => void;
   onWebsiteCountUpdate: (count: number) => void;
   onLoadingChange?: (isLoading: boolean) => void;
+  onNavigationSuggestion?: (aiMessageId: string, navigation: { path: string; label: string }) => void;
+  onJobCardsSuggestion?: (aiMessageId: string, payload: import("../parse-unimad-job-cards").UnimadJobCardsPayload) => void;
+  onLinkedInSuggestions?: (
+    aiMessageId: string,
+    payload: import("../parse-unimad-linkedin-suggestions").UnimadLinkedInSuggestionsPayload
+  ) => void;
 }
 
 export interface UseAdkStreamingManagerReturn {
@@ -44,10 +77,31 @@ export interface UseAdkStreamingManagerReturn {
   currentAgent: string;
   /** User-facing line derived from streaming agent/tool events (sidebar UX). */
   streamActivityLabel: string | null;
-  submitMessage: (message: string, options?: { aiMessageId?: string; sessionIdOverride?: string }) => Promise<void>;
+  /** True only while PATCHing session context before the SSE stream starts. */
+  isSyncingContext: boolean;
+  submitMessage: (
+    message: string,
+    options?: { aiMessageId?: string; sessionIdOverride?: string }
+  ) => Promise<{ hadAssistantText: boolean }>;
 }
 
-const WAKING_UP_LABEL = "Waking up Unibot…";
+function dispatchStreamActivity(detail: UnibotStreamActivityDetail): void {
+  if (typeof window === "undefined") return;
+  if (detail.activityLabel?.trim()) {
+    setStreamActivitySnapshot({
+      activityLabel: detail.activityLabel.trim(),
+      assistantMessageId: detail.assistantMessageId?.trim() || null,
+    });
+  } else if (detail.loading === false) {
+    clearStreamActivitySnapshot();
+  }
+  window.dispatchEvent(new CustomEvent(UNIBOT_STREAM_ACTIVITY_EVENT, { detail }));
+  window.dispatchEvent(
+    new CustomEvent(UNIBOT_AGENT_LOADING_EVENT, {
+      detail: { loading: detail.loading ?? true, activityLabel: detail.activityLabel },
+    })
+  );
+}
 
 type AdkStateSyncSource =
   | "zustand"
@@ -57,8 +111,10 @@ type AdkStateSyncSource =
   | "portfolio_react_query"
   | "content_gen_studio"
   | "application_asset_studio"
+  | "jobs_query"
   | "clear_context"
-  | "linkedin_query";
+  | "linkedin_query"
+  | "resume_id_only";
 
 export function useAdkStreamingManager({
   userId,
@@ -67,9 +123,12 @@ export function useAdkStreamingManager({
   onEventUpdate,
   onWebsiteCountUpdate,
   onLoadingChange,
+  onNavigationSuggestion,
+  onJobCardsSuggestion,
+  onLinkedInSuggestions,
 }: UseAdkStreamingManagerParams): UseAdkStreamingManagerReturn {
   const { retryWithBackoff } = useBackendHealth();
-  const pathname = usePathname();
+  const pathname = usePathname() ?? "";
   const searchParams = useSearchParams();
   const queryClient = useQueryClient();
   const lastResumeStoreFingerprintRef = useRef<string | null>(null);
@@ -77,17 +136,69 @@ export function useAdkStreamingManager({
   const suppressStoreSyncRef = useRef(false);
   const [isSyncingContext, setIsSyncingContext] = useState(false);
   const [isSubmitInFlight, setIsSubmitInFlight] = useState(false);
-  const sessionPullDebounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   /** Captures resume snapshot before ADK session GET applies mutating tool results (avoids racing after_stream). */
   const pendingPrePullBaselineRef = useRef<ResumeData | null>(null);
   const pendingPortfolioPrePullBaselineRef = useRef<PortfolioData | null>(null);
+  const pendingLinkedInPrePullBaselineRef = useRef<LinkedInSessionProfile | null>(null);
+  /** Sub-session sends (improve threads) write to a different ADK session id than the main chat. */
+  const pendingPullSessionIdRef = useRef<string | null>(null);
   /** Captures assistant bubble id for the in-flight stream (review cards attach to this message). */
   const pendingReviewAssistantIdRef = useRef<string | null>(null);
+  const pendingMutatingToolRef = useRef<string | null>(null);
+  const streamHadSidebarContentRef = useRef(false);
+  const streamInFlightRef = useRef(false);
+  const activityPresenterRef = useRef<StreamActivityPresenter | null>(null);
+  const streamHeartbeatRef = useRef<StreamActivityHeartbeat | null>(null);
+  if (activityPresenterRef.current === null) {
+    activityPresenterRef.current = createStreamActivityPresenter({
+      onPresent: ({ label, assistantMessageId }) => {
+        const snapshot = { activityLabel: label, assistantMessageId };
+        setStreamActivitySnapshot(snapshot);
+        flushSync(() => {
+          setStreamActivityLabel(label);
+        });
+        dispatchStreamActivity({
+          loading: true,
+          activityLabel: label,
+          assistantMessageId,
+        });
+      },
+    });
+  }
+  if (streamHeartbeatRef.current === null) {
+    streamHeartbeatRef.current = createStreamActivityHeartbeat({
+      labels: ["Working with Unibot…"],
+      onTick: label => {
+        activityPresenterRef.current?.enqueue(label);
+      },
+    });
+  }
   const [streamActivityLabel, setStreamActivityLabel] = useState<string | null>(null);
-  const resumeId = useMemo(() => {
-    const raw = searchParams.get("id");
-    return raw && raw.trim().length > 0 ? raw.trim() : null;
-  }, [searchParams]);
+  const resumeId = useMemo(() => resolveActiveResumeIdForPatch(searchParams), [searchParams]);
+
+  const resolveResumeIdForSessionPull = useCallback((): string | null => {
+    if (resumeId?.trim()) return resumeId.trim();
+    const keys = Object.keys(useResumeStore.getState().resumeData);
+    return keys[0] ?? null;
+  }, [resumeId]);
+
+  const captureResumeBaselineBeforeMutatingPull = useCallback(
+    (scopeOverride: ContentScope | null): void => {
+      if (pendingPrePullBaselineRef.current) return;
+      const isResumeContext = scopeOverride?.domain === "resume" || pathname.startsWith("/uniboard/resume");
+      if (!isResumeContext) return;
+
+      const fromScope = scopeOverride?.domain === "resume" ? scopeOverride.contentKey.split(":")[1]?.trim() : "";
+      const id = (fromScope && fromScope !== "active" ? fromScope : null) ?? resolveResumeIdForSessionPull();
+      if (!id) return;
+
+      const cur = useResumeStore.getState().getResumeData(id);
+      if (cur) {
+        pendingPrePullBaselineRef.current = JSON.parse(JSON.stringify(cur)) as ResumeData;
+      }
+    },
+    [pathname, resolveResumeIdForSessionPull]
+  );
 
   const isLinkedInRoute = pathname.startsWith("/uniboard/linkedin");
   const { data: linkedInSnapshot } = useLinkedInAnalysis({ enabled: isLinkedInRoute });
@@ -104,22 +215,30 @@ export function useAdkStreamingManager({
   const { isLoading: isStreamLoading, currentAgent, startStream } = useAdkStreaming(retryWithBackoff);
   const isLoading = isSubmitInFlight || isStreamLoading;
 
+  const handleMessageUpdate = useCallback(
+    (am: AgentMessage) => {
+      onMessageUpdate(am);
+      const text = am.content?.trim() ?? "";
+      // Keep activity labels visible for the whole stream — tool-heavy turns clear too early otherwise.
+      if (text && !isStreamingMachineReadablePayloadOnly(text) && !streamInFlightRef.current) {
+        if (activityPresenterRef.current?.isPacing()) {
+          return;
+        }
+        clearStreamActivitySnapshot();
+        setStreamActivityLabel(null);
+      }
+    },
+    [onMessageUpdate]
+  );
+
   useEffect(() => {
     onLoadingChange?.(isLoading);
   }, [isLoading, onLoadingChange]);
 
-  useEffect(() => {
-    if (!isStreamLoading && !isSyncingContext && !isSubmitInFlight) {
-      setStreamActivityLabel(null);
-    }
-  }, [isStreamLoading, isSyncingContext, isSubmitInFlight]);
-
-  useEffect(() => {
-    return () => {
-      if (sessionPullDebounceRef.current) {
-        clearTimeout(sessionPullDebounceRef.current);
-      }
-    };
+  const clearMutatingPullBaselines = useCallback((): void => {
+    pendingPrePullBaselineRef.current = null;
+    pendingPortfolioPrePullBaselineRef.current = null;
+    pendingLinkedInPrePullBaselineRef.current = null;
   }, []);
 
   const getStateDeltaForCurrentRoute = useCallback((): {
@@ -129,6 +248,7 @@ export function useAdkStreamingManager({
     const isResumeRoute = pathname.startsWith("/uniboard/resume");
     const isPortfolioRoute = pathname.startsWith("/uniboard/portfolio");
     const isStudioRoute = pathname.startsWith("/uniboard/studio");
+    const isJobsRoute = pathname.startsWith("/uniboard/jobs");
     const allStoreResumes = useResumeStore.getState().resumeData;
     const allStorePortfolios = usePortfolioStore.getState().portfolioData;
     const warmResumeData = buildAdkResumeDataMap(allStoreResumes);
@@ -153,7 +273,7 @@ export function useAdkStreamingManager({
     }
 
     if (isStudioRoute) {
-      const studioTypeParam = searchParams.get("type");
+      const studioTypeParam = searchParams?.get("type") ?? null;
       const documentTopics: ApplicationAssetStudioTopic[] = ["cover-letter", "cold-email", "referral"];
       const isDocumentStudioTopic = (t: string | null): t is ApplicationAssetStudioTopic =>
         Boolean(t && documentTopics.includes(t as ApplicationAssetStudioTopic));
@@ -171,6 +291,7 @@ export function useAdkStreamingManager({
             contactName: aa.contactName,
             draftPreview: aa.draftPreview,
             acceptedBody: aa.acceptedContent,
+            regenerateDraft: aa.regenerateAnotherInFlight,
           }),
           source: "application_asset_studio",
         };
@@ -180,10 +301,25 @@ export function useAdkStreamingManager({
         stateDelta: buildAdkContentGenStateDelta({
           topic: cg.topic,
           funnel: cg.funnel,
+          mood: cg.mood,
           assetId: cg.assetId,
           draftPreview: cg.draftPreview,
         }),
         source: "content_gen_studio",
+      };
+    }
+
+    if (isJobsRoute) {
+      const applications = queryClient.getQueryData<Application[]>(["applications"]) ?? [];
+      const tab = (searchParams?.get("tab") || "discovery").toLowerCase();
+      const activeContext = tab === "tracker" ? "application_tracker" : tab === "interview" ? "interview_prep" : "jobs";
+      return {
+        stateDelta: {
+          active_context: activeContext,
+          application_tracker_data: applications,
+          interview_prep_data: {},
+        },
+        source: "jobs_query",
       };
     }
 
@@ -238,14 +374,17 @@ export function useAdkStreamingManager({
     if (isResumeRoute && resumeId) {
       const storeResume = useResumeStore.getState().getResumeData(resumeId);
       const queryResume = queryClient.getQueryData<ResumeData>(resumeByIdQueryKey(resumeId));
-      const sourceResume = storeResume ?? queryResume;
+      const listResume = queryClient
+        .getQueryData<ResumeData[]>(resumesListQueryKey)
+        ?.find(resume => String(resume.id) === String(resumeId));
+      const sourceResume = storeResume ?? queryResume ?? listResume;
 
       if (sourceResume) {
         const mergedResumes = {
           ...allStoreResumes,
-          [resumeId]: sourceResume,
+          [resumeId]: { ...sourceResume, id: resumeId },
         };
-        const base = buildAdkResumeStateDelta(sourceResume);
+        const base = buildAdkResumeStateDelta({ ...sourceResume, id: resumeId });
         return {
           stateDelta: {
             ...base,
@@ -256,6 +395,31 @@ export function useAdkStreamingManager({
           source: storeResume ? "zustand" : "react_query",
         };
       }
+
+      const warmOnly = allStoreResumes[resumeId];
+      if (warmOnly) {
+        const mergedResumes = { ...allStoreResumes, [resumeId]: { ...warmOnly, id: resumeId } };
+        return {
+          stateDelta: {
+            ...buildAdkResumeStateDelta({ ...warmOnly, id: resumeId }),
+            resume_data: buildAdkResumeDataMap(mergedResumes),
+            portfolio_data: warmPortfolioData,
+            current_portfolio: null,
+          },
+          source: "zustand",
+        };
+      }
+
+      return {
+        stateDelta: {
+          active_context: "resume",
+          current_resume: resumeId,
+          resume_data: warmResumeData,
+          portfolio_data: warmPortfolioData,
+          current_portfolio: null,
+        },
+        source: "resume_id_only",
+      };
     }
 
     return {
@@ -270,230 +434,228 @@ export function useAdkStreamingManager({
     };
   }, [pathname, resumeId, searchParams, queryClient, linkedInSnapshot, isLinkedInRoute]);
 
+  const getStateDeltaForScope = useCallback(
+    (scope: ContentScope): { stateDelta: Record<string, unknown>; source: AdkStateSyncSource } => {
+      if (scope.domain === "resume") {
+        const allStoreResumes = useResumeStore.getState().resumeData;
+        const warmPortfolioData = buildAdkPortfolioDataMap(usePortfolioStore.getState().portfolioData);
+        const resumeKey = scope.contentKey.split(":")[1] ?? "";
+        let scopedResumeId = resumeKey && resumeKey !== "active" ? resumeKey : null;
+        if (!scopedResumeId) {
+          scopedResumeId = resolveActiveResumeIdForPatch(searchParams);
+        }
+        const sourceResume = scopedResumeId ? useResumeStore.getState().getResumeData(scopedResumeId) : undefined;
+        const queryResume = scopedResumeId ? queryClient.getQueryData<ResumeData>(resumeByIdQueryKey(scopedResumeId)) : undefined;
+        const resolvedResume = sourceResume ?? queryResume;
+        if (resolvedResume && scopedResumeId) {
+          return {
+            stateDelta: {
+              ...buildAdkResumeStateDelta({ ...resolvedResume, id: scopedResumeId }),
+              resume_data: buildAdkResumeDataMap({ ...allStoreResumes, [scopedResumeId]: resolvedResume }),
+              portfolio_data: warmPortfolioData,
+              current_portfolio: null,
+            },
+            source: sourceResume ? "zustand" : "react_query",
+          };
+        }
+        if (scopedResumeId) {
+          return {
+            stateDelta: {
+              active_context: "resume",
+              current_resume: scopedResumeId,
+              resume_data: buildAdkResumeDataMap(allStoreResumes),
+              portfolio_data: warmPortfolioData,
+              current_portfolio: null,
+            },
+            source: "resume_id_only",
+          };
+        }
+      }
+
+      if (scope.domain === "portfolio") {
+        const allStorePortfolios = usePortfolioStore.getState().portfolioData;
+        const queryPortfolio = queryClient.getQueryData<PortfolioData | null>(portfolioQueryKey);
+        const sourcePortfolio = queryPortfolio ?? Object.values(allStorePortfolios)[0] ?? null;
+        const warmResumeData = buildAdkResumeDataMap(useResumeStore.getState().resumeData);
+        if (sourcePortfolio?.id) {
+          return {
+            stateDelta: {
+              ...buildAdkPortfolioStateDelta(sourcePortfolio),
+              portfolio_data: buildAdkPortfolioDataMap({ ...allStorePortfolios, [sourcePortfolio.id]: sourcePortfolio }),
+              resume_data: warmResumeData,
+              current_resume: null,
+            },
+            source: "portfolio_zustand",
+          };
+        }
+      }
+
+      if (scope.domain === "application_asset") {
+        const aa = useApplicationAssetStudioStore.getState();
+        const typePart = scope.contentKey.split(":")[1];
+        const scopedType = typePart === "coverletter" || typePart === "coldemail" || typePart === "referral" ? typePart : aa.assetType;
+        return {
+          stateDelta: buildAdkApplicationAssetStateDelta({
+            assetType: scopedType ?? aa.assetType ?? undefined,
+            assetId: aa.assetId,
+            applicationId: aa.applicationId,
+            role: aa.role,
+            company: aa.company,
+            jobDescription: aa.jobDescription,
+            contactName: aa.contactName,
+            draftPreview: aa.draftPreview,
+            acceptedBody: aa.acceptedContent,
+            regenerateDraft: aa.regenerateAnotherInFlight,
+          }),
+          source: "application_asset_studio",
+        };
+      }
+
+      if (scope.domain === "content_gen") {
+        const cg = useContentGenStudioStore.getState();
+        return {
+          stateDelta: buildAdkContentGenStateDelta({
+            topic: cg.topic,
+            funnel: cg.funnel,
+            mood: cg.mood,
+            assetId: cg.assetId,
+            draftPreview: cg.draftPreview,
+          }),
+          source: "content_gen_studio",
+        };
+      }
+
+      if (scope.domain === "linkedin") {
+        const snapshot = linkedInSnapshot ?? queryClient.getQueryData<LinkedInAnalysisSnapshot | null>(linkedinAnalysisQueryKey);
+        if (snapshot?.result) {
+          return {
+            stateDelta: buildAdkLinkedInStateDelta(snapshot),
+            source: "linkedin_query",
+          };
+        }
+      }
+
+      return getStateDeltaForCurrentRoute();
+    },
+    [getStateDeltaForCurrentRoute, linkedInSnapshot, queryClient, searchParams]
+  );
+
   /** Snapshot current route context into ADK session (call once per user send). */
   const patchSessionContextBeforeSend = useCallback(
-    async (targetSessionId: string): Promise<{ success: boolean; error?: string }> => {
+    async (
+      targetSessionId: string,
+      scopeOverride?: ContentScope | null
+    ): Promise<{ success: boolean; effectiveAppName?: string; error?: string }> => {
       if (!userId || !targetSessionId) {
         return { success: false, error: "userId and sessionId are required" };
       }
 
-      const { stateDelta, source } = getStateDeltaForCurrentRoute();
+      const { stateDelta } = scopeOverride ? getStateDeltaForScope(scopeOverride) : getStateDeltaForCurrentRoute();
 
-      console.log("📤 [ADK STATE SYNC] PATCH session state (before_send)", {
-        sessionId: targetSessionId,
-        resumeId,
-        source,
-        keys: Object.keys(stateDelta),
-        activeContext: stateDelta.active_context,
-        patchedResumeId: stateDelta.current_resume,
-        patchedPortfolioId: stateDelta.current_portfolio,
-        portfolioDataCount:
-          stateDelta.portfolio_data && typeof stateDelta.portfolio_data === "object"
-            ? Object.keys(stateDelta.portfolio_data as Record<string, unknown>).length
-            : 0,
-      });
+      const subThreadExtras: Record<string, unknown> = {};
+      if (scopeOverride?.sessionKind === "sub") {
+        const row = getRegistryRow(targetSessionId);
+        if (scopeOverride.domain === "content_gen") {
+          const section = (row?.section ?? scopeOverride.section ?? "").trim().toLowerCase();
+          subThreadExtras.content_gen_thread_mode = section === "topic" ? "topic" : "draft";
+        }
+        if (scopeOverride.domain === "resume" && row?.section) {
+          subThreadExtras.resume_improve_section = row.section;
+          const entryId = (row.entry_id ?? "").trim();
+          if (entryId) {
+            subThreadExtras.resume_improve_entry_id = entryId;
+          }
+        }
+      }
 
-      const syncResult = await syncSessionStateAction(userId, targetSessionId, {
-        ...stateDelta,
-        django_username: userId,
-      });
+      const adkSessionOptions = resolveAdkSessionOptionsForSessionId(targetSessionId);
+
+      const syncResult = await syncSessionStateAction(
+        userId,
+        targetSessionId,
+        {
+          ...stateDelta,
+          ...subThreadExtras,
+          django_username: userId,
+        },
+        adkSessionOptions
+      );
       if (!syncResult.success) {
-        console.warn("⚠️ [ADK STREAMING] Session PATCH sync failed", {
-          sessionId: targetSessionId,
-          error: syncResult.error,
-        });
         return {
           success: false,
           error: syncResult.error ?? "Could not sync your editor context with Unibot.",
         };
       }
 
-      console.log("✅ [ADK STATE SYNC] PATCH success (before_send)", {
-        sessionId: targetSessionId,
-        resumeId,
-        source,
+      const registryRow = getRegistryRow(targetSessionId);
+      const syncedScope =
+        scopeOverride ??
+        (registryRow
+          ? deriveScopeFromRegistryRow(registryRow)
+          : deriveActiveScope({
+              pathname,
+              searchParams,
+              sessionId: targetSessionId,
+              sessionKind: "main",
+            }));
+      noteAdkSessionSynced(syncedScope);
+
+      return { success: true, effectiveAppName: syncResult.effectiveAppName };
+    },
+    [userId, getStateDeltaForCurrentRoute, getStateDeltaForScope, pathname, searchParams]
+  );
+
+  const noteMutatingToolDuringStream = useCallback((toolName: string, aiMessageId: string) => {
+    pendingMutatingToolRef.current = toolName;
+    pendingReviewAssistantIdRef.current = aiMessageId;
+  }, []);
+
+  const flushMutatingToolSessionPull = useCallback(
+    async (pullSessionId: string): Promise<string | null> => {
+      const tool = pendingMutatingToolRef.current;
+      pendingMutatingToolRef.current = null;
+      if (!tool || !userId) return null;
+
+      await applyMutatingToolSessionPull({
+        userId,
+        sessionId: pullSessionId,
+        toolName: tool,
+        assistantMessageId: pendingReviewAssistantIdRef.current,
+        pathname,
+        resumeId: (() => {
+          const row = getRegistryRow(pullSessionId);
+          const fromRegistry = row?.feature === "resume" ? (row.feature_id ?? "").trim() : "";
+          return fromRegistry || resolveResumeIdForSessionPull();
+        })(),
+        portfolioId: getCurrentPortfolioId(),
+        linkedInSnapshot,
+        queryClient,
+        baselines: {
+          resume: pendingPrePullBaselineRef.current,
+          portfolio: pendingPortfolioPrePullBaselineRef.current,
+          linkedIn: pendingLinkedInPrePullBaselineRef.current,
+        },
       });
-      return { success: true };
+      clearMutatingPullBaselines();
+      pendingReviewAssistantIdRef.current = null;
+      return tool;
     },
-    [userId, resumeId, getStateDeltaForCurrentRoute]
+    [userId, pathname, resolveResumeIdForSessionPull, getCurrentPortfolioId, linkedInSnapshot, queryClient, clearMutatingPullBaselines]
   );
-
-  const syncResumeStoreFromSessionState = useCallback(
-    async (reason: "after_stream" | "after_tool_response"): Promise<void> => {
-      if (!userId || !sessionId) {
-        return;
-      }
-
-      const toolDiffBaseline = reason === "after_tool_response" ? pendingPrePullBaselineRef.current : null;
-
-      try {
-        const pullResult = await pullSessionStateAction(userId, sessionId);
-        if (!pullResult.success || !pullResult.state) {
-          if (!pullResult.success) {
-            console.warn("⚠️ [ADK STATE SYNC] Session GET sync failed", {
-              sessionId,
-              reason,
-              error: pullResult.error,
-            });
-          }
-          return;
-        }
-
-        const nextResumes = mapAdkResumeDataMapToFrontend(pullResult.state.resume_data);
-        const store = useResumeStore.getState();
-        const currentResumeIdRaw = pullResult.state.current_resume;
-        const currentResumeId =
-          typeof currentResumeIdRaw === "string" && currentResumeIdRaw.trim().length > 0 ? currentResumeIdRaw.trim() : null;
-        const sourceResume = currentResumeId ? nextResumes[currentResumeId] : undefined;
-        const currentStoreFingerprint = JSON.stringify(store.resumeData);
-        const nextStoreFingerprint = JSON.stringify(nextResumes);
-
-        if (currentStoreFingerprint === nextStoreFingerprint) {
-          return;
-        }
-
-        if (reason === "after_tool_response" && toolDiffBaseline && currentResumeId && sourceResume) {
-          const { highlights, bannerTitle } = computeAdkReviewFromDiff(toolDiffBaseline, sourceResume);
-          if (Object.keys(highlights).length > 0) {
-            useAdkResumeReviewStore.getState().beginReview({
-              resumeId: currentResumeId,
-              baselineResume: toolDiffBaseline,
-              highlights,
-              bannerTitle,
-              assistantMessageId: pendingReviewAssistantIdRef.current,
-            });
-          }
-        }
-
-        suppressStoreSyncRef.current = true;
-        try {
-          useResumeStore.setState({ resumeData: nextResumes });
-          if (currentResumeId && sourceResume) {
-            queryClient.setQueryData(resumeByIdQueryKey(currentResumeId), sourceResume);
-          }
-          console.log("✅ [ADK STATE SYNC] Session GET applied to store", {
-            reason,
-            sessionId,
-            currentResumeId,
-            resumeCount: Object.keys(nextResumes).length,
-          });
-        } finally {
-          suppressStoreSyncRef.current = false;
-          lastResumeStoreFingerprintRef.current = nextStoreFingerprint;
-        }
-      } finally {
-        if (reason === "after_tool_response") {
-          pendingPrePullBaselineRef.current = null;
-          pendingReviewAssistantIdRef.current = null;
-        }
-      }
-    },
-    [userId, sessionId, queryClient]
-  );
-
-  const syncPortfolioStoreFromSessionState = useCallback(
-    async (reason: "after_stream" | "after_tool_response"): Promise<void> => {
-      if (!userId || !sessionId) {
-        return;
-      }
-
-      const toolDiffBaseline = reason === "after_tool_response" ? pendingPortfolioPrePullBaselineRef.current : null;
-
-      try {
-        const pullResult = await pullSessionStateAction(userId, sessionId);
-        if (!pullResult.success || !pullResult.state) {
-          if (!pullResult.success) {
-            console.warn("⚠️ [ADK STATE SYNC] Portfolio session GET failed", {
-              sessionId,
-              reason,
-              error: pullResult.error,
-            });
-          }
-          return;
-        }
-
-        const nextPortfolios = mapAdkPortfolioDataMapToFrontend(pullResult.state.portfolio_data);
-        const store = usePortfolioStore.getState();
-        const currentPortfolioIdRaw = pullResult.state.current_portfolio;
-        const currentPortfolioId =
-          typeof currentPortfolioIdRaw === "string" && currentPortfolioIdRaw.trim().length > 0 ? currentPortfolioIdRaw.trim() : null;
-        const sourcePortfolio = currentPortfolioId ? nextPortfolios[currentPortfolioId] : undefined;
-        const currentStoreFingerprint = JSON.stringify(store.portfolioData);
-        const nextStoreFingerprint = JSON.stringify(nextPortfolios);
-
-        if (currentStoreFingerprint === nextStoreFingerprint) {
-          return;
-        }
-
-        if (reason === "after_tool_response" && toolDiffBaseline && currentPortfolioId && sourcePortfolio) {
-          const { highlights, bannerTitle } = computeAdkPortfolioReviewFromDiff(toolDiffBaseline, sourcePortfolio);
-          if (Object.keys(highlights).length > 0) {
-            useAdkPortfolioReviewStore.getState().beginReview({
-              portfolioId: currentPortfolioId,
-              baselinePortfolio: toolDiffBaseline,
-              highlights,
-              bannerTitle,
-              assistantMessageId: pendingReviewAssistantIdRef.current,
-            });
-          }
-        }
-
-        suppressStoreSyncRef.current = true;
-        try {
-          usePortfolioStore.setState({ portfolioData: nextPortfolios });
-          if (currentPortfolioId && sourcePortfolio) {
-            queryClient.setQueryData(portfolioQueryKey, sourcePortfolio);
-          }
-          console.log("✅ [ADK STATE SYNC] Portfolio session GET applied to store", {
-            reason,
-            sessionId,
-            currentPortfolioId,
-            portfolioCount: Object.keys(nextPortfolios).length,
-          });
-        } finally {
-          suppressStoreSyncRef.current = false;
-          lastPortfolioStoreFingerprintRef.current = nextStoreFingerprint;
-        }
-      } finally {
-        if (reason === "after_tool_response") {
-          pendingPortfolioPrePullBaselineRef.current = null;
-          pendingReviewAssistantIdRef.current = null;
-        }
-      }
-    },
-    [userId, sessionId, queryClient]
-  );
-
-  const scheduleResumePullAfterMutatingTool = useCallback(() => {
-    if (sessionPullDebounceRef.current) {
-      clearTimeout(sessionPullDebounceRef.current);
-    }
-    sessionPullDebounceRef.current = setTimeout(() => {
-      sessionPullDebounceRef.current = null;
-      void syncResumeStoreFromSessionState("after_tool_response");
-    }, 220);
-  }, [syncResumeStoreFromSessionState]);
-
-  const schedulePortfolioPullAfterMutatingTool = useCallback(() => {
-    if (sessionPullDebounceRef.current) {
-      clearTimeout(sessionPullDebounceRef.current);
-    }
-    sessionPullDebounceRef.current = setTimeout(() => {
-      sessionPullDebounceRef.current = null;
-      void syncPortfolioStoreFromSessionState("after_tool_response");
-    }, 220);
-  }, [syncPortfolioStoreFromSessionState]);
 
   const streamExtras = useMemo(
     () => ({
       onMutatingToolResponse: (toolName: string, aiMessageId: string) => {
-        pendingReviewAssistantIdRef.current = aiMessageId;
-        if (isMutatingResumeTool(toolName) && resumeId) {
-          const cur = useResumeStore.getState().getResumeData(resumeId);
-          if (cur && !pendingPrePullBaselineRef.current) {
-            pendingPrePullBaselineRef.current = JSON.parse(JSON.stringify(cur)) as ResumeData;
+        if (isMutatingResumeTool(toolName)) {
+          const id = resolveResumeIdForSessionPull();
+          if (id) {
+            const cur = useResumeStore.getState().getResumeData(id);
+            if (cur && !pendingPrePullBaselineRef.current) {
+              pendingPrePullBaselineRef.current = JSON.parse(JSON.stringify(cur)) as ResumeData;
+            }
           }
-          scheduleResumePullAfterMutatingTool();
+          noteMutatingToolDuringStream(toolName, aiMessageId);
+          return;
         }
         const activePortfolioId = getCurrentPortfolioId();
         if (isMutatingPortfolioTool(toolName) && activePortfolioId) {
@@ -501,18 +663,61 @@ export function useAdkStreamingManager({
           if (cur && !pendingPortfolioPrePullBaselineRef.current) {
             pendingPortfolioPrePullBaselineRef.current = JSON.parse(JSON.stringify(cur)) as PortfolioData;
           }
-          schedulePortfolioPullAfterMutatingTool();
+          noteMutatingToolDuringStream(toolName, aiMessageId);
+          return;
+        }
+        if (isMutatingLinkedInTool(toolName) && isLinkedInRoute) {
+          const snapshot = linkedInSnapshot ?? queryClient.getQueryData<LinkedInAnalysisSnapshot | null>(linkedinAnalysisQueryKey);
+          if (snapshot && !pendingLinkedInPrePullBaselineRef.current) {
+            pendingLinkedInPrePullBaselineRef.current = JSON.parse(
+              JSON.stringify(mapSnapshotToLinkedInSessionProfile(snapshot))
+            ) as LinkedInSessionProfile;
+          }
+          noteMutatingToolDuringStream(toolName, aiMessageId);
+          return;
+        }
+        if (isMutatingContentGenTool(toolName) || isMutatingApplicationAssetTool(toolName)) {
+          noteMutatingToolDuringStream(toolName, aiMessageId);
         }
       },
       onStreamActivityHint: ({ label }: { label: string }) => {
-        setStreamActivityLabel(label);
+        const trimmed = label.trim();
+        if (trimmed) {
+          streamHeartbeatRef.current?.markRealHint();
+          activityPresenterRef.current?.enqueue(trimmed);
+        }
+      },
+      onNavigationSuggestion: (assistantId: string, navigation: { path: string; label: string }) => {
+        streamHadSidebarContentRef.current = true;
+        onNavigationSuggestion?.(assistantId, navigation);
+      },
+      onJobCardsSuggestion: (assistantId: string, payload: import("../parse-unimad-job-cards").UnimadJobCardsPayload) => {
+        streamHadSidebarContentRef.current = true;
+        onJobCardsSuggestion?.(assistantId, payload);
+      },
+      onLinkedInSuggestions: (
+        assistantId: string,
+        payload: import("../parse-unimad-linkedin-suggestions").UnimadLinkedInSuggestionsPayload
+      ) => {
+        streamHadSidebarContentRef.current = true;
+        onLinkedInSuggestions?.(assistantId, payload);
       },
     }),
-    [scheduleResumePullAfterMutatingTool, schedulePortfolioPullAfterMutatingTool, resumeId, getCurrentPortfolioId]
+    [
+      noteMutatingToolDuringStream,
+      resolveResumeIdForSessionPull,
+      getCurrentPortfolioId,
+      isLinkedInRoute,
+      linkedInSnapshot,
+      queryClient,
+      onNavigationSuggestion,
+      onJobCardsSuggestion,
+      onLinkedInSuggestions,
+    ]
   );
 
   const submitMessage = useCallback(
-    async (message: string, options?: { aiMessageId?: string; sessionIdOverride?: string }): Promise<void> => {
+    async (message: string, options?: { aiMessageId?: string; sessionIdOverride?: string }): Promise<{ hadAssistantText: boolean }> => {
       const targetSessionId = options?.sessionIdOverride?.trim() || sessionId;
       if (!message.trim() || !userId || !targetSessionId) {
         throw new Error("Message, userId, and sessionId are required");
@@ -523,44 +728,110 @@ export function useAdkStreamingManager({
         throw new Error(`${ADK_REQUEST_RATE_LIMIT_MESSAGE} (${rateLimit.retryAfterSeconds}s)`);
       }
 
+      pendingReviewAssistantIdRef.current = options?.aiMessageId ?? null;
+      streamHadSidebarContentRef.current = false;
+      activityPresenterRef.current?.reset();
+      activityPresenterRef.current?.setAssistantMessageId(pendingReviewAssistantIdRef.current);
+      clearStreamActivitySnapshot();
+      setStreamActivityLabel(null);
+
+      const seedRow = getRegistryRow(targetSessionId);
+      const seedScope = seedRow ? deriveScopeFromRegistryRow(seedRow) : null;
+      const seedLabel =
+        seedScope?.domain === "resume" && seedScope.section === "summary"
+          ? "Shaping your professional summary…"
+          : seedScope?.domain === "content_gen"
+            ? (resolveContentGenActivityLabelHint(message) ?? "Working with Unibot…")
+            : "Working with Unibot…";
+      activityPresenterRef.current?.enqueue(seedLabel);
+
       setIsSubmitInFlight(true);
       setIsSyncingContext(true);
-      setStreamActivityLabel(WAKING_UP_LABEL);
+
+      let hadAssistantText = false;
+      let streamAdkAppName: string | undefined;
+      const submitStartedAt = Date.now();
       try {
-        const patchResult = await patchSessionContextBeforeSend(targetSessionId);
-        if (!patchResult.success) {
-          throw new Error(patchResult.error ?? "Could not sync your editor context with Unibot.");
+        try {
+          const sessionRow = options?.sessionIdOverride ? getRegistryRow(targetSessionId) : undefined;
+          const scopeOverride = sessionRow ? deriveScopeFromRegistryRow(sessionRow) : null;
+          captureResumeBaselineBeforeMutatingPull(scopeOverride);
+          const patchResult = await patchSessionContextBeforeSend(targetSessionId, scopeOverride);
+          if (!patchResult.success) {
+            throw new Error(patchResult.error ?? "Could not sync your editor context with Unibot.");
+          }
+          streamAdkAppName = patchResult.effectiveAppName ?? resolveAdkSessionOptionsForSessionId(targetSessionId).appName;
+        } finally {
+          setIsSyncingContext(false);
+          clearStreamActivitySnapshot();
+          setStreamActivityLabel(null);
         }
-      } finally {
-        setIsSyncingContext(false);
-      }
 
-      setStreamActivityLabel(null);
-      pendingReviewAssistantIdRef.current = options?.aiMessageId ?? null;
+        pendingPullSessionIdRef.current =
+          options?.sessionIdOverride && options.sessionIdOverride.trim() !== sessionId ? options.sessionIdOverride.trim() : null;
 
-      try {
-        await startStream(
+        if (isAdkActivityTraceEnabled()) {
+          console.info(`[adk-activity] session PATCH done +${Date.now() - submitStartedAt}ms before fetch`);
+        }
+
+        streamInFlightRef.current = true;
+        streamHeartbeatRef.current?.start(resolveStreamHeartbeatLabels(seedScope, pathname, searchParams?.get("type")));
+
+        hadAssistantText = await startStream(
           {
             message: message.trim(),
             userId,
             sessionId: targetSessionId,
             aiMessageId: options?.aiMessageId,
+            adkAppName: streamAdkAppName,
           },
-          onMessageUpdate,
+          handleMessageUpdate,
           onEventUpdate,
           onWebsiteCountUpdate,
           streamExtras
         );
-        const isSubSend = Boolean(options?.sessionIdOverride && options.sessionIdOverride !== sessionId);
-        if (!isSubSend) {
-          if (pathname.startsWith("/uniboard/portfolio")) {
-            await syncPortfolioStoreFromSessionState("after_stream");
-          } else if (pathname.startsWith("/uniboard/resume")) {
-            await syncResumeStoreFromSessionState("after_stream");
+
+        // Pull session only after /run_sse completes — ADK may not persist tool state mid-stream.
+        const pullSessionId = pendingPullSessionIdRef.current ?? targetSessionId;
+        const appliedTool = await flushMutatingToolSessionPull(pullSessionId);
+        if (!hadAssistantText && appliedTool && options?.aiMessageId) {
+          const completion = completionMessageForMutatingTool(appliedTool);
+          if (completion) {
+            handleMessageUpdate({
+              type: "ai",
+              content: completion,
+              id: options.aiMessageId,
+              timestamp: new Date(),
+            });
+            hadAssistantText = true;
           }
         }
+
+        if (!hadAssistantText && streamHadSidebarContentRef.current) {
+          hadAssistantText = true;
+        }
+
+        return { hadAssistantText };
       } finally {
-        setIsSubmitInFlight(false);
+        streamInFlightRef.current = false;
+        streamHeartbeatRef.current?.stop();
+        pendingPullSessionIdRef.current = null;
+        const finishSubmit = (): void => {
+          activityPresenterRef.current?.reset();
+          setIsSubmitInFlight(false);
+          setStreamActivityLabel(null);
+          clearStreamActivitySnapshot();
+          dispatchStreamActivity({
+            loading: false,
+            activityLabel: null,
+            assistantMessageId: pendingReviewAssistantIdRef.current,
+          });
+        };
+        if (activityPresenterRef.current?.isPacing()) {
+          activityPresenterRef.current.finish(finishSubmit);
+        } else {
+          finishSubmit();
+        }
       }
     },
     [
@@ -568,13 +839,13 @@ export function useAdkStreamingManager({
       sessionId,
       pathname,
       startStream,
-      onMessageUpdate,
+      handleMessageUpdate,
       onEventUpdate,
       onWebsiteCountUpdate,
       patchSessionContextBeforeSend,
-      syncResumeStoreFromSessionState,
-      syncPortfolioStoreFromSessionState,
       streamExtras,
+      flushMutatingToolSessionPull,
+      captureResumeBaselineBeforeMutatingPull,
     ]
   );
 
@@ -582,6 +853,7 @@ export function useAdkStreamingManager({
     isLoading,
     currentAgent,
     streamActivityLabel,
+    isSyncingContext,
     submitMessage,
   };
 }

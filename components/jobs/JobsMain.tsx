@@ -107,7 +107,8 @@ const JobsMain: React.FC<JobsMainProps> = ({
     onTabChange("interview");
     onInterviewUrlChange({
       setup: null,
-      view: payload.mode === "live" ? "voice" : null,
+      // view: payload.mode === "live" ? "voice" : null, // Gemini Live — temporarily disabled
+      view: null,
       interview_id: null,
       round: payload.roundType,
     });

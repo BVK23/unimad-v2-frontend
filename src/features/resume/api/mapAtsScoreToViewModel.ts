@@ -17,7 +17,16 @@ const mapBackendStatusToUi = (status: string | undefined): AtsSectionUiStatus =>
   return "warning";
 };
 
-const rowFromSection = (label: string, sec: AtsSectionScore | undefined): AtsScoreViewModel["sectionAnalysis"][0] => {
+const formatDeltaSuffix = (delta: number | undefined): string => {
+  if (typeof delta !== "number" || !Number.isFinite(delta) || delta === 0) return "";
+  return ` (${delta > 0 ? `+${delta}` : delta})`;
+};
+
+const rowFromSection = (
+  label: string,
+  sec: AtsSectionScore | undefined,
+  sectionDelta?: number
+): AtsScoreViewModel["sectionAnalysis"][0] => {
   if (!sec) {
     return {
       name: label,
@@ -30,9 +39,12 @@ const rowFromSection = (label: string, sec: AtsSectionScore | undefined): AtsSco
   return {
     name: label,
     status: mapBackendStatusToUi(typeof sec.status === "string" ? sec.status : undefined),
-    feedback: `${baseFeedback}${scoreSuffix}`,
+    feedback: `${baseFeedback}${scoreSuffix}${formatDeltaSuffix(sectionDelta)}`,
   };
 };
+
+const stringList = (value: unknown): string[] =>
+  Array.isArray(value) ? value.filter((item): item is string => typeof item === "string" && item.trim().length > 0) : [];
 
 /**
  * Maps Django `ats_score` JSON to the shape used by ResumeEditor modal (dots + copy).
@@ -41,15 +53,22 @@ export const mapAtsScoreToViewModel = (payload: AtsScorePayload | null | undefin
   const raw = typeof payload?.overall_score === "number" ? payload.overall_score : Number(payload?.overall_score);
   const score = Number.isFinite(raw) ? Math.min(100, Math.max(0, Math.round(raw))) : 0;
 
-  const improvements = Array.isArray(payload?.improvements) ? payload.improvements.filter((s): s is string => typeof s === "string") : [];
-
+  const improvements = stringList(payload?.improvements);
+  const delta = payload?.delta;
   const section_scores = payload?.section_scores;
-  const sectionAnalysis = SECTION_ORDER.map(({ key, label }) => rowFromSection(label, section_scores?.[key])).filter(
+  const sectionDeltas = delta?.sections;
+
+  const sectionAnalysis = SECTION_ORDER.map(({ key, label }) => rowFromSection(label, section_scores?.[key], sectionDeltas?.[key])).filter(
     row => row.feedback !== "Not analyzed."
   );
 
   const generalRaw = payload?.general_score;
   const jdRaw = payload?.jd_match_score;
+
+  const keywordsResolved = stringList(delta?.keywords_resolved?.length ? delta.keywords_resolved : payload?.keyword_resolved);
+  const keywordsStillMissing = stringList(
+    delta?.keywords_still_missing?.length ? delta.keywords_still_missing : (payload?.keyword_still_missing ?? payload?.missing_keywords)
+  );
 
   return {
     score,
@@ -58,5 +77,24 @@ export const mapAtsScoreToViewModel = (payload: AtsScorePayload | null | undefin
     jdMatchScore: typeof jdRaw === "number" && Number.isFinite(jdRaw) ? Math.round(jdRaw) : undefined,
     improvements,
     sectionAnalysis,
+    hasComparison: typeof delta?.overall_score === "number" && Number.isFinite(delta.overall_score),
+    deltaOverall: typeof delta?.overall_score === "number" ? Math.round(delta.overall_score) : undefined,
+    deltaGeneral: typeof delta?.general_score === "number" ? Math.round(delta.general_score) : undefined,
+    deltaJdMatch: typeof delta?.jd_match_score === "number" ? Math.round(delta.jd_match_score) : undefined,
+    deltaKeywordMatch: typeof delta?.keyword_match_percentage === "number" ? Math.round(delta.keyword_match_percentage) : undefined,
+    comparisonResetReason: payload?.comparison_reset_reason ?? null,
+    comparisonMessage: typeof payload?.comparison_message === "string" ? payload.comparison_message : null,
+    scoreChangeSummary: typeof payload?.score_change_summary === "string" ? payload.score_change_summary : undefined,
+    improvementsAddressed: stringList(payload?.improvements_addressed),
+    improvementsStillOpen: stringList(payload?.improvements_still_open),
+    keywordsResolved,
+    keywordsStillMissing,
+    previousSnapshot: payload?.previous_snapshot,
   };
+};
+
+export const formatAtsDeltaLabel = (delta: number | undefined): string | null => {
+  if (typeof delta !== "number" || !Number.isFinite(delta) || delta === 0) return null;
+  const prefix = delta > 0 ? "+" : "";
+  return `${prefix}${delta} since last score`;
 };

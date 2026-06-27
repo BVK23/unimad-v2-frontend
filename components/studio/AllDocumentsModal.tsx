@@ -59,7 +59,7 @@ const AllDocumentsModal: React.FC<AllDocumentsModalProps> = ({
           </div>
         </div>
 
-        <div className="flex-1 space-y-3 overflow-y-auto bg-slate-50/30 p-4 dark:bg-slate-900">
+        <div className="scrollbar-on-hover flex-1 space-y-3 overflow-y-auto bg-slate-50/30 p-4 dark:bg-slate-900">
           {filtered.length > 0 ? (
             filtered.map(doc => (
               <DocumentListCard

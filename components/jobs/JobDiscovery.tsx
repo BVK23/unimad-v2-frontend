@@ -340,7 +340,7 @@ const JobDiscovery: React.FC<JobDiscoveryProps> = ({
           </div>
 
           {/* Top section: one row of 3 jobs, with arrows to see more */}
-          <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
+          <div className="grid grid-cols-1 gap-4 md:grid-cols-3">
             {isHeroLoading ? (
               Array.from({ length: TOP_JOBS_PER_PAGE }, (_, i) => (
                 <div key={i} className="w-full">
@@ -495,7 +495,7 @@ const JobDiscovery: React.FC<JobDiscoveryProps> = ({
           </div>
         )}
 
-        <div className="grid grid-cols-1 gap-6 md:grid-cols-2 lg:grid-cols-3">
+        <div className="grid grid-cols-1 gap-4 md:grid-cols-2 lg:grid-cols-3">
           {filterType === "Saved" ? (
             isSavedLoading && savedJobs.length === 0 ? (
               Array.from({ length: 6 }, (_, i) => (

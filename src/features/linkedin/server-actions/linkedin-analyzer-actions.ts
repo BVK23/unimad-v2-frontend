@@ -190,3 +190,88 @@ export async function fetchLinkedInAnalysis(): Promise<LinkedInAnalyzerResult<Li
     return failure(message);
   }
 }
+
+export type UpdateLinkedInProfileContentInput = {
+  headline?: string;
+  about?: string;
+  experience?: unknown[];
+  skills?: unknown[];
+};
+
+export async function updateLinkedInProfileContent(
+  input: UpdateLinkedInProfileContentInput
+): Promise<LinkedInAnalyzerResult<LinkedInAnalysisSnapshot>> {
+  try {
+    const backendUrl = getBackendUrl();
+    const { token, scheme } = await getAuth();
+
+    const response = await fetch(`${backendUrl}/api/linkedin/profile/`, {
+      method: "PATCH",
+      headers: {
+        Authorization: `${scheme} ${token}`,
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify(input),
+      cache: "no-store",
+    });
+
+    const rawText = await response.text();
+    if (!response.ok) {
+      const parsed = parseErrorBody(rawText, response.status);
+      return failure(parsed.message, parsed.code);
+    }
+
+    let rawPayload: unknown = {};
+    try {
+      rawPayload = rawText ? (JSON.parse(rawText) as unknown) : {};
+    } catch {
+      return failure("Invalid response from LinkedIn profile update");
+    }
+
+    const body = rawPayload && typeof rawPayload === "object" ? (rawPayload as Record<string, unknown>) : {};
+    const analysis = body.analysis;
+    const analyzedAt = body.analyzedAt;
+
+    if (analysis == null || typeof analysis !== "object") {
+      return failure("LinkedIn profile update did not return analysis");
+    }
+
+    const at = typeof analyzedAt === "string" && analyzedAt.trim().length > 0 ? analyzedAt.trim() : "";
+    const hasAnalysis = Boolean(body.hasAnalysis);
+    const overallScore = typeof body.overallScore === "number" ? body.overallScore : undefined;
+    const sectionScores =
+      body.sectionScores && typeof body.sectionScores === "object"
+        ? (body.sectionScores as LinkedInAnalysisSnapshot["sectionScores"])
+        : undefined;
+
+    const rawProfileContent = body.profileContent;
+    let profileContent: LinkedInAnalysisSnapshot["profileContent"];
+    if (rawProfileContent && typeof rawProfileContent === "object") {
+      const pc = rawProfileContent as Record<string, unknown>;
+      profileContent = {
+        displayName: typeof pc.displayName === "string" ? pc.displayName : "",
+        profilePictureUrl: typeof pc.profilePictureUrl === "string" && pc.profilePictureUrl.trim() ? pc.profilePictureUrl.trim() : null,
+        coverPictureUrl: typeof pc.coverPictureUrl === "string" && pc.coverPictureUrl.trim() ? pc.coverPictureUrl.trim() : null,
+        headline: typeof pc.headline === "string" ? pc.headline : "",
+        about: typeof pc.about === "string" ? pc.about : "",
+        experience: Array.isArray(pc.experience) ? pc.experience : [],
+        skills: Array.isArray(pc.skills) ? pc.skills : [],
+      };
+    }
+
+    return {
+      success: true,
+      data: {
+        result: mapLinkedInAnalyzeResponse(analysis),
+        analyzedAt: at,
+        hasAnalysis,
+        overallScore,
+        sectionScores,
+        profileContent,
+      },
+    };
+  } catch (err) {
+    const message = err instanceof Error ? err.message : "Could not save your LinkedIn profile edits.";
+    return failure(message);
+  }
+}

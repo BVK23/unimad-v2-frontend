@@ -1,4 +1,5 @@
 import type { UnibotResumeSection } from "@/components/chat/unibot-incoming-request";
+import { isResumeImproveHandoffPrompt } from "@/features/resume/api/resume-improve-prompts";
 
 export const RESUME_IMPROVE_PREFIX = "Please improve the following text for my resume:";
 
@@ -13,6 +14,7 @@ export const UNIBOT_SECTION_REVIEW_PROMPTS: Record<UnibotResumeSection, string> 
   education:
     "Please look at my education section on my resume and suggest improvements (including descriptions if any). Use my resume data from the session.",
   experience: "Please look at my work experience descriptions on my resume and suggest improvements. Use my resume data from the session.",
+  skills: "Please look at my skills section on my resume and suggest improvements. Use my resume data from the session.",
   projects:
     "Please look at my projects section on my resume and suggest improvements (including project descriptions). Use my resume data from the session.",
   certifications:
@@ -30,6 +32,7 @@ export function isHandoffPromptForTitle(text: string): boolean {
   const trimmed = text.trim();
   if (!trimmed) return true;
   if (trimmed.startsWith(RESUME_IMPROVE_PREFIX)) return true;
+  if (isResumeImproveHandoffPrompt(trimmed)) return true;
   if (trimmed.startsWith(LINKEDIN_IMPROVE_PREFIX)) return true;
   if (trimmed === LINKEDIN_IMPROVE_PROFILE_FALLBACK) return true;
   if (SECTION_REVIEW_PROMPTS.has(trimmed)) return true;

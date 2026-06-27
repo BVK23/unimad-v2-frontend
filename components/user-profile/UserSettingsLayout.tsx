@@ -12,7 +12,7 @@ const TEAM_TAB = { href: "/uniboard/team", label: "Team dashboard" } as const;
 
 export function UserSettingsLayout({ children, isTeamMember = false }: { children: React.ReactNode; isTeamMember?: boolean }) {
   const TABS = isTeamMember ? [...BASE_TABS, TEAM_TAB] : BASE_TABS;
-  const pathname = usePathname();
+  const pathname = usePathname() ?? "";
 
   return (
     <div className="flex-1 bg-slate-50 dark:bg-[#0a0a0a] h-full overflow-y-auto">

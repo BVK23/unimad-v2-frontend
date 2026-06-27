@@ -97,8 +97,10 @@ const PrepareApplicationModal: React.FC<PrepareApplicationModalProps> = ({
   const [interviewLaunchError, setInterviewLaunchError] = useState<string | null>(null);
   const [copied, setCopied] = useState(false);
   const [isDownloading, setIsDownloading] = useState(false);
+  const [textEditorResetKey, setTextEditorResetKey] = useState(0);
   const applicationIdRef = useRef<string | null>(null);
   const activeTextContentRef = useRef("");
+  const savedTextBaselineRef = useRef("");
   const isTabPendingRef = useRef<(tab: GeneratablePrepareTab) => boolean>(() => false);
 
   const {
@@ -319,6 +321,7 @@ const PrepareApplicationModal: React.FC<PrepareApplicationModalProps> = ({
         applicationId: appId,
       };
 
+      /* Gemini Live — temporarily disabled
       if (payload.mode === "live") {
         storeInterviewLaunch({
           context,
@@ -329,6 +332,7 @@ const PrepareApplicationModal: React.FC<PrepareApplicationModalProps> = ({
         onClose();
         return;
       }
+      */
 
       const result = await startInterviewSession({
         role: job.role,
@@ -387,7 +391,6 @@ const PrepareApplicationModal: React.FC<PrepareApplicationModalProps> = ({
       fromPrepareApplication: true,
       navigate: prepareNavigate,
       openImproveMode: true,
-      recipientName: type === "cold-email" ? "Hiring Manager" : undefined,
     });
   };
 
@@ -412,6 +415,7 @@ const PrepareApplicationModal: React.FC<PrepareApplicationModalProps> = ({
     } else {
       await updateColdEmail({ id: activeAsset.assetId, content });
     }
+    savedTextBaselineRef.current = content;
   }, [activeAsset?.assetId, activeTab]);
 
   const {
@@ -427,18 +431,32 @@ const PrepareApplicationModal: React.FC<PrepareApplicationModalProps> = ({
   });
 
   useEffect(() => {
-    activeTextContentRef.current = activeAsset?.content ?? "";
+    const content = activeAsset?.content ?? "";
+    activeTextContentRef.current = content;
+    savedTextBaselineRef.current = content;
+    setTextEditorResetKey(0);
     resetTextAssetSaveStatus();
   }, [activeAsset?.assetId, activeTab, resetTextAssetSaveStatus]);
+
+  const handleCancelTextEdits = () => {
+    if (activeTab !== "cover-letter" && activeTab !== "cold-email") return;
+    const saved = savedTextBaselineRef.current;
+    activeTextContentRef.current = saved;
+    setTabState(activeTab, { content: saved });
+    resetTextAssetSaveStatus();
+    setTextEditorResetKey(key => key + 1);
+  };
 
   const handleContentChange = (value: string, options?: { hydrate?: boolean }) => {
     if (isInterviewTab || activeTab === "resume" || activeTab === "vpd") return;
     const tab = activeTab as "cover-letter" | "cold-email";
     activeTextContentRef.current = value;
     setTabState(tab, { content: value });
-    if (!options?.hydrate) {
-      markTextAssetDirty();
+    if (options?.hydrate) {
+      savedTextBaselineRef.current = value;
+      return;
     }
+    markTextAssetDirty();
   };
 
   const activeResumeId = activeTab === "resume" ? (tabStates.resume.assetId ?? linkedResumeId) : null;
@@ -526,6 +544,7 @@ const PrepareApplicationModal: React.FC<PrepareApplicationModalProps> = ({
       const assetId = state.assetId ?? (activeTab === "cover-letter" ? linkedCoverLetterId : linkedColdEmailId)!;
       return (
         <PrepareTextAssetEditor
+          key={`${assetId}-${textEditorResetKey}`}
           kind={activeTab}
           assetId={assetId}
           content={state.content}
@@ -693,6 +712,7 @@ const PrepareApplicationModal: React.FC<PrepareApplicationModalProps> = ({
                   isSaving={textAssetIsSaving}
                   savedConfirmationVisible={textAssetSavedConfirmationVisible}
                   onSaveNow={() => void runTextAssetSave()}
+                  onCancel={handleCancelTextEdits}
                   visible={textAssetHasPendingUnsavedChanges || textAssetIsSaving || textAssetSavedConfirmationVisible}
                 />
               )}

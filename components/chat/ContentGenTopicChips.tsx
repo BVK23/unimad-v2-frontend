@@ -2,7 +2,7 @@
 
 import type { ContentGenFunnel } from "@/features/content-lab/api/adk-mappers";
 import type { ContentGenPlannerAction } from "@/features/content-lab/api/content-gen-events";
-import { parsePlannerChips } from "@/features/content-lab/api/extractPlannerChips";
+import { parsePlannerChipsWithFallback } from "@/features/content-lab/api/extractPlannerChips";
 
 type ContentGenTopicChipsProps = {
   botMessage: string;
@@ -11,6 +11,8 @@ type ContentGenTopicChipsProps = {
   onUseTopic: (topic: string, funnel: ContentGenFunnel | null) => void;
   onActionClick: (action: ContentGenPlannerAction, topicId?: string) => void;
   activeFunnel: ContentGenFunnel | null;
+  /** When true, all chips on this message are hidden (user picked one). */
+  chipsDismissed?: boolean;
 };
 
 export const ContentGenTopicChips = ({
@@ -20,8 +22,13 @@ export const ContentGenTopicChips = ({
   onUseTopic,
   onActionClick,
   activeFunnel,
+  chipsDismissed,
 }: ContentGenTopicChipsProps) => {
-  const { topics, affirmations, actions } = parsePlannerChips(botMessage);
+  if (chipsDismissed) {
+    return null;
+  }
+
+  const { topics, affirmations, actions } = parsePlannerChipsWithFallback(botMessage, activeFunnel);
 
   if (topics.length === 0 && affirmations.length === 0 && actions.length === 0) {
     return null;

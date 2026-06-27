@@ -1,7 +1,7 @@
 import type { NextConfig } from "next";
 
 const nextConfig: NextConfig = {
-  reactStrictMode: true,
+  compress: false,
   // Turbopack-specific options
   turbopack: {
     root: __dirname,
@@ -27,7 +27,24 @@ const nextConfig: NextConfig = {
     return config;
   },
   async redirects() {
-    return [{ source: "/uniboard", destination: "/uniboard/portfolio", permanent: true }];
+    return [
+      { source: "/uniboard", destination: "/uniboard/portfolio", permanent: true },
+      {
+        source: "/uniboard/portfolio/masterclass",
+        destination: "/masterclass",
+        permanent: true,
+      },
+      {
+        source: "/uniboard/masterclass",
+        destination: "/masterclass",
+        permanent: true,
+      },
+      {
+        source: "/webinar",
+        destination: "/masterclass",
+        permanent: false,
+      },
+    ];
   },
 };
 

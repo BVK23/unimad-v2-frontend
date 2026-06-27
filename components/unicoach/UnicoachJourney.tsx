@@ -99,8 +99,8 @@ const UnicoachJourney: React.FC = () => {
 
   const coachTargetUserId = useMemo(() => {
     if (!isCoachAccount) return null;
-    if (searchParams.get("view") !== "student") return null;
-    const raw = searchParams.get("user_id");
+    if (searchParams?.get("view") !== "student") return null;
+    const raw = searchParams?.get("user_id");
     if (raw == null || raw === "") return null;
     const n = Number(raw);
     if (!Number.isFinite(n) || n <= 0) return null;

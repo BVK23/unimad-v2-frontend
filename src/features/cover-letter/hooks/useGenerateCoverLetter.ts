@@ -1,6 +1,8 @@
 import {
   useGenerateApplicationAsset,
+  regenerateApplicationAssetDraft,
   type GenerateApplicationAssetResult,
+  type RegenerateApplicationAssetParams,
 } from "@/features/application-assets/hooks/useGenerateApplicationAsset";
 import { deleteCoverLetter } from "../server-actions/cover-letter-actions";
 import type { GenerateCoverLetterParams } from "../types";
@@ -50,5 +52,7 @@ export function useGenerateCoverLetter(options?: {
         application_id: params.application_id,
       }),
     replaceExistingAndGenerate,
+    regenerateAnother: (params: RegenerateApplicationAssetParams) =>
+      regenerateApplicationAssetDraft({ ...params, studioTopic: "cover-letter" }),
   };
 }

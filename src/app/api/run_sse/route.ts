@@ -1,36 +1,17 @@
-import { shouldUseAgentEngine } from "@/src/features/adk-chat/config";
-import { createValidationError, createInternalServerError } from "@/src/lib/adk/error-utils";
-import { handleAgentEngineStreamRequest } from "@/src/lib/adk/run-sse-agent-engine-handler";
-import { parseStreamRequest, logStreamRequest, CORS_HEADERS } from "@/src/lib/adk/run-sse-common";
-import { handleLocalBackendStreamRequest } from "@/src/lib/adk/run-sse-local-backend-handler";
-import { NextRequest } from "next/server";
+import { proxyRunSseFromRequest, runSseOptionsResponse } from "@/src/lib/adk/run-sse-app-handler";
 
-export const maxDuration = 300;
+export const dynamic = "force-dynamic";
+export const runtime = "nodejs";
 
-export async function POST(request: NextRequest): Promise<Response> {
+export async function POST(req: Request): Promise<Response> {
   try {
-    const { data: requestData, validation } = await parseStreamRequest(request);
-
-    if (!validation.isValid || !requestData) {
-      return createValidationError(validation.error || "Invalid request format");
-    }
-
-    const deploymentType = shouldUseAgentEngine() ? "agent_engine" : "local_backend";
-
-    logStreamRequest(requestData.sessionId, requestData.userId, requestData.message, deploymentType);
-
-    if (deploymentType === "agent_engine") {
-      return await handleAgentEngineStreamRequest(requestData);
-    }
-    return await handleLocalBackendStreamRequest(requestData);
+    return await proxyRunSseFromRequest(req);
   } catch (error) {
-    return createInternalServerError("Failed to process streaming request", error);
+    console.error("run_sse app route error:", error);
+    return Response.json({ error: "Failed to process streaming request" }, { status: 500 });
   }
 }
 
 export async function OPTIONS(): Promise<Response> {
-  return new Response(null, {
-    status: 200,
-    headers: CORS_HEADERS,
-  });
+  return runSseOptionsResponse();
 }

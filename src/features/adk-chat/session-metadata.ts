@@ -3,7 +3,9 @@
  * Source of truth: Django registry (`session-registry.ts`), not localStorage.
  */
 import { isUntitledMainSessionTitle, mainSessionDisplayTitle, UNTITLED_THREAD_TITLE } from "./constants";
-import { getRegistryRow, getSessionRegistry, registryRowToMeta, type UnibotSessionKind } from "./session-registry";
+import { mainSessionHasUserPrompt } from "./main-session-activity";
+import { getRegistryRow, getSessionRegistry, getSubsForMain, registryRowToMeta, type UnibotSessionKind } from "./session-registry";
+import { buildLinkedInImproveTitle, buildResumeImproveTitle, deriveSubSessionDisplayTitle } from "./sub-session-titles";
 
 export { NEW_THREAD_DISPLAY_TITLE, UNTITLED_THREAD_TITLE, isUntitledMainSessionTitle, mainSessionDisplayTitle } from "./constants";
 
@@ -21,11 +23,16 @@ export function getSessionMeta(_userId: string, sessionId: string): UnibotSessio
   return registryRowToMeta(row);
 }
 
-/** Main sessions are deletable once they have a generated title (not the untitled placeholder). */
-export function canDeleteMainChatSession(sessionId: string): boolean {
+/** Main sessions deletable unless empty untitled orphan (no subs, no main user prompts). */
+export function canDeleteMainChatSession(sessionId: string, userId?: string): boolean {
   const row = getRegistryRow(sessionId);
   const title = row?.title?.trim();
-  return Boolean(title && !isUntitledMainSessionTitle(title));
+  if (title && !isUntitledMainSessionTitle(title)) {
+    return true;
+  }
+  const hasSubs = getSubsForMain(sessionId).length > 0;
+  const hasMainPrompts = userId ? mainSessionHasUserPrompt(userId, sessionId) : false;
+  return hasSubs || hasMainPrompts;
 }
 
 export function getSessionDisplayName(_userId: string, sessionId: string, fallback?: string): string {
@@ -54,7 +61,7 @@ export function groupSessionsForSidebar(
     if (row.kind !== "sub" || !row.parent_adk_session_id) continue;
     if (!adkIds.has(row.adk_session_id)) continue;
     const list = subsByParent.get(row.parent_adk_session_id) ?? [];
-    list.push({ id: row.adk_session_id, title: row.title?.trim() || "Improve thread" });
+    list.push({ id: row.adk_session_id, title: deriveSubSessionDisplayTitle(row) });
     subsByParent.set(row.parent_adk_session_id, list);
   }
 
@@ -71,7 +78,7 @@ export function groupSessionsForSidebar(
       title: mainSessionDisplayTitle(row?.title),
       kind: "main",
       subs: subsByParent.get(session.id) ?? [],
-      canDelete: canDeleteMainChatSession(session.id),
+      canDelete: canDeleteMainChatSession(session.id, _userId),
     });
   }
 
@@ -85,7 +92,7 @@ export function groupSessionsForSidebar(
       title: mainSessionDisplayTitle(row.title),
       kind: "main",
       subs: subsByParent.get(row.adk_session_id) ?? [],
-      canDelete: canDeleteMainChatSession(row.adk_session_id),
+      canDelete: canDeleteMainChatSession(row.adk_session_id, _userId),
     });
   }
 
@@ -97,13 +104,13 @@ export function groupSessionsForSidebar(
 }
 
 /** Human-readable sub-session label before registry row exists. */
-export function buildImproveSubSessionTitle(section: string, entryIndex?: number | null): string {
-  const sectionLabel = section
-    .split("_")
-    .map(w => w.charAt(0).toUpperCase() + w.slice(1))
-    .join(" ");
-  const base = `Resume · ${sectionLabel} Improvement`;
-  if (entryIndex != null && entryIndex >= 1) {
+export function buildImproveSubSessionTitle(
+  section: string,
+  entryIndex?: number | null,
+  context: "resume" | "linkedin" = "resume"
+): string {
+  const base = context === "linkedin" ? buildLinkedInImproveTitle(section) : buildResumeImproveTitle(section);
+  if (entryIndex != null && entryIndex >= 1 && context === "resume") {
     return `${base} (${entryIndex})`;
   }
   return base;

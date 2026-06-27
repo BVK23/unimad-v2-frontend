@@ -102,6 +102,20 @@ type LinkBoxBlockProps = {
   handleMediaFileUpload: (file: File) => void;
 };
 
+const getLinkEditSeed = (linkItem: PortfolioItem) => {
+  const title = (linkItem.title ?? "").trim();
+  const isLegacyUntitled = title === "New Link" && !(linkItem.linkUrl ?? "").trim();
+  if (isLegacyUntitled || (!title && !linkItem.linkUrl)) return "";
+  return linkItem.linkUrl || linkItem.title || "";
+};
+
+const linkBlockNeedsInlineEdit = (linkItem: PortfolioItem) => {
+  const title = (linkItem.title ?? "").trim();
+  const isLegacyUntitled = title === "New Link" && !(linkItem.linkUrl ?? "").trim();
+  if (isLegacyUntitled) return true;
+  return !title && !linkItem.linkUrl;
+};
+
 const LinkBoxBlock = React.forwardRef<HTMLDivElement, LinkBoxBlockProps>(function LinkBoxBlock(
   { item, isEditMode, shellClassName = "", onUpdate, mediaInputRef, openMediaPicker, onMediaInputChange, handleMediaFileUpload },
   ref
@@ -110,14 +124,19 @@ const LinkBoxBlock = React.forwardRef<HTMLDivElement, LinkBoxBlockProps>(functio
   const [isResolvingTitle, setIsResolvingTitle] = useState(false);
   const [resolveError, setResolveError] = useState<string | null>(null);
   const [isInlineEditing, setIsInlineEditing] = useState(false);
+  const [draftInputValue, setDraftInputValue] = useState("");
   const [hasFaviconLoadError, setHasFaviconLoadError] = useState(false);
   const lastFetchedUrlRef = useRef<string | null>(null);
   const fetchGenRef = useRef(0);
+  const commitInFlightRef = useRef(false);
 
   useEffect(() => {
-    lastFetchedUrlRef.current = null;
+    lastFetchedUrlRef.current = item.linkUrl ? (normalizeExternalUrl(item.linkUrl) ?? item.linkUrl) : null;
     fetchGenRef.current = 0;
-    setIsInlineEditing(!item.title && !item.linkUrl);
+    const startsInlineEditing = linkBlockNeedsInlineEdit(item);
+    setIsInlineEditing(startsInlineEditing);
+    setDraftInputValue(startsInlineEditing ? getLinkEditSeed(item) : "");
+    setResolveError(null);
   }, [item.id]);
 
   useEffect(() => {
@@ -126,9 +145,6 @@ const LinkBoxBlock = React.forwardRef<HTMLDivElement, LinkBoxBlockProps>(functio
 
   const hasPreviewImage = Boolean(item.content);
   const compact = !isEditMode && (item.height ?? 96) <= 110;
-  const normalizedLinkTitle = (item.title ?? "").trim();
-  const isLegacyUntitledLink = normalizedLinkTitle === "New Link" && !(item.linkUrl ?? "").trim();
-  const editInputValue = isLegacyUntitledLink ? "" : item.title || "";
 
   const fillsCardHeight = item.heightUserSet === true;
   const linkCardClassName = `w-full flex items-center p-4 border rounded-2xl bg-white dark:bg-white/5 transition-all group/link ${fillsCardHeight ? "h-full" : ""} ${isEditMode ? "border-slate-100 dark:border-white/10 hover:border-brand-500/30" : "border-slate-100 dark:border-white/10 hover:shadow-lg hover:-translate-y-1"} ${isMediaDragOver && isEditMode ? "border-brand-500 ring-2 ring-brand-200" : ""}`;
@@ -179,8 +195,6 @@ const LinkBoxBlock = React.forwardRef<HTMLDivElement, LinkBoxBlockProps>(functio
       return;
     }
 
-    onUpdate(item.id, { linkUrl: normalized });
-
     if (lastFetchedUrlRef.current === normalized) {
       setIsResolvingTitle(false);
       return;
@@ -205,11 +219,26 @@ const LinkBoxBlock = React.forwardRef<HTMLDivElement, LinkBoxBlockProps>(functio
     }
   };
 
-  const handleTitleBlur = (e: React.FocusEvent<HTMLInputElement>) => {
-    void (async () => {
-      await resolveTitleInput(e.currentTarget.value);
+  const commitDraftInput = async (rawValue: string) => {
+    if (commitInFlightRef.current) return;
+    commitInFlightRef.current = true;
+    try {
+      await resolveTitleInput(rawValue);
       setIsInlineEditing(false);
-    })();
+    } finally {
+      commitInFlightRef.current = false;
+    }
+  };
+
+  const handleTitleBlur = () => {
+    if (!isInlineEditing) return;
+    void commitDraftInput(draftInputValue);
+  };
+
+  const handleStartInlineEdit = () => {
+    setDraftInputValue(getLinkEditSeed(item));
+    setResolveError(null);
+    setIsInlineEditing(true);
   };
 
   const inner = (
@@ -236,10 +265,10 @@ const LinkBoxBlock = React.forwardRef<HTMLDivElement, LinkBoxBlockProps>(functio
         <div className="flex items-center gap-2">
           {isEditMode && isInlineEditing ? (
             <input
-              value={editInputValue}
+              value={draftInputValue}
               onChange={e => {
                 setResolveError(null);
-                onUpdate(item.id, { title: e.target.value });
+                setDraftInputValue(e.target.value);
               }}
               onBlur={handleTitleBlur}
               onClick={e => e.stopPropagation()}
@@ -247,11 +276,7 @@ const LinkBoxBlock = React.forwardRef<HTMLDivElement, LinkBoxBlockProps>(functio
                 e.stopPropagation();
                 if (e.key !== "Enter") return;
                 e.preventDefault();
-                void (async () => {
-                  await resolveTitleInput(e.currentTarget.value);
-                  setIsInlineEditing(false);
-                  e.currentTarget.blur();
-                })();
+                void commitDraftInput(draftInputValue);
               }}
               className="font-semibold text-lg text-slate-900 dark:text-white bg-transparent outline-none w-full min-w-0 placeholder:text-slate-300"
               placeholder="Paste a link or title"
@@ -266,7 +291,7 @@ const LinkBoxBlock = React.forwardRef<HTMLDivElement, LinkBoxBlockProps>(functio
               type="button"
               onClick={e => {
                 e.stopPropagation();
-                setIsInlineEditing(true);
+                handleStartInlineEdit();
               }}
               className="inline-flex h-7 w-7 items-center justify-center rounded-full border border-slate-200/90 text-slate-400 transition-colors hover:border-brand-400/50 hover:text-brand-600"
               aria-label="Edit link"

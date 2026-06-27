@@ -1,5 +1,6 @@
 "use server";
 
+import { normalizeContactNameForDisplay } from "@/utils/normalizeContactName";
 import { cookies } from "next/headers";
 import type { ReferralAsset, GenerateReferralParams, UpdateReferralParams } from "../types";
 
@@ -47,6 +48,11 @@ async function authedFetch(path: string, options: RequestInit = {}): Promise<Res
 
 const ASSET_TYPE = "referral";
 
+const normalizeReferralAsset = (asset: ReferralAsset & { contact_name?: string }): ReferralAsset => ({
+  ...asset,
+  conname: normalizeContactNameForDisplay(asset.conname ?? asset.contact_name),
+});
+
 // ---------------------------------------------------------------------------
 // Server Actions
 // ---------------------------------------------------------------------------
@@ -65,7 +71,7 @@ export async function fetchReferrals(): Promise<ReferralAsset[]> {
     throw new Error((data as { error?: string })?.error ?? "Failed to fetch referrals");
   }
   const data = (await res.json()) as { assetData?: ReferralAsset[] };
-  return data.assetData ?? [];
+  return (data.assetData ?? []).map(normalizeReferralAsset);
 }
 
 /**
@@ -77,7 +83,7 @@ export async function fetchReferralById(id: string | number): Promise<ReferralAs
     if (res.ok) {
       const detail = (await res.json()) as ReferralAsset;
       if (detail?.content != null || detail?.id != null) {
-        return detail;
+        return normalizeReferralAsset(detail);
       }
     }
   } catch {

@@ -12,6 +12,12 @@ export interface ParsedSSEData {
   textParts: string[];
   thoughtParts: string[];
   agent: string;
+  /** ADK progressive stream marker — tool/author signals may arrive on partial events. */
+  partial?: boolean;
+  /** Synthetic progress label injected by ADK middleware before real events arrive. */
+  streamActivityHint?: string;
+  /** ADK sets this on the user-role event after a handoff tool completes. */
+  transferToAgent?: string;
   functionCall?: {
     name: string;
     args: Record<string, unknown>;
@@ -33,23 +39,34 @@ export interface RawSSEData {
   error?: string;
   errorCode?: string;
   errorMessage?: string;
-  content?: {
-    parts?: Array<{
-      text?: string;
-      thought?: boolean;
-      functionCall?: {
-        name: string;
-        args: Record<string, unknown>;
-        id: string;
+  partial?: boolean;
+  /** Injected by Unimad ADK /run_sse middleware (not native ADK). */
+  unimadStreamActivity?: string;
+  turnComplete?: boolean;
+  content?:
+    | string
+    | {
+        parts?: Array<{
+          text?: string;
+          thought?: boolean;
+          functionCall?: {
+            name: string;
+            args: Record<string, unknown>;
+            id: string;
+          };
+          functionResponse?: {
+            name: string;
+            response: Record<string, unknown>;
+            id: string;
+          };
+        }>;
       };
-      functionResponse?: {
-        name: string;
-        response: Record<string, unknown>;
-        id: string;
-      };
-    }>;
-  };
   author?: string;
+  actions?: {
+    transferToAgent?: string;
+    transfer_to_agent?: string;
+    stateDelta?: Record<string, unknown>;
+  };
 }
 
 /**
@@ -79,6 +96,15 @@ export interface StreamProcessingCallbacks {
   onWebsiteCountUpdate: (count: number) => void;
   /** After a tool mutates ADK session state, frontend can refresh Zustand from GET session. */
   onMutatingToolResponse?: (toolName: string, aiMessageId: string) => void;
+  /** `suggest_unimad_navigation` completed — show Go to page button on the assistant message. */
+  onNavigationSuggestion?: (aiMessageId: string, navigation: { path: string; label: string }) => void;
+  /** Job board tool completed — show compact job cards on the assistant message. */
+  onJobCardsSuggestion?: (aiMessageId: string, payload: import("../parse-unimad-job-cards").UnimadJobCardsPayload) => void;
+  /** LinkedIn sub-thread tool completed — show copy-ready suggestion cards. */
+  onLinkedInSuggestions?: (
+    aiMessageId: string,
+    payload: import("../parse-unimad-linkedin-suggestions").UnimadLinkedInSuggestionsPayload
+  ) => void;
   /** Short UX line while streaming (agent handoff, tool call, etc.). */
   onStreamActivityHint?: (hint: { label: string }) => void;
 }
@@ -90,12 +116,22 @@ export interface StreamingAPIPayload {
   message: string;
   userId: string;
   sessionId: string;
+  adkAppName?: string;
 }
 
 /**
  * Connection manager options
  */
+export interface StreamTimingCallbacks {
+  onFetchStart?: () => void;
+  /** Response headers received (TTFB from browser to /api/run_sse). */
+  onFetchResponse?: (response: Response) => void;
+  /** First non-empty SSE body chunk from the backend stream. */
+  onFirstSseChunk?: () => void;
+}
+
 export interface ConnectionManagerOptions {
   retryFn?: <T>(fn: () => Promise<T>) => Promise<T>;
   endpoint?: string;
+  streamTiming?: StreamTimingCallbacks;
 }

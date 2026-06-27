@@ -1,8 +1,11 @@
 import React, { useState, useEffect, useRef, useCallback, useMemo } from "react";
+import { DocumentSaveStatusBar } from "@/components/application-assets/DocumentSaveStatusBar";
 import { useOptionalAdkChatContext } from "@/components/chat/AdkChatProvider";
+import AssetPreviewLoadingOverlay from "@/components/studio/AssetPreviewLoadingOverlay";
 import { ModalPortalOverlay } from "@/components/ui/ModalPortalOverlay";
 import { PanelResizeHandle } from "@/components/ui/PanelResizeHandle";
 import { loadPersistedActiveSessionId } from "@/features/adk-chat/active-session-persist";
+import { buildApplicationAssetContentKey, buildContentGenContentKey } from "@/features/adk-chat/content-scope";
 import { useAdkApplicationAssetReviewStore } from "@/features/adk-chat/stores/useAdkApplicationAssetReviewStore";
 import {
   APPLICATION_ASSET_EVENTS,
@@ -25,7 +28,13 @@ import { useColdEmailHistory, useGenerateColdEmail, type GenerateColdEmailResult
 import { COLD_EMAIL_LIST_QUERY_KEY } from "@/features/cold-email/hooks/useColdEmailHistory";
 import { deleteColdEmail, fetchColdEmailById, updateColdEmail } from "@/features/cold-email/server-actions/cold-email-actions";
 import type { ColdEmailAsset } from "@/features/cold-email/types";
-import { funnelDisplayLabel, type ContentGenFunnel } from "@/features/content-lab/api/adk-mappers";
+import {
+  CONTENT_GEN_FUNNEL_STUDIO_OPTIONS,
+  funnelDisplayLabel,
+  funnelFromStudioContentTypeLabel,
+  studioContentTypeLabelForFunnel,
+  type ContentGenFunnel,
+} from "@/features/content-lab/api/adk-mappers";
 import {
   CONTENT_GEN_EVENTS,
   CONTENT_GEN_PUBLISH_BLOCKED_MESSAGE,
@@ -40,6 +49,7 @@ import {
 } from "@/features/content-lab/api/content-gen-events";
 import { ensureContentGenAssetPersisted } from "@/features/content-lab/api/ensureContentGenAssetPersisted";
 import { mapContentGenToModalPost, type ContentGenModalPost } from "@/features/content-lab/api/mapContentGenToModalPost";
+import { uploadContentGenMediaClient } from "@/features/content-lab/api/uploadContentGenMedia";
 import {
   ADK_DRAFT_PENDING_ERROR,
   runContentGenDraftGeneration,
@@ -49,7 +59,6 @@ import {
   deleteContentGenAsset,
   fetchContentGenAssets,
   postContentGenToLinkedIn,
-  uploadContentGenMedia,
   updateContentGenAsset,
 } from "@/features/content-lab/server-actions/content-lab-actions";
 import { useContentGenStudioStore } from "@/features/content-lab/store/useContentGenStudioStore";
@@ -60,6 +69,7 @@ import { COVER_LETTER_LIST_QUERY_KEY } from "@/features/cover-letter/hooks/useCo
 import { useGenerateCoverLetter, type GenerateCoverLetterResult } from "@/features/cover-letter/hooks/useGenerateCoverLetter";
 import { deleteCoverLetter, fetchCoverLetterById, updateCoverLetter } from "@/features/cover-letter/server-actions/cover-letter-actions";
 import type { CoverLetterAsset } from "@/features/cover-letter/types";
+import { MIN_LINKEDIN_POST_CHARS, LINKEDIN_POST_TOO_SHORT_MESSAGE } from "@/features/linkedin/constants";
 import { useLinkedInAnalysis } from "@/features/linkedin/hooks/useLinkedInAnalysis";
 import { resolveLinkedInPublishAccess } from "@/features/linkedin/utils/linkedinPublishAccess";
 import { useOnboardingGate } from "@/features/onboarding/context/OnboardingGateContext";
@@ -87,6 +97,13 @@ import {
 } from "@/lib/jobs/prepare-application-url";
 import { getRegistryRow } from "@/src/features/adk-chat/session-registry";
 import { getJob } from "@/src/features/jobs/server-actions/jobs-actions";
+import {
+  UNIBOT_AGENT_LOADING_EVENT,
+  UNIBOT_STREAM_ACTIVITY_EVENT,
+  useUnibotAgentBusy,
+  type UnibotStreamActivityDetail,
+} from "@/src/hooks/useUnibotAgentBusy";
+import { useUnibotStreamActivityLabel } from "@/src/hooks/useUnibotStreamActivityLabel";
 import { computeAdkUserId } from "@/utils/adkUserId";
 import { exportApplicationAssetAsDocx } from "@/utils/export-application-asset-file";
 import { htmlToPlainText } from "@/utils/html-to-text";
@@ -107,6 +124,7 @@ import LinkedInPostAuthorHeader from "./LinkedInPostAuthorHeader";
 import LinkedInPostListCard from "./LinkedInPostListCard";
 import { LinkedInPublishAccessTooltipWrap } from "./LinkedInPublishAccessNotice";
 import PostSchedulerModal from "./PostSchedulerModal";
+import { StudioAssetDeleteConfirmDialog, type StudioDeletableAssetKind } from "./StudioAssetDeleteConfirmDialog";
 import StudioDocumentPreview from "./StudioDocumentPreview";
 import StudioMediaPreviewImage from "./StudioMediaPreviewImage";
 import StudioSectionDot from "./StudioSectionDot";
@@ -114,7 +132,12 @@ import VpdEditorWindow from "./VpdEditorWindow";
 import VpdLibraryCard from "./VpdLibraryCard";
 import VpdPreview from "./VpdPreview";
 import { DocumentLibraryItem } from "./documentLibraryTypes";
-import { mapColdEmailToDocumentItem, mapCoverLetterToDocumentItem, mapReferralToDocumentItem } from "./studioDocumentMappers";
+import {
+  mapColdEmailToDocumentItem,
+  mapCoverLetterToDocumentItem,
+  mapReferralToDocumentItem,
+  sortApplicationAssetsByRecency,
+} from "./studioDocumentMappers";
 import { getTopicDescription, getTopicMeta, TOPIC_GROUPS } from "./studioTopicConfig";
 import { MOCK_VPDS, buildVpdProjectFromDraft, createDefaultVpdProject, type VpdListItem } from "./vpdStudioHelpers";
 
@@ -124,7 +147,6 @@ interface StudioMainProps {
 }
 
 const MOODS = ["Professional", "Casual", "Enthusiastic", "Thought Leadership", "Storytelling"];
-const CONTENT_TYPES = ["Career Update", "Industry Insight", "Personal Story", "Project Showcase", "Advice"];
 
 const DOCUMENT_TOPIC_LABELS: Record<"cover-letter" | "cold-email" | "referral", string> = {
   "cover-letter": "Cover Letters",
@@ -256,7 +278,7 @@ const ASSET_DRAFT_ERROR_FALLBACK = "Draft generation failed. Please try again.";
 const StudioMainV2: React.FC<StudioMainProps> = ({ initialContext, initialAssetId }) => {
   const queryClient = useQueryClient();
   const router = useRouter();
-  const pathname = usePathname();
+  const pathname = usePathname() ?? "";
   const searchParams = useSearchParams();
   const { profileSetupRequired, promptProfileSetup } = useOnboardingGate();
   const { data: profileData } = useProfileData();
@@ -283,6 +305,9 @@ const StudioMainV2: React.FC<StudioMainProps> = ({ initialContext, initialAssetI
   const adkApplicationAssetReviewStack = useAdkApplicationAssetReviewStore(s => s.reviewStack);
   const activeApplicationAssetReview = useAdkApplicationAssetReviewStore(s => s.reviewStack.at(-1) ?? null);
   const selectionRefineLoading = useApplicationAssetStudioStore(s => s.selectionRefineLoading);
+  const regenerateAnotherInFlight = useApplicationAssetStudioStore(s => s.regenerateAnotherInFlight);
+  const isUnibotAgentBusy = useUnibotAgentBusy();
+  const liveDocumentStreamActivity = useUnibotStreamActivityLabel();
   const {
     adkReviewBusy: applicationAssetReviewBusy,
     acceptApplicationAssetReview,
@@ -306,6 +331,11 @@ const StudioMainV2: React.FC<StudioMainProps> = ({ initialContext, initialAssetI
   /** After generate, asset `content` is still empty on server; URL hydration must not overwrite the in-memory draft. */
   const linkedinPreserveDraftForAssetIdRef = useRef<string | null>(null);
   const linkedinPersistDebounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const [linkedinServerPersistEnabled, setLinkedinServerPersistEnabled] = useState(false);
+  const [linkedinStreamActivityLabel, setLinkedinStreamActivityLabel] = useState<string | null>(null);
+  const isGeneratingRef = useRef(false);
+  const resetLinkedinSaveStatusRef = useRef<() => void>(() => {});
+  const linkedinSkipDirtyOnceRef = useRef(false);
   const [prepareReturn, setPrepareReturn] = useState<PrepareApplicationReturnSession | null>(null);
   const { data: applications = [] } = useApplications();
   const prepareApplication = useMemo(() => {
@@ -321,6 +351,10 @@ const StudioMainV2: React.FC<StudioMainProps> = ({ initialContext, initialAssetI
   const [selectedTopic, setSelectedTopic] = useState<string>(initialContext?.type ?? "linkedin-post");
   const [generatedContent, setGeneratedContent] = useState("");
   const [isGenerating, setIsGenerating] = useState(false);
+
+  useEffect(() => {
+    isGeneratingRef.current = isGenerating;
+  }, [isGenerating]);
   const [applicationAssetDraftLoading, setApplicationAssetDraftLoading] = useState(false);
   const [documentGeneratingTopic, setDocumentGeneratingTopic] = useState<ApplicationAssetStudioTopic | null>(null);
   const [reviewAcceptSaving, setReviewAcceptSaving] = useState(false);
@@ -359,9 +393,9 @@ const StudioMainV2: React.FC<StudioMainProps> = ({ initialContext, initialAssetI
 
   // LinkedIn specific state
   const [mood, setMood] = useState("Professional");
-  const [contentType, setContentType] = useState("Career Update");
   const [topicIdea, setTopicIdea] = useState("");
-  const [linkedinFunnel, setLinkedinFunnel] = useState<ContentGenFunnel | null>(null);
+  const [linkedinFunnel, setLinkedinFunnel] = useState<ContentGenFunnel | null>("top");
+  const [topicInputFlash, setTopicInputFlash] = useState(false);
   const [linkedinPostAssetId, setLinkedinPostAssetId] = useState<string | null>(null);
   const [linkedinGenerateError, setLinkedinGenerateError] = useState<string | null>(null);
   const [linkedinPersistError, setLinkedinPersistError] = useState<string | null>(null);
@@ -402,29 +436,31 @@ const StudioMainV2: React.FC<StudioMainProps> = ({ initialContext, initialAssetI
   const handleOpenContentGenTopic = useCallback(() => {
     window.dispatchEvent(
       new CustomEvent("open-content-gen-topic", {
-        detail: { seedTopic: topicIdea.trim() || undefined, requestKey: Date.now() },
+        detail: {
+          seedTopic: topicIdea.trim() || undefined,
+          funnel: linkedinFunnel ?? undefined,
+          requestKey: Date.now(),
+        },
       })
     );
-  }, [topicIdea]);
+  }, [topicIdea, linkedinFunnel]);
 
-  const handlePostSchedulerImprove = useCallback((content: string) => {
-    const trimmed = content.trim();
-    if (!trimmed) return;
-    setGeneratedContent(trimmed);
+  const handlePostSchedulerImprove = useCallback(() => {
     setShowScheduler(false);
     setPublishModalSeed(null);
     setSelectedPostData(null);
     window.dispatchEvent(
       new CustomEvent("open-content-gen-topic", {
         detail: {
-          followUpText: `${IMPROVE_INITIAL_DRAFT_PROMPT}:\n\n${trimmed}`,
-          topicTitle: "Improve LinkedIn Post",
-          reuseExistingTopic: true,
+          improveDraft: true,
+          seedTopic: topicIdea.trim() || undefined,
+          assetId: linkedinPostAssetId ?? undefined,
+          funnel: linkedinFunnel ?? undefined,
           requestKey: Date.now(),
         },
       })
     );
-  }, []);
+  }, [linkedinFunnel, linkedinPostAssetId, topicIdea]);
 
   // Specific Form States
   const [role, setRole] = useState(initialContext?.role ?? "");
@@ -441,6 +477,12 @@ const StudioMainV2: React.FC<StudioMainProps> = ({ initialContext, initialAssetI
   // Document library state
   const [selectedDocumentId, setSelectedDocumentId] = useState<string | number | null>(null);
   const [showAllDocumentsModal, setShowAllDocumentsModal] = useState(false);
+  const [pendingStudioAssetDelete, setPendingStudioAssetDelete] = useState<{
+    id: string | number;
+    kind: StudioDeletableAssetKind;
+    label: string;
+  } | null>(null);
+  const [isDeletingStudioAsset, setIsDeletingStudioAsset] = useState(false);
   const [showScheduler, setShowScheduler] = useState(false);
   const [scheduledPosts, setScheduledPosts] = useState(MOCK_SCHEDULED);
   const [postHistory, setPostHistory] = useState(MOCK_HISTORY);
@@ -595,13 +637,13 @@ const StudioMainV2: React.FC<StudioMainProps> = ({ initialContext, initialAssetI
 
   const documentItemsForTopic = useMemo((): DocumentLibraryItem[] => {
     if (selectedTopic === "cover-letter") {
-      return coverLetterHistory.map(mapCoverLetterToDocumentItem);
+      return sortApplicationAssetsByRecency(coverLetterHistory).map(mapCoverLetterToDocumentItem);
     }
     if (selectedTopic === "cold-email") {
-      return coldEmailHistory.map(mapColdEmailToDocumentItem);
+      return sortApplicationAssetsByRecency(coldEmailHistory).map(mapColdEmailToDocumentItem);
     }
     if (selectedTopic === "referral") {
-      return referralHistory.map(mapReferralToDocumentItem);
+      return sortApplicationAssetsByRecency(referralHistory).map(mapReferralToDocumentItem);
     }
     return [];
   }, [selectedTopic, coverLetterHistory, coldEmailHistory, referralHistory]);
@@ -609,7 +651,7 @@ const StudioMainV2: React.FC<StudioMainProps> = ({ initialContext, initialAssetI
   const activeRecentDocumentId = useMemo((): string | number | null => {
     if (!isDocumentTopic(selectedTopic)) return null;
 
-    const urlId = searchParams.get("id")?.trim() || null;
+    const urlId = searchParams?.get("id")?.trim() || null;
     const draftId =
       selectedTopic === "cover-letter"
         ? currentCoverLetterDraft?.id
@@ -632,7 +674,7 @@ const StudioMainV2: React.FC<StudioMainProps> = ({ initialContext, initialAssetI
       return;
     }
 
-    const urlId = searchParams.get("id")?.trim() || null;
+    const urlId = searchParams?.get("id")?.trim() || null;
     if (!urlId) {
       syncedDocumentUrlIdRef.current = null;
       return;
@@ -797,6 +839,29 @@ const StudioMainV2: React.FC<StudioMainProps> = ({ initialContext, initialAssetI
     (selectedTopic === "cold-email" && Boolean(currentColdEmailDraft?.id)) ||
     (selectedTopic === "referral" && Boolean(currentReferralDraft?.id));
 
+  const documentRewindSyncContentKey = useMemo(() => {
+    const apiType =
+      selectedTopic === "cover-letter" || selectedTopic === "cold-email" || selectedTopic === "referral"
+        ? STUDIO_TOPIC_TO_API_TYPE[selectedTopic]
+        : null;
+    if (!apiType) return null;
+    const assetId =
+      selectedTopic === "cover-letter"
+        ? currentCoverLetterDraft?.id
+        : selectedTopic === "cold-email"
+          ? currentColdEmailDraft?.id
+          : selectedTopic === "referral"
+            ? currentReferralDraft?.id
+            : null;
+    if (!assetId) return null;
+    return buildApplicationAssetContentKey({ assetType: apiType, assetId: String(assetId) });
+  }, [selectedTopic, currentCoverLetterDraft?.id, currentColdEmailDraft?.id, currentReferralDraft?.id]);
+
+  const linkedinRewindSyncContentKey = useMemo(
+    () => buildContentGenContentKey({ assetId: linkedinPostAssetId, topic: topicIdea }),
+    [linkedinPostAssetId, topicIdea]
+  );
+
   const persistDocumentContent = useCallback(
     async (content: string) => {
       if (selectedTopic === "cover-letter" && currentCoverLetterDraft?.id) {
@@ -826,6 +891,7 @@ const StudioMainV2: React.FC<StudioMainProps> = ({ initialContext, initialAssetI
     reset: resetDocumentSaveStatus,
   } = useDocumentAutosave({
     enabled: canAutosaveDocument,
+    rewindSyncContentKey: documentRewindSyncContentKey,
     onSave: async () => {
       await persistDocumentContent(documentContentRef.current);
     },
@@ -1028,7 +1094,7 @@ const StudioMainV2: React.FC<StudioMainProps> = ({ initialContext, initialAssetI
   );
 
   const runLinkedinDraftGeneration = useCallback(
-    async (topic: string, funnel: ContentGenFunnel | null) => {
+    async (topic: string, funnel: ContentGenFunnel | null, draftMood?: string) => {
       const trimmedTopic = topic.trim();
       if (!trimmedTopic) {
         setLinkedinGenerateError("Add a topic or use the wand to suggest one.");
@@ -1036,14 +1102,16 @@ const StudioMainV2: React.FC<StudioMainProps> = ({ initialContext, initialAssetI
       }
       setLinkedinGenerateError(null);
       setIsGenerating(true);
+      setLinkedinStreamActivityLabel("Starting your LinkedIn post draft…");
       let keepGenerating = false;
       try {
         const result = await runContentGenDraftGeneration({
           topic: trimmedTopic,
           funnel,
+          mood: draftMood ?? mood,
           pendingMedia: linkedinPendingMediaRef.current,
           existingImages: linkedinImages,
-          uploadContentGenMedia,
+          uploadContentGenMedia: uploadContentGenMediaClient,
         });
         await applyDraftGenerationResult(result);
       } catch (e) {
@@ -1059,7 +1127,7 @@ const StudioMainV2: React.FC<StudioMainProps> = ({ initialContext, initialAssetI
         }
       }
     },
-    [applyDraftGenerationResult, linkedinImages]
+    [applyDraftGenerationResult, linkedinImages, mood]
   );
 
   useEffect(() => {
@@ -1069,10 +1137,11 @@ const StudioMainV2: React.FC<StudioMainProps> = ({ initialContext, initialAssetI
     useContentGenStudioStore.getState().syncFromStudio({
       topic: topicIdea,
       funnel: linkedinFunnel,
+      mood,
       assetId: linkedinPostAssetId,
       draftPreview: generatedContent,
     });
-  }, [selectedTopic, topicIdea, linkedinFunnel, linkedinPostAssetId, generatedContent]);
+  }, [selectedTopic, topicIdea, linkedinFunnel, mood, linkedinPostAssetId, generatedContent]);
 
   useEffect(() => {
     if (!isDocumentTopic(selectedTopic)) {
@@ -1083,14 +1152,15 @@ const StudioMainV2: React.FC<StudioMainProps> = ({ initialContext, initialAssetI
     let acceptedContent = "";
     if (selectedTopic === "cover-letter" && currentCoverLetterDraft) {
       assetId = String(currentCoverLetterDraft.id);
-      acceptedContent = currentCoverLetterDraft.status === "accepted" ? (currentCoverLetterDraft.content ?? "") : "";
+      acceptedContent = currentCoverLetterDraft.content ?? "";
     } else if (selectedTopic === "cold-email" && currentColdEmailDraft) {
       assetId = String(currentColdEmailDraft.id);
-      acceptedContent = currentColdEmailDraft.status === "accepted" ? (currentColdEmailDraft.content ?? "") : "";
+      acceptedContent = currentColdEmailDraft.content ?? "";
     } else if (selectedTopic === "referral" && currentReferralDraft) {
       assetId = String(currentReferralDraft.id);
-      acceptedContent = currentReferralDraft.status === "accepted" ? (currentReferralDraft.content ?? "") : "";
+      acceptedContent = currentReferralDraft.content ?? "";
     }
+    const previewBody = generatedContent.trim() || acceptedContent.trim();
     useApplicationAssetStudioStore.getState().syncFromStudio({
       assetType: apiType,
       assetId,
@@ -1098,7 +1168,7 @@ const StudioMainV2: React.FC<StudioMainProps> = ({ initialContext, initialAssetI
       company,
       jobDescription: jobDescription,
       contactName: selectedTopic === "cold-email" ? managerName : selectedTopic === "referral" ? connectionName : "",
-      draftPreview: generatedContent,
+      draftPreview: previewBody,
       acceptedContent,
     });
   }, [
@@ -1118,6 +1188,9 @@ const StudioMainV2: React.FC<StudioMainProps> = ({ initialContext, initialAssetI
     const onDraftPreview = (e: Event) => {
       const d = (e as CustomEvent<ApplicationAssetDraftPreviewDetail>).detail;
       if (!d?.draft) {
+        return;
+      }
+      if (useApplicationAssetStudioStore.getState().regenerateAnotherInFlight) {
         return;
       }
       const targetTopic = d.assetType ? API_TYPE_TO_STUDIO_TOPIC[d.assetType] : null;
@@ -1278,6 +1351,7 @@ const StudioMainV2: React.FC<StudioMainProps> = ({ initialContext, initialAssetI
     const onStreamComplete = () => {
       setApplicationAssetDraftLoading(false);
       useApplicationAssetStudioStore.getState().setSelectionRefineLoading(false);
+      useApplicationAssetStudioStore.getState().setRegenerateAnotherInFlight(false);
     };
     const onReviewAccepted = (e: Event) => {
       const d = (e as CustomEvent<ApplicationAssetReviewAcceptedDetail>).detail;
@@ -1384,6 +1458,9 @@ const StudioMainV2: React.FC<StudioMainProps> = ({ initialContext, initialAssetI
             applicationId: d.assetId,
           });
         } catch (err) {
+          if (err instanceof Error && err.message === ADK_DRAFT_PENDING_ERROR) {
+            return;
+          }
           const message = sanitizeUserFacingError(
             err instanceof Error ? err.message : ASSET_DRAFT_ERROR_FALLBACK,
             ASSET_DRAFT_ERROR_FALLBACK
@@ -1408,6 +1485,8 @@ const StudioMainV2: React.FC<StudioMainProps> = ({ initialContext, initialAssetI
       const d = (e as CustomEvent<ApplicationAssetDraftFailedDetail>).detail;
       setApplicationAssetDraftLoading(false);
       useApplicationAssetStudioStore.getState().setSelectionRefineLoading(false);
+      useApplicationAssetStudioStore.getState().clearRefineAnchor();
+      useApplicationAssetStudioStore.getState().setRegenerateAnotherInFlight(false);
       const message = sanitizeUserFacingError(d?.message ?? ASSET_DRAFT_ERROR_FALLBACK, ASSET_DRAFT_ERROR_FALLBACK);
       if (selectedTopic === "cover-letter") {
         setCoverLetterFormError(message);
@@ -1431,6 +1510,10 @@ const StudioMainV2: React.FC<StudioMainProps> = ({ initialContext, initialAssetI
         setLinkedinPostAssetId(d.assetId);
       }
       setLinkedinGenerateError(null);
+      if (d.flashInput) {
+        setTopicInputFlash(true);
+        window.setTimeout(() => setTopicInputFlash(false), 1200);
+      }
     };
     window.addEventListener(CONTENT_GEN_EVENTS.applyTopic, handleApplyTopic);
     return () => window.removeEventListener(CONTENT_GEN_EVENTS.applyTopic, handleApplyTopic);
@@ -1445,64 +1528,14 @@ const StudioMainV2: React.FC<StudioMainProps> = ({ initialContext, initialAssetI
       if (d?.funnel) {
         setLinkedinFunnel(d.funnel);
       }
-      void runLinkedinDraftGeneration(d?.topic ?? topicIdea, d?.funnel ?? linkedinFunnel);
+      if (d?.mood?.trim()) {
+        setMood(d.mood.trim());
+      }
+      void runLinkedinDraftGeneration(d?.topic ?? topicIdea, d?.funnel ?? linkedinFunnel, d?.mood ?? mood);
     };
     window.addEventListener(CONTENT_GEN_EVENTS.requestDraft, onRequestDraft);
     return () => window.removeEventListener(CONTENT_GEN_EVENTS.requestDraft, onRequestDraft);
-  }, [linkedinFunnel, runLinkedinDraftGeneration, topicIdea]);
-
-  useEffect(() => {
-    const onDraftReady = (e: Event) => {
-      const d = (e as CustomEvent<ContentGenDraftReadyDetail>).detail;
-      if (!d?.assetId || !d?.draft) return;
-      setIsGenerating(false);
-      setLinkedinGenerateError(null);
-      void applyDraftGenerationResult({
-        id: d.assetId,
-        draft: d.draft,
-        mergedImageUrls: linkedinImages,
-      });
-    };
-    const onDraftPreview = (e: Event) => {
-      const d = (e as CustomEvent<ContentGenDraftPreviewDetail>).detail;
-      if (!d?.draft) {
-        return;
-      }
-      if (selectedTopic !== "linkedin-post") {
-        return;
-      }
-      setGeneratedContent(d.draft);
-      if (d.topic?.trim()) {
-        setTopicIdea(d.topic.trim());
-      }
-      if (d.funnel !== undefined) {
-        setLinkedinFunnel(d.funnel);
-      }
-      if (d.assetId !== undefined) {
-        setLinkedinPostAssetId(d.assetId);
-      }
-      setLinkedinGenerateError(null);
-      setIsGenerating(false);
-    };
-    const onDraftStreamComplete = () => {
-      setIsGenerating(false);
-    };
-    const onDraftFailed = (e: Event) => {
-      const d = (e as CustomEvent<ContentGenDraftFailedDetail>).detail;
-      setIsGenerating(false);
-      setLinkedinGenerateError(d?.message ?? "Draft generation failed. Please try again.");
-    };
-    window.addEventListener(CONTENT_GEN_EVENTS.draftReady, onDraftReady);
-    window.addEventListener(CONTENT_GEN_EVENTS.draftPreview, onDraftPreview);
-    window.addEventListener(CONTENT_GEN_EVENTS.draftStreamComplete, onDraftStreamComplete);
-    window.addEventListener(CONTENT_GEN_EVENTS.draftFailed, onDraftFailed);
-    return () => {
-      window.removeEventListener(CONTENT_GEN_EVENTS.draftReady, onDraftReady);
-      window.removeEventListener(CONTENT_GEN_EVENTS.draftPreview, onDraftPreview);
-      window.removeEventListener(CONTENT_GEN_EVENTS.draftStreamComplete, onDraftStreamComplete);
-      window.removeEventListener(CONTENT_GEN_EVENTS.draftFailed, onDraftFailed);
-    };
-  }, [applyDraftGenerationResult, linkedinImages]);
+  }, [linkedinFunnel, mood, runLinkedinDraftGeneration, topicIdea]);
 
   useEffect(() => {
     const onPublishComplete = () => {
@@ -1537,6 +1570,10 @@ const StudioMainV2: React.FC<StudioMainProps> = ({ initialContext, initialAssetI
       }
       if (!generatedContent.trim()) {
         setLinkedinGenerateError("Your draft is empty. Generate or edit your post first.");
+        return;
+      }
+      if (generatedContent.trim().length < MIN_LINKEDIN_POST_CHARS) {
+        setLinkedinGenerateError(LINKEDIN_POST_TOO_SHORT_MESSAGE);
         return;
       }
       if (!linkedinPostAssetId && !topicIdea.trim()) {
@@ -1636,7 +1673,7 @@ const StudioMainV2: React.FC<StudioMainProps> = ({ initialContext, initialAssetI
 
   // Sync tab from URL only for back/forward and external links — not while a tab click is in flight.
   useEffect(() => {
-    const urlType = searchParams.get("type");
+    const urlType = searchParams?.get("type");
     if (!urlType) return;
 
     if (pendingTopicRef.current) {
@@ -1724,7 +1761,7 @@ const StudioMainV2: React.FC<StudioMainProps> = ({ initialContext, initialAssetI
     if (!prepareReturn) return;
     if (selectedTopic !== "cover-letter" && selectedTopic !== "cold-email") return;
 
-    const urlId = searchParams.get("id")?.trim();
+    const urlId = searchParams?.get("id")?.trim();
     if (urlId) return;
 
     const linkedId = getLinkedAssetId(prepareApplicationAssets, selectedTopic);
@@ -1842,8 +1879,8 @@ const StudioMainV2: React.FC<StudioMainProps> = ({ initialContext, initialAssetI
   );
 
   useEffect(() => {
-    const urlId = searchParams.get("id") ?? initialAssetId;
-    const urlType = searchParams.get("type") ?? selectedTopic;
+    const urlId = searchParams?.get("id") ?? initialAssetId;
+    const urlType = searchParams?.get("type") ?? selectedTopic;
     if (!urlId || !urlType) {
       hydratedAssetKeyRef.current = null;
       return;
@@ -1879,7 +1916,7 @@ const StudioMainV2: React.FC<StudioMainProps> = ({ initialContext, initialAssetI
           setCurrentColdEmailDraft(asset);
           setSelectedTopic("cold-email");
           applyColdEmailDraftToForm(asset);
-          const contact = managerName || initialContext?.recipientName || asset.hirname || "Hiring Manager";
+          const contact = managerName || initialContext?.recipientName || asset.hirname || "";
           dispatchOpenImproveForAsset({
             assetType: "coldemail",
             assetId: String(asset.id),
@@ -1917,6 +1954,8 @@ const StudioMainV2: React.FC<StudioMainProps> = ({ initialContext, initialAssetI
           const serverContent = match.content?.trim() ?? "";
           if (serverContent) {
             setGeneratedContent(serverContent);
+            setLinkedinServerPersistEnabled(true);
+            resetLinkedinSaveStatusRef.current();
             linkedinPreserveDraftForAssetIdRef.current = null;
           } else if (linkedinPreserveDraftForAssetIdRef.current === String(match.id)) {
             linkedinPreserveDraftForAssetIdRef.current = null;
@@ -1927,7 +1966,7 @@ const StudioMainV2: React.FC<StudioMainProps> = ({ initialContext, initialAssetI
         }
       } catch {
         hydratedAssetKeyRef.current = `failed:${hydrateKey}`;
-        const params = new URLSearchParams(searchParams.toString());
+        const params = new URLSearchParams(searchParams?.toString() ?? "");
         params.delete("id");
         const query = params.toString();
         router.replace(query ? `${pathname}?${query}` : pathname, { scroll: false });
@@ -1954,6 +1993,9 @@ const StudioMainV2: React.FC<StudioMainProps> = ({ initialContext, initialAssetI
     if (selectedTopic === "linkedin-post") {
       if (!finalContent.trim() || !topicIdea.trim()) {
         throw new Error("Your draft is empty. Generate or edit your post first.");
+      }
+      if (finalContent.trim().length < MIN_LINKEDIN_POST_CHARS) {
+        throw new Error(LINKEDIN_POST_TOO_SHORT_MESSAGE);
       }
       if (isUploadingLinkedinMedia) {
         throw new Error("Wait for media upload to finish before posting.");
@@ -2028,23 +2070,25 @@ const StudioMainV2: React.FC<StudioMainProps> = ({ initialContext, initialAssetI
     }
   };
 
-  const handlePostClick = (post: ComposerPost, type: "scheduled" | "history") => {
-    if (selectedTopic === "linkedin-post") {
-      const p = post as ContentGenModalPost;
+  const loadLinkedinPostIntoStudio = useCallback(
+    (post: ContentGenModalPost) => {
       const asset = linkedinContentGenAssets.find(a => String(a.id) === String(post.id));
       clearLinkedinPendingMedia();
-      setTopicIdea(p.topic ?? "");
-      setGeneratedContent(p.content);
+      setTopicIdea(post.topic ?? "");
+      setGeneratedContent(post.content);
       setLinkedinPostAssetId(String(post.id));
       setLinkedinImages(Array.isArray(asset?.images) ? asset.images : []);
       linkedinPreserveDraftForAssetIdRef.current = null;
+      setLinkedinServerPersistEnabled(true);
+      resetLinkedinSaveStatusRef.current();
       updateStudioUrl({ type: "linkedin-post", id: String(post.id) });
-      setSelectedPostData({
-        ...post,
-        isScheduled: type === "scheduled",
-        dateScheduled: asset?.dateScheduled,
-      });
-      setShowScheduler(true);
+    },
+    [clearLinkedinPendingMedia, linkedinContentGenAssets, updateStudioUrl]
+  );
+
+  const handlePostClick = (post: ComposerPost, type: "scheduled" | "history") => {
+    if (selectedTopic === "linkedin-post") {
+      loadLinkedinPostIntoStudio(post as ContentGenModalPost);
       return;
     }
 
@@ -2081,6 +2125,61 @@ const StudioMainV2: React.FC<StudioMainProps> = ({ initialContext, initialAssetI
     [clearLinkedinPendingMedia, linkedinPostAssetId, refreshLinkedinAssets, updateStudioUrl]
   );
 
+  const resolveLinkedinPostDeleteLabel = useCallback(
+    (id: string | number) => {
+      const post = [...linkedinScheduledModalPosts, ...linkedinHistoryModalPosts].find(p => String(p.id) === String(id));
+      if (!post) return "this post";
+      return (
+        post.topic?.trim() ||
+        post.content
+          .split("\n")
+          .map(line => line.trim())
+          .find(Boolean) ||
+        "this post"
+      );
+    },
+    [linkedinHistoryModalPosts, linkedinScheduledModalPosts]
+  );
+
+  const requestDeleteLinkedinPost = useCallback(
+    (id: string | number) => {
+      setPendingStudioAssetDelete({
+        id,
+        kind: "linkedin-post",
+        label: resolveLinkedinPostDeleteLabel(id),
+      });
+    },
+    [resolveLinkedinPostDeleteLabel]
+  );
+
+  const requestDeleteDocument = useCallback(
+    (id: string | number) => {
+      if (!isDocumentTopic(selectedTopic)) return;
+      const doc = documentItemsForTopic.find(item => String(item.id) === String(id));
+      setPendingStudioAssetDelete({
+        id,
+        kind: selectedTopic,
+        label: doc?.title?.trim() || "this draft",
+      });
+    },
+    [documentItemsForTopic, selectedTopic]
+  );
+
+  const handleConfirmStudioAssetDelete = useCallback(async () => {
+    if (!pendingStudioAssetDelete) return;
+    setIsDeletingStudioAsset(true);
+    try {
+      if (pendingStudioAssetDelete.kind === "linkedin-post") {
+        await handleDeleteLinkedinPost(String(pendingStudioAssetDelete.id));
+      } else {
+        await handleDeleteDocument(pendingStudioAssetDelete.id);
+      }
+      setPendingStudioAssetDelete(null);
+    } finally {
+      setIsDeletingStudioAsset(false);
+    }
+  }, [handleDeleteDocument, handleDeleteLinkedinPost, pendingStudioAssetDelete]);
+
   const handleViewAll = (tab: "scheduled" | "history") => {
     if (isDocumentTopic(selectedTopic)) {
       setShowAllDocumentsModal(true);
@@ -2108,6 +2207,50 @@ const StudioMainV2: React.FC<StudioMainProps> = ({ initialContext, initialAssetI
       setCurrentColdEmailDraft(null);
     } else {
       setCurrentReferralDraft(null);
+    }
+  };
+
+  const beginRegenerateDocumentDraft = (topic: ApplicationAssetStudioTopic) => {
+    setApplicationAssetDraftLoading(true);
+    setDocumentGeneratingTopic(topic);
+  };
+
+  const runApplicationAssetRegenerate = async (
+    topic: ApplicationAssetStudioTopic,
+    params: {
+      role: string;
+      company: string;
+      job_description?: string;
+      hirname?: string;
+      conname?: string;
+      application_id?: string | number;
+      studioAssetId: string;
+    }
+  ) => {
+    beginRegenerateDocumentDraft(topic);
+    const regenerate =
+      topic === "cover-letter"
+        ? generateCoverLetterMutation.regenerateAnother
+        : topic === "cold-email"
+          ? generateColdEmailMutation.regenerateAnother
+          : generateReferralMutation.regenerateAnother;
+    try {
+      await regenerate({ ...params, studioAssetId: params.studioAssetId });
+    } catch (err) {
+      if (err instanceof Error && err.message === ADK_DRAFT_PENDING_ERROR) {
+        return;
+      }
+      const message = sanitizeUserFacingError(err instanceof Error ? err.message : ASSET_DRAFT_ERROR_FALLBACK, ASSET_DRAFT_ERROR_FALLBACK);
+      useApplicationAssetStudioStore.getState().setRegenerateAnotherInFlight(false);
+      setApplicationAssetDraftLoading(false);
+      setDocumentGeneratingTopic(null);
+      if (topic === "cover-letter") {
+        setCoverLetterFormError(message);
+      } else if (topic === "cold-email") {
+        setColdEmailFormError(message);
+      } else {
+        setReferralFormError(message);
+      }
     }
   };
 
@@ -2242,34 +2385,73 @@ const StudioMainV2: React.FC<StudioMainProps> = ({ initialContext, initialAssetI
     }
 
     if (selectedTopic === "cover-letter") {
-      setCurrentCoverLetterDraft(null);
-      setGeneratedContent("");
-      setSelectedDocumentId(null);
-      resetDocumentSaveStatus();
-      updateStudioUrl({ type: "cover-letter" });
-      handleGenerate();
+      const existingId = currentCoverLetterDraft?.id;
+      if (!existingId) {
+        handleGenerate();
+        return;
+      }
+      setCoverLetterFormError(null);
+      void runApplicationAssetRegenerate("cover-letter", {
+        role: role.trim(),
+        company: company.trim(),
+        job_description: jobDescription.trim(),
+        studioAssetId: String(existingId),
+        ...(prepareApplicationId ? { application_id: prepareApplicationId } : {}),
+      });
       return;
     }
 
     if (selectedTopic === "cold-email") {
-      setCurrentColdEmailDraft(null);
-      setGeneratedContent("");
-      setSelectedDocumentId(null);
-      resetDocumentSaveStatus();
-      updateStudioUrl({ type: "cold-email" });
-      handleGenerate();
+      const existingId = currentColdEmailDraft?.id;
+      if (!existingId) {
+        handleGenerate();
+        return;
+      }
+      setColdEmailFormError(null);
+      void runApplicationAssetRegenerate("cold-email", {
+        role: role.trim(),
+        company: company.trim(),
+        job_description: jobDescription.trim(),
+        hirname: managerName.trim(),
+        studioAssetId: String(existingId),
+        ...(prepareApplicationId ? { application_id: prepareApplicationId } : {}),
+      });
       return;
     }
 
     if (selectedTopic === "referral") {
-      setCurrentReferralDraft(null);
-      setGeneratedContent("");
-      setSelectedDocumentId(null);
-      resetDocumentSaveStatus();
-      updateStudioUrl({ type: "referral" });
-      handleGenerate();
+      const existingId = currentReferralDraft?.id;
+      if (!existingId) {
+        handleGenerate();
+        return;
+      }
+      setReferralFormError(null);
+      void runApplicationAssetRegenerate("referral", {
+        role: role.trim(),
+        company: company.trim(),
+        conname: connectionName.trim(),
+        studioAssetId: String(existingId),
+      });
+      return;
     }
   };
+
+  const handleNewLinkedinPost = useCallback(() => {
+    setLinkedinPostAssetId(null);
+    setGeneratedContent("");
+    setTopicIdea("");
+    setLinkedinFunnel(null);
+    setMood("Professional");
+    setLinkedinImages([]);
+    clearLinkedinPendingMedia();
+    setLinkedinGenerateError(null);
+    setLinkedinServerPersistEnabled(false);
+    resetLinkedinSaveStatusRef.current();
+    linkedinPreserveDraftForAssetIdRef.current = null;
+    preservedLinkedinTabRef.current = null;
+    hydratedAssetKeyRef.current = null;
+    updateStudioUrl({ type: "linkedin-post" });
+  }, [clearLinkedinPendingMedia, updateStudioUrl]);
 
   const handleImproveWithUnibot = useCallback(() => {
     if (selectedTopic === "linkedin-post") {
@@ -2278,9 +2460,10 @@ const StudioMainV2: React.FC<StudioMainProps> = ({ initialContext, initialAssetI
       window.dispatchEvent(
         new CustomEvent("open-content-gen-topic", {
           detail: {
-            followUpText: `${IMPROVE_INITIAL_DRAFT_PROMPT}:\n\n${content}`,
-            topicTitle: "Improve LinkedIn Post",
-            reuseExistingTopic: true,
+            improveDraft: true,
+            seedTopic: topicIdea.trim() || undefined,
+            assetId: linkedinPostAssetId ?? undefined,
+            funnel: linkedinFunnel ?? undefined,
             requestKey: Date.now(),
           },
         })
@@ -2361,7 +2544,7 @@ const StudioMainV2: React.FC<StudioMainProps> = ({ initialContext, initialAssetI
         ? "Updating your cold email..."
         : "Updating your referral request...";
 
-  const isDocumentPreviewLoading = isDocumentGenerating || selectionRefineLoading;
+  const isDocumentPreviewLoading = isDocumentGenerating;
 
   const generateMockContent = () => {
     if (selectedTopic === "linkedin-post") {
@@ -2379,16 +2562,18 @@ const StudioMainV2: React.FC<StudioMainProps> = ({ initialContext, initialAssetI
     return `Title: Value Proposition Document\nRole: ${role}\nCompany: ${company}\n\n1. Core Strengths...\n2. Relevant Experience...\n3. Why Me?`;
   };
 
-  const persistLinkedinContentToServer = useCallback(async () => {
-    if (selectedTopic !== "linkedin-post" || !generatedContent.trim() || !topicIdea.trim()) {
-      return;
-    }
-    try {
+  const persistLinkedinContentToServer = useCallback(
+    async (contentOverride?: string) => {
+      if (selectedTopic !== "linkedin-post") return;
+      const body = (contentOverride ?? generatedContent).trim();
+      if (!body || !topicIdea.trim()) {
+        throw new Error("Add a topic and draft before saving.");
+      }
       setLinkedinPersistError(null);
       const id = await ensureContentGenAssetPersisted({
         assetId: linkedinPostAssetId,
         topic: topicIdea,
-        draft: generatedContent,
+        draft: body,
         funnel: linkedinFunnel,
         images: linkedinImages,
       });
@@ -2397,19 +2582,134 @@ const StudioMainV2: React.FC<StudioMainProps> = ({ initialContext, initialAssetI
         updateStudioUrl({ type: "linkedin-post", id });
       }
       await refreshLinkedinAssets();
-    } catch (e) {
-      setLinkedinPersistError(e instanceof Error ? e.message : "Could not save changes");
-    }
-  }, [
-    selectedTopic,
-    linkedinPostAssetId,
-    generatedContent,
-    topicIdea,
-    linkedinFunnel,
-    linkedinImages,
-    refreshLinkedinAssets,
-    updateStudioUrl,
-  ]);
+    },
+    [
+      selectedTopic,
+      linkedinPostAssetId,
+      generatedContent,
+      topicIdea,
+      linkedinFunnel,
+      linkedinImages,
+      refreshLinkedinAssets,
+      updateStudioUrl,
+    ]
+  );
+
+  const {
+    hasPendingUnsavedChanges: linkedinHasPendingUnsavedChanges,
+    isSaving: linkedinIsSaving,
+    savedConfirmationVisible: linkedinSavedConfirmationVisible,
+    markDirty: markLinkedinDirty,
+    runSave: runLinkedinSave,
+    reset: resetLinkedinSaveStatus,
+    acknowledgeSaved: acknowledgeLinkedinSaved,
+  } = useDocumentAutosave({
+    enabled: linkedinServerPersistEnabled && selectedTopic === "linkedin-post" && Boolean(linkedinPostAssetId),
+    rewindSyncContentKey: linkedinRewindSyncContentKey,
+    onSave: async () => {
+      try {
+        await persistLinkedinContentToServer();
+      } catch (e) {
+        setLinkedinPersistError(e instanceof Error ? e.message : "Could not save changes");
+        throw e;
+      }
+    },
+  });
+  resetLinkedinSaveStatusRef.current = resetLinkedinSaveStatus;
+
+  useEffect(() => {
+    const onDraftReady = (e: Event) => {
+      const d = (e as CustomEvent<ContentGenDraftReadyDetail>).detail;
+      if (!d?.assetId || !d?.draft) return;
+      setIsGenerating(false);
+      setLinkedinStreamActivityLabel(null);
+      setLinkedinGenerateError(null);
+      setLinkedinServerPersistEnabled(true);
+      linkedinSkipDirtyOnceRef.current = true;
+      resetLinkedinSaveStatus();
+      void applyDraftGenerationResult({
+        id: d.assetId,
+        draft: d.draft,
+        mergedImageUrls: linkedinImages,
+      }).then(() => {
+        acknowledgeLinkedinSaved();
+      });
+    };
+    const onDraftPreview = (e: Event) => {
+      const d = (e as CustomEvent<ContentGenDraftPreviewDetail>).detail;
+      if (!d?.draft) {
+        return;
+      }
+      if (selectedTopic !== "linkedin-post") {
+        return;
+      }
+      setLinkedinServerPersistEnabled(false);
+      resetLinkedinSaveStatus();
+      setGeneratedContent(d.draft);
+      if (d.topic?.trim()) {
+        setTopicIdea(d.topic.trim());
+      }
+      if (d.funnel !== undefined) {
+        setLinkedinFunnel(d.funnel);
+      }
+      if (d.assetId !== undefined) {
+        setLinkedinPostAssetId(d.assetId);
+      }
+      setLinkedinGenerateError(null);
+      setIsGenerating(false);
+    };
+    const onDraftStreamComplete = () => {
+      setIsGenerating(false);
+    };
+    const onDraftFailed = (e: Event) => {
+      const d = (e as CustomEvent<ContentGenDraftFailedDetail>).detail;
+      setIsGenerating(false);
+      setLinkedinGenerateError(d?.message ?? "Draft generation failed. Please try again.");
+    };
+    window.addEventListener(CONTENT_GEN_EVENTS.draftReady, onDraftReady);
+    window.addEventListener(CONTENT_GEN_EVENTS.draftPreview, onDraftPreview);
+    window.addEventListener(CONTENT_GEN_EVENTS.draftStreamComplete, onDraftStreamComplete);
+    window.addEventListener(CONTENT_GEN_EVENTS.draftFailed, onDraftFailed);
+    return () => {
+      window.removeEventListener(CONTENT_GEN_EVENTS.draftReady, onDraftReady);
+      window.removeEventListener(CONTENT_GEN_EVENTS.draftPreview, onDraftPreview);
+      window.removeEventListener(CONTENT_GEN_EVENTS.draftStreamComplete, onDraftStreamComplete);
+      window.removeEventListener(CONTENT_GEN_EVENTS.draftFailed, onDraftFailed);
+    };
+  }, [acknowledgeLinkedinSaved, applyDraftGenerationResult, linkedinImages, resetLinkedinSaveStatus, selectedTopic]);
+
+  useEffect(() => {
+    const onLoading = (e: Event) => {
+      if (selectedTopic !== "linkedin-post") {
+        return;
+      }
+      const d = (e as CustomEvent<{ loading?: boolean; activityLabel?: string | null }>).detail;
+      if (d?.activityLabel?.trim()) {
+        setLinkedinStreamActivityLabel(d.activityLabel.trim());
+      } else if (!d?.loading && !isGeneratingRef.current) {
+        setLinkedinStreamActivityLabel(null);
+      }
+    };
+    const onStreamActivity = (e: Event) => {
+      if (selectedTopic !== "linkedin-post") {
+        return;
+      }
+      const d = (e as CustomEvent<UnibotStreamActivityDetail>).detail;
+      if (d?.activityLabel?.trim()) {
+        setLinkedinStreamActivityLabel(d.activityLabel.trim());
+        return;
+      }
+      if (d?.loading === false && !isGeneratingRef.current) {
+        setLinkedinStreamActivityLabel(null);
+      }
+    };
+    window.addEventListener(UNIBOT_AGENT_LOADING_EVENT, onLoading);
+    window.addEventListener(UNIBOT_STREAM_ACTIVITY_EVENT, onStreamActivity);
+    return () => {
+      window.removeEventListener(UNIBOT_AGENT_LOADING_EVENT, onLoading);
+      window.removeEventListener(UNIBOT_STREAM_ACTIVITY_EVENT, onStreamActivity);
+    };
+  }, [selectedTopic]);
 
   const handleLinkedinMediaUpload = useCallback(
     async (files: FileList | null) => {
@@ -2430,7 +2730,7 @@ const StudioMainV2: React.FC<StudioMainProps> = ({ initialContext, initialAssetI
       }
       setIsUploadingLinkedinMedia(true);
       try {
-        const uploaded = await Promise.all(Array.from(files).map(file => uploadContentGenMedia(file, "linkedin-post")));
+        const uploaded = await Promise.all(Array.from(files).map(file => uploadContentGenMediaClient(file, "linkedin-post")));
         const merged = Array.from(new Set([...linkedinImages, ...uploaded.map(item => item.url)]));
         setLinkedinImages(merged);
         await updateContentGenAsset({
@@ -2478,23 +2778,18 @@ const StudioMainV2: React.FC<StudioMainProps> = ({ initialContext, initialAssetI
     if (selectedTopic !== "linkedin-post" || !generatedContent.trim()) {
       return;
     }
+    if (!linkedinServerPersistEnabled) {
+      return;
+    }
+    if (linkedinSkipDirtyOnceRef.current) {
+      linkedinSkipDirtyOnceRef.current = false;
+      return;
+    }
     if (linkedinPendingMedia.length > 0) {
       return;
     }
-    if (linkedinPersistDebounceRef.current) {
-      clearTimeout(linkedinPersistDebounceRef.current);
-    }
-    linkedinPersistDebounceRef.current = setTimeout(() => {
-      linkedinPersistDebounceRef.current = null;
-      void persistLinkedinContentToServer();
-    }, 750);
-    return () => {
-      if (linkedinPersistDebounceRef.current) {
-        clearTimeout(linkedinPersistDebounceRef.current);
-        linkedinPersistDebounceRef.current = null;
-      }
-    };
-  }, [generatedContent, linkedinPendingMedia.length, linkedinPostAssetId, selectedTopic, topicIdea, persistLinkedinContentToServer]);
+    markLinkedinDirty();
+  }, [generatedContent, linkedinPendingMedia.length, linkedinServerPersistEnabled, markLinkedinDirty, selectedTopic]);
 
   useEffect(() => {
     if (selectedTopic !== "linkedin-post" || !linkedinPostAssetId) return;
@@ -2510,12 +2805,24 @@ const StudioMainV2: React.FC<StudioMainProps> = ({ initialContext, initialAssetI
   }, [selectedTopic, linkedinPostAssetId, linkedinContentGenAssets, linkedinImages, linkedinPendingMedia.length]);
 
   const handleLinkedinPreviewBlur = useCallback(() => {
-    if (linkedinPersistDebounceRef.current) {
-      clearTimeout(linkedinPersistDebounceRef.current);
-      linkedinPersistDebounceRef.current = null;
+    if (!linkedinServerPersistEnabled) {
+      return;
     }
-    void persistLinkedinContentToServer();
-  }, [persistLinkedinContentToServer]);
+    if (linkedinHasPendingUnsavedChanges) {
+      void runLinkedinSave();
+    }
+  }, [linkedinHasPendingUnsavedChanges, linkedinServerPersistEnabled, runLinkedinSave]);
+
+  const handleLinkedinPreviewContentChange = useCallback(
+    (content: string) => {
+      setLinkedinPersistError(null);
+      setGeneratedContent(content);
+      if (selectedTopic === "linkedin-post" && linkedinPostAssetId) {
+        setLinkedinServerPersistEnabled(true);
+      }
+    },
+    [linkedinPostAssetId, selectedTopic]
+  );
 
   const renderVpdSavedCards = () => {
     const recents = savedVpds.filter(v => !v.isTemplate);
@@ -2599,7 +2906,7 @@ const StudioMainV2: React.FC<StudioMainProps> = ({ initialContext, initialAssetI
           )}
         </div>
 
-        <div className="flex max-h-[min(42vh,360px)] flex-col gap-2 overflow-y-auto pr-1">
+        <div className="flex flex-col gap-2">
           {combinedList.length === 0 ? (
             <p className="rounded-xl border border-dashed border-slate-200 px-4 py-8 text-center text-xs text-slate-400 dark:border-slate-700">
               No recent drafts yet. Generate one to get started.
@@ -2613,7 +2920,7 @@ const StudioMainV2: React.FC<StudioMainProps> = ({ initialContext, initialAssetI
                   doc={doc}
                   isSelected={isSameDocumentId(activeRecentDocumentId, doc.id)}
                   onClick={() => void handleSelectDocument(doc)}
-                  onDelete={id => void handleDeleteDocument(id)}
+                  onDelete={id => requestDeleteDocument(id)}
                 />
               ))
           )}
@@ -2635,6 +2942,10 @@ const StudioMainV2: React.FC<StudioMainProps> = ({ initialContext, initialAssetI
   };
 
   const renderInputs = () => {
+    const linkedinTopicLocked = !!linkedinPostAssetId || (selectedTopic === "linkedin-post" && generatedContent.trim().length > 0);
+    const linkedinMoodLocked = generatedContent.trim().length > 0;
+    const linkedinContentTypeValue = linkedinFunnel ? studioContentTypeLabelForFunnel(linkedinFunnel) : "Top of Funnel";
+
     return (
       <div className="space-y-5">
         {/* LinkedIn Inputs */}
@@ -2653,18 +2964,28 @@ const StudioMainV2: React.FC<StudioMainProps> = ({ initialContext, initialAssetI
                 <input
                   value={topicIdea}
                   onChange={e => {
+                    if (linkedinTopicLocked) return;
                     setLinkedinGenerateError(null);
                     setTopicIdea(e.target.value);
                   }}
-                  className="flex-1 bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-xl px-4 py-3 text-sm font-medium outline-none focus:ring-2 focus:ring-brand-500/20"
+                  readOnly={linkedinTopicLocked}
+                  disabled={linkedinTopicLocked}
+                  aria-disabled={linkedinTopicLocked}
+                  title={linkedinTopicLocked ? "Topic is locked after your first draft is created" : undefined}
+                  className={`flex-1 bg-slate-50 dark:bg-slate-900 border rounded-xl px-4 py-3 text-sm font-medium outline-none focus:ring-2 focus:ring-brand-500/20 transition-all duration-300 ${
+                    topicInputFlash
+                      ? "border-brand-500 ring-2 ring-brand-400/40 bg-brand-50/50 dark:bg-brand-950/30"
+                      : "border-slate-200 dark:border-slate-700"
+                  } ${linkedinTopicLocked ? "cursor-not-allowed opacity-70" : ""}`}
                   placeholder="e.g. Learnings from my first design sprint..."
                 />
                 <button
                   type="button"
                   aria-label="Plan topic with Unibot"
-                  title="Plan topic with Unibot"
+                  title={linkedinTopicLocked ? "Topic is locked after your first draft is created" : "Plan topic with Unibot"}
+                  disabled={linkedinTopicLocked}
                   onClick={() => handleOpenContentGenTopic()}
-                  className="px-4 bg-brand-50 text-brand-600 rounded-xl hover:bg-brand-100 transition-colors font-medium"
+                  className="px-4 bg-brand-50 text-brand-600 rounded-xl hover:bg-brand-100 transition-colors font-medium disabled:cursor-not-allowed disabled:opacity-50"
                 >
                   <Wand2 size={18} />
                 </button>
@@ -2675,11 +2996,13 @@ const StudioMainV2: React.FC<StudioMainProps> = ({ initialContext, initialAssetI
                 <label className="block text-xs font-medium text-slate-500 mb-2">Mood</label>
                 <select
                   value={mood}
-                  disabled
-                  aria-disabled
-                  title="Coming soon"
+                  disabled={linkedinMoodLocked}
+                  aria-disabled={linkedinMoodLocked}
+                  title={linkedinMoodLocked ? "Locked after draft is generated" : "Tone for draft generation"}
                   onChange={e => setMood(e.target.value)}
-                  className="w-full bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-xl px-4 py-3 text-sm font-medium outline-none focus:ring-2 focus:ring-brand-500/20 appearance-none bg-white dark:bg-slate-900 opacity-60 cursor-not-allowed"
+                  className={`w-full bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-xl px-4 py-3 text-sm font-medium outline-none focus:ring-2 focus:ring-brand-500/20 appearance-none ${
+                    linkedinMoodLocked ? "opacity-60 cursor-not-allowed" : ""
+                  }`}
                 >
                   {MOODS.map(m => (
                     <option key={m} value={m}>
@@ -2710,16 +3033,25 @@ const StudioMainV2: React.FC<StudioMainProps> = ({ initialContext, initialAssetI
                   </div>
                 </div>
                 <select
-                  value={contentType}
-                  disabled
-                  aria-disabled
-                  title="Coming soon"
-                  onChange={e => setContentType(e.target.value)}
-                  className="w-full cursor-not-allowed appearance-none rounded-xl border border-slate-200 bg-slate-50 px-4 py-3 text-sm font-medium opacity-60 outline-none focus:ring-2 focus:ring-brand-500/20 dark:border-slate-700 dark:bg-slate-900"
+                  value={linkedinContentTypeValue}
+                  disabled={linkedinTopicLocked}
+                  aria-disabled={linkedinTopicLocked}
+                  title={linkedinTopicLocked ? "Locked after your first draft is created" : "Funnel for topic brainstorming with Unibot"}
+                  onChange={e => {
+                    const next = funnelFromStudioContentTypeLabel(e.target.value);
+                    if (next) {
+                      setLinkedinFunnel(next);
+                    }
+                  }}
+                  className={`w-full appearance-none rounded-xl border border-slate-200 bg-slate-50 px-4 py-3 text-sm font-medium outline-none focus:ring-2 focus:ring-brand-500/20 dark:border-slate-700 dark:bg-slate-900 ${
+                    linkedinTopicLocked ? "opacity-60 cursor-not-allowed" : ""
+                  }`}
                 >
-                  <option value="Top of Funnel">Top of Funnel</option>
-                  <option value="Middle of Funnel">Middle of Funnel</option>
-                  <option value="Bottom of Funnel">Bottom of Funnel</option>
+                  {CONTENT_GEN_FUNNEL_STUDIO_OPTIONS.map(opt => (
+                    <option key={opt.value} value={opt.label}>
+                      {opt.label}
+                    </option>
+                  ))}
                 </select>
               </div>
             </div>
@@ -2881,29 +3213,54 @@ const StudioMainV2: React.FC<StudioMainProps> = ({ initialContext, initialAssetI
         ) : null}
 
         {(showGenerateDraftCta || showGenerateAnotherCta) && (
-          <button
-            type="button"
-            onClick={showGenerateAnotherCta ? handleGenerateAnother : handleStudioPrimaryAction}
-            disabled={isStudioPrimaryActionLoading || isDocumentAdkLoading}
-            className={`group mt-4 flex w-full items-center justify-center gap-2 rounded-xl py-4 font-medium transition-all active:scale-95 disabled:cursor-not-allowed disabled:opacity-70 ${
-              showGenerateAnotherCta
-                ? "border border-slate-200 bg-white text-slate-700 shadow-sm hover:border-brand-600 hover:bg-brand-600 hover:text-white hover:shadow-lg hover:shadow-brand-500/30 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-200 dark:hover:border-brand-600 dark:hover:bg-brand-600 dark:hover:text-white"
-                : "bg-brand-600 text-white shadow-lg shadow-brand-500/30 hover:bg-brand-700"
-            }`}
+          <div
+            className={showGenerateAnotherCta && selectedTopic === "linkedin-post" ? "mt-4 grid grid-cols-1 gap-3 sm:grid-cols-2" : "mt-4"}
           >
-            {isStudioPrimaryActionLoading ? (
-              <div
-                className={`h-4 w-4 animate-spin rounded-full border-2 border-t-transparent ${
-                  showGenerateAnotherCta
-                    ? "border-slate-400 group-hover:border-white/50 group-hover:border-t-white"
-                    : "border-white/50 border-t-white"
-                }`}
-              />
-            ) : (
-              <Wand2 size={18} />
-            )}
-            {isStudioPrimaryActionLoading ? " Crafting..." : showGenerateAnotherCta ? "Generate Another" : "Generate Draft"}
-          </button>
+            {showGenerateAnotherCta && selectedTopic === "linkedin-post" ? (
+              <button
+                type="button"
+                onClick={handleNewLinkedinPost}
+                disabled={isStudioPrimaryActionLoading || isDocumentAdkLoading}
+                className="flex w-full items-center justify-center gap-2 rounded-xl border border-slate-200 bg-white py-4 font-medium text-slate-700 shadow-sm transition-all hover:border-slate-300 hover:bg-slate-50 active:scale-95 disabled:cursor-not-allowed disabled:opacity-70 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-200 dark:hover:bg-slate-800"
+              >
+                <Plus size={18} />
+                New Post
+              </button>
+            ) : null}
+            <button
+              type="button"
+              onClick={showGenerateAnotherCta ? handleGenerateAnother : handleStudioPrimaryAction}
+              disabled={
+                showGenerateAnotherCta && isDocumentTopic(selectedTopic)
+                  ? isDocumentGenerateAnotherBusy
+                  : isStudioPrimaryActionLoading || isDocumentAdkLoading
+              }
+              className={`flex w-full items-center justify-center gap-2 rounded-xl py-4 font-medium transition-all active:scale-95 disabled:cursor-not-allowed disabled:opacity-70 ${
+                showGenerateAnotherCta
+                  ? "border border-slate-200 bg-white text-slate-700 shadow-sm hover:border-brand-600 hover:bg-brand-600 hover:text-white hover:shadow-lg hover:shadow-brand-500/30 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-200 dark:hover:border-brand-600 dark:hover:bg-brand-600 dark:hover:text-white"
+                  : "bg-brand-600 text-white shadow-lg shadow-brand-500/30 hover:bg-brand-700"
+              }`}
+            >
+              {isDocumentGenerateAnotherBusy ? null : isStudioPrimaryActionLoading ? (
+                <div
+                  className={`h-4 w-4 animate-spin rounded-full border-2 border-t-transparent ${
+                    showGenerateAnotherCta
+                      ? "border-slate-400 group-hover:border-white/50 group-hover:border-t-white"
+                      : "border-white/50 border-t-white"
+                  }`}
+                />
+              ) : (
+                <Wand2 size={18} />
+              )}
+              {isDocumentGenerateAnotherBusy
+                ? documentAssetActivityLabel
+                : isStudioPrimaryActionLoading
+                  ? ` ${linkedinGeneratingLabel}`
+                  : showGenerateAnotherCta
+                    ? "Generate Another"
+                    : "Generate Draft"}
+            </button>
+          </div>
         )}
 
         {selectedTopic === "vpd" && (
@@ -2926,7 +3283,7 @@ const StudioMainV2: React.FC<StudioMainProps> = ({ initialContext, initialAssetI
         {isDocumentTopic(selectedTopic) && renderDocumentSavedCards()}
 
         {selectedTopic === "linkedin-post" && (
-          <div className="mt-5 flex min-h-[min(58vh,560px)] flex-1 flex-col border-t border-slate-100 pt-5 dark:border-slate-800">
+          <div className="mt-5 border-t border-slate-100 pt-5 dark:border-slate-800">
             <div className="mb-3 flex items-center gap-3">
               <div className="flex min-w-0 flex-1 items-center gap-2">
                 <StudioSectionDot />
@@ -2946,20 +3303,23 @@ const StudioMainV2: React.FC<StudioMainProps> = ({ initialContext, initialAssetI
               </button>
             </div>
 
-            <div className="scrollbar-on-hover flex min-h-0 flex-1 flex-col gap-2 overflow-y-auto pr-1">
+            <div className="flex flex-col gap-2">
               {scheduledPostsForModal.length === 0 ? (
                 <p className="rounded-xl border border-dashed border-slate-200 px-4 py-8 text-center text-xs text-slate-400 dark:border-slate-700">
                   Nothing scheduled yet. Generate a draft, then schedule it from the preview.
                 </p>
               ) : (
-                scheduledPostsForModal.map(post => (
-                  <LinkedInPostListCard
-                    key={post.id}
-                    post={post}
-                    onClick={() => handlePostClick(post, "scheduled")}
-                    onDelete={id => void handleDeleteLinkedinPost(String(id))}
-                  />
-                ))
+                scheduledPostsForModal
+                  .slice(0, 5)
+                  .map(post => (
+                    <LinkedInPostListCard
+                      key={post.id}
+                      post={post}
+                      isSelected={String(linkedinPostAssetId) === String(post.id)}
+                      onClick={() => handlePostClick(post, "scheduled")}
+                      onDelete={id => requestDeleteLinkedinPost(String(id))}
+                    />
+                  ))
               )}
             </div>
 
@@ -3099,7 +3459,22 @@ const StudioMainV2: React.FC<StudioMainProps> = ({ initialContext, initialAssetI
   const isStudioPrimaryActionLoading =
     selectedTopic === "linkedin-post" ? isGenerating : isDocumentPreviewLoading || (selectedTopic === "vpd" && isGenerating);
 
+  const linkedinGeneratingLabel = linkedinStreamActivityLabel ?? "Crafting…";
+
   const showGenerateAnotherCta = topicHasGeneratedDraft && (isDocumentTopic(selectedTopic) || selectedTopic === "linkedin-post");
+
+  const isApplicationAssetSubThreadBusy =
+    isDocumentTopic(selectedTopic) &&
+    ((selectedTopic === "cover-letter" && !!currentCoverLetterDraft?.id) ||
+      (selectedTopic === "cold-email" && !!currentColdEmailDraft?.id) ||
+      (selectedTopic === "referral" && !!currentReferralDraft?.id)) &&
+    (isDocumentAdkLoading || isUnibotAgentBusy || regenerateAnotherInFlight);
+
+  const documentAssetActivityLabel =
+    liveDocumentStreamActivity.activityLabel?.trim() || adkChat?.streamActivityLabel?.trim() || documentRefineLoadingLabel;
+
+  const isDocumentGenerateAnotherBusy =
+    showGenerateAnotherCta && isDocumentTopic(selectedTopic) && (isApplicationAssetSubThreadBusy || hasApplicationAssetPendingRevision);
 
   const showGenerateDraftCta = (isDocumentTopic(selectedTopic) || selectedTopic === "linkedin-post") && !topicHasGeneratedDraft;
 
@@ -3188,28 +3563,44 @@ const StudioMainV2: React.FC<StudioMainProps> = ({ initialContext, initialAssetI
                 <div className="relative w-full max-w-[210mm] group/preview">
                   {selectedTopic === "linkedin-post" ? (
                     <div className="flex min-h-[min(68vh,580px)] w-full flex-col rounded-2xl border border-slate-200 bg-white p-5 shadow-sm dark:border-slate-800 dark:bg-slate-900">
-                      <div className="mb-3 flex shrink-0 items-start justify-between">
+                      <div className="mb-3 flex shrink-0 items-start justify-between gap-3">
                         <LinkedInPostAuthorHeader author={linkedInPostAuthor} />
-                        <button type="button" className="rounded-full p-1 text-slate-500 hover:bg-slate-100" aria-label="More options">
-                          <MoreHorizontal size={20} />
-                        </button>
+                        <div className="flex shrink-0 items-center gap-2">
+                          <DocumentSaveStatusBar
+                            hasPendingUnsavedChanges={linkedinHasPendingUnsavedChanges}
+                            isSaving={linkedinIsSaving}
+                            savedConfirmationVisible={linkedinSavedConfirmationVisible}
+                            onSaveNow={() => void runLinkedinSave()}
+                            visible={
+                              linkedinServerPersistEnabled &&
+                              Boolean(getLinkedInPreviewContent().trim()) &&
+                              (linkedinHasPendingUnsavedChanges || linkedinIsSaving || linkedinSavedConfirmationVisible)
+                            }
+                          />
+                          <button type="button" className="rounded-full p-1 text-slate-500 hover:bg-slate-100" aria-label="More options">
+                            <MoreHorizontal size={20} />
+                          </button>
+                        </div>
                       </div>
                       {linkedinPersistError ? (
                         <p className="mb-2 shrink-0 text-xs text-red-600 dark:text-red-400" role="alert">
                           {linkedinPersistError}
                         </p>
                       ) : null}
-                      <textarea
-                        value={getLinkedInPreviewContent()}
-                        onChange={e => {
-                          setLinkedinPersistError(null);
-                          setGeneratedContent(e.target.value);
-                        }}
-                        onBlur={handleLinkedinPreviewBlur}
-                        placeholder="Your content preview will appear here..."
-                        aria-label="LinkedIn post content"
-                        className="scrollbar-on-hover mb-2 min-h-[min(42vh,360px)] w-full flex-1 resize-none overflow-y-auto border-none bg-transparent text-sm leading-relaxed text-slate-800 outline-none placeholder:text-slate-300 dark:text-slate-100 dark:placeholder:text-slate-600"
-                      />
+                      <div className="relative mb-2 min-h-[min(42vh,360px)] flex-1">
+                        {isGenerating ? <AssetPreviewLoadingOverlay label={linkedinStreamActivityLabel ?? "Crafting your post…"} /> : null}
+                        <textarea
+                          value={getLinkedInPreviewContent()}
+                          onChange={e => {
+                            handleLinkedinPreviewContentChange(e.target.value);
+                          }}
+                          onBlur={handleLinkedinPreviewBlur}
+                          placeholder="Your content preview will appear here..."
+                          aria-label="LinkedIn post content"
+                          disabled={isGenerating}
+                          className="scrollbar-on-hover h-full min-h-[min(42vh,360px)] w-full resize-none overflow-y-auto border-none bg-transparent text-sm leading-relaxed text-slate-800 outline-none placeholder:text-slate-300 disabled:opacity-60 dark:text-slate-100 dark:placeholder:text-slate-600"
+                        />
+                      </div>
                       {linkedinPendingMedia.length > 0 || linkedinImages.length > 0 ? (
                         <div className="mb-3 grid shrink-0 grid-cols-2 gap-2">
                           {linkedinPendingMedia.map(p => (
@@ -3288,6 +3679,7 @@ const StudioMainV2: React.FC<StudioMainProps> = ({ initialContext, initialAssetI
                           disabled={
                             !linkedInPublishAccess.canPost ||
                             !getLinkedInPreviewContent().trim() ||
+                            getLinkedInPreviewContent().trim().length < MIN_LINKEDIN_POST_CHARS ||
                             isUploadingLinkedinMedia ||
                             linkedinPendingMedia.length > 0
                           }
@@ -3297,6 +3689,7 @@ const StudioMainV2: React.FC<StudioMainProps> = ({ initialContext, initialAssetI
                             disabled={
                               !linkedInPublishAccess.canPost ||
                               !getLinkedInPreviewContent().trim() ||
+                              getLinkedInPreviewContent().trim().length < MIN_LINKEDIN_POST_CHARS ||
                               isUploadingLinkedinMedia ||
                               linkedinPendingMedia.length > 0
                             }
@@ -3322,15 +3715,15 @@ const StudioMainV2: React.FC<StudioMainProps> = ({ initialContext, initialAssetI
                       isSaving={documentIsSaving || reviewAcceptSaving}
                       savedConfirmationVisible={documentSavedConfirmationVisible || reviewAcceptSavedVisible}
                       isGenerating={isDocumentPreviewLoading}
+                      refineInProgress={selectionRefineLoading}
                       generatingLabel={
-                        selectionRefineLoading && !isDocumentDraftLoadingForTopic
-                          ? documentRefineLoadingLabel
-                          : selectedTopic === "cover-letter"
-                            ? "Generating cover letter..."
-                            : selectedTopic === "cold-email"
-                              ? "Generating cold email..."
-                              : "Generating referral request..."
+                        selectedTopic === "cover-letter"
+                          ? "Generating cover letter..."
+                          : selectedTopic === "cold-email"
+                            ? "Generating cold email..."
+                            : "Generating referral request..."
                       }
+                      refineLabel={documentRefineLoadingLabel}
                       copyFeedback={
                         selectedTopic === "cover-letter"
                           ? copyToast
@@ -3425,6 +3818,17 @@ const StudioMainV2: React.FC<StudioMainProps> = ({ initialContext, initialAssetI
             setPublishModalSeed(null);
           }}
           onPost={handlePost}
+          onPersistDraft={
+            linkedinServerPersistEnabled
+              ? async (content: string) => {
+                  setGeneratedContent(content);
+                  await persistLinkedinContentToServer(content);
+                }
+              : undefined
+          }
+          onContentDraftChange={content => {
+            handleLinkedinPreviewContentChange(content);
+          }}
           onImproveWithUnibot={handlePostSchedulerImprove}
           linkedInPublishAccess={linkedInPublishAccess}
           userId={profileData?.user_id}
@@ -3450,7 +3854,7 @@ const StudioMainV2: React.FC<StudioMainProps> = ({ initialContext, initialAssetI
             setShowAllPostsModal(false);
             handlePostClick(post, type);
           }}
-          onDeletePost={selectedTopic === "linkedin-post" ? (id, _type) => void handleDeleteLinkedinPost(String(id)) : undefined}
+          onDeletePost={selectedTopic === "linkedin-post" ? id => requestDeleteLinkedinPost(id) : undefined}
         />
       )}
 
@@ -3476,7 +3880,7 @@ const StudioMainV2: React.FC<StudioMainProps> = ({ initialContext, initialAssetI
             setShowAllDocumentsModal(false);
             void handleSelectDocument(doc);
           }}
-          onDeleteDocument={id => void handleDeleteDocument(id)}
+          onDeleteDocument={id => requestDeleteDocument(id)}
         />
       )}
 
@@ -3681,6 +4085,18 @@ const StudioMainV2: React.FC<StudioMainProps> = ({ initialContext, initialAssetI
           </div>
         </ModalPortalOverlay>
       )}
+
+      <StudioAssetDeleteConfirmDialog
+        open={Boolean(pendingStudioAssetDelete)}
+        kind={pendingStudioAssetDelete?.kind ?? "linkedin-post"}
+        label={pendingStudioAssetDelete?.label ?? "this item"}
+        onConfirm={() => void handleConfirmStudioAssetDelete()}
+        onCancel={() => {
+          if (isDeletingStudioAsset) return;
+          setPendingStudioAssetDelete(null);
+        }}
+        isDeleting={isDeletingStudioAsset}
+      />
     </div>
   );
 };

@@ -357,34 +357,47 @@ const SectionRenderer = ({ resume, type }: { resume: ResumeData; type: string })
     const customSection = resume.customSections?.find(s => s.id === type);
     if (!customSection || !customSection.items || !customSection.items.some(item => !item.hidden)) return null;
 
+    const visibleItems = customSection.items.filter(d => !d.hidden);
+
     return (
       <View style={styles.section}>
-        {/* Section header is its own anchor — title+divider never orphan */}
-        <View wrap={false}>
-          <Text style={styles.sectionTitle}>{customSection.title || "Custom Section"}</Text>
-          <View style={styles.sectionDivider} />
-        </View>
-        {customSection.items
-          .filter(d => !d.hidden)
-          .map((item, i) => (
-            // Each custom item is an anchor block — Title+Description stay together
-            <View key={i} style={{ marginBottom: TOKENS.spacing.md }} wrap={false}>
-              <Text style={styles.entryTitle}>{item.title}</Text>
-              {item.description && (
-                <View style={{ marginTop: 2 }}>
-                  <HtmlRenderer
-                    html={item.description}
-                    style={{
-                      fontSize: TOKENS.sizes.body,
-                      lineHeight: TOKENS.lineHeights.body,
-                      fontFamily: "Times-Roman",
-                      color: TOKENS.colors.text,
-                    }}
-                  />
-                </View>
-              )}
+        {visibleItems.map((item, i) => (
+          <View key={i} style={styles.entryRow} wrap={false}>
+            {i === 0 && (
+              <View wrap={false}>
+                <Text style={styles.sectionTitle}>{customSection.title || "Custom Section"}</Text>
+                <View style={styles.sectionDivider} />
+              </View>
+            )}
+            <View style={styles.entryHeader}>
+              <View style={styles.entryLeft}>
+                {item.title ? <Text style={styles.entryTitle}>{item.title}</Text> : null}
+                {item.subtitle ? <Text style={styles.entrySub}>{item.subtitle}</Text> : null}
+              </View>
+              <View style={styles.entryRight}>
+                {item.location ? <Text style={styles.entryMeta}>{item.location}</Text> : null}
+                {item.startDate ? (
+                  <Text style={styles.entryMeta}>
+                    {formatDateMonthYear(item.startDate)} — {item.current ? "Present" : formatDateMonthYear(item.endDate)}
+                  </Text>
+                ) : null}
+              </View>
             </View>
-          ))}
+            {item.description && (
+              <View style={{ marginTop: 4 }}>
+                <HtmlRenderer
+                  html={item.description}
+                  style={{
+                    fontSize: TOKENS.sizes.body,
+                    lineHeight: TOKENS.lineHeights.body,
+                    fontFamily: "Times-Roman",
+                    color: TOKENS.colors.text,
+                  }}
+                />
+              </View>
+            )}
+          </View>
+        ))}
       </View>
     );
   }

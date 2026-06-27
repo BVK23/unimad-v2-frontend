@@ -1,8 +1,12 @@
 "use client";
 
 import { useCallback, useState } from "react";
+import { buildApplicationAssetContentKey } from "@/features/adk-chat/content-scope";
+import { persistAcceptSnapshotForSession } from "@/features/adk-chat/persist-accept-snapshot";
 import { persistReviewDecisionForSession } from "@/features/adk-chat/persist-review-decision";
+import { buildApplicationAssetSnapshotPayload } from "@/features/adk-chat/revert-django-content-after-rewind";
 import { useAdkApplicationAssetReviewStore } from "@/features/adk-chat/stores/useAdkApplicationAssetReviewStore";
+import { syncAdkContentStateOnAccept } from "@/features/adk-chat/sync-adk-content-on-accept";
 import { APPLICATION_ASSET_EVENTS } from "@/features/application-assets/api/application-asset-events";
 import { syncApplicationAssetOnAccept } from "@/features/application-assets/api/syncApplicationAssetOnAccept";
 import { useApplicationAssetStudioStore } from "@/features/application-assets/store/useApplicationAssetStudioStore";
@@ -34,10 +38,44 @@ export const useApplicationAssetReviewActions = (options?: { userId?: string; ma
           applicationId: studio.applicationId,
         });
         useAdkApplicationAssetReviewStore.getState().markReviewAccepted();
-        if (userId && mainSessionId) {
+        if (userId && mainSessionId && card.assistantMessageId) {
+          const contentKey = buildApplicationAssetContentKey({
+            assetType: card.assetType,
+            assetId: result.assetId,
+            role: card.role || studio.role,
+            company: card.company || studio.company,
+          });
+          const prePayload = buildApplicationAssetSnapshotPayload({
+            content: card.baselineDraft,
+            assetType: card.assetType,
+            assetId: card.baselineAssetId,
+            role: card.baselineRole,
+            company: card.baselineCompany,
+            jobDescription: card.baselineJobDescription,
+            contactName: card.baselineContactName,
+          });
+          const postPayload = buildApplicationAssetSnapshotPayload({
+            content: finalDraft,
+            assetType: card.assetType,
+            assetId: result.assetId,
+            role: card.role || studio.role,
+            company: card.company || studio.company,
+            jobDescription,
+            contactName: card.contactName || studio.contactName,
+          });
+          await persistAcceptSnapshotForSession(userId, mainSessionId, {
+            domain: "application_asset",
+            contentKey,
+            assistantMessageId: card.assistantMessageId,
+            preAcceptPayload: prePayload,
+            postAcceptPayload: postPayload,
+            acceptedAt: new Date().toISOString(),
+          });
+          await syncAdkContentStateOnAccept(userId, mainSessionId, postPayload);
           await persistReviewDecisionForSession(userId, mainSessionId, card.assistantMessageId, "accepted");
         }
         useApplicationAssetStudioStore.getState().clearSelection();
+        useApplicationAssetStudioStore.getState().setRegenerateAnotherInFlight(false);
         window.dispatchEvent(
           new CustomEvent(APPLICATION_ASSET_EVENTS.applyContext, {
             detail: {
@@ -46,6 +84,14 @@ export const useApplicationAssetReviewActions = (options?: { userId?: string; ma
               company: card.company || studio.company,
               jobDescription,
               contactName: card.contactName || studio.contactName || undefined,
+              assetId: result.assetId,
+            },
+          })
+        );
+        window.dispatchEvent(
+          new CustomEvent(APPLICATION_ASSET_EVENTS.reviewAccepted, {
+            detail: {
+              assetType: card.assetType,
               assetId: result.assetId,
             },
           })
@@ -77,6 +123,8 @@ export const useApplicationAssetReviewActions = (options?: { userId?: string; ma
       acceptedContent: card.baselineDraft,
     });
     useApplicationAssetStudioStore.getState().clearSelection();
+    useApplicationAssetStudioStore.getState().clearRefineAnchor();
+    useApplicationAssetStudioStore.getState().setRegenerateAnotherInFlight(false);
     window.dispatchEvent(
       new CustomEvent(APPLICATION_ASSET_EVENTS.applyContext, {
         detail: {

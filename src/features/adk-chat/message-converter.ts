@@ -1,3 +1,4 @@
+import { enrichAgentMessagesFromToolEvents } from "./enrich-messages-from-tool-events";
 import { filterActiveAdkEvents, getEventInvocationId } from "./filter-active-adk-events";
 import type { AdkContent, AdkEvent, ConversionResult, TimelineActivity, AgentMessage } from "./types";
 
@@ -37,19 +38,10 @@ interface AdkEventPart {
  * Filters out thought parts to avoid mixing thoughts with regular message content
  */
 function extractTextFromAdkEvent(event: AdkEvent): string {
-  console.log(`🔍 [EXTRACT_TEXT] Processing event ${event.id}:`, {
-    contentType: typeof event.content,
-    hasContent: !!event.content,
-  });
-
   // Handle case where content is a JSON string
   if (typeof event.content === "string") {
     try {
       const parsed = JSON.parse(event.content);
-      console.log(`📦 [EXTRACT_TEXT] Parsed JSON content:`, {
-        hasParts: !!parsed.parts,
-        partsLength: parsed.parts?.length || 0,
-      });
 
       if (parsed.parts && Array.isArray(parsed.parts)) {
         // MATCH REAL-TIME STREAMING: Filter out thought parts (part.thought === true)
@@ -62,15 +54,9 @@ function extractTextFromAdkEvent(event: AdkEvent): string {
           .filter((text: string) => text && text.trim().length > 0);
 
         const result = texts.join(" ");
-        console.log(`✅ [EXTRACT_TEXT] Extracted NON-THOUGHT text from JSON:`, {
-          partsCount: parsed.parts.length,
-          nonThoughtTextParts: texts.length,
-          resultLength: result.length,
-        });
         return result;
       }
     } catch (error) {
-      console.warn(`⚠️ [EXTRACT_TEXT] JSON parsing failed:`, error);
       // If JSON parsing fails, return the string as-is
       return event.content;
     }
@@ -88,16 +74,10 @@ function extractTextFromAdkEvent(event: AdkEvent): string {
       .filter((text: string) => text && text.trim().length > 0);
 
     const result = texts.join(" ");
-    console.log(`✅ [EXTRACT_TEXT] Extracted NON-THOUGHT text from object:`, {
-      partsCount: event.content.parts.length,
-      nonThoughtTextParts: texts.length,
-      resultLength: result.length,
-    });
     return result;
   }
 
   // Fallback to empty string if no text content
-  console.log(`⚠️ [EXTRACT_TEXT] No extractable content found for event ${event.id}`);
   return "";
 }
 
@@ -106,11 +86,6 @@ function extractTextFromAdkEvent(event: AdkEvent): string {
  * Only returns text from parts where thought === true
  */
 function extractThoughtsFromAdkEvent(event: AdkEvent): string[] {
-  console.log(`🧠 [EXTRACT_THOUGHTS] Processing event ${event.id}:`, {
-    contentType: typeof event.content,
-    hasContent: !!event.content,
-  });
-
   // Handle case where content is a JSON string
   if (typeof event.content === "string") {
     try {
@@ -125,15 +100,9 @@ function extractThoughtsFromAdkEvent(event: AdkEvent): string[] {
           .map((part: AdkEventPart) => part.text!)
           .filter((text: string) => text && text.trim().length > 0);
 
-        console.log(`✅ [EXTRACT_THOUGHTS] Extracted thoughts from JSON:`, {
-          partsCount: parsed.parts.length,
-          thoughtParts: thoughtTexts.length,
-          thoughts: thoughtTexts,
-        });
         return thoughtTexts;
       }
     } catch (error) {
-      console.warn(`⚠️ [EXTRACT_THOUGHTS] JSON parsing failed:`, error);
       return [];
     }
   }
@@ -149,16 +118,10 @@ function extractThoughtsFromAdkEvent(event: AdkEvent): string[] {
       .map((part: AdkEventPart) => part.text!)
       .filter((text: string) => text && text.trim().length > 0);
 
-    console.log(`✅ [EXTRACT_THOUGHTS] Extracted thoughts from object:`, {
-      partsCount: event.content.parts.length,
-      thoughtParts: thoughtTexts.length,
-      thoughts: thoughtTexts,
-    });
     return thoughtTexts;
   }
 
   // Fallback to empty array if no thought content
-  console.log(`⚠️ [EXTRACT_THOUGHTS] No thought content found for event ${event.id}`);
   return [];
 }
 
@@ -214,13 +177,11 @@ function hasMeaningfulActions(event: AdkEvent): boolean {
           });
 
           if (hasNonEmptyValues) {
-            console.log(`✅ [MEANINGFUL_ACTIONS] Found meaningful content in actions.${key}:`, objectValue);
             return true;
           }
         }
       } else if (value !== null && value !== undefined) {
         // Non-object values that are not null/undefined are considered meaningful
-        console.log(`✅ [MEANINGFUL_ACTIONS] Found meaningful primitive in actions.${key}:`, value);
         return true;
       }
     }
@@ -230,12 +191,10 @@ function hasMeaningfulActions(event: AdkEvent): boolean {
   if (event.groundingMetadata && typeof event.groundingMetadata === "object") {
     const metadataKeys = Object.keys(event.groundingMetadata);
     if (metadataKeys.length > 0) {
-      console.log(`✅ [MEANINGFUL_ACTIONS] Found meaningful grounding metadata:`, event.groundingMetadata);
       return true;
     }
   }
 
-  console.log(`⚠️ [MEANINGFUL_ACTIONS] No meaningful actions found for event ${event.id}`);
   return false;
 }
 
@@ -264,17 +223,7 @@ function reconstructTimelineFromEvents(events: AdkEvent[]): {
       // Join all thought parts first, then split into individual thought sections
       const combinedThoughts = thoughtParts.join(" ");
 
-      console.log(`🔍 [TIMELINE] Combined thoughts for event ${event.id}:`, {
-        combinedThoughts,
-        length: combinedThoughts.length,
-      });
-
       const thoughtSections = splitThoughtsIntoSections(combinedThoughts);
-
-      console.log(`🔍 [TIMELINE] Thought sections for event ${event.id}:`, {
-        sectionsCount: thoughtSections.length,
-        sections: thoughtSections,
-      });
 
       thoughtSections.forEach((section, sectionIndex) => {
         // Always use generic "AI Thinking" title, put specific content inside
@@ -300,12 +249,6 @@ function reconstructTimelineFromEvents(events: AdkEvent[]): {
           messageCorrelation[messageIndex] = [];
         }
         messageCorrelation[messageIndex].push(thoughtActivity);
-
-        console.log(`✅ [TIMELINE] Created thought activity ${sectionIndex + 1}/${thoughtSections.length} for event ${event.id}:`, {
-          title: title,
-          messageIndex: messageIndex,
-          preview: section.substring(0, 100) + "...",
-        });
       });
     }
 
@@ -332,18 +275,8 @@ function reconstructTimelineFromEvents(events: AdkEvent[]): {
         messageCorrelation[messageIndex] = [];
       }
       messageCorrelation[messageIndex].push(activity);
-
-      console.log(`✅ [TIMELINE] Created "Processing step" activity for event ${event.id} (meaningful actions):`, {
-        messageIndex: messageIndex,
-        hasActions: !!event.actions,
-        hasGroundingMetadata: !!event.groundingMetadata,
-      });
     } else if (!hasThoughts && (event.actions || event.groundingMetadata)) {
-      console.log(`⚠️ [TIMELINE] Skipped "Processing step" for event ${event.id} - no meaningful content:`, {
-        hasActions: !!event.actions,
-        hasGroundingMetadata: !!event.groundingMetadata,
-        actionsContent: event.actions,
-      });
+      // actions/grounding metadata only; no chat correlation row needed
     }
 
     // Increment message index for AI messages (model role)
@@ -365,35 +298,12 @@ function reconstructTimelineFromEvents(events: AdkEvent[]): {
 export function convertAdkEventsToMessages(events: AdkEvent[]): ConversionResult {
   const activeEvents = filterActiveAdkEvents(events);
 
-  console.log("🔄 [CONVERTER] Converting ADK events to messages:", {
-    totalEvents: events.length,
-    activeEvents: activeEvents.length,
-    events: events.map(e => ({
-      id: e.id,
-      author: e.author,
-      content: typeof e.content === "string" ? (e.content as string).substring(0, 100) + "..." : e.content,
-    })),
-  });
-
   const messages = activeEvents
     .map((event, index) => {
-      console.log(`🔍 [CONVERTER] Processing event ${index + 1}/${activeEvents.length}:`, {
-        id: event.id,
-        author: event.author,
-        timestamp: event.timestamp,
-        contentType: typeof event.content,
-        contentPreview: typeof event.content === "string" ? (event.content as string).substring(0, 100) + "..." : event.content,
-      });
-
       const content = extractTextFromAdkEvent(event);
-      console.log(`📝 [CONVERTER] Extracted content for event ${event.id}:`, {
-        contentLength: content.length,
-        content: content.substring(0, 200) + (content.length > 200 ? "..." : ""),
-      });
 
       // Skip events without meaningful text content
       if (!content.trim()) {
-        console.log(`⚠️ [CONVERTER] Skipping event ${event.id} - no meaningful content`);
         return null;
       }
 
@@ -403,7 +313,6 @@ export function convertAdkEventsToMessages(events: AdkEvent[]): ConversionResult
         try {
           parsedContent = JSON.parse(event.content);
         } catch (error) {
-          console.warn(`⚠️ [CONVERTER] Failed to parse JSON content for event ${event.id}:`, error);
           return null;
         }
       } else if (event.content && typeof event.content === "object") {
@@ -412,7 +321,6 @@ export function convertAdkEventsToMessages(events: AdkEvent[]): ConversionResult
 
       // Use content.role instead of author for reliable message type detection
       if (!parsedContent?.role) {
-        console.warn(`⚠️ [CONVERTER] Event ${event.id} missing content.role, skipping`);
         return null;
       }
 
@@ -436,14 +344,6 @@ export function convertAdkEventsToMessages(events: AdkEvent[]): ConversionResult
         ...(agent && { agent }), // Only add agent field if it exists
       };
 
-      console.log(`✅ [CONVERTER] Created message for event ${event.id}:`, {
-        id: message.id,
-        type: message.type,
-        agent: message.agent,
-        contentLength: message.content.length,
-        timestamp: message.timestamp.toISOString(),
-      });
-
       return message;
     })
     .filter(
@@ -456,31 +356,13 @@ export function convertAdkEventsToMessages(events: AdkEvent[]): ConversionResult
     ) // Remove null entries
     .sort((a, b) => a.timestamp.getTime() - b.timestamp.getTime()); // Sort chronologically
 
-  console.log("✅ [CONVERTER] Final converted messages:", {
-    totalMessages: messages.length,
-    messages: messages.map(m => ({
-      id: m.id,
-      type: m.type,
-      contentLength: m.content.length,
-    })),
-  });
-
   // Reconstruct timeline activities from events
   const timelineResult = reconstructTimelineFromEvents(activeEvents);
-  console.log("✅ [CONVERTER] Final reconstructed timeline:", {
-    totalActivities: timelineResult.activities.length,
-    messageDistribution: Object.entries(timelineResult.messageCorrelation).map(([msgIndex, activities]) => ({
-      messageIndex: parseInt(msgIndex),
-      activitiesCount: activities.length,
-    })),
-  });
 
   // Distribute timeline activities across their originating messages
   const availableMessageIndices = Object.keys(timelineResult.messageCorrelation)
     .map(key => parseInt(key))
     .sort((a, b) => a - b);
-
-  console.log("🔗 [CONVERTER] Available correlation message indices:", availableMessageIndices);
 
   let aiMessageIndex = 0; // Track AI message indices to match with correlation data
   let correlationIndex = 0; // Track position in available correlation indices
@@ -498,17 +380,6 @@ export function convertAdkEventsToMessages(events: AdkEvent[]): ConversionResult
           timelineActivities: activitiesForThisMessage,
         };
 
-        console.log(`✅ [CONVERTER] Distributed ${activitiesForThisMessage.length} timeline activities to AI message ${aiMessageIndex}:`, {
-          messageId: messages[i].id,
-          aiMessageIndex: aiMessageIndex,
-          correlationMessageIndex: correlationMessageIndex,
-          activities: activitiesForThisMessage.map(a => ({
-            type: a.type,
-            agent: a.agent,
-            title: a.title,
-          })),
-        });
-
         correlationIndex++; // Move to next available correlation index
       }
 
@@ -522,7 +393,6 @@ export function convertAdkEventsToMessages(events: AdkEvent[]): ConversionResult
     .reduce((sum, m) => sum + (m.timelineActivities?.length || 0), 0);
 
   if (timelineResult.activities.length > 0 && totalDistributedActivities === 0) {
-    console.warn("⚠️ [CONVERTER] Fallback: No activities were distributed to messages, attaching to last AI message");
     const lastAiMessageIndex = messages.map(m => m.type).lastIndexOf("ai");
     if (lastAiMessageIndex !== -1) {
       messages[lastAiMessageIndex] = {
@@ -532,14 +402,10 @@ export function convertAdkEventsToMessages(events: AdkEvent[]): ConversionResult
     }
   }
 
-  console.log("✅ [CONVERTER] Timeline distribution complete:", {
-    totalActivitiesGenerated: timelineResult.activities.length,
-    totalActivitiesDistributed: totalDistributedActivities,
-    messagesWithTimeline: messages.filter(m => m.timelineActivities?.length).length,
-  });
+  const enrichedMessages = enrichAgentMessagesFromToolEvents(messages as AgentMessage[], activeEvents);
 
   return {
-    messages: messages as AgentMessage[],
+    messages: enrichedMessages,
     timelineActivities: timelineResult.activities,
   };
 }

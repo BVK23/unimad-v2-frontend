@@ -9,6 +9,7 @@ import { checkApplicationAssetAvailability } from "@/features/application-assets
 import { useApplicationAssetStudioStore } from "@/features/application-assets/store/useApplicationAssetStudioStore";
 import type { ApplicationAssetApiType } from "@/features/application-assets/types";
 import { STUDIO_TOPIC_TO_API_TYPE, type ApplicationAssetStudioTopic } from "@/features/application-assets/types";
+import { ADK_DRAFT_PENDING_ERROR } from "@/features/content-lab/hooks/runContentGenDraftGeneration";
 import { sanitizeUserFacingError } from "@/utils/message-from-failed-response";
 import { useMutation, useQueryClient } from "@tanstack/react-query";
 
@@ -26,6 +27,10 @@ export type GenerateApplicationAssetParams = {
   conname?: string;
 
   application_id?: string | number;
+};
+
+export type RegenerateApplicationAssetParams = Omit<GenerateApplicationAssetParams, "studioTopic"> & {
+  studioAssetId: string;
 };
 
 export type GenerateApplicationAssetResult =
@@ -48,6 +53,65 @@ export type GenerateApplicationAssetResult =
   | { duplicate: true; existing_asset_id: string | number }
   | { subscriptionRequired: true }
   | { error: string };
+
+/** Generate Another: new ADK draft for an existing asset — skips duplicate check, keeps Studio preview until Accept. */
+export const regenerateApplicationAssetDraft = async (
+  params: RegenerateApplicationAssetParams & { studioTopic: ApplicationAssetStudioTopic }
+): Promise<GenerateApplicationAssetResult> => {
+  const assetType = STUDIO_TOPIC_TO_API_TYPE[params.studioTopic];
+  const contactName = params.hirname ?? params.conname ?? "";
+  const studioAssetId = params.studioAssetId.trim();
+
+  const store = useApplicationAssetStudioStore.getState();
+  store.syncFromStudio({
+    assetType,
+    assetId: studioAssetId,
+    applicationId: params.application_id != null ? String(params.application_id) : null,
+    role: params.role,
+    company: params.company,
+    jobDescription: params.job_description ?? "",
+    contactName,
+  });
+  store.setRegenerateAnotherInFlight(true);
+
+  try {
+    await runApplicationAssetDraftGeneration({
+      assetType,
+      role: params.role,
+      company: params.company,
+      jobDescription: params.job_description ?? "",
+      contactName,
+      applicationId: params.application_id,
+      studioAssetId,
+      preserveExistingDraft: true,
+      regenerateAnother: true,
+    });
+    return {
+      success: true,
+      assetType,
+      role: params.role,
+      company: params.company,
+      job_description: params.job_description,
+      contactName,
+      content: "",
+      assetId: studioAssetId,
+    };
+  } catch (err) {
+    store.setRegenerateAnotherInFlight(false);
+    if (err instanceof Error && err.message === ADK_DRAFT_PENDING_ERROR) {
+      throw err;
+    }
+
+    const rawMessage = err instanceof Error ? err.message : "Draft generation failed. Please try again.";
+    const message = sanitizeUserFacingError(rawMessage, "Draft generation failed. Please try again.");
+
+    if (rawMessage.toLowerCase().includes("plus membership") || message.toLowerCase().includes("plus membership")) {
+      return { subscriptionRequired: true };
+    }
+
+    return { error: message };
+  }
+};
 
 export const useGenerateApplicationAsset = (options?: {
   onSuccess?: (result: GenerateApplicationAssetResult) => void;
@@ -144,6 +208,10 @@ export const useGenerateApplicationAsset = (options?: {
           assetId: result.assetId,
         };
       } catch (err) {
+        if (err instanceof Error && err.message === ADK_DRAFT_PENDING_ERROR) {
+          throw err;
+        }
+
         const rawMessage = err instanceof Error ? err.message : "Draft generation failed. Please try again.";
         const message = sanitizeUserFacingError(rawMessage, "Draft generation failed. Please try again.");
 
@@ -190,6 +258,9 @@ export const useGenerateApplicationAsset = (options?: {
     },
 
     onError: (err: Error) => {
+      if (err.message === ADK_DRAFT_PENDING_ERROR) {
+        return;
+      }
       options?.onError?.(sanitizeUserFacingError(err.message, "Draft generation failed. Please try again."));
     },
 

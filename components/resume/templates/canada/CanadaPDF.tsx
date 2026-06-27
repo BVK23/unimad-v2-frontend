@@ -414,44 +414,49 @@ const SectionRenderer = ({ resume, type }: { resume: ResumeData; type: string })
     const customSection = resume.customSections?.find(s => s.id === type);
     if (!customSection || !customSection.items || !customSection.items.some(item => !item.hidden)) return null;
 
+    const visibleItems = customSection.items.filter(d => !d.hidden);
+
     return (
       <View style={styles.section}>
-        {/* Section header — title+divider never orphaned */}
-        <View wrap={false}>
-          <View style={styles.sectionTitleWrapper}>
-            <Text style={styles.sectionTitle}>{customSection.title || "Custom Section"}</Text>
-          </View>
-          <View style={styles.hr} />
-        </View>
-        {customSection.items
-          .filter(d => !d.hidden)
-          .map((item, i) => {
-            const content = (
-              <View>
-                <Text style={styles.entryTitle}>{item.title}</Text>
-                {item.description && (
-                  <View style={{ marginTop: 2 }}>
-                    <HtmlRenderer
-                      html={item.description}
-                      style={{
-                        fontSize: 9.75,
-                        color: "#111111",
-                        lineHeight: 1.4,
-                        textAlign: "justify",
-                      }}
-                    />
-                  </View>
+        {visibleItems.map((item, i) => (
+          <View key={i} style={{ marginBottom: TOKENS.spacing.sm }} wrap={false}>
+            {i === 0 && (
+              <View wrap={false}>
+                <View style={styles.sectionTitleWrapper}>
+                  <Text style={styles.sectionTitle}>{customSection.title || "Custom Section"}</Text>
+                </View>
+                <View style={styles.hr} />
+              </View>
+            )}
+            <View>
+              <View style={styles.entryRow}>
+                {item.title && <Text style={styles.companyName}>{item.title}</Text>}
+                {item.location && <Text style={styles.entryDate}>{item.location}</Text>}
+              </View>
+              <View style={styles.entryRow}>
+                {item.subtitle && <Text style={styles.entrySubtitle}>{item.subtitle}</Text>}
+                {item.startDate && (
+                  <Text style={styles.entryDate}>
+                    {formatDateMonthYear(item.startDate)} — {item.current ? "Present" : formatDateMonthYear(item.endDate)}
+                  </Text>
                 )}
               </View>
-            );
-
-            // Each custom item is an anchor block — Title+Description stay together
-            return (
-              <View key={i} style={{ marginBottom: TOKENS.spacing.sm }} wrap={false}>
-                {content}
-              </View>
-            );
-          })}
+              {item.description && (
+                <View style={{ marginTop: 2 }}>
+                  <HtmlRenderer
+                    html={item.description}
+                    style={{
+                      fontSize: 9.75,
+                      color: "#111111",
+                      lineHeight: 1.4,
+                      textAlign: "justify",
+                    }}
+                  />
+                </View>
+              )}
+            </View>
+          </View>
+        ))}
       </View>
     );
   }

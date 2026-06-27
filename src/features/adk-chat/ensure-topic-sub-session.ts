@@ -15,6 +15,7 @@ export async function ensureMainSessionRegistered(mainAdkSessionId: string): Pro
     adk_session_id: mainAdkSessionId,
     kind: "main",
     title: UNTITLED_THREAD_TITLE,
+    content_key: `general:${mainAdkSessionId}`,
   });
   if (reg.success && reg.session) {
     upsertRegistryRow(reg.session);
@@ -32,6 +33,7 @@ export async function ensureContentGenTopicSubSession(params: {
   mainAdkSessionId: string;
   mode: "topic" | "draft";
   topic?: string;
+  assetId?: string | null;
   title: string;
 }): Promise<ResolvedTopicSubSession | null> {
   await ensureMainSessionRegistered(params.mainAdkSessionId);
@@ -40,6 +42,7 @@ export async function ensureContentGenTopicSubSession(params: {
     mainAdkSessionId: params.mainAdkSessionId,
     mode: params.mode,
     topic: params.topic,
+    assetId: params.assetId,
     title: params.title,
   });
   if (!resolved.success || !resolved.adkSessionId) {

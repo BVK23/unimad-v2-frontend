@@ -13,6 +13,7 @@ export async function ensureMainSessionRegistered(mainSessionId: string): Promis
     adk_session_id: mainSessionId,
     kind: "main",
     title: UNTITLED_THREAD_TITLE,
+    content_key: `general:${mainSessionId}`,
   });
   if (reg.success && reg.session) {
     upsertRegistryRow(reg.session);

@@ -1,7 +1,6 @@
 "use client";
 
 import React, { Suspense, useEffect, useMemo, useState } from "react";
-import ChatSidebar from "@/components/ChatSidebar";
 import DebugConsole from "@/components/DebugConsole";
 import OnboardingModal from "@/components/OnboardingModal";
 import ProfileMenu from "@/components/ProfileMenu";
@@ -15,8 +14,19 @@ import { useProfileData } from "@/features/user-profile/hooks/use-profile-data";
 import { computeAdkUserId } from "@/utils/adkUserId";
 import { useQueryClient } from "@tanstack/react-query";
 import { Bell } from "lucide-react";
+import dynamic from "next/dynamic";
 import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
+
+const ChatSidebar = dynamic(() => import("@/components/ChatSidebar"), {
+  ssr: false,
+  loading: () => (
+    <div
+      aria-hidden
+      className="relative z-20 flex h-full min-h-0 w-[280px] shrink-0 flex-col border-r border-slate-200 bg-white shadow-sm dark:border-white/5 dark:bg-slate-950"
+    />
+  ),
+});
 
 type UserData = {
   username?: string;
@@ -78,7 +88,7 @@ const UNICOACH_NAV = { href: "/uniboard/unicoach", label: "Unicoach" } as const;
 
 export default function UniboardShell({ children, userData }: { children: React.ReactNode; userData: UserData | null }) {
   const adkUserId = computeAdkUserId(userData);
-  const pathname = usePathname();
+  const pathname = usePathname() ?? "";
   const router = useRouter();
   const queryClient = useQueryClient();
   const { data: liveProfile } = useProfileData();
@@ -111,10 +121,11 @@ export default function UniboardShell({ children, userData }: { children: React.
           feature?: string;
           featureId?: string;
           entryId?: string;
+          hasContent?: boolean;
         }>
       ).detail;
       if (!d) return;
-      if (d.type === "improve" || (d.improveType === "resume" && d.featureId && d.section)) {
+      if (d.type === "improve" || ((d.improveType === "resume" || d.improveType === "linkedin") && d.featureId && d.section)) {
         setPendingAIRequest({
           type: "improve",
           text: d.text ?? "",
@@ -124,6 +135,7 @@ export default function UniboardShell({ children, userData }: { children: React.
           featureId: d.featureId,
           section: d.section,
           entryId: d.entryId,
+          hasContent: d.hasContent,
           requestKey: typeof d.requestKey === "number" ? d.requestKey : undefined,
         });
         return;
@@ -153,6 +165,9 @@ export default function UniboardShell({ children, userData }: { children: React.
           followUpText?: string;
           topicTitle?: string;
           reuseExistingTopic?: boolean;
+          improveDraft?: boolean;
+          assetId?: string;
+          funnel?: import("@/features/content-lab/api/adk-mappers").ContentGenFunnel;
           requestKey?: number;
         }>
       ).detail;
@@ -162,6 +177,9 @@ export default function UniboardShell({ children, userData }: { children: React.
         followUpText: d?.followUpText,
         topicTitle: d?.topicTitle,
         reuseExistingTopic: d?.reuseExistingTopic,
+        improveDraft: d?.improveDraft,
+        assetId: d?.assetId,
+        funnel: d?.funnel,
         requestKey: typeof d?.requestKey === "number" ? d.requestKey : Date.now(),
       });
     };

@@ -3,13 +3,23 @@ import LinkedInScheduledPostsModal from "@/components/LinkedInScheduledPostsModa
 import type { UnibotIncomingRequest } from "@/components/chat/unibot-incoming-request";
 import LinkedInAnalyzeErrorMessage from "@/components/linkedin/LinkedInAnalyzeErrorMessage";
 import LinkedInCalculateScorePreview from "@/components/linkedin/LinkedInCalculateScorePreview";
+import { LinkedInStaleProfileImage } from "@/components/linkedin/LinkedInStaleProfileImage";
 import type { LinkedInListItem } from "@/components/studio/LinkedInPostListCard";
+import { StudioAssetDeleteConfirmDialog } from "@/components/studio/StudioAssetDeleteConfirmDialog";
 import StudioSectionDot from "@/components/studio/StudioSectionDot";
 import { deleteContentGenAsset } from "@/features/content-lab/server-actions/content-lab-actions";
-import { LinkedInAnalyzerClientError, useAnalyzeLinkedInProfile, useLinkedInAnalysis } from "@/features/linkedin/hooks/useLinkedInAnalysis";
+import {
+  LinkedInAnalyzerClientError,
+  linkedinAnalysisQueryKey,
+  useAnalyzeLinkedInProfile,
+  useLinkedInAnalysis,
+} from "@/features/linkedin/hooks/useLinkedInAnalysis";
+import { updateLinkedInProfileContent } from "@/features/linkedin/server-actions/linkedin-analyzer-actions";
 import { generateLinkedInConnectionRequest } from "@/features/linkedin/server-actions/linkedin-connection-actions";
-import type { LinkedInAnalyzeResult, LinkedInAnalyzerErrorCode } from "@/features/linkedin/types";
-import { LINKEDIN_ADK_PROFILE_KEY, LINKEDIN_COMMENT_EXTENSION_URL } from "@/src/features/linkedin/constants";
+import type { LinkedInAnalyzeResult, LinkedInAnalyzerErrorCode, LinkedInAnalysisSnapshot } from "@/features/linkedin/types";
+import { useAdkLinkedInReviewStore } from "@/src/features/adk-chat/stores/useAdkLinkedInReviewStore";
+import { mapSnapshotToLinkedInSessionProfile } from "@/src/features/linkedin/api/adk-mappers";
+import { LINKEDIN_ADK_PROFILE_KEY, LINKEDIN_COMMENT_EXTENSION_URL, LINKEDIN_REANALYZE_EVENT } from "@/src/features/linkedin/constants";
 import { linkedinScheduledPostsQueryKey, useLinkedInScheduledPosts } from "@/src/features/linkedin/hooks/useLinkedInScheduledPosts";
 import { buildLinkedInImproveMessage, linkedInSectionIdToAdkSection } from "@/src/features/linkedin/improve-prompts";
 import { useUnibotAgentBusy, UNIBOT_AGENT_LOADING_EVENT } from "@/src/hooks/useUnibotAgentBusy";
@@ -52,6 +62,34 @@ const LinkedInDashboard: React.FC<LinkedInDashboardProps> = ({ onImprove, onNavi
   const [activeImproveSectionId, setActiveImproveSectionId] = useState<string | null>(null);
 
   useEffect(() => {
+    useAdkLinkedInReviewStore.getState().registerSaveHandler(LINKEDIN_ADK_PROFILE_KEY, async () => {
+      const card = useAdkLinkedInReviewStore.getState().getActiveCard();
+      const highlights = card?.highlights ?? {};
+      const needsDjango = Boolean(highlights.headline || highlights.about || highlights.exp || highlights.skills);
+      if (!needsDjango) return;
+
+      const snapshot = queryClient.getQueryData<LinkedInAnalysisSnapshot | null>(linkedinAnalysisQueryKey);
+      if (!snapshot) return;
+      const profile = mapSnapshotToLinkedInSessionProfile(snapshot);
+      const result = await updateLinkedInProfileContent({
+        headline: highlights.headline ? profile.headline : undefined,
+        about: highlights.about ? profile.about : undefined,
+        experience: highlights.exp ? profile.experience : undefined,
+        skills: highlights.skills ? profile.skills : undefined,
+      });
+      if (!result.success) {
+        throw new Error(result.error);
+      }
+      if (result.data) {
+        queryClient.setQueryData(linkedinAnalysisQueryKey, result.data);
+      }
+    });
+    return () => {
+      useAdkLinkedInReviewStore.getState().unregisterSaveHandler(LINKEDIN_ADK_PROFILE_KEY);
+    };
+  }, [queryClient]);
+
+  useEffect(() => {
     const onLoading = (e: Event) => {
       const loading = Boolean((e as CustomEvent<{ loading?: boolean }>).detail?.loading);
       if (!loading) setActiveImproveSectionId(null);
@@ -63,6 +101,11 @@ const LinkedInDashboard: React.FC<LinkedInDashboardProps> = ({ onImprove, onNavi
 
   const [profileBreakdownOpen, setProfileBreakdownOpen] = useState(true);
   const [showScheduledModal, setShowScheduledModal] = useState(false);
+  const [pendingDeleteScheduledPost, setPendingDeleteScheduledPost] = useState<{
+    id: string | number;
+    label: string;
+  } | null>(null);
+  const [isDeletingScheduledPost, setIsDeletingScheduledPost] = useState(false);
   const [connectionRecipientName, setConnectionRecipientName] = useState("");
   const [connectionRecipientDesignation, setConnectionRecipientDesignation] = useState("");
   const [generatedConnectionRequest, setGeneratedConnectionRequest] = useState("");
@@ -71,6 +114,8 @@ const LinkedInDashboard: React.FC<LinkedInDashboardProps> = ({ onImprove, onNavi
   const [copyFeedback, setCopyFeedback] = useState<string | null>(null);
 
   const analysis: LinkedInAnalyzeResult | null = data?.result ?? null;
+  const reanalysisMeta = analysis?.reanalysisMeta;
+  const changedSectionIds = new Set(reanalysisMeta?.changedSections ?? []);
   const lastAnalyzedLabel = data?.analyzedAt ? formatLastAnalyzedOn(data.analyzedAt) : null;
   const profileSections = analysis?.sections ?? [];
   const score = analysis?.overallScore ?? 0;
@@ -97,10 +142,20 @@ const LinkedInDashboard: React.FC<LinkedInDashboardProps> = ({ onImprove, onNavi
     analyzeMutation.mutate();
   };
 
-  const handleReanalyze = () => {
+  const handleReanalyze = useCallback(() => {
     analyzeMutation.reset();
     analyzeMutation.mutate();
-  };
+  }, [analyzeMutation]);
+
+  useEffect(() => {
+    const onReanalyze = () => {
+      if (!analyzeMutation.isPending) {
+        handleReanalyze();
+      }
+    };
+    window.addEventListener(LINKEDIN_REANALYZE_EVENT, onReanalyze);
+    return () => window.removeEventListener(LINKEDIN_REANALYZE_EVENT, onReanalyze);
+  }, [analyzeMutation.isPending, handleReanalyze]);
 
   const generateConnectionRequest = async () => {
     const name = connectionRecipientName.trim();
@@ -266,6 +321,17 @@ const LinkedInDashboard: React.FC<LinkedInDashboardProps> = ({ onImprove, onNavi
         </a>
       </div>
 
+      {reanalysisMeta?.isReanalysis ? (
+        <div className="border-b border-brand-100 bg-brand-50/80 px-6 py-3 text-sm text-brand-900 dark:border-brand-900/40 dark:bg-brand-950/30 dark:text-brand-100">
+          <p className="mx-auto max-w-6xl leading-relaxed">{reanalysisMeta.summary}</p>
+          {reanalysisMeta.changedSections.length > 0 ? (
+            <p className="mx-auto mt-1 max-w-6xl text-xs text-brand-800/80 dark:text-brand-200/80">
+              Re-scored: {reanalysisMeta.changedSections.map(id => profileSections.find(s => s.id === id)?.name ?? id).join(", ")}
+            </p>
+          ) : null}
+        </div>
+      ) : null}
+
       <div className="max-w-6xl mx-auto p-8 space-y-8">
         <div className="grid grid-cols-1 lg:grid-cols-3 gap-8 items-start">
           {/* LEFT: Profile breakdown + Unicoach CTA */}
@@ -317,8 +383,15 @@ const LinkedInDashboard: React.FC<LinkedInDashboardProps> = ({ onImprove, onNavi
                         </div>
 
                         <div className="min-w-0 flex-1">
-                          <div className="mb-2 flex items-center justify-between">
-                            <h4 className="text-base font-medium text-slate-900 dark:text-white">{section.name}</h4>
+                          <div className="mb-2 flex items-center justify-between gap-2">
+                            <div className="flex min-w-0 items-center gap-2">
+                              <h4 className="text-base font-medium text-slate-900 dark:text-white">{section.name}</h4>
+                              {changedSectionIds.has(section.id) ? (
+                                <span className="shrink-0 rounded-full bg-emerald-100 px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-emerald-800 dark:bg-emerald-900/40 dark:text-emerald-300">
+                                  Updated
+                                </span>
+                              ) : null}
+                            </div>
                             <button
                               type="button"
                               disabled={isUnibotBusy}
@@ -372,23 +445,18 @@ const LinkedInDashboard: React.FC<LinkedInDashboardProps> = ({ onImprove, onNavi
           <div className="space-y-6">
             <div className="flex flex-col items-center rounded-2xl border border-slate-200 bg-white p-6 shadow-sm dark:border-slate-800 dark:bg-slate-900">
               {analysis.coverPictureUrl ? (
-                <div className="mb-3 h-16 w-full overflow-hidden rounded-lg border border-slate-200 bg-slate-100 dark:border-slate-700 dark:bg-slate-800">
-                  {/* eslint-disable-next-line @next/next/no-img-element */}
-                  <img src={analysis.coverPictureUrl} alt="LinkedIn cover" className="h-full w-full object-cover" loading="lazy" />
+                <div className="mb-3 h-16 w-full rounded-lg border border-slate-200 bg-slate-100 dark:border-slate-700 dark:bg-slate-800">
+                  <LinkedInStaleProfileImage src={analysis.coverPictureUrl} alt="LinkedIn cover" variant="cover" />
                 </div>
               ) : null}
               <div className="relative mb-4">
-                <div className="relative z-10 h-20 w-20 overflow-hidden rounded-full border-4 border-white shadow-lg dark:border-black">
-                  {analysis.profilePictureUrl ? (
-                    // eslint-disable-next-line @next/next/no-img-element
-                    <img src={analysis.profilePictureUrl} alt="LinkedIn profile" className="h-full w-full object-cover" />
-                  ) : (
-                    <div className="flex h-full w-full items-center justify-center bg-slate-100 dark:bg-slate-800">
-                      <span className="text-2xl font-medium text-slate-400">
-                        {(analysis.displayName || "me").slice(0, 2).toLowerCase()}
-                      </span>
-                    </div>
-                  )}
+                <div className="relative z-10 h-20 w-20 rounded-full border-4 border-white shadow-lg dark:border-black">
+                  <LinkedInStaleProfileImage
+                    src={analysis.profilePictureUrl}
+                    alt="LinkedIn profile"
+                    variant="profile"
+                    fallbackLabel={analysis.displayName}
+                  />
                 </div>
                 <div className="absolute inset-0 -z-0 scale-110 rounded-full border border-slate-200 dark:border-slate-800" />
               </div>
@@ -524,17 +592,44 @@ const LinkedInDashboard: React.FC<LinkedInDashboardProps> = ({ onImprove, onNavi
             goToStudio();
           }}
           onDeletePost={id => {
-            void (async () => {
-              try {
-                await deleteContentGenAsset(String(id));
-                await queryClient.invalidateQueries({ queryKey: linkedinScheduledPostsQueryKey });
-              } catch {
-                // ignore — modal list will refresh on next navigation
-              }
-            })();
+            const post = scheduledPosts.find(item => String(item.id) === String(id));
+            const label =
+              post?.topic?.trim() ||
+              post?.content
+                .split("\n")
+                .map(line => line.trim())
+                .find(Boolean) ||
+              "this post";
+            setPendingDeleteScheduledPost({ id, label });
           }}
         />
       ) : null}
+
+      <StudioAssetDeleteConfirmDialog
+        open={Boolean(pendingDeleteScheduledPost)}
+        kind="linkedin-post"
+        label={pendingDeleteScheduledPost?.label ?? "this post"}
+        onConfirm={() => {
+          if (!pendingDeleteScheduledPost) return;
+          void (async () => {
+            setIsDeletingScheduledPost(true);
+            try {
+              await deleteContentGenAsset(String(pendingDeleteScheduledPost.id));
+              await queryClient.invalidateQueries({ queryKey: linkedinScheduledPostsQueryKey });
+              setPendingDeleteScheduledPost(null);
+            } catch {
+              // ignore — modal list will refresh on next navigation
+            } finally {
+              setIsDeletingScheduledPost(false);
+            }
+          })();
+        }}
+        onCancel={() => {
+          if (isDeletingScheduledPost) return;
+          setPendingDeleteScheduledPost(null);
+        }}
+        isDeleting={isDeletingScheduledPost}
+      />
     </div>
   );
 };

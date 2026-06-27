@@ -8,7 +8,7 @@ import { DocumentSaveStatusBar, type DocumentSaveStatusBarVariant } from "@/comp
 import AssetPreviewLoadingOverlay from "@/components/studio/AssetPreviewLoadingOverlay";
 import DocumentDiffPreview from "@/components/studio/DocumentDiffPreview";
 import DocumentPendingRevisionBar from "@/components/studio/DocumentPendingRevisionBar";
-import SelectionQuickActions from "@/components/studio/SelectionQuickActions";
+import { SelectionImproveActions } from "@/components/studio/SelectionQuickActions";
 import { APPLICATION_DOCUMENT_BODY_CLASS } from "@/constants/applicationDocumentPreview";
 import { APPLICATION_ASSET_MIN_SELECTION_CHARS } from "@/features/application-assets/config/selection-presets";
 import { useApplicationAssetStudioStore } from "@/features/application-assets/store/useApplicationAssetStudioStore";
@@ -21,7 +21,10 @@ interface StudioDocumentPreviewProps {
   content: string;
   placeholder: string;
   isGenerating?: boolean;
+  /** Keep draft visible while Unibot refines (overlay on top instead of replacing content). */
+  refineInProgress?: boolean;
   generatingLabel?: string;
+  refineLabel?: string;
   copyFeedback?: boolean;
   hasPendingUnsavedChanges?: boolean;
   isSaving?: boolean;
@@ -64,7 +67,9 @@ const StudioDocumentPreview = ({
   content,
   placeholder,
   isGenerating = false,
+  refineInProgress = false,
   generatingLabel = "Generating draft...",
+  refineLabel = "Updating draft...",
   copyFeedback = false,
   hasPendingUnsavedChanges = false,
   isSaving = false,
@@ -97,6 +102,7 @@ const StudioDocumentPreview = ({
 
   const selectedText = useApplicationAssetStudioStore(s => s.selectedText);
   const selectionRect = useApplicationAssetStudioStore(s => s.selectionRect);
+  const refineAnchorText = useApplicationAssetStudioStore(s => s.refineAnchorText);
   const setSelection = useApplicationAssetStudioStore(s => s.setSelection);
   const clearSelection = useApplicationAssetStudioStore(s => s.clearSelection);
 
@@ -121,6 +127,7 @@ const StudioDocumentPreview = ({
   useEffect(() => {
     if (showDiffView) {
       clearSelection();
+      useApplicationAssetStudioStore.getState().clearRefineAnchor();
     }
   }, [showDiffView, clearSelection]);
 
@@ -141,6 +148,19 @@ const StudioDocumentPreview = ({
     selectedText.trim().length >= APPLICATION_ASSET_MIN_SELECTION_CHARS &&
     !isGenerating &&
     hasContent;
+
+  const selectionImproveSlot =
+    showQuickActions && assetType ? (
+      <SelectionImproveActions
+        assetType={assetType}
+        selectedText={selectedText}
+        documentBody={htmlToPlainText(displayContent)}
+        baselineDraft={displayContent}
+        disabled={stripDisabled}
+        disabledReason={stripDisabledReason}
+        onActionFired={clearSelection}
+      />
+    ) : null;
 
   const handleSelectionChange = useCallback(
     (info: RichTextEditorSelectionInfo | null) => {
@@ -220,9 +240,10 @@ const StudioDocumentPreview = ({
   return (
     <ApplicationDocumentPageFrame variant="studio" header={toolbar} className="min-h-[min(68vh,580px)]">
       {showDiffView ? (
-        <div className="relative overflow-hidden">
+        <div className="relative overflow-visible">
           <DocumentDiffPreview
             key={reviewSessionKey}
+            reviewSessionKey={reviewSessionKey}
             baselineDraft={baselineDraft}
             proposedDraft={content}
             anchorSelectedText={anchorSelectedText}
@@ -233,7 +254,9 @@ const StudioDocumentPreview = ({
           />
         </div>
       ) : (
-        <div className={`relative ${documentPreviewBodyTypography} ${isGenerating || showGenerateOverlay ? "min-h-[320px]" : ""}`}>
+        <div
+          className={`relative ${documentPreviewBodyTypography} ${isGenerating || refineInProgress || showGenerateOverlay ? "min-h-[320px]" : ""}`}
+        >
           {hasPendingRevision && !showDiffView && assetType && onAcceptRevision && onRevertRevision ? (
             <DocumentPendingRevisionBar
               assetType={assetType}
@@ -242,8 +265,8 @@ const StudioDocumentPreview = ({
               onRevert={onRevertRevision}
             />
           ) : null}
-          {isGenerating ? (
-            <AssetPreviewLoadingOverlay label={generatingLabel} />
+          {isGenerating && !hasContent ? (
+            <AssetPreviewLoadingOverlay variant="skeleton" />
           ) : hasContent ? (
             <>
               <RichTextEditor
@@ -253,17 +276,14 @@ const StudioDocumentPreview = ({
                 className={documentPreviewEditorClass}
                 onSelectionChange={assetType ? handleSelectionChange : undefined}
                 forceExternalSync={hasPendingRevision}
+                unifiedSelectionToolbar={Boolean(assetType)}
+                selectionImproveSlot={selectionImproveSlot}
+                refineAnchorText={refineAnchorText}
               />
-              {showQuickActions && assetType && selectionRect ? (
-                <SelectionQuickActions
-                  assetType={assetType}
-                  selectedText={selectedText}
-                  selectionRect={selectionRect}
-                  documentBody={htmlToPlainText(displayContent)}
-                  disabled={stripDisabled}
-                  disabledReason={stripDisabledReason}
-                  onActionFired={clearSelection}
-                />
+              {isGenerating || refineInProgress ? (
+                <div className="absolute inset-0 z-10 flex items-center justify-center bg-white/80 backdrop-blur-[1px] dark:bg-slate-900/80">
+                  <AssetPreviewLoadingOverlay variant="spinner" label={refineInProgress ? refineLabel : generatingLabel} />
+                </div>
               ) : null}
             </>
           ) : (

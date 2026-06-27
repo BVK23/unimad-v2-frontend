@@ -1,7 +1,7 @@
 "use client";
 
 import { useState, useCallback, useRef } from "react";
-import { StreamingConnectionManager } from "../streaming/connection-manager";
+import { ADK_CHAT_STREAM_ENDPOINT, StreamingConnectionManager } from "../streaming/connection-manager";
 import { getEventTitle } from "../streaming/stream-utils";
 import type { StreamProcessingCallbacks, StreamingAPIPayload } from "../streaming/types";
 import type { AgentMessage, ProcessedEvent } from "../types";
@@ -15,12 +15,13 @@ export interface UseAdkStreamingReturn {
       userId: string;
       sessionId: string;
       aiMessageId?: string;
+      adkAppName?: string;
     },
     onMessageUpdate: (message: AgentMessage) => void,
     onEventUpdate: (messageId: string, event: ProcessedEvent) => void,
     onWebsiteCountUpdate: (count: number) => void,
     streamExtras?: Pick<StreamProcessingCallbacks, "onMutatingToolResponse" | "onStreamActivityHint">
-  ) => Promise<void>;
+  ) => Promise<boolean>;
   getEventTitle: (agentName: string) => string;
 }
 
@@ -36,7 +37,7 @@ export function useAdkStreaming(retryFn: <T>(fn: () => Promise<T>) => Promise<T>
   if (connectionManager.current === null) {
     connectionManager.current = new StreamingConnectionManager({
       retryFn,
-      endpoint: "/api/run_sse",
+      endpoint: ADK_CHAT_STREAM_ENDPOINT,
     });
   }
 
@@ -47,12 +48,13 @@ export function useAdkStreaming(retryFn: <T>(fn: () => Promise<T>) => Promise<T>
         userId: string;
         sessionId: string;
         aiMessageId?: string;
+        adkAppName?: string;
       },
       onMessageUpdate: (message: AgentMessage) => void,
       onEventUpdate: (messageId: string, event: ProcessedEvent) => void,
       onWebsiteCountUpdate: (count: number) => void,
       streamExtras?: Pick<StreamProcessingCallbacks, "onMutatingToolResponse" | "onStreamActivityHint">
-    ): Promise<void> => {
+    ): Promise<boolean> => {
       if (!connectionManager.current) {
         throw new Error("Connection manager not initialized");
       }
@@ -74,9 +76,10 @@ export function useAdkStreaming(retryFn: <T>(fn: () => Promise<T>) => Promise<T>
         message: apiPayload.message,
         userId: apiPayload.userId,
         sessionId: apiPayload.sessionId,
+        adkAppName: apiPayload.adkAppName,
       };
 
-      await connectionManager.current.submitMessage(
+      return connectionManager.current.submitMessage(
         streamingPayload,
         callbacks,
         accumulatedTextRef,

@@ -1,4 +1,5 @@
 import type { ApplicationAssetApiType } from "@/features/application-assets/types";
+import { formatCoverLetterDate, normalizeCoverLetterDatePlaceholders } from "@/features/application-assets/utils/formatCoverLetterDate";
 
 export type ApplicationAssetDraftPayload = {
   draft: string;
@@ -40,12 +41,15 @@ const payloadFromParsedObject = (parsed: Record<string, unknown>): ApplicationAs
   if (typeof dataValue !== "string") {
     return null;
   }
-  const draft = formatDraftString(dataValue);
+  const rawType = typeof parsed.asset_type === "string" ? parsed.asset_type.trim() : "";
+  const assetType = VALID_TYPES.has(rawType as ApplicationAssetApiType) ? (rawType as ApplicationAssetApiType) : undefined;
+  let draft = formatDraftString(dataValue);
+  if (assetType === "coverletter") {
+    draft = normalizeCoverLetterDatePlaceholders(draft, formatCoverLetterDate());
+  }
   if (!draft) {
     return null;
   }
-  const rawType = typeof parsed.asset_type === "string" ? parsed.asset_type.trim() : "";
-  const assetType = VALID_TYPES.has(rawType as ApplicationAssetApiType) ? (rawType as ApplicationAssetApiType) : undefined;
   const role = typeof parsed.role === "string" ? parsed.role.trim() : undefined;
   const company = typeof parsed.company === "string" ? parsed.company.trim() : undefined;
   const jobDescription =

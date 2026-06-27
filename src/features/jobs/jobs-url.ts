@@ -24,7 +24,17 @@ export type JobsUrlState = {
   prepareTab: string | null;
 };
 
-export function parseJobsSearchParams(searchParams: URLSearchParams): JobsUrlState {
+export function parseJobsSearchParams(searchParams: { get(name: string): string | null } | null | undefined): JobsUrlState {
+  if (!searchParams) {
+    return {
+      tab: "discovery",
+      interviewId: null,
+      view: null,
+      round: null,
+      prepareJob: null,
+      prepareTab: null,
+    };
+  }
   return {
     tab: parseJobsTab(searchParams.get("tab")),
     interviewId: searchParams.get("interview_id"),
@@ -36,7 +46,7 @@ export function parseJobsSearchParams(searchParams: URLSearchParams): JobsUrlSta
 }
 
 export function buildJobsSearchParams(
-  current: URLSearchParams,
+  current: { toString(): string } | null | undefined,
   updates: Partial<{
     tab: JobsTab | null;
     interview_id: string | null;
@@ -47,7 +57,7 @@ export function buildJobsSearchParams(
     prepareTab: string | null;
   }>
 ): string {
-  const next = new URLSearchParams(current.toString());
+  const next = new URLSearchParams(current?.toString() ?? "");
 
   const apply = (key: string, value: string | null | undefined) => {
     if (value === null || value === undefined || value === "") next.delete(key);

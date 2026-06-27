@@ -1,9 +1,18 @@
 "use client";
 
-import StudioMainV2 from "@/components/studio/StudioMainV2";
 import { parseStudioSearchParams } from "@/lib/jobs/prepare-application-url";
 import type { GeneratorContext } from "@/types/jobs";
+import dynamic from "next/dynamic";
 import { useSearchParams } from "next/navigation";
+
+const StudioMainV2 = dynamic(() => import("@/components/studio/StudioMainV2"), {
+  ssr: false,
+  loading: () => (
+    <div className="flex min-h-0 flex-1 items-center justify-center bg-slate-50 text-sm text-slate-400 dark:bg-slate-950 dark:text-slate-500">
+      Loading studio…
+    </div>
+  ),
+});
 
 export default function StudioPageClient() {
   const searchParams = useSearchParams();

@@ -114,7 +114,7 @@ function ResumeEditorById({
 }
 
 function ResumePageContent({ initialResumeId, initialIsNewDraft = false }: ResumePageClientProps) {
-  const pathname = usePathname();
+  const pathname = usePathname() ?? "";
   const queryClient = useQueryClient();
   const { resumeId, isNewDraft } = useResumeUrlState({
     resumeId: initialResumeId,

@@ -15,6 +15,12 @@ interface AllPostsModalProps {
   onDeletePost?: (id: string | number, type: "scheduled" | "history") => void;
 }
 
+const matchesPostSearch = (post: LinkedInListItem, query: string): boolean => {
+  const q = query.trim().toLowerCase();
+  if (!q) return true;
+  return post.topic?.toLowerCase().includes(q) || post.content.toLowerCase().includes(q) || (post.mood?.toLowerCase().includes(q) ?? false);
+};
+
 const AllPostsModal: React.FC<AllPostsModalProps> = ({ onClose, initialTab, scheduledPosts, historyPosts, onPostClick, onDeletePost }) => {
   const [activeTab, setActiveTab] = useState<"scheduled" | "history">(initialTab);
   const [searchQuery, setSearchQuery] = useState("");
@@ -23,11 +29,10 @@ const AllPostsModal: React.FC<AllPostsModalProps> = ({ onClose, initialTab, sche
   const currentPosts = activeTab === "scheduled" ? scheduledPosts : historyPosts;
 
   const filteredPosts = currentPosts.filter(post => {
-    const matchesSearch = post.content.toLowerCase().includes(searchQuery.toLowerCase());
-    if (activeTab !== "history") return matchesSearch;
+    if (!matchesPostSearch(post, searchQuery)) return false;
+    if (activeTab !== "history") return true;
     const historyPost = post as LinkedInListItem & { status?: string };
-    const matchesStatus = filterStatus === "All" || historyPost.status === filterStatus;
-    return matchesSearch && matchesStatus;
+    return filterStatus === "All" || historyPost.status === filterStatus;
   });
 
   if (typeof document === "undefined") return null;
@@ -80,7 +85,7 @@ const AllPostsModal: React.FC<AllPostsModalProps> = ({ onClose, initialTab, sche
             <input
               value={searchQuery}
               onChange={e => setSearchQuery(e.target.value)}
-              placeholder="Search posts..."
+              placeholder="Search by topic or content..."
               className="w-full rounded-xl border border-slate-200 bg-slate-50 py-2.5 pl-11 pr-4 text-sm font-medium outline-none focus:ring-2 focus:ring-brand-500/20 dark:border-slate-700 dark:bg-slate-900"
             />
           </div>
@@ -92,31 +97,28 @@ const AllPostsModal: React.FC<AllPostsModalProps> = ({ onClose, initialTab, sche
                 onChange={e => setFilterStatus(e.target.value as "All" | "Posted" | "Draft")}
                 className="h-full w-full cursor-pointer appearance-none rounded-xl border border-slate-200 bg-slate-50 py-2.5 pl-8 pr-4 text-sm font-medium outline-none focus:ring-2 focus:ring-brand-500/20 dark:border-slate-700 dark:bg-slate-900"
               >
-                <option value="All">All Status</option>
+                <option value="All">All status</option>
+                <option value="Draft">Draft</option>
                 <option value="Posted">Posted</option>
-                <option value="Draft">Drafts</option>
               </select>
             </div>
           )}
         </div>
 
-        <div className="flex-1 space-y-3 overflow-y-auto bg-slate-50/30 p-4 dark:bg-slate-900">
+        <div className="scrollbar-on-hover flex-1 space-y-3 overflow-y-auto bg-slate-50/30 p-4 dark:bg-slate-900">
           {filteredPosts.length > 0 ? (
             filteredPosts.map(post => {
               const historyPost = post as LinkedInListItem & { status?: string; stats?: string };
               return (
                 <div key={post.id}>
                   <LinkedInPostListCard
-                    post={{
-                      ...post,
-                      date: activeTab === "history" && historyPost.status ? `${post.date} · ${historyPost.status}` : post.date,
-                    }}
+                    post={post}
                     onClick={() => onPostClick(post, activeTab)}
                     onDelete={onDeletePost ? id => onDeletePost(id, activeTab) : undefined}
                   />
-                  {activeTab === "history" && historyPost.stats && (
+                  {activeTab === "history" && historyPost.stats && historyPost.stats !== "—" ? (
                     <p className="mt-1 px-1 text-[10px] text-slate-400">{historyPost.stats}</p>
-                  )}
+                  ) : null}
                 </div>
               );
             })

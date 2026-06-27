@@ -1,29 +1,31 @@
 "use client";
 
 import { useCallback, useEffect, useState, type RefObject } from "react";
-import { Check, Undo2 } from "lucide-react";
+import { Check, RotateCcw } from "lucide-react";
 
 export type DiffRegionChipPlacement = {
   regionId: string;
   top: number;
   left: number;
-  index: number;
-  total: number;
 };
 
 type DiffRegionChipOverlayProps = {
   scrollContainerRef: RefObject<HTMLDivElement | null>;
   regionIds: string[];
   decisions: Record<string, "keep" | "undo">;
+  activeRegionId: string | null;
+  hoveredRegionId?: string | null;
+  onHoverRegionChange?: (regionId: string | null) => void;
   onKeep: (regionId: string) => void;
   onUndo: (regionId: string) => void;
   busy?: boolean;
   layoutKey: string;
 };
 
-const CHIP_WIDTH = 148;
-const CHIP_HEIGHT = 32;
-const CHIP_INSET = 8;
+const PILL_WIDTH = 72;
+const PILL_HEIGHT = 36;
+/** Overlap the pill onto the region top so the cursor path from block → pill stays interactive. */
+const PILL_OVERLAP = 12;
 
 const getScrollableAncestors = (element: HTMLElement): HTMLElement[] => {
   const scrollables: HTMLElement[] = [];
@@ -49,36 +51,41 @@ const measurePlacements = (
   if (pending.length === 0) return [];
 
   const containerRect = container.getBoundingClientRect();
-  const maxLeft = container.clientWidth - CHIP_WIDTH - CHIP_INSET;
   const placements: DiffRegionChipPlacement[] = [];
 
-  pending.forEach((regionId, index) => {
+  pending.forEach(regionId => {
     const el = container.querySelector(`[data-diff-region="${regionId}"]`) as HTMLElement | null;
     if (!el) return;
 
     const elRect = el.getBoundingClientRect();
-    const top = elRect.bottom - containerRect.top + container.scrollTop - CHIP_HEIGHT - CHIP_INSET;
-    const left = Math.min(
-      maxLeft,
-      Math.max(CHIP_INSET, elRect.right - containerRect.left + container.scrollLeft - CHIP_WIDTH - CHIP_INSET)
-    );
+    const centerLeft = elRect.left - containerRect.left + container.scrollLeft + elRect.width / 2 - PILL_WIDTH / 2;
+    const top = elRect.top - containerRect.top + container.scrollTop - PILL_HEIGHT + PILL_OVERLAP;
 
     placements.push({
       regionId,
-      top: Math.max(CHIP_INSET, top),
-      left,
-      index: index + 1,
-      total: pending.length,
+      top: Math.max(8, top),
+      left: Math.max(8, Math.min(container.clientWidth - PILL_WIDTH - 8, centerLeft)),
     });
   });
 
   return placements;
 };
 
+const isSameInteractionRegion = (regionId: string, relatedTarget: EventTarget | null): boolean => {
+  if (!(relatedTarget instanceof HTMLElement)) return false;
+  const relatedRegionId =
+    relatedTarget.closest("[data-diff-region]")?.getAttribute("data-diff-region") ??
+    relatedTarget.closest("[data-diff-pill]")?.getAttribute("data-diff-pill");
+  return relatedRegionId === regionId;
+};
+
 const DiffRegionChipOverlay = ({
   scrollContainerRef,
   regionIds,
   decisions,
+  activeRegionId,
+  hoveredRegionId = null,
+  onHoverRegionChange,
   onKeep,
   onUndo,
   busy = false,
@@ -126,42 +133,51 @@ const DiffRegionChipOverlay = ({
 
   return (
     <>
-      {placements.map(p => (
-        <div
-          key={p.regionId}
-          role="toolbar"
-          aria-label={`Review change ${p.index} of ${p.total}`}
-          className="pointer-events-auto absolute z-30 flex items-center gap-1 rounded-lg border border-slate-700/80 bg-slate-900 px-1.5 py-1 shadow-lg dark:border-slate-600 dark:bg-slate-950"
-          style={{ top: p.top, left: p.left, width: CHIP_WIDTH }}
-          onMouseDown={e => e.preventDefault()}
-        >
-          {p.total > 1 ? (
-            <span className="shrink-0 px-1 text-[9px] font-medium tabular-nums text-slate-400">
-              {p.index}/{p.total}
-            </span>
-          ) : null}
-          <button
-            type="button"
-            disabled={busy}
-            onClick={() => onUndo(p.regionId)}
-            className="inline-flex flex-1 items-center justify-center gap-1 rounded-md px-2 py-1 text-[10px] font-medium text-slate-300 transition-colors hover:bg-slate-800 hover:text-white disabled:opacity-50"
-            aria-label="Undo this change"
+      {placements.map(p => {
+        const isActive = p.regionId === activeRegionId;
+        const isHovered = p.regionId === hoveredRegionId;
+        const isVisible = isActive || isHovered;
+        return (
+          <div
+            key={p.regionId}
+            data-diff-pill={p.regionId}
+            role="toolbar"
+            aria-label="Review this change"
+            className={`absolute z-40 ${isVisible ? "pointer-events-auto opacity-100 translate-y-0" : "pointer-events-none opacity-0 translate-y-1"}`}
+            style={{ top: p.top - 12, left: p.left - 10, width: PILL_WIDTH + 20, height: PILL_HEIGHT + 20, padding: "12px 10px 8px" }}
+            onMouseEnter={() => onHoverRegionChange?.(p.regionId)}
+            onMouseLeave={e => {
+              if (isSameInteractionRegion(p.regionId, e.relatedTarget)) return;
+              onHoverRegionChange?.(null);
+            }}
+            onMouseDown={e => e.preventDefault()}
           >
-            <Undo2 size={11} aria-hidden />
-            Undo
-          </button>
-          <button
-            type="button"
-            disabled={busy}
-            onClick={() => onKeep(p.regionId)}
-            className="inline-flex flex-1 items-center justify-center gap-1 rounded-md bg-emerald-600 px-2 py-1 text-[10px] font-medium text-white transition-colors hover:bg-emerald-500 disabled:opacity-50"
-            aria-label="Keep this change"
-          >
-            <Check size={11} aria-hidden />
-            Keep
-          </button>
-        </div>
-      ))}
+            <div className="pointer-events-auto flex h-full w-full items-center justify-center gap-1 rounded-full border border-slate-200 bg-white p-1 shadow-md transition-all duration-200 dark:border-slate-700 dark:bg-slate-800">
+              <button
+                type="button"
+                disabled={busy}
+                onClick={() => onKeep(p.regionId)}
+                className="rounded-full p-1.5 text-slate-500 transition-colors hover:bg-green-50 hover:text-green-600 dark:hover:bg-green-900/30"
+                aria-label="Keep this change"
+                title="Keep"
+              >
+                <Check size={16} />
+              </button>
+              <div className="h-4 w-px bg-slate-200 dark:bg-slate-700" />
+              <button
+                type="button"
+                disabled={busy}
+                onClick={() => onUndo(p.regionId)}
+                className="rounded-full p-1.5 text-slate-500 transition-colors hover:bg-orange-50 hover:text-orange-600 dark:hover:bg-orange-900/30"
+                aria-label="Undo this change"
+                title="Undo"
+              >
+                <RotateCcw size={16} />
+              </button>
+            </div>
+          </div>
+        );
+      })}
     </>
   );
 };

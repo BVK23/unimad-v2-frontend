@@ -1,4 +1,9 @@
-import type { LinkedInAnalyzeResult, LinkedInSectionAnalysis, LinkedInSectionStatus } from "@/features/linkedin/types";
+import type {
+  LinkedInAnalyzeResult,
+  LinkedInReanalysisMeta,
+  LinkedInSectionAnalysis,
+  LinkedInSectionStatus,
+} from "@/features/linkedin/types";
 
 const SECTION_NAME_MAP: Record<string, string> = {
   pic: "Profile Picture",
@@ -59,6 +64,46 @@ function sortSections(sections: LinkedInSectionAnalysis[]): LinkedInSectionAnaly
   return [...sections].sort((left, right) => (rank.get(left.id) ?? 99) - (rank.get(right.id) ?? 99));
 }
 
+function mapReanalysisMeta(raw: unknown): LinkedInReanalysisMeta | undefined {
+  const input = asRecord(raw);
+  if (!input || input.isReanalysis !== true) return undefined;
+  const changedSections = Array.isArray(input.changedSections)
+    ? input.changedSections
+        .map(id =>
+          String(id ?? "")
+            .trim()
+            .toLowerCase()
+        )
+        .filter(Boolean)
+    : [];
+  const unchangedSections = Array.isArray(input.unchangedSections)
+    ? input.unchangedSections
+        .map(id =>
+          String(id ?? "")
+            .trim()
+            .toLowerCase()
+        )
+        .filter(Boolean)
+    : [];
+  const summary = String(input.summary ?? "").trim();
+  if (!summary && changedSections.length === 0) return undefined;
+  return {
+    isReanalysis: true,
+    changedSections,
+    unchangedSections,
+    summary: summary || "Profile re-analysed.",
+    sectionChanges:
+      input.sectionChanges && typeof input.sectionChanges === "object"
+        ? (input.sectionChanges as LinkedInReanalysisMeta["sectionChanges"])
+        : undefined,
+  };
+}
+
+function asRecord(value: unknown): Record<string, unknown> | null {
+  if (!value || typeof value !== "object" || Array.isArray(value)) return null;
+  return value as Record<string, unknown>;
+}
+
 export function mapLinkedInAnalyzeResponse(raw: unknown): LinkedInAnalyzeResult {
   const input = raw && typeof raw === "object" ? (raw as Record<string, unknown>) : {};
   const sections = Array.isArray(input.sections)
@@ -83,5 +128,6 @@ export function mapLinkedInAnalyzeResponse(raw: unknown): LinkedInAnalyzeResult 
     topActions: Array.isArray(input.topActions)
       ? input.topActions.filter((item): item is string => typeof item === "string" && item.trim().length > 0)
       : [],
+    reanalysisMeta: mapReanalysisMeta(input.reanalysisMeta),
   };
 }

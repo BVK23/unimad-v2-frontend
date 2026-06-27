@@ -76,25 +76,29 @@ export function ProfileProjectsSection() {
         <div className="space-y-3">
           {items.map((project, index) => (
             <div key={`${project.title}-${index}`} className="group space-y-1">
-              <button
-                type="button"
-                onClick={() => openEdit(index)}
-                className="w-full rounded-xl border border-brand-500/25 bg-white px-4 py-3 text-left transition hover:bg-brand-50/50 dark:border-brand-500/20 dark:bg-[#111] dark:hover:bg-brand-950/20"
-              >
-                <div className="text-sm font-semibold text-slate-900 dark:text-white">{project.title}</div>
-                {project.descriptions?.length ? (
-                  <ul className="mt-2 list-disc space-y-1 pl-4 text-xs text-slate-600 dark:text-slate-400">
-                    {project.descriptions.map((d, i) => (
-                      <li key={i}>{d}</li>
-                    ))}
-                  </ul>
-                ) : null}
+              <div className="rounded-xl border border-brand-500/25 bg-white px-4 py-3 transition hover:bg-brand-50/50 dark:border-brand-500/20 dark:bg-[#111] dark:hover:bg-brand-950/20">
+                <button type="button" onClick={() => openEdit(index)} className="w-full text-left">
+                  <div className="text-sm font-semibold text-slate-900 dark:text-white">{project.title}</div>
+                  {project.descriptions?.length ? (
+                    <ul className="mt-2 list-disc space-y-1 pl-4 text-xs text-slate-600 dark:text-slate-400">
+                      {project.descriptions.map((d, i) => (
+                        <li key={i}>{d}</li>
+                      ))}
+                    </ul>
+                  ) : null}
+                </button>
                 {project.url ? (
-                  <span className="mt-2 inline-flex items-center gap-1 text-xs text-brand-600 dark:text-brand-400">
+                  <a
+                    href={project.url}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="mt-2 inline-flex items-center gap-1 text-xs text-brand-600 hover:underline dark:text-brand-400"
+                    aria-label="Open project link"
+                  >
                     <ExternalLink size={12} /> Project link
-                  </span>
+                  </a>
                 ) : null}
-              </button>
+              </div>
               <div className="flex justify-end gap-3 px-1 opacity-0 transition group-hover:opacity-100">
                 <button type="button" onClick={() => openEdit(index)} className="text-xs text-brand-600 inline-flex items-center gap-1">
                   <Pencil size={12} /> Edit

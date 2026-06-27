@@ -1,5 +1,8 @@
 import React, { useState, useEffect, useRef, useCallback } from "react";
+import { createPortal } from "react-dom";
 import type { PortfolioTitleHeadingLevel } from "@/features/portfolio/utils/portfolio-html";
+import { applyRefineAnchorMark, clearRefineAnchorMarks } from "@/utils/refine-anchor-highlight";
+import { ArrowRight, Sparkles } from "lucide-react";
 import {
   Bold,
   Italic,
@@ -32,6 +35,11 @@ interface RichTextEditorProps {
   forceExternalSync?: boolean;
   /** When true, content is not editable but text can still be selected (e.g. diff review). */
   readOnly?: boolean;
+  /** Studio-only: white two-row toolbar with improve actions on top. */
+  unifiedSelectionToolbar?: boolean;
+  selectionImproveSlot?: React.ReactNode;
+  /** Persistent highlight for the text span sent to Unibot (survives toolbar dismiss). */
+  refineAnchorText?: string;
 }
 
 type ActiveFormats = {
@@ -68,8 +76,13 @@ const RichTextEditor: React.FC<RichTextEditorProps> = ({
   onSelectionChange,
   forceExternalSync = false,
   readOnly = false,
+  unifiedSelectionToolbar = false,
+  selectionImproveSlot,
+  refineAnchorText = "",
 }) => {
   const editorRef = useRef<HTMLDivElement>(null);
+  const anchorMarkRef = useRef<HTMLElement | null>(null);
+  const [anchorCueRect, setAnchorCueRect] = useState<DOMRect | null>(null);
   const [showToolbar, setShowToolbar] = useState(false);
   const [toolbarPosition, setToolbarPosition] = useState({ top: 0, left: 0 });
   const [activeFormats, setActiveFormats] = useState<ActiveFormats>(EMPTY_ACTIVE_FORMATS);
@@ -137,6 +150,45 @@ const RichTextEditor: React.FC<RichTextEditorProps> = ({
     }
   }, [value, forceExternalSync]);
 
+  const updateAnchorCuePosition = useCallback(() => {
+    const mark = anchorMarkRef.current;
+    if (!mark || !mark.isConnected) {
+      setAnchorCueRect(null);
+      return;
+    }
+    setAnchorCueRect(mark.getBoundingClientRect());
+  }, []);
+
+  useEffect(() => {
+    const root = editorRef.current;
+    if (!root) return;
+
+    const trimmed = refineAnchorText.trim();
+    if (!trimmed) {
+      clearRefineAnchorMarks(root);
+      anchorMarkRef.current = null;
+      // eslint-disable-next-line react-hooks/set-state-in-effect -- clear cue when anchor text removed
+      setAnchorCueRect(null);
+      return;
+    }
+
+    const mark = applyRefineAnchorMark(root, trimmed);
+    anchorMarkRef.current = mark;
+    updateAnchorCuePosition();
+
+    const onLayoutChange = () => updateAnchorCuePosition();
+    window.addEventListener("scroll", onLayoutChange, true);
+    window.addEventListener("resize", onLayoutChange);
+    return () => {
+      window.removeEventListener("scroll", onLayoutChange, true);
+      window.removeEventListener("resize", onLayoutChange);
+      if (root) {
+        clearRefineAnchorMarks(root);
+      }
+      anchorMarkRef.current = null;
+    };
+  }, [refineAnchorText, value, updateAnchorCuePosition]);
+
   const handleInput = () => {
     if (readOnly) return;
     if (editorRef.current) {
@@ -164,8 +216,8 @@ const RichTextEditor: React.FC<RichTextEditorProps> = ({
       setShowToolbar(true);
       setActiveFormats(computeActiveFormats());
       setToolbarPosition({
-        top: rect.top - 50,
-        left: rect.left + rect.width / 2 - 100,
+        top: rect.top - (unifiedSelectionToolbar ? 90 : 50),
+        left: rect.left + rect.width / 2,
       });
       const text = selection.toString();
       if (text.trim()) {
@@ -195,111 +247,184 @@ const RichTextEditor: React.FC<RichTextEditorProps> = ({
     executeCommand("formatBlock", target);
   };
 
-  const buttonClass = (isActive: boolean) =>
+  const darkButtonClass = (isActive: boolean) =>
     `p-1.5 rounded transition-colors ${isActive ? "bg-slate-700 text-white" : "hover:bg-slate-700"}`;
+
+  const lightButtonClass = (isActive: boolean) =>
+    `p-1.5 rounded transition-colors ${isActive ? "bg-slate-100 text-slate-900 dark:bg-slate-800 dark:text-white" : "text-slate-700 hover:bg-slate-100 dark:text-slate-300 dark:hover:bg-slate-800"}`;
+
+  const renderFormattingButtons = (btnClass: (isActive: boolean) => string, dividerClass: string) => (
+    <>
+      <button
+        type="button"
+        onClick={() => executeCommand("bold")}
+        aria-pressed={activeFormats.bold}
+        className={btnClass(activeFormats.bold)}
+      >
+        <Bold size={16} />
+      </button>
+      <button
+        type="button"
+        onClick={() => executeCommand("italic")}
+        aria-pressed={activeFormats.italic}
+        className={btnClass(activeFormats.italic)}
+      >
+        <Italic size={16} />
+      </button>
+      <button
+        type="button"
+        onClick={() => executeCommand("underline")}
+        aria-pressed={activeFormats.underline}
+        className={btnClass(activeFormats.underline)}
+      >
+        <Underline size={16} />
+      </button>
+      <div className={`mx-1 h-4 w-px ${dividerClass}`} />
+      <button
+        type="button"
+        onClick={() => executeCommand("insertUnorderedList")}
+        aria-pressed={activeFormats.bulletList}
+        className={btnClass(activeFormats.bulletList)}
+      >
+        <List size={16} />
+      </button>
+      <button
+        type="button"
+        onClick={() => executeCommand("insertOrderedList")}
+        aria-pressed={activeFormats.orderedList}
+        className={btnClass(activeFormats.orderedList)}
+      >
+        <ListOrdered size={16} />
+      </button>
+      <div className={`mx-1 h-4 w-px ${dividerClass}`} />
+      <button
+        type="button"
+        onClick={() => toggleHeading("H1")}
+        aria-pressed={activeFormats.heading === "h1"}
+        className={btnClass(activeFormats.heading === "h1")}
+      >
+        <Heading1 size={16} />
+      </button>
+      <button
+        type="button"
+        onClick={() => toggleHeading("H2")}
+        aria-pressed={activeFormats.heading === "h2"}
+        className={btnClass(activeFormats.heading === "h2")}
+      >
+        <Heading2 size={16} />
+      </button>
+      <button
+        type="button"
+        onClick={() => toggleHeading("H3")}
+        aria-pressed={activeFormats.heading === "h3"}
+        className={btnClass(activeFormats.heading === "h3")}
+      >
+        <Heading3 size={16} />
+      </button>
+      <div className={`mx-1 h-4 w-px ${dividerClass}`} />
+      <button
+        type="button"
+        onClick={() => executeCommand("justifyLeft")}
+        aria-pressed={activeFormats.alignLeft}
+        className={btnClass(activeFormats.alignLeft)}
+      >
+        <AlignLeft size={16} />
+      </button>
+      <button
+        type="button"
+        onClick={() => executeCommand("justifyCenter")}
+        aria-pressed={activeFormats.alignCenter}
+        className={btnClass(activeFormats.alignCenter)}
+      >
+        <AlignCenter size={16} />
+      </button>
+      <button
+        type="button"
+        onClick={() => executeCommand("justifyRight")}
+        aria-pressed={activeFormats.alignRight}
+        className={btnClass(activeFormats.alignRight)}
+      >
+        <AlignRight size={16} />
+      </button>
+      {onToggleCollapsible ? (
+        <>
+          <div className={`mx-1 h-4 w-px ${dividerClass}`} />
+          <button
+            type="button"
+            onClick={onToggleCollapsible}
+            title={isCollapsible ? "Disable collapsible section" : "Enable collapsible section"}
+            aria-label={isCollapsible ? "Disable collapsible section" : "Enable collapsible section"}
+            aria-pressed={Boolean(isCollapsible)}
+            className={btnClass(Boolean(isCollapsible))}
+          >
+            <ChevronsUpDown size={14} />
+          </button>
+        </>
+      ) : null}
+    </>
+  );
 
   const editorSurfaceClass = `outline-none min-h-[1em] cursor-text empty:before:content-[attr(data-placeholder)] empty:before:text-slate-400 ${className ?? ""}`;
 
+  const toolbarStyle: React.CSSProperties = unifiedSelectionToolbar
+    ? {
+        top: toolbarPosition.top,
+        left: toolbarPosition.left,
+        transform: "translateX(-50%)",
+      }
+    : {
+        top: toolbarPosition.top,
+        left: toolbarPosition.left - 100,
+      };
+
+  const anchorCue =
+    anchorCueRect && refineAnchorText.trim() && typeof document !== "undefined"
+      ? createPortal(
+          <div
+            className="pointer-events-none fixed z-[55] flex max-w-[min(92vw,280px)] animate-in fade-in slide-in-from-top-1 duration-200"
+            style={{
+              top: anchorCueRect.bottom + 6,
+              left: Math.max(12, Math.min(anchorCueRect.left, window.innerWidth - 292)),
+            }}
+            aria-hidden
+          >
+            <div className="inline-flex items-center gap-1.5 rounded-full border border-brand-200 bg-brand-50/95 px-3 py-1.5 text-[11px] font-medium text-brand-700 shadow-md shadow-brand-500/10 backdrop-blur-sm dark:border-brand-500/30 dark:bg-brand-500/15 dark:text-brand-200">
+              <Sparkles size={12} className="shrink-0 text-brand-600 dark:text-brand-300" aria-hidden />
+              <span>Continue in Unibot</span>
+              <ArrowRight size={12} className="shrink-0 opacity-70" aria-hidden />
+            </div>
+          </div>,
+          document.body
+        )
+      : null;
+
   return (
     <div className="relative group">
-      {showToolbar && (
+      {showToolbar && unifiedSelectionToolbar ? (
         <div
-          className="fixed z-50 flex items-center gap-1 p-1 bg-slate-900 text-white rounded-lg shadow-xl animate-in fade-in zoom-in-95 duration-200"
-          style={{ top: toolbarPosition.top, left: toolbarPosition.left }}
+          className="fixed z-50 flex max-w-[min(96vw,560px)] flex-col gap-1 rounded-lg border border-slate-200 bg-white p-1 shadow-xl animate-in fade-in zoom-in-95 duration-200 dark:border-slate-800 dark:bg-slate-900"
+          style={toolbarStyle}
           onMouseDown={e => e.preventDefault()}
         >
-          <button onClick={() => executeCommand("bold")} aria-pressed={activeFormats.bold} className={buttonClass(activeFormats.bold)}>
-            <Bold size={16} />
-          </button>
-          <button
-            onClick={() => executeCommand("italic")}
-            aria-pressed={activeFormats.italic}
-            className={buttonClass(activeFormats.italic)}
-          >
-            <Italic size={16} />
-          </button>
-          <button
-            onClick={() => executeCommand("underline")}
-            aria-pressed={activeFormats.underline}
-            className={buttonClass(activeFormats.underline)}
-          >
-            <Underline size={16} />
-          </button>
-          <div className="w-px h-4 bg-slate-700 mx-1" />
-          <button
-            onClick={() => executeCommand("insertUnorderedList")}
-            aria-pressed={activeFormats.bulletList}
-            className={buttonClass(activeFormats.bulletList)}
-          >
-            <List size={16} />
-          </button>
-          <button
-            onClick={() => executeCommand("insertOrderedList")}
-            aria-pressed={activeFormats.orderedList}
-            className={buttonClass(activeFormats.orderedList)}
-          >
-            <ListOrdered size={16} />
-          </button>
-          <div className="w-px h-4 bg-slate-700 mx-1" />
-          <button
-            onClick={() => toggleHeading("H1")}
-            aria-pressed={activeFormats.heading === "h1"}
-            className={buttonClass(activeFormats.heading === "h1")}
-          >
-            <Heading1 size={16} />
-          </button>
-          <button
-            onClick={() => toggleHeading("H2")}
-            aria-pressed={activeFormats.heading === "h2"}
-            className={buttonClass(activeFormats.heading === "h2")}
-          >
-            <Heading2 size={16} />
-          </button>
-          <button
-            onClick={() => toggleHeading("H3")}
-            aria-pressed={activeFormats.heading === "h3"}
-            className={buttonClass(activeFormats.heading === "h3")}
-          >
-            <Heading3 size={16} />
-          </button>
-          <div className="w-px h-4 bg-slate-700 mx-1" />
-          <button
-            onClick={() => executeCommand("justifyLeft")}
-            aria-pressed={activeFormats.alignLeft}
-            className={buttonClass(activeFormats.alignLeft)}
-          >
-            <AlignLeft size={16} />
-          </button>
-          <button
-            onClick={() => executeCommand("justifyCenter")}
-            aria-pressed={activeFormats.alignCenter}
-            className={buttonClass(activeFormats.alignCenter)}
-          >
-            <AlignCenter size={16} />
-          </button>
-          <button
-            onClick={() => executeCommand("justifyRight")}
-            aria-pressed={activeFormats.alignRight}
-            className={buttonClass(activeFormats.alignRight)}
-          >
-            <AlignRight size={16} />
-          </button>
-          {onToggleCollapsible && (
-            <>
-              <div className="w-px h-4 bg-slate-700 mx-1" />
-              <button
-                onClick={onToggleCollapsible}
-                title={isCollapsible ? "Disable collapsible section" : "Enable collapsible section"}
-                aria-label={isCollapsible ? "Disable collapsible section" : "Enable collapsible section"}
-                aria-pressed={Boolean(isCollapsible)}
-                className={buttonClass(Boolean(isCollapsible))}
-              >
-                <ChevronsUpDown size={14} />
-              </button>
-            </>
-          )}
+          {selectionImproveSlot ? (
+            <div className="flex flex-wrap items-center gap-1 border-b border-slate-100 p-1 dark:border-slate-800">
+              {selectionImproveSlot}
+            </div>
+          ) : null}
+          <div className="flex flex-wrap items-center gap-1 p-1 text-slate-700 dark:text-slate-300">
+            {renderFormattingButtons(lightButtonClass, "bg-slate-200 dark:bg-slate-700")}
+          </div>
         </div>
-      )}
+      ) : null}
+      {showToolbar && !unifiedSelectionToolbar ? (
+        <div
+          className="fixed z-50 flex items-center gap-1 rounded-lg bg-slate-900 p-1 text-white shadow-xl animate-in fade-in zoom-in-95 duration-200"
+          style={toolbarStyle}
+          onMouseDown={e => e.preventDefault()}
+        >
+          {renderFormattingButtons(darkButtonClass, "bg-slate-700")}
+        </div>
+      ) : null}
 
       <div
         ref={editorRef}
@@ -323,6 +448,7 @@ const RichTextEditor: React.FC<RichTextEditorProps> = ({
         data-placeholder={placeholder}
         suppressContentEditableWarning={true}
       />
+      {anchorCue}
     </div>
   );
 };

@@ -280,7 +280,7 @@ export const reconcileAnchoredDraft = ({
   const baseMiddle = baseBlocks.slice(baseMiddleStart, baseMiddleEnd);
   const propMiddle = propBlocks.slice(propMiddleStart, propMiddleEnd);
 
-  const middleRegions = diffMiddleBlocks(baseMiddle, propMiddle, Boolean(anchorOnBase));
+  const middleRegions = anchorOnBase ? diffAnchoredMiddleBlocks(baseMiddle, propMiddle) : diffMiddleBlocks(baseMiddle, propMiddle, false);
   regions.push(...middleRegions);
 
   for (let i = 0; i < suffixLen; i++) {
@@ -297,6 +297,61 @@ export const reconcileAnchoredDraft = ({
   const finalRegions = ensureChangedRegions(regions, baselineHtml, proposedHtml);
 
   return { regions: finalRegions, reconciledHtml };
+};
+
+/**
+ * When the user anchored a selection, treat the middle as one logical edit even if
+ * the LLM returned a different block count (avoids spurious "added" regions).
+ */
+const diffAnchoredMiddleBlocks = (baseMiddle: string[], propMiddle: string[]): DiffRegion[] => {
+  const baseHtml = baseMiddle.join("");
+  const propHtml = propMiddle.join("");
+
+  if (!baseHtml && !propHtml) {
+    return [];
+  }
+
+  if (!baseHtml && propHtml) {
+    return [
+      {
+        id: nextRegionId(),
+        kind: "added",
+        html: propHtml,
+        baselineHtml: null,
+      },
+    ];
+  }
+
+  if (baseHtml && !propHtml) {
+    return [
+      {
+        id: nextRegionId(),
+        kind: "removed",
+        html: "",
+        baselineHtml: baseHtml,
+      },
+    ];
+  }
+
+  if (normalizeBlockText(baseHtml) === normalizeBlockText(propHtml)) {
+    return [
+      {
+        id: nextRegionId(),
+        kind: "unchanged",
+        html: baseHtml,
+        baselineHtml: baseHtml,
+      },
+    ];
+  }
+
+  return [
+    {
+      id: nextRegionId(),
+      kind: "changed",
+      html: propHtml,
+      baselineHtml: baseHtml,
+    },
+  ];
 };
 
 /**

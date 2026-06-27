@@ -4,6 +4,8 @@ export type ReviewDecision = "accepted" | "discarded";
 
 export type ReviewDecisionsMap = Record<string, ReviewDecision>;
 
+const EMPTY_REVIEW_DECISIONS: ReviewDecisionsMap = Object.freeze({});
+
 const UI_REVIEW_DECISIONS_KEY = "ui_review_decisions";
 
 function localStorageKey(userId: string, sessionId: string): string {
@@ -55,17 +57,34 @@ export function mergeReviewDecisions(adk: ReviewDecisionsMap, local: ReviewDecis
   return { ...local, ...adk };
 }
 
-let inMemoryDecisions: ReviewDecisionsMap = {};
+let inMemoryDecisions: ReviewDecisionsMap = EMPTY_REVIEW_DECISIONS;
 let inMemorySessionKey = "";
+const reviewDecisionsListeners = new Set<() => void>();
+
+const notifyReviewDecisionsListeners = (): void => {
+  reviewDecisionsListeners.forEach(listener => listener());
+};
+
+export function subscribeReviewDecisionsChanged(listener: () => void): () => void {
+  reviewDecisionsListeners.add(listener);
+  return () => {
+    reviewDecisionsListeners.delete(listener);
+  };
+}
 
 export function setReviewDecisionsCache(userId: string, sessionId: string, decisions: ReviewDecisionsMap): void {
   inMemorySessionKey = `${userId}:${sessionId}`;
   inMemoryDecisions = { ...decisions };
+  notifyReviewDecisionsListeners();
 }
 
 export function getReviewDecisionsCache(userId: string, sessionId: string): ReviewDecisionsMap {
-  if (inMemorySessionKey !== `${userId}:${sessionId}`) return {};
+  if (inMemorySessionKey !== `${userId}:${sessionId}`) return EMPTY_REVIEW_DECISIONS;
   return inMemoryDecisions;
+}
+
+export function getReviewDecisionsServerSnapshot(): ReviewDecisionsMap {
+  return EMPTY_REVIEW_DECISIONS;
 }
 
 export function shouldOfferDraftReview(userId: string, sessionId: string, assistantMessageId: string | null | undefined): boolean {
@@ -86,6 +105,23 @@ export function recordReviewDecision(
   }
   const id = assistantMessageId.trim();
   const next = { ...getReviewDecisionsCache(userId, sessionId), [id]: decision };
+  setReviewDecisionsCache(userId, sessionId, next);
+  saveReviewDecisionsToLocalStorage(userId, sessionId, next);
+  return next;
+}
+
+export function pruneReviewDecisionsByAssistantIds(userId: string, sessionId: string, assistantIds: Iterable<string>): ReviewDecisionsMap {
+  const drop = new Set([...assistantIds].filter(Boolean));
+  if (drop.size === 0) {
+    return getReviewDecisionsCache(userId, sessionId);
+  }
+  const current = getReviewDecisionsCache(userId, sessionId);
+  const next: ReviewDecisionsMap = {};
+  for (const [id, decision] of Object.entries(current)) {
+    if (!drop.has(id)) {
+      next[id] = decision;
+    }
+  }
   setReviewDecisionsCache(userId, sessionId, next);
   saveReviewDecisionsToLocalStorage(userId, sessionId, next);
   return next;

@@ -17,6 +17,7 @@ import { usePortfolioGridRemeasure } from "@/features/portfolio/hooks/usePortfol
 import { flushPortfolioLayoutRemeasure } from "@/features/portfolio/layout/portfolioLayoutRemeasure";
 import { publishPortfolioAsset } from "@/features/portfolio/server-actions/portfolio-actions";
 import { usePortfolioStore } from "@/features/portfolio/store/usePortfolioStore";
+import { getPortfolioBlockDeleteLabel } from "@/features/portfolio/utils/getPortfolioBlockDeleteLabel";
 import { normalizePortfolioItems } from "@/features/portfolio/utils/normalizePortfolioItems";
 import { estimateTitleOnlyTextLayoutHeightPx, isTemplateTitleOnlyTextItem } from "@/features/portfolio/utils/portfolio-html";
 import { UploadError, uploadHeroImageFromDataUrl } from "@/features/portfolio/utils/upload";
@@ -62,6 +63,7 @@ import { useGridResize } from "../hooks/useGridResize";
 import { PortfolioItem, UserProfile, ContentType, PortfolioData, ContactButton } from "../types";
 import BlockRenderer from "./BlockRenderer";
 import ProjectDetailView from "./ProjectDetailView";
+import DeleteBlockConfirmModal from "./portfolio/DeleteBlockConfirmModal";
 import { PortfolioAdkBlockHighlight } from "./portfolio/PortfolioAdkBlockHighlight";
 import PortfolioImage from "./portfolio/PortfolioImage";
 
@@ -253,6 +255,18 @@ const buildFallbackPortfolio = (portfolioId: string, initialData?: PortfolioData
   items: normalizePortfolioItems(initialData?.items ?? INITIAL_ITEMS, { clampTitleOnlyHeights: true }),
 });
 
+const getMaxPrefixedNumericId = (ids: string[], prefix: string) => {
+  const pattern = new RegExp(`^${prefix}-(\\d+)$`);
+  let max = 0;
+  for (const id of ids) {
+    const match = pattern.exec(id);
+    if (match) {
+      max = Math.max(max, Number.parseInt(match[1], 10));
+    }
+  }
+  return max;
+};
+
 const AVATAR_CROP_MAX_OUTPUT_PX = 512;
 const COVER_CROP_MAX_OUTPUT_PX = 1920;
 /** Portfolio cover banner is always cropped to a horizontal 4:1 frame. */
@@ -318,6 +332,7 @@ const Portfolio: React.FC<PortfolioProps> = ({ portfolioId, initialData, onBack,
   const selectedProjectId = usePortfolioStore(s => s.getFocusedPageCardId(portfolioId));
   const setFocusedPageCardId = usePortfolioStore(s => s.setFocusedPageCardId);
   const [contextMenu, setContextMenu] = useState<{ x: number; y: number; targetId: string | null } | null>(null);
+  const [pendingDeleteBlockId, setPendingDeleteBlockId] = useState<string | null>(null);
   const [showPublishMenu, setShowPublishMenu] = useState(false);
   const [publishUrlInput, setPublishUrlInput] = useState("");
   const [publishedUrl, setPublishedUrl] = useState<string | null>(null);
@@ -325,6 +340,7 @@ const Portfolio: React.FC<PortfolioProps> = ({ portfolioId, initialData, onBack,
   const [publishShowPublished, setPublishShowPublished] = useState(false);
   const [inlineInsertIndex, setInlineInsertIndex] = useState<number | null>(null);
   const publishMenuRef = useRef<HTMLDivElement>(null);
+  const pendingPublishedTabUrlRef = useRef<string | null>(null);
   const [toastMessage, setToastMessage] = useState<string | null>(null);
   const [coverCropModal, setCoverCropModal] = useState<{
     source: string;
@@ -362,10 +378,38 @@ const Portfolio: React.FC<PortfolioProps> = ({ portfolioId, initialData, onBack,
   };
   const [collapsedHeights, setCollapsedHeights] = useState<Record<string, number>>({});
 
-  const getNextId = (prefix = "item") => {
-    nextIdRef.current += 1;
-    return `${prefix}-${nextIdRef.current}`;
-  };
+  const getNextId = useCallback(
+    (prefix = "item") => {
+      const existingIds = new Set(items.map(item => item.id));
+      if (prefix === "contact") {
+        for (const button of profile.contactButtons ?? []) {
+          existingIds.add(button.id);
+        }
+      }
+
+      let candidate = "";
+      do {
+        nextIdRef.current += 1;
+        candidate = `${prefix}-${nextIdRef.current}`;
+      } while (existingIds.has(candidate));
+
+      return candidate;
+    },
+    [items, profile.contactButtons]
+  );
+
+  useEffect(() => {
+    nextIdRef.current = Math.max(
+      getMaxPrefixedNumericId(
+        items.map(item => item.id),
+        "item"
+      ),
+      getMaxPrefixedNumericId(
+        (profile.contactButtons ?? []).map(button => button.id),
+        "contact"
+      )
+    );
+  }, [portfolioId, items, profile.contactButtons]);
 
   const showToast = (message: string) => {
     setToastMessage(message);
@@ -469,6 +513,16 @@ const Portfolio: React.FC<PortfolioProps> = ({ portfolioId, initialData, onBack,
   }, [showPublishMenu]);
 
   useEffect(() => {
+    if (isPublishing || !publishShowPublished || !publishedUrl) return;
+
+    const url = pendingPublishedTabUrlRef.current;
+    if (!url || url !== publishedUrl) return;
+
+    pendingPublishedTabUrlRef.current = null;
+    window.open(url, "_blank", "noopener,noreferrer");
+  }, [isPublishing, publishShowPublished, publishedUrl]);
+
+  useEffect(() => {
     const cap = items.length;
     const raw = profile.itemsAboveProfileCount ?? 0;
     if (raw > cap) {
@@ -485,7 +539,10 @@ const Portfolio: React.FC<PortfolioProps> = ({ portfolioId, initialData, onBack,
     if (publishedUrl && portfolio.slug) {
       setPublishUrlInput(portfolio.slug);
     }
-    setShowPublishMenu(open => !open);
+    setShowPublishMenu(open => {
+      if (!open) setInlineInsertIndex(null);
+      return !open;
+    });
   };
 
   const normalizePublishSlug = (raw: string) =>
@@ -515,7 +572,7 @@ const Portfolio: React.FC<PortfolioProps> = ({ portfolioId, initialData, onBack,
     return "";
   };
 
-  const saveAndPublishPortfolio = async (slug: string, successToast: string) => {
+  const saveAndPublishPortfolio = async (slug: string, successToast: string): Promise<string | null> => {
     await runSave("manual");
 
     const current = usePortfolioStore.getState().getPortfolioData(portfolioId) ?? portfolio;
@@ -524,7 +581,7 @@ const Portfolio: React.FC<PortfolioProps> = ({ portfolioId, initialData, onBack,
 
     if (!result.ok) {
       showToast(result.error || "Failed to publish");
-      return false;
+      return null;
     }
 
     const publicUrl = buildPortfolioPublicUrl(result.slug);
@@ -533,7 +590,7 @@ const Portfolio: React.FC<PortfolioProps> = ({ portfolioId, initialData, onBack,
     updatePortfolio(portfolioId, prev => ({ ...prev, slug: result.slug }));
     showToast(successToast);
     setPublishShowPublished(true);
-    return true;
+    return publicUrl;
   };
 
   const handlePublish = async () => {
@@ -565,7 +622,10 @@ const Portfolio: React.FC<PortfolioProps> = ({ portfolioId, initialData, onBack,
 
     setIsPublishing(true);
     try {
-      await saveAndPublishPortfolio(slug, "Published");
+      const publicUrl = await saveAndPublishPortfolio(slug, "Published");
+      if (publicUrl) {
+        pendingPublishedTabUrlRef.current = publicUrl;
+      }
     } catch {
       showToast("Could not publish portfolio");
     } finally {
@@ -574,9 +634,9 @@ const Portfolio: React.FC<PortfolioProps> = ({ portfolioId, initialData, onBack,
   };
 
   const handleCopyPublishedLink = async () => {
-    const url = (publishedUrl ?? (publishUrlInput.trim() ? buildPortfolioPublicUrl(publishUrlInput.trim()) : "")).trim();
+    const url = publishedUrl?.trim();
     if (!url) {
-      showToast("Enter a link name to copy");
+      showToast("Publish your portfolio first to copy the link");
       return;
     }
     try {
@@ -588,7 +648,7 @@ const Portfolio: React.FC<PortfolioProps> = ({ portfolioId, initialData, onBack,
   };
 
   const publishMenuDropdown = showPublishMenu ? (
-    <div className="absolute right-0 top-[calc(100%+0.5rem)] z-50 w-[min(20rem,calc(100vw-2rem))] rounded-2xl border border-slate-200 bg-white p-4 shadow-xl dark:border-white/10 dark:bg-slate-950">
+    <div className="pointer-events-auto absolute right-0 top-[calc(100%+0.5rem)] z-[101] w-[min(20rem,calc(100vw-2rem))] rounded-2xl border border-slate-200 bg-white p-4 shadow-xl dark:border-white/10 dark:bg-slate-950">
       <p className="text-sm font-semibold text-slate-900 dark:text-white">Publish portfolio</p>
       {!publishedUrl && (
         <p className="mt-2 rounded-lg border border-amber-200/80 bg-amber-50 px-3 py-2 text-[11px] leading-snug text-amber-800 dark:border-amber-500/20 dark:bg-amber-950/40 dark:text-amber-200/90">
@@ -615,7 +675,7 @@ const Portfolio: React.FC<PortfolioProps> = ({ portfolioId, initialData, onBack,
         <button
           type="button"
           onClick={handleCopyPublishedLink}
-          disabled={!publishedUrl && !publishUrlInput.trim()}
+          disabled={!publishedUrl}
           className={`inline-flex items-center justify-center gap-1.5 rounded-full border border-slate-200 px-3 py-2 text-xs font-semibold text-slate-700 transition-all hover:border-brand-500/40 disabled:cursor-not-allowed disabled:opacity-40 dark:border-white/10 dark:text-slate-200 ${isEditMode ? "flex-1" : "w-full"}`}
         >
           <Copy size={13} /> Copy URL
@@ -683,9 +743,9 @@ const Portfolio: React.FC<PortfolioProps> = ({ portfolioId, initialData, onBack,
       <>
         <div
           style={{ overflow: "visible", pointerEvents: "auto" }}
-          className={`absolute -bottom-5 left-0 right-0 z-[60] flex h-10 items-center justify-center transition-opacity duration-150 ${
-            isActive ? "opacity-100" : "opacity-0 hover:opacity-100"
-          }`}
+          className={`absolute -bottom-5 left-0 right-0 flex h-10 items-center justify-center transition-opacity duration-150 ${
+            isActive ? "z-[60]" : "z-30"
+          } ${isActive ? "opacity-100" : "opacity-0 hover:opacity-100"}`}
         >
           <div className="absolute inset-x-4 top-1/2 h-[2px] rounded-full bg-brand-400/40" />
           <button
@@ -696,7 +756,9 @@ const Portfolio: React.FC<PortfolioProps> = ({ portfolioId, initialData, onBack,
               e.stopPropagation();
               setInlineInsertIndex(isActive ? null : index + 1);
             }}
-            className={`relative z-[61] flex h-7 w-7 items-center justify-center rounded-full border shadow-md transition-all ${
+            className={`relative flex h-7 w-7 items-center justify-center rounded-full border shadow-md transition-all ${
+              isActive ? "z-[61]" : "z-[31]"
+            } ${
               isActive
                 ? "scale-110 border-brand-500 bg-brand-500 text-white"
                 : "border-slate-200 bg-white text-slate-400 hover:scale-110 hover:border-brand-400 hover:text-brand-600 dark:border-white/10 dark:bg-slate-800"
@@ -1273,6 +1335,19 @@ const Portfolio: React.FC<PortfolioProps> = ({ portfolioId, initialData, onBack,
     }
   };
 
+  const requestDeleteBlock = (id: string) => {
+    setPendingDeleteBlockId(id);
+    closeContextMenu();
+  };
+
+  const handleConfirmDeleteBlock = () => {
+    if (!pendingDeleteBlockId) return;
+    removeItem(pendingDeleteBlockId);
+    setPendingDeleteBlockId(null);
+  };
+
+  const pendingDeleteBlock = pendingDeleteBlockId ? items.find(item => item.id === pendingDeleteBlockId) : null;
+
   const moveItemFromBelowToAboveProfile = (fromIndex: number) => {
     if (!showProfileSection) return;
     const k = Math.min(profile.itemsAboveProfileCount ?? 0, items.length);
@@ -1518,7 +1593,7 @@ const Portfolio: React.FC<PortfolioProps> = ({ portfolioId, initialData, onBack,
                   type="button"
                   onClick={e => {
                     e.stopPropagation();
-                    removeItem(item.id);
+                    requestDeleteBlock(item.id);
                   }}
                   className="p-1.5 text-slate-400 hover:text-red-500 bg-white dark:bg-slate-800 rounded-lg shadow-xl border border-slate-100 dark:border-white/5 transition-colors"
                   title="Delete block"
@@ -1604,7 +1679,11 @@ const Portfolio: React.FC<PortfolioProps> = ({ portfolioId, initialData, onBack,
 
           {/* Editor / preview header */}
           {(isEditMode || onBack) && (
-            <div className="sticky top-0 z-40 flex items-center justify-between border-b border-slate-100 bg-white/80 px-6 py-4 backdrop-blur-md dark:border-white/5 dark:bg-slate-950/80">
+            <div
+              className={`sticky top-0 isolate flex items-center justify-between border-b border-slate-100 bg-white/80 px-6 py-4 backdrop-blur-md dark:border-white/5 dark:bg-slate-950/80 ${
+                showPublishMenu ? "z-[100]" : "z-40"
+              }`}
+            >
               {onBack ? (
                 <button
                   type="button"
@@ -2168,8 +2247,7 @@ const Portfolio: React.FC<PortfolioProps> = ({ portfolioId, initialData, onBack,
                   </button>
                   <button
                     onClick={() => {
-                      removeItem(contextMenu.targetId!);
-                      closeContextMenu();
+                      requestDeleteBlock(contextMenu.targetId!);
                     }}
                     className="w-full text-left px-4 py-2 text-sm text-red-600 hover:bg-red-50 dark:hover:bg-red-900/20 flex items-center gap-2"
                   >
@@ -2399,6 +2477,14 @@ const Portfolio: React.FC<PortfolioProps> = ({ portfolioId, initialData, onBack,
                 Edit Portfolio
               </span>
             </button>
+          )}
+
+          {pendingDeleteBlock && (
+            <DeleteBlockConfirmModal
+              blockLabel={getPortfolioBlockDeleteLabel(pendingDeleteBlock)}
+              onCancel={() => setPendingDeleteBlockId(null)}
+              onConfirm={handleConfirmDeleteBlock}
+            />
           )}
 
           {/* Toast */}

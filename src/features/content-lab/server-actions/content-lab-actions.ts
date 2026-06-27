@@ -122,14 +122,17 @@ export type GenerateContentGenResult = {
  */
 export async function createContentGenShell(
   topic: string,
-  options?: { funnel?: "top" | "middle" | "bottom" }
+  options?: { funnel?: "top" | "middle" | "bottom"; mood?: string }
 ): Promise<GenerateContentGenResult> {
-  const body: { topic: string; funnel?: string; skip_generation: boolean } = {
+  const body: { topic: string; funnel?: string; mood?: string; skip_generation: boolean } = {
     topic,
     skip_generation: true,
   };
   if (options?.funnel) {
     body.funnel = options.funnel;
+  }
+  if (options?.mood?.trim()) {
+    body.mood = options.mood.trim();
   }
   const res = await authedFetch(`/api/generate-asset/contentgen/`, {
     method: "POST",

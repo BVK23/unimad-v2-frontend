@@ -2,13 +2,16 @@
 
 import { useCallback, useEffect, useRef, useState } from "react";
 import { DOCUMENT_AUTOSAVE_DELAY_MS, DOCUMENT_SAVED_CONFIRMATION_MS } from "@/constants/documentAutosave";
+import { noteFeatureLocalEditByContentKey } from "@/src/features/adk-chat/rewind-state-divergence";
 
 type UseDocumentAutosaveOptions = {
   enabled?: boolean;
   onSave: () => Promise<void>;
+  /** When set, manual edits mark local divergence from last ADK session sync (rewind UX). */
+  rewindSyncContentKey?: string | null;
 };
 
-export function useDocumentAutosave({ enabled = true, onSave }: UseDocumentAutosaveOptions) {
+export function useDocumentAutosave({ enabled = true, onSave, rewindSyncContentKey }: UseDocumentAutosaveOptions) {
   const [hasPendingUnsavedChanges, setHasPendingUnsavedChanges] = useState(false);
   const [isSaving, setIsSaving] = useState(false);
   const [savedConfirmationVisible, setSavedConfirmationVisible] = useState(false);
@@ -59,7 +62,10 @@ export function useDocumentAutosave({ enabled = true, onSave }: UseDocumentAutos
     setHasPendingUnsavedChanges(true);
     setSavedConfirmationVisible(false);
     clearSavedConfirmationTimer();
-  }, [clearSavedConfirmationTimer, enabled]);
+    if (rewindSyncContentKey?.trim()) {
+      noteFeatureLocalEditByContentKey(rewindSyncContentKey);
+    }
+  }, [clearSavedConfirmationTimer, enabled, rewindSyncContentKey]);
 
   const reset = useCallback(() => {
     setHasPendingUnsavedChanges(false);
@@ -82,6 +88,12 @@ export function useDocumentAutosave({ enabled = true, onSave }: UseDocumentAutos
     return () => clearSavedConfirmationTimer();
   }, [clearSavedConfirmationTimer]);
 
+  const acknowledgeSaved = useCallback(() => {
+    setHasPendingUnsavedChanges(false);
+    setIsSaving(false);
+    showSavedConfirmation();
+  }, [showSavedConfirmation]);
+
   return {
     hasPendingUnsavedChanges,
     isSaving,
@@ -89,5 +101,6 @@ export function useDocumentAutosave({ enabled = true, onSave }: UseDocumentAutos
     markDirty,
     runSave,
     reset,
+    acknowledgeSaved,
   };
 }

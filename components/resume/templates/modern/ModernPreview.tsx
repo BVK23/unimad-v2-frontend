@@ -160,33 +160,30 @@ const ModernPreview: React.FC<ModernPreviewProps> = ({ data, previewScale, isMod
       default:
         const customSec = customSections.find(s => s.id === id);
         if (!customSec) return null;
+        const visibleItems = customSec.items.filter(i => !i.hidden);
         return (
           <section key={customSec.id}>
-            <h3 className={sectionTitleClass}>{customSec.title}</h3>
-            <div>
-              {customSec.items
-                .filter(i => !i.hidden)
-                .map(item => (
-                  <div key={item.id} className="mb-[10px]">
-                    <div className="flex justify-between items-end mb-[2px]">
-                      {item.title && <h4 className="font-bold text-[11px] text-slate-900">{item.title}</h4>}
-                      {item.subtitle && <span className="text-[9px] text-slate-500">{item.subtitle}</span>}
-                    </div>
-                    {(item.hasDates && (item.startDate || item.endDate)) || (item.hasLocation && item.location) ? (
-                      <div className="flex justify-between text-[9px] text-slate-400 mb-[2px]">
-                        {item.hasLocation && <span className="text-slate-400">{item.location}</span>}
-                        {item.hasDates && (
-                          <span>
-                            {item.startDate &&
-                              `${parseDate(item.startDate)} - ${item.current ? "Present" : item.endDate ? parseDate(item.endDate) : ""}`}
-                          </span>
-                        )}
-                      </div>
-                    ) : null}
-                    <HtmlDisplay content={item.description} className={htmlBodyClass} variant="pdfTight" />
+            {visibleItems.map((item, idx) => (
+              <div key={item.id} className="mb-[10px]" style={{ breakInside: idx === 0 ? "avoid" : "auto" }}>
+                {idx === 0 && <h3 className={sectionTitleClass}>{customSec.title}</h3>}
+                <div className="flex justify-between items-end mb-[2px]">
+                  {item.title && <h4 className="font-bold text-[11px] text-slate-900">{item.title}</h4>}
+                  {item.subtitle && <span className="text-[9px] text-slate-500">{item.subtitle}</span>}
+                </div>
+                {(item.hasDates && (item.startDate || item.endDate)) || (item.hasLocation && item.location) ? (
+                  <div className="flex justify-between text-[9px] text-slate-400 mb-[2px]">
+                    {item.hasLocation && <span className="text-slate-400">{item.location}</span>}
+                    {item.hasDates && (
+                      <span>
+                        {item.startDate &&
+                          `${parseDate(item.startDate)} - ${item.current ? "Present" : item.endDate ? parseDate(item.endDate) : ""}`}
+                      </span>
+                    )}
                   </div>
-                ))}
-            </div>
+                ) : null}
+                <HtmlDisplay content={item.description} className={htmlBodyClass} variant="pdfTight" />
+              </div>
+            ))}
           </section>
         );
     }

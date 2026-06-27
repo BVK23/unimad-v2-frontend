@@ -1,7 +1,8 @@
+import { resolveAdkAppName } from "./adk-app-names";
 import { getEndpointForPath, getAuthHeaders, shouldUseAgentEngine } from "./config";
 
-function getAdkAppName(): string {
-  return process.env.ADK_APP_NAME || "app";
+export interface SessionCreationOptions {
+  appName?: string;
 }
 
 export interface SessionCreationResult {
@@ -13,11 +14,11 @@ export interface SessionCreationResult {
 }
 
 export abstract class SessionService {
-  abstract createSession(userId: string): Promise<SessionCreationResult>;
+  abstract createSession(userId: string, options?: SessionCreationOptions): Promise<SessionCreationResult>;
 }
 
 export class AgentEngineSessionService extends SessionService {
-  async createSession(userId: string): Promise<SessionCreationResult> {
+  async createSession(userId: string, _options?: SessionCreationOptions): Promise<SessionCreationResult> {
     const sessionEndpoint = getEndpointForPath("", "query");
 
     const createSessionPayload = {
@@ -73,8 +74,8 @@ export class AgentEngineSessionService extends SessionService {
 }
 
 export class LocalBackendSessionService extends SessionService {
-  async createSession(userId: string): Promise<SessionCreationResult> {
-    const appName = getAdkAppName();
+  async createSession(userId: string, options?: SessionCreationOptions): Promise<SessionCreationResult> {
+    const appName = resolveAdkAppName(options?.appName);
     const sessionEndpoint = getEndpointForPath(`/apps/${appName}/users/${userId}/sessions`);
 
     try {
@@ -131,7 +132,7 @@ export function getSessionService(): SessionService {
   return new LocalBackendSessionService();
 }
 
-export async function createSessionWithService(userId: string): Promise<SessionCreationResult> {
+export async function createSessionWithService(userId: string, options?: SessionCreationOptions): Promise<SessionCreationResult> {
   const service = getSessionService();
-  return service.createSession(userId);
+  return service.createSession(userId, options);
 }

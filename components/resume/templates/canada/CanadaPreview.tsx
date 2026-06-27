@@ -284,24 +284,39 @@ const CanadaPreview: React.FC<CanadaPreviewProps> = ({ data, previewScale = 1, i
       const customSection = resume.customSections?.find(s => s.id === type);
       if (!customSection || !customSection.items || !customSection.items.some(item => !item.hidden)) return null;
 
+      const visibleItems = customSection.items.filter(d => !d.hidden);
+
       return (
         <div className="mb-[12px]">
-          <div className={sectionTitleWrapClass}>
-            <h2 className={sectionTitleClass}>{customSection.title || "Custom Section"}</h2>
-          </div>
-          <div className={dividerClass} />
-          {customSection.items
-            .filter(d => !d.hidden)
-            .map((item, i) => (
-              <div key={i} className="mb-[8px]">
-                <div className={titleMutedClass}>{item.title}</div>
-                {item.description && (
-                  <div className="mt-[2px]">
-                    <HtmlDisplay content={item.description} className={bodyTextClass} variant="pdfTight" />
+          {visibleItems.map((item, i) => (
+            <div key={i} className="mb-[11px]" style={{ breakInside: i === 0 ? "avoid" : "auto" }}>
+              {i === 0 && (
+                <>
+                  <div className={sectionTitleWrapClass}>
+                    <h2 className={sectionTitleClass}>{customSection.title || "Custom Section"}</h2>
                   </div>
+                  <div className={dividerClass} />
+                </>
+              )}
+              <div className="flex justify-between items-start w-full">
+                {item.title && <span className={`${titleMutedClass} flex-1`}>{item.title}</span>}
+                {item.location && <span className={`${subtitleClass} text-right shrink-0 ml-[6px]`}>{item.location}</span>}
+              </div>
+              <div className="flex justify-between items-start w-full">
+                {item.subtitle && <span className={subtitleClass}>{item.subtitle}</span>}
+                {item.startDate && (
+                  <span className={`${subtitleClass} text-right shrink-0 ml-[6px]`}>
+                    {formatDateMonthYear(item.startDate)} — {item.current ? "Present" : formatDateMonthYear(item.endDate)}
+                  </span>
                 )}
               </div>
-            ))}
+              {item.description && (
+                <div className="mt-[2px]">
+                  <HtmlDisplay content={item.description} className={bodyTextClass} variant="pdfTight" />
+                </div>
+              )}
+            </div>
+          ))}
         </div>
       );
     }

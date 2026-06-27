@@ -110,6 +110,7 @@ export const SelectionImproveActions = ({
         message,
         baselineDraft,
       };
+      useApplicationAssetStudioStore.getState().setRefineAnchor(selectedText);
       window.dispatchEvent(new CustomEvent(APPLICATION_ASSET_EVENTS.selectionRefine, { detail }));
       onActionFired?.();
     },
@@ -128,6 +129,7 @@ export const SelectionImproveActions = ({
       selectedText: selectedText.trim(),
       baselineDraft,
     };
+    useApplicationAssetStudioStore.getState().setRefineAnchor(selectedText);
     window.dispatchEvent(new CustomEvent(APPLICATION_ASSET_EVENTS.selectionFreeform, { detail }));
     onActionFired?.();
   }, [assetType, disabled, onActionFired, resolveBaselineDraft, selectedText]);

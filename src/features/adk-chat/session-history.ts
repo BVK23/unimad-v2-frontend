@@ -1,3 +1,4 @@
+import { getAdkAppName, resolveAdkAppName } from "./adk-app-names";
 import { getEndpointForPath, getAuthHeaders, shouldUseAgentEngine } from "./config";
 import type { AdkSession, AdkSessionWithEvents, ListSessionsResponse, ListEventsResponse } from "./types";
 
@@ -12,11 +13,59 @@ import type { AdkSession, AdkSessionWithEvents, ListSessionsResponse, ListEvents
  * - Support for both Agent Engine and Local Backend deployments
  */
 
-/**
- * Gets the ADK app name from environment or defaults
- */
-function getAdkAppName(): string {
-  return process.env.ADK_APP_NAME || "app";
+export type AdkSessionServiceOptions = {
+  appName?: string;
+  /** Retry with this app when the primary returns 404 (legacy sub-sessions created under `app`). */
+  fallbackAppName?: string;
+};
+
+async function fetchSessionFromBackend(
+  userId: string,
+  sessionId: string,
+  appName: string
+): Promise<{ session: AdkSession | null; notFound: boolean }> {
+  const endpoint = getEndpointForPath(`/apps/${appName}/users/${userId}/sessions/${sessionId}`);
+  const authHeaders = await getAuthHeaders();
+  const response = await fetch(endpoint, {
+    method: "GET",
+    headers: {
+      ...authHeaders,
+    },
+  });
+
+  if (response.status === 404) {
+    return { session: null, notFound: true };
+  }
+
+  if (!response.ok) {
+    throw new Error(`Failed to get session: ${response.statusText}`);
+  }
+
+  return { session: await response.json(), notFound: false };
+}
+
+/** Which ADK app owns this session (primary sub-app, or legacy `app` fallback). */
+export async function resolveEffectiveAdkAppForSession(
+  userId: string,
+  sessionId: string,
+  options?: AdkSessionServiceOptions
+): Promise<string> {
+  const primary = resolveAdkAppName(options?.appName);
+  if (shouldUseAgentEngine()) {
+    return primary;
+  }
+  const first = await fetchSessionFromBackend(userId, sessionId, primary);
+  if (first.session) {
+    return primary;
+  }
+  const fallback = options?.fallbackAppName?.trim();
+  if (first.notFound && fallback && fallback !== primary) {
+    const retry = await fetchSessionFromBackend(userId, sessionId, fallback);
+    if (retry.session) {
+      return fallback;
+    }
+  }
+  return primary;
 }
 
 /**
@@ -29,8 +78,8 @@ export class AdkSessionService {
   /**
    * Retrieves a specific session by ID
    */
-  static async getSession(userId: string, sessionId: string): Promise<AdkSession | null> {
-    const appName = getAdkAppName();
+  static async getSession(userId: string, sessionId: string, options?: AdkSessionServiceOptions): Promise<AdkSession | null> {
+    const appName = resolveAdkAppName(options?.appName);
 
     if (shouldUseAgentEngine()) {
       // Agent Engine: Use v1beta1 sessions API
@@ -59,27 +108,18 @@ export class AdkSessionService {
         throw error;
       }
     } else {
-      // Local Backend: GET with path
-      const endpoint = getEndpointForPath(`/apps/${appName}/users/${userId}/sessions/${sessionId}`);
-
+      const primaryApp = resolveAdkAppName(options?.appName);
       try {
-        const authHeaders = await getAuthHeaders();
-        const response = await fetch(endpoint, {
-          method: "GET",
-          headers: {
-            ...authHeaders,
-          },
-        });
-
-        if (response.status === 404) {
-          return null;
+        const primary = await fetchSessionFromBackend(userId, sessionId, primaryApp);
+        if (primary.session) {
+          return primary.session;
         }
-
-        if (!response.ok) {
-          throw new Error(`Failed to get session: ${response.statusText}`);
+        const fallback = options?.fallbackAppName?.trim();
+        if (primary.notFound && fallback && fallback !== primaryApp) {
+          const retry = await fetchSessionFromBackend(userId, sessionId, fallback);
+          return retry.session;
         }
-
-        return response.json();
+        return null;
       } catch (error) {
         console.error("❌ [ADK SESSION SERVICE] Local Backend getSession error:", error);
         throw error;
@@ -96,11 +136,6 @@ export class AdkSessionService {
     if (shouldUseAgentEngine()) {
       // Agent Engine: Use v1beta1 sessions API
       const endpoint = getEndpointForPath("", "sessions");
-
-      console.log("🔗 [ADK SESSION SERVICE] Agent Engine listSessions request:", {
-        endpoint,
-        method: "GET",
-      });
 
       try {
         const authHeaders = await getAuthHeaders();
@@ -152,13 +187,6 @@ export class AdkSessionService {
       // Local Backend: GET with path
       const endpoint = getEndpointForPath(`/apps/${appName}/users/${userId}/sessions`);
 
-      console.log("🔗 [ADK SESSION SERVICE] Local Backend listSessions request:", {
-        endpoint,
-        method: "GET",
-        userId,
-        appName,
-      });
-
       try {
         const authHeaders = await getAuthHeaders();
         const response = await fetch(endpoint, {
@@ -168,22 +196,11 @@ export class AdkSessionService {
           },
         });
 
-        console.log("📡 [ADK SESSION SERVICE] Local Backend response:", {
-          status: response.status,
-          statusText: response.statusText,
-          contentType: response.headers.get("content-type"),
-        });
-
         if (!response.ok) {
           throw new Error(`Failed to list sessions: ${response.statusText}`);
         }
 
         const sessions: AdkSession[] = await response.json();
-
-        console.log("✅ [ADK SESSION SERVICE] Local Backend success:", {
-          sessionsCount: sessions.length,
-          sessionIds: sessions.map(s => s.id || "no-id"),
-        });
 
         return {
           sessions,
@@ -199,8 +216,8 @@ export class AdkSessionService {
   /**
    * Deletes a specific session by ID.
    */
-  static async deleteSession(userId: string, sessionId: string): Promise<void> {
-    const appName = getAdkAppName();
+  static async deleteSession(userId: string, sessionId: string, options?: AdkSessionServiceOptions): Promise<void> {
+    const appName = resolveAdkAppName(options?.appName);
 
     if (shouldUseAgentEngine()) {
       const endpoint = getEndpointForPath(`/${sessionId}`, "sessions");
@@ -245,8 +262,8 @@ export class AdkSessionService {
   /**
    * Lists all events for a specific session
    */
-  static async listEvents(userId: string, sessionId: string): Promise<ListEventsResponse> {
-    const appName = getAdkAppName();
+  static async listEvents(userId: string, sessionId: string, options?: AdkSessionServiceOptions): Promise<ListEventsResponse> {
+    const appName = resolveAdkAppName(options?.appName);
 
     if (shouldUseAgentEngine()) {
       // Agent Engine: Use v1beta1 sessions API
@@ -308,18 +325,21 @@ export class AdkSessionService {
   /**
    * Retrieves a session with all its events (for historical context)
    */
-  static async getSessionWithEvents(userId: string, sessionId: string): Promise<AdkSessionWithEvents | null> {
+  static async getSessionWithEvents(
+    userId: string,
+    sessionId: string,
+    options?: AdkSessionServiceOptions
+  ): Promise<AdkSessionWithEvents | null> {
     try {
       if (shouldUseAgentEngine()) {
-        // For Agent Engine, get events directly from the /events endpoint
-        const eventsResponse = await AdkSessionService.listEvents(userId, sessionId);
+        const eventsResponse = await AdkSessionService.listEvents(userId, sessionId, options);
         const events = eventsResponse?.events || [];
 
         // Create a minimal session object with the events
         const session: AdkSessionWithEvents = {
           id: sessionId,
           user_id: userId,
-          app_name: process.env.ADK_APP_NAME || "app",
+          app_name: process.env.ADK_APP_NAME || "unibot",
           state: null,
           last_update_time: new Date().toISOString(),
           events: events,
@@ -327,8 +347,7 @@ export class AdkSessionService {
 
         return session;
       } else {
-        // Local backend - fetch session only (backend includes events in session detail)
-        const session = await AdkSessionService.getSession(userId, sessionId);
+        const session = await AdkSessionService.getSession(userId, sessionId, options);
 
         if (!session) {
           return null;
@@ -355,7 +374,8 @@ export class AdkSessionService {
   static async rewindSession(
     userId: string,
     sessionId: string,
-    rewindBeforeInvocationId: string
+    rewindBeforeInvocationId: string,
+    options?: AdkSessionServiceOptions
   ): Promise<{ success: boolean; error?: string }> {
     if (shouldUseAgentEngine()) {
       return {
@@ -364,12 +384,13 @@ export class AdkSessionService {
       };
     }
 
-    const appName = getAdkAppName();
-    const endpoint = getEndpointForPath(`/apps/${appName}/users/${userId}/sessions/${sessionId}/rewind`);
+    const primaryApp = resolveAdkAppName(options?.appName);
+    const fallback = options?.fallbackAppName?.trim();
 
-    try {
+    const attemptRewind = async (appName: string): Promise<Response> => {
+      const endpoint = getEndpointForPath(`/apps/${appName}/users/${userId}/sessions/${sessionId}/rewind`);
       const authHeaders = await getAuthHeaders();
-      const response = await fetch(endpoint, {
+      return fetch(endpoint, {
         method: "POST",
         headers: {
           ...authHeaders,
@@ -378,6 +399,13 @@ export class AdkSessionService {
           rewind_before_invocation_id: rewindBeforeInvocationId,
         }),
       });
+    };
+
+    try {
+      let response = await attemptRewind(primaryApp);
+      if (response.status === 404 && fallback && fallback !== primaryApp) {
+        response = await attemptRewind(fallback);
+      }
 
       if (!response.ok) {
         let detail = response.statusText;
@@ -410,7 +438,8 @@ export class AdkSessionService {
   static async patchSessionState(
     userId: string,
     sessionId: string,
-    stateDelta: Record<string, unknown>
+    stateDelta: Record<string, unknown>,
+    options?: AdkSessionServiceOptions
   ): Promise<{ patched: boolean; patchSupported: boolean; error?: string }> {
     if (shouldUseAgentEngine()) {
       return {
@@ -426,29 +455,12 @@ export class AdkSessionService {
       };
     }
 
-    const appName = getAdkAppName();
-    const endpoint = getEndpointForPath(`/apps/${appName}/users/${userId}/sessions/${sessionId}`);
+    const appName = resolveAdkAppName(options?.appName);
 
-    try {
+    const attemptPatch = async (targetApp: string) => {
+      const patchEndpoint = getEndpointForPath(`/apps/${targetApp}/users/${userId}/sessions/${sessionId}`);
       const authHeaders = await getAuthHeaders();
-      console.log("📤 [ADK SESSION SERVICE] PATCH /sessions stateDelta", {
-        endpoint,
-        userId,
-        sessionId,
-        keys: Object.keys(stateDelta),
-        activeContext: stateDelta.active_context,
-        currentResume: stateDelta.current_resume,
-        resumeDataCount:
-          stateDelta.resume_data && typeof stateDelta.resume_data === "object"
-            ? Object.keys(stateDelta.resume_data as Record<string, unknown>).length
-            : 0,
-        currentPortfolio: stateDelta.current_portfolio,
-        portfolioDataCount:
-          stateDelta.portfolio_data && typeof stateDelta.portfolio_data === "object"
-            ? Object.keys(stateDelta.portfolio_data as Record<string, unknown>).length
-            : 0,
-      });
-      const response = await fetch(endpoint, {
+      return fetch(patchEndpoint, {
         method: "PATCH",
         headers: {
           ...authHeaders,
@@ -457,13 +469,18 @@ export class AdkSessionService {
           stateDelta,
         }),
       });
+    };
+
+    try {
+      let response = await attemptPatch(appName);
+
+      const fallback = options?.fallbackAppName?.trim();
+      if (response.status === 404 && fallback && fallback !== appName) {
+        response = await attemptPatch(fallback);
+      }
 
       if (response.ok) {
         AdkSessionService.localSessionPatchSupported = true;
-        console.log("✅ [ADK SESSION SERVICE] PATCH /sessions success", {
-          sessionId,
-          status: response.status,
-        });
         return {
           patched: true,
           patchSupported: true,
@@ -473,10 +490,6 @@ export class AdkSessionService {
       // Older ADK versions do not support this method.
       if (response.status === 404 || response.status === 405 || response.status === 501) {
         AdkSessionService.localSessionPatchSupported = false;
-        console.warn("⚠️ [ADK SESSION SERVICE] PATCH /sessions unsupported", {
-          sessionId,
-          status: response.status,
-        });
         return {
           patched: false,
           patchSupported: false,
@@ -484,11 +497,6 @@ export class AdkSessionService {
       }
 
       AdkSessionService.localSessionPatchSupported = true;
-      console.warn("⚠️ [ADK SESSION SERVICE] PATCH /sessions failed", {
-        sessionId,
-        status: response.status,
-        statusText: response.statusText,
-      });
       return {
         patched: false,
         patchSupported: true,
@@ -511,8 +519,12 @@ export class AdkSessionService {
 /**
  * Convenience functions that use the AdkSessionService
  */
-export async function getSessionWithEvents(userId: string, sessionId: string): Promise<AdkSessionWithEvents | null> {
-  return await AdkSessionService.getSessionWithEvents(userId, sessionId);
+export async function getSessionWithEvents(
+  userId: string,
+  sessionId: string,
+  options?: AdkSessionServiceOptions
+): Promise<AdkSessionWithEvents | null> {
+  return await AdkSessionService.getSessionWithEvents(userId, sessionId, options);
 }
 
 export async function listUserSessions(userId: string): Promise<ListSessionsResponse> {

@@ -18,6 +18,19 @@ export async function proxy(request: NextRequest) {
   // set x-pathname header for use in server components
   headers.set("x-pathname", pathname);
 
+  // SSE must start immediately — skip token refresh round-trip when access token is still valid.
+  if (pathname === "/api/run_sse" && request.method === "POST" && accessToken?.value) {
+    try {
+      const decodedToken = jwt.decode(accessToken.value) as { exp?: number } | null;
+      const currentTime = Math.floor(Date.now() / 1000);
+      if ((decodedToken?.exp ?? 0) > currentTime) {
+        return NextResponse.next({ request: { headers } });
+      }
+    } catch {
+      /* fall through to refresh */
+    }
+  }
+
   const deleteCookies = (response: NextResponse) => {
     const cookieOptions = isLocal
       ? { path: "/" }

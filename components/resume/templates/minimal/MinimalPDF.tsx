@@ -148,8 +148,7 @@ interface MinimalPDFProps {
 const MinimalPDF: React.FC<MinimalPDFProps> = ({ data }) => {
   const { profile, experience, education, skills, projects, certifications, customSections, sectionOrder } = data;
   const orderedSections = deduplicateSectionOrder(sectionOrder);
-  const isEducationSectionVisible = !orderedSections.find(s => s.id === "education")?.hidden;
-  const isSkillsSectionVisible = !orderedSections.find(s => s.id === "skills")?.hidden;
+  const sidebarSectionIds = orderedSections.filter(s => !s.hidden && (s.id === "education" || s.id === "skills"));
 
   const renderSection = (id: string) => {
     switch (id) {
@@ -258,23 +257,66 @@ const MinimalPDF: React.FC<MinimalPDFProps> = ({ data }) => {
       default:
         const customSec = customSections.find(s => s.id === id);
         if (!customSec) return null;
+        const visibleItems = customSec.items.filter(i => !i.hidden);
         return (
           <View key={customSec.id} style={styles.section}>
-            <Text style={styles.sectionTitle}>{customSec.title}</Text>
-            {customSec.items
-              .filter(i => !i.hidden)
-              .map(item => (
-                <View key={item.id} style={styles.experienceItem}>
-                  <View style={styles.rowBetween}>
-                    {item.title && <Text style={styles.role}>{item.title}</Text>}
-                    {item.subtitle && <Text style={styles.date}>{item.subtitle}</Text>}
-                  </View>
-                  <HtmlRenderer html={item.description} style={styles.description} />
+            {visibleItems.map((item, idx) => (
+              <View key={item.id} style={styles.experienceItem} wrap={false}>
+                {idx === 0 && <Text style={styles.sectionTitle}>{customSec.title}</Text>}
+                <View style={styles.rowBetween}>
+                  {item.title && <Text style={styles.role}>{item.title}</Text>}
+                  {item.subtitle && <Text style={styles.date}>{item.subtitle}</Text>}
                 </View>
-              ))}
+                {item.startDate && (
+                  <View style={styles.rowBetween}>
+                    {item.location ? <Text style={styles.location}>{item.location}</Text> : <Text></Text>}
+                    <Text style={styles.date}>
+                      {parseDate(item.startDate)} - {item.current ? "Present" : item.endDate ? parseDate(item.endDate) : ""}
+                    </Text>
+                  </View>
+                )}
+                {!item.startDate && item.location ? <Text style={styles.location}>{item.location}</Text> : null}
+                <HtmlRenderer html={item.description} style={styles.description} />
+              </View>
+            ))}
           </View>
         );
     }
+  };
+
+  const renderSidebarSection = (id: string) => {
+    if (id === "education") {
+      return (
+        <View key="education" style={styles.section}>
+          <Text style={styles.sidebarSectionTitle}>Education</Text>
+          {education
+            .filter(e => !e.hidden)
+            .map(edu => (
+              <View key={edu.id} style={styles.educationItem}>
+                <Text style={styles.school}>{edu.school}</Text>
+                <Text style={styles.degree}>{edu.degree}</Text>
+                <Text style={{ ...styles.date, textAlign: "right" }}>{edu.endDate}</Text>
+                {edu.location && <Text style={{ ...styles.location, textAlign: "right" }}>{edu.location}</Text>}
+              </View>
+            ))}
+        </View>
+      );
+    }
+    if (id === "skills") {
+      return (
+        <View key="skills" style={styles.section}>
+          <Text style={styles.sidebarSectionTitle}>Skills</Text>
+          {skills
+            .filter(s => !s.hidden)
+            .map(skill => (
+              <Text key={skill.id} style={styles.skillText}>
+                {skill.name}
+              </Text>
+            ))}
+        </View>
+      );
+    }
+    return null;
   };
 
   return (
@@ -317,42 +359,9 @@ const MinimalPDF: React.FC<MinimalPDFProps> = ({ data }) => {
 
       {/* Two-Column Layout */}
       <View style={styles.twoColumn}>
-        <View style={styles.sidebar}>
-          {isEducationSectionVisible && (
-            <View style={styles.section}>
-              <Text style={styles.sidebarSectionTitle}>Education</Text>
-              {education
-                .filter(e => !e.hidden)
-                .map(edu => (
-                  <View key={edu.id} style={styles.educationItem}>
-                    <Text style={styles.school}>{edu.school}</Text>
-                    <Text style={styles.degree}>{edu.degree}</Text>
-                    <Text style={{ ...styles.date, textAlign: "right" }}>{edu.endDate}</Text>
-                    {edu.location && <Text style={{ ...styles.location, textAlign: "right" }}>{edu.location}</Text>}
-                  </View>
-                ))}
-            </View>
-          )}
-          {isSkillsSectionVisible && (
-            <View style={styles.section}>
-              <Text style={styles.sidebarSectionTitle}>Skills</Text>
-              {skills
-                .filter(s => !s.hidden)
-                .map(skill => (
-                  <Text key={skill.id} style={styles.skillText}>
-                    {skill.name}
-                  </Text>
-                ))}
-            </View>
-          )}
-        </View>
+        <View style={styles.sidebar}>{sidebarSectionIds.map(s => renderSidebarSection(s.id))}</View>
         <View style={styles.main}>
-          {orderedSections
-            .filter(s => !s.hidden)
-            .map(s => {
-              if (s.id === "education" || s.id === "skills") return null;
-              return renderSection(s.id);
-            })}
+          {orderedSections.filter(s => !s.hidden && s.id !== "education" && s.id !== "skills").map(s => renderSection(s.id))}
         </View>
       </View>
     </Page>

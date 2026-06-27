@@ -1,6 +1,20 @@
 "use client";
 
 import type { ApplicationAssetApiType } from "@/features/application-assets/types";
+import { resolveAdkSessionOptionsForFeatureSection } from "@/src/features/adk-chat/resolve-sub-session-adk-app";
+import {
+  applicationAssetScopeFeatureId,
+  buildLinkedInPostContentKey,
+  buildLinkedInTopicContentKey,
+  buildStudioAssetContentKey,
+  linkedInTopicSlug,
+} from "@/src/features/adk-chat/sub-session-content-key";
+import {
+  buildLinkedInPostTitle,
+  buildLinkedInTopicPickerTitle,
+  buildStudioAssetDraftTitle,
+  deriveSubSessionDisplayTitle,
+} from "@/src/features/adk-chat/sub-session-titles";
 import { createSessionAction } from "./actions";
 import { upsertRegistryRow } from "./session-registry";
 import { registerUnibotAdkSessionAction } from "./unibot-adk-session-actions";
@@ -13,16 +27,14 @@ export interface ResolveFeatureSubSessionResult {
   error?: string;
 }
 
-function normalizeScopeId(value: string): string {
-  return value.trim().toLowerCase().replace(/\s+/g, " ");
-}
-
+/** @deprecated Use applicationAssetScopeFeatureId from sub-session-content-key */
 export function applicationAssetFeatureId(role: string, company: string): string {
-  return normalizeScopeId(`${company}|${role}`);
+  return applicationAssetScopeFeatureId(role, company);
 }
 
+/** @deprecated Legacy content_gen id shape */
 export function contentGenFeatureId(topic: string | undefined, mode: "topic" | "draft"): string {
-  const slug = topic?.trim() ? normalizeScopeId(topic).slice(0, 120) : "active";
+  const slug = linkedInTopicSlug(topic);
   return `${mode}:${slug}`;
 }
 
@@ -34,6 +46,7 @@ async function resolveFeatureSubSession(params: {
   featureId: string;
   entryId?: string;
   title: string;
+  contentKey?: string;
 }): Promise<ResolveFeatureSubSessionResult> {
   const entryId = params.entryId?.trim() ?? "";
 
@@ -44,6 +57,8 @@ async function resolveFeatureSubSession(params: {
     feature_id: params.featureId,
     section: params.section,
     entry_id: entryId,
+    content_key: params.contentKey ?? null,
+    title: params.title,
   });
 
   if (!lookup.success) {
@@ -55,7 +70,7 @@ async function resolveFeatureSubSession(params: {
     return {
       success: true,
       adkSessionId: lookup.session.adk_session_id,
-      title: lookup.session.title,
+      title: params.title?.trim() || deriveSubSessionDisplayTitle(lookup.session),
       reused: true,
     };
   }
@@ -65,7 +80,7 @@ async function resolveFeatureSubSession(params: {
     return {
       success: true,
       adkSessionId: lookup.session.adk_session_id,
-      title: lookup.session.title,
+      title: params.title?.trim() || deriveSubSessionDisplayTitle(lookup.session),
       reused: false,
     };
   }
@@ -74,7 +89,9 @@ async function resolveFeatureSubSession(params: {
     return { success: false, error: lookup.error ?? "Unexpected register response" };
   }
 
-  const created = await createSessionAction(params.userId);
+  const adkSessionOptions = resolveAdkSessionOptionsForFeatureSection(params.feature, params.section);
+
+  const created = await createSessionAction(params.userId, adkSessionOptions);
   if (!created.success || !created.sessionId) {
     return { success: false, error: created.error ?? "ADK session creation failed" };
   }
@@ -88,6 +105,7 @@ async function resolveFeatureSubSession(params: {
     section: params.section,
     entry_id: entryId,
     title: params.title,
+    content_key: params.contentKey ?? null,
   });
 
   if (!reg.success || !reg.session) {
@@ -98,7 +116,7 @@ async function resolveFeatureSubSession(params: {
   return {
     success: true,
     adkSessionId: reg.session.adk_session_id,
-    title: reg.session.title,
+    title: params.title?.trim() || deriveSubSessionDisplayTitle(reg.session),
     reused: false,
   };
 }
@@ -108,15 +126,32 @@ export async function resolveContentGenSubSession(params: {
   mainAdkSessionId: string;
   mode: "topic" | "draft";
   topic?: string;
-  title: string;
+  assetId?: string | null;
+  title?: string;
 }): Promise<ResolveFeatureSubSessionResult> {
+  if (params.mode === "topic") {
+    const slug = linkedInTopicSlug(params.topic);
+    return resolveFeatureSubSession({
+      userId: params.userId,
+      mainAdkSessionId: params.mainAdkSessionId,
+      feature: "linkedin_topic",
+      section: "",
+      featureId: slug,
+      title: params.title ?? buildLinkedInTopicPickerTitle(),
+      contentKey: buildLinkedInTopicContentKey(params.topic),
+    });
+  }
+
+  const assetId = params.assetId?.trim();
+  const topic = params.topic?.trim() ?? "";
   return resolveFeatureSubSession({
     userId: params.userId,
     mainAdkSessionId: params.mainAdkSessionId,
-    feature: "content_gen",
-    section: params.mode,
-    featureId: contentGenFeatureId(params.topic, params.mode),
-    title: params.title,
+    feature: "linkedin_post",
+    section: "",
+    featureId: assetId || linkedInTopicSlug(topic),
+    title: params.title ?? buildLinkedInPostTitle(topic),
+    contentKey: buildLinkedInPostContentKey({ assetId, topic }),
   });
 }
 
@@ -127,15 +162,25 @@ export async function resolveApplicationAssetSubSession(params: {
   role: string;
   company: string;
   assetId?: string | null;
-  title: string;
+  title?: string;
 }): Promise<ResolveFeatureSubSessionResult> {
+  const assetId = params.assetId?.trim();
+  const scopeFeatureId = applicationAssetScopeFeatureId(params.role, params.company);
+  const featureId = assetId || scopeFeatureId;
+
   return resolveFeatureSubSession({
     userId: params.userId,
     mainAdkSessionId: params.mainAdkSessionId,
-    feature: "application_asset",
-    section: params.assetType,
-    featureId: applicationAssetFeatureId(params.role, params.company),
-    entryId: params.assetId?.trim() || "",
-    title: params.title,
+    feature: params.assetType,
+    section: "",
+    featureId,
+    entryId: assetId ? `${params.company.trim()}|${params.role.trim()}` : "",
+    title: params.title ?? buildStudioAssetDraftTitle(params.assetType, assetId),
+    contentKey: buildStudioAssetContentKey({
+      assetType: params.assetType,
+      assetId,
+      role: params.role,
+      company: params.company,
+    }),
   });
 }

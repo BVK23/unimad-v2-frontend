@@ -415,6 +415,8 @@ type AtsApiBody = {
   resume_updated_at?: string | null;
   ats_calc_count?: number;
   from_cache?: boolean;
+  score_stale?: boolean;
+  history_count?: number;
 };
 
 function parseAtsMeta(data: AtsApiBody) {
@@ -423,6 +425,8 @@ function parseAtsMeta(data: AtsApiBody) {
     resume_updated_at: typeof data.resume_updated_at === "string" ? data.resume_updated_at : null,
     ats_calc_count: typeof data.ats_calc_count === "number" ? data.ats_calc_count : 0,
     from_cache: Boolean(data.from_cache),
+    score_stale: Boolean(data.score_stale),
+    history_count: typeof data.history_count === "number" ? data.history_count : undefined,
   };
 }
 

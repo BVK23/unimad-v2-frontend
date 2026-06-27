@@ -3,6 +3,7 @@ import type { PortfolioHighlightMap } from "@/features/adk-chat/adkPortfolioHigh
 import { getDefaultItemHeightPx, getMinGridRowsForItem, gridRowSpanForHeightPx } from "@/features/portfolio/constants/portfolioLayout";
 import { useAutoItemHeights } from "@/features/portfolio/hooks/useAutoItemHeights";
 import { usePortfolioGridRemeasure } from "@/features/portfolio/hooks/usePortfolioGridRemeasure";
+import { getPortfolioBlockDeleteLabel } from "@/features/portfolio/utils/getPortfolioBlockDeleteLabel";
 import { normalizePortfolioHtmlForRender } from "@/features/portfolio/utils/portfolio-html";
 import { UploadError, uploadPortfolioFile } from "@/features/portfolio/utils/upload";
 import {
@@ -25,8 +26,13 @@ import {
 import { useGridResize } from "../hooks/useGridResize";
 import { PortfolioItem, ContentType } from "../types";
 import BlockRenderer from "./BlockRenderer";
+import RichTextEditor from "./RichTextEditor";
+import DeleteBlockConfirmModal from "./portfolio/DeleteBlockConfirmModal";
 import { PortfolioAdkBlockHighlight } from "./portfolio/PortfolioAdkBlockHighlight";
 import PortfolioImage from "./portfolio/PortfolioImage";
+
+const PAGE_HERO_RICH_TEXT_CLASSES =
+  "[&_strong]:font-bold [&_b]:font-bold [&_em]:italic [&_i]:italic [&_u]:underline [&_p]:inline [&_br]:block";
 
 interface ProjectDetailViewProps {
   project: PortfolioItem;
@@ -56,6 +62,7 @@ const ProjectDetailView: React.FC<ProjectDetailViewProps> = ({
   const [isEditMode, setIsEditMode] = useState(true);
   const [draggedBlockIndex, setDraggedBlockIndex] = useState<number | null>(null);
   const [contextMenu, setContextMenu] = useState<{ x: number; y: number; targetId?: string } | null>(null);
+  const [pendingDeleteBlockId, setPendingDeleteBlockId] = useState<string | null>(null);
   const [coverUploadError, setCoverUploadError] = useState<string | null>(null);
   const [isCoverUploading, setIsCoverUploading] = useState(false);
   const [collapsedHeights, setCollapsedHeights] = useState<Record<string, number>>({});
@@ -185,6 +192,19 @@ const ProjectDetailView: React.FC<ProjectDetailViewProps> = ({
     handleUpdateBlocks(blocks.filter(b => b.id !== id));
     setContextMenu(null);
   };
+
+  const requestDeleteBlock = (id: string) => {
+    setPendingDeleteBlockId(id);
+    setContextMenu(null);
+  };
+
+  const handleConfirmDeleteBlock = () => {
+    if (!pendingDeleteBlockId) return;
+    handleRemoveBlock(pendingDeleteBlockId);
+    setPendingDeleteBlockId(null);
+  };
+
+  const pendingDeleteBlock = pendingDeleteBlockId ? blocks.find(block => block.id === pendingDeleteBlockId) : null;
 
   // Drag & Drop
   const handleDragStart = (e: React.DragEvent, index: number, blockId: string) => {
@@ -432,25 +452,27 @@ const ProjectDetailView: React.FC<ProjectDetailViewProps> = ({
         <div className="absolute inset-0 bg-gradient-to-t from-[#080808] via-[#080808]/20 to-transparent flex flex-col justify-end p-8 md:p-16">
           <div className={`${editorMaxWidth} mx-auto w-full group/text`}>
             {isEditMode ? (
-              <input
-                value={project.title || ""}
-                onChange={e => onUpdateProject({ ...project, title: e.target.value })}
-                className="block text-4xl md:text-6xl font-semibold text-white bg-transparent outline-none w-full mb-2 placeholder:text-white/50"
+              <RichTextEditor
+                value={normalizePortfolioHtmlForRender(project.title || "")}
+                onChange={value => onUpdateProject({ ...project, title: value })}
+                className={`block w-full bg-transparent text-4xl md:text-6xl font-semibold text-white outline-none mb-2 min-h-[2.5rem] placeholder:text-white/50 ${PAGE_HERO_RICH_TEXT_CLASSES}`}
                 placeholder="Page Title"
               />
             ) : (
-              <h1 className="text-4xl md:text-6xl font-black text-white mb-2 leading-tight drop-shadow-md">
-                {project.title || "Untitled Page"}
-              </h1>
+              <h1
+                className={`text-4xl md:text-6xl font-black text-white mb-2 leading-tight drop-shadow-md ${PAGE_HERO_RICH_TEXT_CLASSES}`}
+                dangerouslySetInnerHTML={{
+                  __html: normalizePortfolioHtmlForRender(project.title || "Untitled Page"),
+                }}
+              />
             )}
 
             {isEditMode ? (
-              <textarea
-                value={project.description || ""}
-                onChange={e => onUpdateProject({ ...project, description: e.target.value })}
-                className="block text-xl text-white/80 bg-transparent outline-none w-full max-w-2xl resize-none placeholder:text-white/40"
+              <RichTextEditor
+                value={normalizePortfolioHtmlForRender(project.description || "")}
+                onChange={value => onUpdateProject({ ...project, description: value })}
+                className={`block w-full max-w-2xl bg-transparent text-xl text-white/80 outline-none min-h-[3rem] placeholder:text-white/40 ${PAGE_HERO_RICH_TEXT_CLASSES}`}
                 placeholder="Add a description..."
-                rows={2}
               />
             ) : (
               project.description && (
@@ -534,7 +556,7 @@ const ProjectDetailView: React.FC<ProjectDetailViewProps> = ({
                         type="button"
                         onClick={e => {
                           e.stopPropagation();
-                          handleRemoveBlock(block.id);
+                          requestDeleteBlock(block.id);
                         }}
                         className="p-1.5 text-slate-400 hover:text-red-500 bg-white dark:bg-slate-800 rounded-lg shadow-xl border border-slate-100 dark:border-white/5 transition-colors"
                         title="Delete block"
@@ -672,8 +694,7 @@ const ProjectDetailView: React.FC<ProjectDetailViewProps> = ({
               </button>
               <button
                 onClick={() => {
-                  handleRemoveBlock(contextMenu.targetId!);
-                  setContextMenu(null);
+                  requestDeleteBlock(contextMenu.targetId!);
                 }}
                 className="w-full text-left px-4 py-2 text-sm text-red-600 hover:bg-red-50 dark:hover:bg-red-900/20 flex items-center gap-2 font-medium"
               >
@@ -682,6 +703,13 @@ const ProjectDetailView: React.FC<ProjectDetailViewProps> = ({
             </div>
           )}
         </div>
+      )}
+      {pendingDeleteBlock && (
+        <DeleteBlockConfirmModal
+          blockLabel={getPortfolioBlockDeleteLabel(pendingDeleteBlock)}
+          onCancel={() => setPendingDeleteBlockId(null)}
+          onConfirm={handleConfirmDeleteBlock}
+        />
       )}
     </div>
   );

@@ -33,7 +33,7 @@ function baseToolName(name: string): string {
 }
 
 /** ADK / Gemini may declare tools as camelCase; normalize for switch + mutating set. */
-function toSnakeToolKey(name: string): string {
+export function toSnakeToolKey(name: string): string {
   const b = baseToolName(name);
   return b
     .replace(/([a-z0-9])([A-Z])/g, "$1_$2")
@@ -58,7 +58,13 @@ export function isMutatingResumeTool(name: string): boolean {
 }
 
 /** Tool names that write into session portfolio_data via portfolio_mutating_tools. */
-export const MUTATING_CONTENT_GEN_TOOL_NAMES = new Set<string>(["update_post_draft"]);
+export const MUTATING_CONTENT_GEN_TOOL_NAMES = new Set<string>(["update_post_draft", "set_content_gen_topic"]);
+
+export const MUTATING_APPLICATION_ASSET_TOOL_NAMES = new Set<string>([
+  "update_application_asset_draft",
+  "set_application_asset_context",
+  "generate_application_asset_draft",
+]);
 
 export const MUTATING_PORTFOLIO_TOOL_NAMES = new Set<string>([
   "update_profile_field",
@@ -82,8 +88,31 @@ export function isMutatingContentGenTool(name: string): boolean {
   return MUTATING_CONTENT_GEN_TOOL_NAMES.has(toSnakeToolKey(name));
 }
 
+export function isMutatingApplicationAssetTool(name: string): boolean {
+  return MUTATING_APPLICATION_ASSET_TOOL_NAMES.has(toSnakeToolKey(name));
+}
+
+export const MUTATING_LINKEDIN_TOOL_NAMES = new Set<string>([
+  "update_headline",
+  "update_about",
+  "update_experience",
+  "update_skills",
+  "update_connection_draft",
+  "update_comment_draft",
+]);
+
+export function isMutatingLinkedInTool(name: string): boolean {
+  return MUTATING_LINKEDIN_TOOL_NAMES.has(toSnakeToolKey(name));
+}
+
 export function isMutatingAdkTool(name: string): boolean {
-  return isMutatingResumeTool(name) || isMutatingPortfolioTool(name) || isMutatingContentGenTool(name);
+  return (
+    isMutatingResumeTool(name) ||
+    isMutatingPortfolioTool(name) ||
+    isMutatingContentGenTool(name) ||
+    isMutatingLinkedInTool(name) ||
+    isMutatingApplicationAssetTool(name)
+  );
 }
 
 /**
@@ -114,6 +143,11 @@ function readHandoffTargetAgent(args?: Record<string, unknown>): string | null {
   return null;
 }
 
+/** User-facing label when ADK transfers to a named sub-agent. */
+export function labelForTransferTarget(targetRaw: string): string {
+  return handoffLabelForTarget(targetRaw);
+}
+
 function handoffLabelForTarget(targetRaw: string): string {
   const id = targetRaw.trim().toLowerCase().replace(/\s+/g, "_");
   switch (id) {
@@ -137,10 +171,36 @@ function handoffLabelForTarget(targetRaw: string): string {
       return "Tuning your LinkedIn skills…";
     case "content_gen_agent":
       return "Opening Content Lab…";
+    case "top_funnel_topic_agent":
+      return "Exploring thought-leadership angles…";
+    case "middle_funnel_topic_agent":
+      return "Exploring personal story angles…";
+    case "bottom_funnel_topic_agent":
+      return "Exploring open-to-roles angles…";
+    case "top_funnel_draft_agent":
+      return "Drafting your thought-leadership post…";
+    case "middle_funnel_draft_agent":
+      return "Drafting your story post…";
+    case "bottom_funnel_draft_agent":
+      return "Drafting your open-to-roles post…";
     case "topic_planner_agent":
       return "Planning your LinkedIn topic…";
     case "post_draft_agent":
-      return "Writing your LinkedIn post…";
+      return "Coordinating your post workflow…";
+    case "linkedin_post_creative_drafter":
+      return "Crafting your post for the topic and tone…";
+    case "linkedin_post_creative_improver":
+      return "Refining your post based on your feedback…";
+    case "post_draft_entry_agent":
+      return "Starting your LinkedIn post…";
+    case "linkedin_post_formatter":
+      return "Polishing structure and flow…";
+    case "linkedin_post_personalization_agent":
+      return "Personalizing for your profile and tone…";
+    case "linkedin_web_research_agent":
+      return "Looking up recent facts and trends…";
+    case "linkedin_post_publish_agent":
+      return "Preparing to publish your post…";
     case "experience_agent":
       return "Going deeper on your work experience…";
     case "education_agent":
@@ -211,6 +271,21 @@ function sectionLabel(sectionName: string): string {
   return "your resume";
 }
 
+export function resolveContentGenActivityLabelHint(message: string): string | undefined {
+  const m = message.trim().toLowerCase();
+  if (!m) return undefined;
+  if (m.includes("improve my linkedin post draft") || m.includes("what would you like to improve")) {
+    return "Refining your post based on your feedback…";
+  }
+  if (m.includes("write the full linkedin post draft")) {
+    return "Crafting your post for the topic and tone…";
+  }
+  if (m.includes("help me choose a linkedin post topic")) {
+    return "Exploring topic ideas…";
+  }
+  return undefined;
+}
+
 export function labelForAgent(author: string): string {
   const a = author.trim().toLowerCase().replace(/\s+/g, "_");
   switch (a) {
@@ -242,10 +317,44 @@ export function labelForAgent(author: string): string {
       return "Drafting your cold email…";
     case "referral_draft_agent":
       return "Drafting your referral message…";
+    case "top_funnel_topic_agent":
+      return "Exploring thought-leadership angles…";
+    case "middle_funnel_topic_agent":
+      return "Exploring personal story angles…";
+    case "bottom_funnel_topic_agent":
+      return "Exploring open-to-roles angles…";
+    case "top_funnel_draft_agent":
+      return "Drafting your thought-leadership post…";
+    case "middle_funnel_draft_agent":
+      return "Drafting your story post…";
+    case "bottom_funnel_draft_agent":
+      return "Drafting your open-to-roles post…";
     case "topic_planner_agent":
       return "Exploring topic ideas…";
     case "post_draft_agent":
-      return "Drafting your LinkedIn post…";
+      return "Coordinating your post workflow…";
+    case "cover_letter_reviewer":
+    case "cold_email_reviewer":
+    case "referral_reviewer":
+      return "Polishing your draft…";
+    case "studio_coverletter_sequential_runner":
+    case "studio_coldemail_sequential_runner":
+    case "studio_referral_sequential_runner":
+      return "Starting your draft pipeline…";
+    case "linkedin_post_creative_drafter":
+      return "Crafting your post for the topic and tone…";
+    case "linkedin_post_creative_improver":
+      return "Refining your post based on your feedback…";
+    case "post_draft_entry_agent":
+      return "Starting your LinkedIn post…";
+    case "linkedin_post_formatter":
+      return "Polishing structure and flow…";
+    case "linkedin_post_personalization_agent":
+      return "Personalizing for your profile and tone…";
+    case "linkedin_web_research_agent":
+      return "Looking up recent facts and trends…";
+    case "linkedin_post_publish_agent":
+      return "Preparing to publish your post…";
     case "summary_agent":
       return "Shaping your professional summary…";
     case "linkedin_experience_agent":
@@ -285,12 +394,40 @@ export function labelForToolCall(name: string, args?: Record<string, unknown>): 
       return "Loading your profile for topic ideas…";
     case "fetch_user_personal_details":
       return "Loading your profile…";
+    case "summarize_user_profile":
+      return "Summarizing your background…";
+    case "assess_profile_relevance_for_post":
+      return "Checking if personal details help this post…";
+    case "set_content_gen_topic":
+      return "Saving your topic choice…";
     case "get_post_draft":
-      return "Reading your post draft…";
+      return "Reading your existing post…";
+    case "get_post_draft_handoff":
+      return "Checking what you need for your post…";
     case "update_post_draft":
-      return "Updating your post draft…";
+      return "Saving your updated draft…";
+    case "schedule_linkedin_post":
+      return "Scheduling your LinkedIn post…";
+    case "publish_linkedin_post":
+      return "Publishing your LinkedIn post…";
+    case "suggest_unimad_navigation":
+      return "Finding the right page…";
+    case "get_content_gen_handoff":
+      return "Routing your Content Lab request…";
+    case "fetch_recommended_jobs":
+      return "Finding jobs that match your profile…";
+    case "search_jobs_for_user":
+      return "Searching the job board…";
+    case "fetch_user_desired_roles":
+      return "Loading your target roles…";
     case "get_application_asset_draft":
       return "Reading your application draft…";
+    case "generate_application_asset_draft":
+      return "Generating your first draft…";
+    case "generate_studio_initial_draft":
+      return "Generating your first draft…";
+    case "create_job_application":
+      return "Linking your job application…";
     case "update_application_asset_draft":
       return "Updating your cover letter draft…";
     case "set_application_asset_context":
@@ -314,6 +451,14 @@ export function labelForToolCall(name: string, args?: Record<string, unknown>): 
       return "Reviewing your LinkedIn profile…";
     case "get_linkedin_section":
       return `Reviewing ${linkedInSectionLabel(readSectionNameArg(args))}…`;
+    case "present_linkedin_suggestions":
+      return "Preparing copy-ready suggestions…";
+    case "fetch_linkedin_profile_experiences":
+    case "fetch_base_resume_experiences":
+      return "Loading your experience history…";
+    case "fetch_linkedin_profile_skills":
+    case "fetch_base_resume_skills":
+      return "Loading your skills…";
     case "get_experiences":
       return "Reviewing your experience…";
     case "get_experience_by_id":
@@ -369,13 +514,68 @@ export function labelForToolCall(name: string, args?: Record<string, unknown>): 
       return "Reordering your blocks…";
     case "duplicate_block":
       return "Duplicating a portfolio block…";
+    case "update_headline":
+      return "Updating your LinkedIn headline…";
+    case "update_about":
+      return "Updating your About section…";
+    case "update_experience":
+      return "Updating your LinkedIn experience…";
+    case "update_skills":
+      return "Updating your LinkedIn skills…";
+    case "update_connection_draft":
+      return "Updating your connection request…";
+    case "update_comment_draft":
+      return "Updating your comment draft…";
     default:
       return `Working on ${humanizeUnknownToolName(name)}…`;
   }
 }
 
+function parsePostDraftPayload(response: Record<string, unknown>): Record<string, unknown> | null {
+  const nested = response.response ?? response.result ?? response.output;
+  if (typeof nested === "string") {
+    try {
+      const parsed = JSON.parse(nested) as unknown;
+      return typeof parsed === "object" && parsed !== null && !Array.isArray(parsed) ? (parsed as Record<string, unknown>) : null;
+    } catch {
+      return null;
+    }
+  }
+  if (typeof nested === "object" && nested !== null && !Array.isArray(nested)) {
+    return nested as Record<string, unknown>;
+  }
+  if (typeof response.body === "string" || typeof response.topic === "string") {
+    return response;
+  }
+  return null;
+}
+
+/** User-facing label after a read-only tool returns (only when the result is noteworthy). */
+export function labelForReadToolResponse(name: string, response: Record<string, unknown>): string | null {
+  const key = toSnakeToolKey(name);
+  if (key !== "get_post_draft" && key !== "get_post_draft_handoff") {
+    return null;
+  }
+
+  const payload = parsePostDraftPayload(response);
+  if (!payload) return null;
+
+  if (typeof payload.error === "string" && payload.error.trim()) {
+    return "Couldn't load your post — we'll start fresh…";
+  }
+
+  const body = typeof payload.body === "string" ? payload.body.trim() : "";
+  if (!body) {
+    return "No existing post yet — starting fresh…";
+  }
+
+  return null;
+}
+
 export function labelForMutatingToolResponse(name: string): string {
   switch (toSnakeToolKey(name)) {
+    case "update_post_draft":
+      return "Post draft saved — refreshing your view…";
     case "update_summary":
       return "Summary updated — refreshing your view…";
     case "update_education":
@@ -417,5 +617,37 @@ export function labelForMutatingToolResponse(name: string): string {
       return "Block duplicated — refreshing your view…";
     default:
       return "Changes saved — refreshing your view…";
+  }
+}
+
+/** Chat bubble copy after a mutating tool when the agent streamed no prose (tool-only turns). */
+export function completionMessageForMutatingTool(name: string): string | null {
+  switch (toSnakeToolKey(name)) {
+    case "update_summary":
+      return "I've updated your professional summary. Review the highlighted changes in the editor — accept to save or discard to revert.";
+    case "update_education":
+    case "add_education":
+    case "remove_education":
+      return "I've updated your education section. Review the highlighted changes in the editor.";
+    case "update_experience":
+    case "add_experience":
+    case "remove_experience":
+    case "add_bullet":
+    case "update_bullet":
+    case "remove_bullet":
+      return "I've updated your experience section. Review the highlighted changes in the editor.";
+    case "add_skill":
+    case "remove_skill":
+      return "I've updated your skills section. Review the highlighted changes in the editor.";
+    case "add_project":
+    case "update_project":
+    case "remove_project":
+      return "I've updated your projects section. Review the highlighted changes in the editor.";
+    case "update_post_draft":
+      return "I've updated your post draft. Review the changes when you're ready.";
+    case "set_content_gen_topic":
+      return "Topic saved. You can continue refining or start drafting.";
+    default:
+      return null;
   }
 }

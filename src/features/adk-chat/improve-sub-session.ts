@@ -1,7 +1,9 @@
 "use client";
 
 import { createSessionAction } from "./actions";
+import { resolveAdkSessionOptionsForFeatureSection } from "./resolve-sub-session-adk-app";
 import { upsertRegistryRow } from "./session-registry";
+import { deriveSubSessionDisplayTitle } from "./sub-session-titles";
 import { registerUnibotAdkSessionAction } from "./unibot-adk-session-actions";
 
 export interface ResolveImproveSubSessionParams {
@@ -11,6 +13,8 @@ export interface ResolveImproveSubSessionParams {
   featureId: string;
   section: string;
   entryId?: string;
+  contentKey?: string;
+  title?: string;
 }
 
 export interface ResolveImproveSubSessionResult {
@@ -35,6 +39,8 @@ export async function resolveImproveSubSession(params: ResolveImproveSubSessionP
     feature_id: params.featureId,
     section: params.section,
     entry_id: entryId,
+    content_key: params.contentKey ?? null,
+    title: params.title ?? "",
   });
 
   if (!lookup.success) {
@@ -46,7 +52,7 @@ export async function resolveImproveSubSession(params: ResolveImproveSubSessionP
     return {
       success: true,
       adkSessionId: lookup.session.adk_session_id,
-      title: lookup.session.title,
+      title: params.title?.trim() || deriveSubSessionDisplayTitle(lookup.session),
       reused: true,
     };
   }
@@ -56,7 +62,7 @@ export async function resolveImproveSubSession(params: ResolveImproveSubSessionP
     return {
       success: true,
       adkSessionId: lookup.session.adk_session_id,
-      title: lookup.session.title,
+      title: params.title?.trim() || deriveSubSessionDisplayTitle(lookup.session),
       reused: false,
     };
   }
@@ -65,7 +71,9 @@ export async function resolveImproveSubSession(params: ResolveImproveSubSessionP
     return { success: false, error: lookup.error ?? "Unexpected register response" };
   }
 
-  const created = await createSessionAction(params.userId);
+  const adkSessionOptions = resolveAdkSessionOptionsForFeatureSection(params.feature, params.section);
+
+  const created = await createSessionAction(params.userId, adkSessionOptions);
   if (!created.success || !created.sessionId) {
     return { success: false, error: created.error ?? "ADK session creation failed" };
   }
@@ -78,7 +86,8 @@ export async function resolveImproveSubSession(params: ResolveImproveSubSessionP
     feature_id: params.featureId,
     section: params.section,
     entry_id: entryId,
-    title: lookup.suggested_title ?? "",
+    title: params.title ?? lookup.suggested_title ?? "",
+    content_key: params.contentKey ?? null,
   });
 
   if (!reg.success || !reg.session) {
@@ -89,7 +98,7 @@ export async function resolveImproveSubSession(params: ResolveImproveSubSessionP
   return {
     success: true,
     adkSessionId: reg.session.adk_session_id,
-    title: reg.session.title,
+    title: params.title?.trim() || deriveSubSessionDisplayTitle(reg.session),
     reused: false,
   };
 }

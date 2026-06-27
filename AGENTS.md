@@ -7,6 +7,7 @@ When working in this repo, follow the project folder structure so new and modifi
 - **Folder structure and conventions:** [STRUCTURE.md](./STRUCTURE.md) (current layout) · [docs/FOLDER_STRUCTURE_V2.md](./docs/FOLDER_STRUCTURE_V2.md) (target layout)  
   Use it to decide where to create or move files (feature logic vs UI, hooks, server actions, types, utils, etc.).
 - **Code guidelines (`useEffect`, React, overlays):** [docs/CODE_GUIDELINES.md](./docs/CODE_GUIDELINES.md)
+- **ADK session contract (PATCH / SSE / GET on mutating tools):** [docs/ADK_SESSION_CONTRACT.md](./docs/ADK_SESSION_CONTRACT.md)
 - **Design system (UI components, tokens, badges, cards):** `docs/internal/design-system.html` — browse at `/internal/design/design-system` when running locally, or when signed in as a team member in production.
 - **Brand guidelines:** `docs/internal/brand-book.html` — browse at `/internal/design/brand-book` under the same access rules.
 

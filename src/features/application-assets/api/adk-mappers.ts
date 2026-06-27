@@ -1,4 +1,6 @@
 import type { ApplicationAssetApiType } from "@/features/application-assets/types";
+import type { ApplicationAssetProfileSnapshot } from "@/features/application-assets/utils/applicationAssetProfileSnapshot";
+import { formatCoverLetterDate } from "@/features/application-assets/utils/formatCoverLetterDate";
 
 export type ApplicationAssetAdkStateDeltaPayload = {
   active_context: "application_asset";
@@ -11,6 +13,9 @@ export type ApplicationAssetAdkStateDeltaPayload = {
   application_contact_name?: string;
   application_asset_draft_preview?: string;
   application_asset_accepted_body?: string;
+  application_asset_current_date?: string;
+  studio_headless?: boolean;
+  application_asset_profile_snapshot?: ApplicationAssetProfileSnapshot;
   application_asset_data?: Record<
     string,
     {
@@ -38,12 +43,26 @@ export type BuildApplicationAssetStateDeltaInput = {
   contactName?: string;
   draftPreview?: string;
   acceptedBody?: string;
+  studioHeadless?: boolean;
+  profileSnapshot?: ApplicationAssetProfileSnapshot;
+  /** Generate Another: agent should treat as first draft (empty session body, accepted kept for UI). */
+  regenerateDraft?: boolean;
 };
 
 export const buildAdkApplicationAssetStateDelta = (
   input: BuildApplicationAssetStateDeltaInput = {}
 ): ApplicationAssetAdkStateDeltaPayload => {
-  const delta: ApplicationAssetAdkStateDeltaPayload = { active_context: "application_asset" };
+  const delta: ApplicationAssetAdkStateDeltaPayload = {
+    active_context: "application_asset",
+    application_asset_current_date: formatCoverLetterDate(),
+  };
+
+  if (input.studioHeadless) {
+    delta.studio_headless = true;
+  }
+  if (input.profileSnapshot) {
+    delta.application_asset_profile_snapshot = input.profileSnapshot;
+  }
 
   if (input.assetType) {
     delta.application_asset_type = input.assetType;
@@ -72,8 +91,10 @@ export const buildAdkApplicationAssetStateDelta = (
   }
   const draft = input.draftPreview?.trim();
   const accepted = input.acceptedBody?.trim();
-  if (draft) {
-    delta.application_asset_draft_preview = draft.slice(0, 8000);
+  /** Agent tools read `body`; PATCH must not send accepted-only without body or improve sees an empty draft. */
+  const sessionBody = input.regenerateDraft ? "" : ((draft || accepted)?.slice(0, 8000) ?? "");
+  if (sessionBody) {
+    delta.application_asset_draft_preview = sessionBody;
     delta.current_application_asset = "active";
     delta.application_asset_data = {
       active: {
@@ -84,11 +105,11 @@ export const buildAdkApplicationAssetStateDelta = (
         company: company ?? "",
         job_description: jd ?? "",
         contact_name: contact ?? "",
-        body: draft.slice(0, 8000),
+        body: sessionBody,
         accepted_body: accepted?.slice(0, 8000) ?? "",
       },
     };
-  } else if (input.assetType || input.assetId) {
+  } else if (input.assetType || input.assetId || input.studioHeadless) {
     delta.current_application_asset = "active";
     delta.application_asset_data = {
       active: {

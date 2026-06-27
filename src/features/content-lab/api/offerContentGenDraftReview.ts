@@ -18,26 +18,39 @@ export type OfferContentGenDraftReviewParams = {
   pathname: string | null;
   topicOverride?: string;
   funnelOverride?: ContentGenFunnel | null;
+  /** When set, use this draft instead of parsing botMessage (e.g. ADK session pull). */
+  proposedDraftOverride?: string;
   appliedTopicRef?: string | null;
   threadMessages?: ResolveContentGenDraftTopicParams["threadMessages"];
   userId?: string;
   sessionId?: string;
   /** When false, open the review card only — do not sync draft into Studio stores/events. */
   syncStudioPreview?: boolean;
+  /** After rewind: allow re-offering review even if a decision was already recorded. */
+  forceOfferAfterRewind?: boolean;
+  /** Push draft into Studio via events even when not currently on /uniboard/studio. */
+  forceStudioPreview?: boolean;
+  /** Baseline draft for review diff (e.g. prior assistant turn after rewind). */
+  baselineDraftOverride?: string;
 };
 
 /**
  * When a draft is detected: open Accept/Discard review and preview on Studio (if on Studio + topic set).
  */
 export const offerContentGenDraftReview = (params: OfferContentGenDraftReviewParams): boolean => {
-  if (params.userId && params.sessionId && !shouldOfferDraftReview(params.userId, params.sessionId, params.assistantMessageId)) {
+  if (
+    params.userId &&
+    params.sessionId &&
+    !params.forceOfferAfterRewind &&
+    !shouldOfferDraftReview(params.userId, params.sessionId, params.assistantMessageId)
+  ) {
     return false;
   }
   if (isApplicationAssetBotMessage(params.botMessage)) {
     return false;
   }
   const payload = extractContentGenDraftPayload(params.botMessage);
-  const proposedDraft = payload.draft;
+  const proposedDraft = params.proposedDraftOverride?.trim() || payload.draft;
   if (proposedDraft.length < CONTENT_GEN_MIN_DRAFT_CHARS) {
     return false;
   }
@@ -61,10 +74,10 @@ export const offerContentGenDraftReview = (params: OfferContentGenDraftReviewPar
   const baselineTopic = studio.topic.trim();
   const baselineAssetId = studio.assetId;
   const baselineFunnel = studio.funnel;
-  const baselineDraft = studio.draftPreview?.trim() ?? "";
+  const baselineDraft = params.baselineDraftOverride?.trim() || studio.draftPreview?.trim() || "";
   const isTopicChange = Boolean(baselineTopic) && !contentGenTopicsEqual(baselineTopic, topic);
   const onStudio = Boolean(params.pathname?.startsWith("/uniboard/studio"));
-  const syncStudioPreview = params.syncStudioPreview !== false;
+  const shouldSyncStudioPreview = params.forceStudioPreview || (onStudio && params.syncStudioPreview !== false);
 
   const bannerTitle = isTopicChange
     ? resolved.topicInferredFromDraft
@@ -85,7 +98,7 @@ export const offerContentGenDraftReview = (params: OfferContentGenDraftReviewPar
     isTopicChange,
   });
 
-  if (onStudio && syncStudioPreview) {
+  if (shouldSyncStudioPreview) {
     window.dispatchEvent(
       new CustomEvent(CONTENT_GEN_EVENTS.draftPreview, {
         detail: {

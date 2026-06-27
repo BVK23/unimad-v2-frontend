@@ -32,6 +32,14 @@ export type OfferApplicationAssetDraftReviewParams = {
 
   /** When false, open the review card only — do not sync draft into Studio stores/events. */
   syncStudioPreview?: boolean;
+  /** After rewind: allow re-offering review even if a decision was already recorded. */
+  forceOfferAfterRewind?: boolean;
+  /** Push draft into Studio via events even when not currently on /uniboard/studio. */
+  forceStudioPreview?: boolean;
+  /** Baseline draft for review diff (e.g. prior assistant turn after rewind). */
+  baselineDraftOverride?: string;
+  /** When set, use session pull result instead of parsing botMessage. */
+  proposedDraftOverride?: string;
 };
 
 const pushStudioContext = (ctx: {
@@ -112,11 +120,16 @@ const isDifferentJobContext = (baselineRole: string, baselineCompany: string, pr
 };
 
 export const offerApplicationAssetDraftReview = (params: OfferApplicationAssetDraftReviewParams): boolean => {
-  if (params.userId && params.sessionId && !shouldOfferDraftReview(params.userId, params.sessionId, params.assistantMessageId)) {
+  if (
+    params.userId &&
+    params.sessionId &&
+    !params.forceOfferAfterRewind &&
+    !shouldOfferDraftReview(params.userId, params.sessionId, params.assistantMessageId)
+  ) {
     return false;
   }
 
-  const proposedDraft = extractApplicationAssetDraftPayload(params.botMessage).draft.trim();
+  const proposedDraft = params.proposedDraftOverride?.trim() || extractApplicationAssetDraftPayload(params.botMessage).draft.trim();
 
   if (proposedDraft.length < APPLICATION_ASSET_MIN_DRAFT_CHARS) {
     return false;
@@ -150,17 +163,22 @@ export const offerApplicationAssetDraftReview = (params: OfferApplicationAssetDr
 
   const { assetType, role, company, jobDescription, contactName } = resolved;
 
-  const baselineDraft = studio.acceptedContent.trim() || studio.draftPreview.trim();
+  const refineCtx = useApplicationAssetStudioStore.getState().consumePendingRefineContext();
+  if (refineCtx) {
+    useApplicationAssetStudioStore.getState().clearRefineAnchor();
+  }
+
+  const baselineDraft =
+    params.baselineDraftOverride?.trim() || refineCtx?.baselineDraft?.trim() || studio.acceptedContent.trim() || studio.draftPreview.trim();
   const baselineAssetId = studio.assetId;
   const baselineRole = studio.role;
   const baselineCompany = studio.company;
   const baselineJobDescription = studio.jobDescription;
   const baselineContactName = studio.contactName;
 
-  const refineCtx = useApplicationAssetStudioStore.getState().consumePendingRefineContext();
-
   const onStudio = Boolean(params.pathname?.startsWith("/uniboard/studio"));
-  const syncStudioPreview = params.syncStudioPreview !== false;
+  const shouldSyncStudioPreview = params.forceStudioPreview || (onStudio && params.syncStudioPreview !== false);
+  const preserveStudioPreviewUntilAccept = studio.regenerateAnotherInFlight;
 
   useAdkApplicationAssetReviewStore.getState().beginReview({
     assistantMessageId: params.assistantMessageId,
@@ -180,7 +198,7 @@ export const offerApplicationAssetDraftReview = (params: OfferApplicationAssetDr
     presetLabel: refineCtx?.presetLabel,
   });
 
-  if (onStudio && syncStudioPreview) {
+  if (shouldSyncStudioPreview && !preserveStudioPreviewUntilAccept) {
     const previewAssetId = isDifferentJobContext(baselineRole, baselineCompany, role, company) ? null : baselineAssetId;
     pushStudioContext({
       assetType,

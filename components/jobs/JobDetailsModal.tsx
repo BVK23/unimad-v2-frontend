@@ -209,8 +209,9 @@ const JobDetailsModal: React.FC<JobDetailsModalProps> = ({
             <FileText size={18} className="text-brand-500" /> {hasPreparedApplication ? "Continue Application" : "Prepare Application"}
           </button>
           <button
+            type="button"
             onClick={() => onApply && onApply(job)}
-            className="flex-1 py-3 bg-brand-600 hover:bg-brand-700 text-white font-medium rounded-xl shadow-lg shadow-brand-500/20 transition-all flex items-center justify-center gap-2 active:scale-95"
+            className="flex flex-1 items-center justify-center gap-2 rounded-xl bg-brand-600 py-3 font-medium text-white shadow-lg shadow-brand-500/20 transition-all hover:bg-brand-700 active:scale-95"
           >
             Apply Now <ExternalLink size={18} />
           </button>

@@ -43,7 +43,7 @@ function toSignature(value: unknown): string {
 
 /**
  * Mirrors the legacy `unimadai-frontendapp` behavior:
- * - `profile` updates are debounced at 300ms
+ * - `profile` updates are debounced at 750ms
  * - `experience`, `education`, `projects`, `certifications`, `customSections` are debounced at 750ms
  * - `skills`, `sectionOrder`, `templateId`, `title` update immediately
  *

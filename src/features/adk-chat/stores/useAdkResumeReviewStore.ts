@@ -41,6 +41,7 @@ export type AdkResumeReviewState = {
   /** Baseline for the active (top) card — used for Discard. */
   getBaselineResume: () => ResumeData | null;
   clearAllReviews: () => void;
+  clearReviewsByAssistantIds: (assistantIds: Iterable<string>) => void;
   /** After discard of active review — restores prior stacked review if any. */
   popReviewAfterDiscard: () => void;
 
@@ -99,6 +100,14 @@ export const useAdkResumeReviewStore = create<AdkResumeReviewState>((set, get) =
 
   clearAllReviews: () => {
     set({ reviewStack: [] });
+  },
+
+  clearReviewsByAssistantIds: assistantIds => {
+    const drop = new Set([...assistantIds].filter(Boolean));
+    if (drop.size === 0) return;
+    set(state => ({
+      reviewStack: state.reviewStack.filter(card => !card.assistantMessageId || !drop.has(card.assistantMessageId)),
+    }));
   },
 
   popReviewAfterDiscard: () => {

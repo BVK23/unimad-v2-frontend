@@ -10,6 +10,9 @@ function toLinkedInListItem(post: ReturnType<typeof mapContentGenToModalPost>): 
     id: post.id,
     content: post.content,
     date: post.date,
+    topic: post.topic,
+    mood: post.mood,
+    status: post.status,
   };
 }
 

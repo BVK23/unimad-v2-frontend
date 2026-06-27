@@ -6,4 +6,5 @@ export type DocumentLibraryItem = {
   topic: "cover-letter" | "cold-email" | "referral";
   kind: "recent" | "history";
   status?: "Draft" | "Sent";
+  contactName?: string;
 };

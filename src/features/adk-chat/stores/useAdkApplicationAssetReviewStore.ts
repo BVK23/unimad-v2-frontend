@@ -52,6 +52,7 @@ export type AdkApplicationAssetReviewState = {
   markReviewAccepted: () => void;
   popReviewAfterDiscard: () => void;
   clearAllReviews: () => void;
+  clearReviewsByAssistantIds: (assistantIds: Iterable<string>) => void;
 };
 
 export const useAdkApplicationAssetReviewStore = create<AdkApplicationAssetReviewState>((set, get) => ({
@@ -123,4 +124,11 @@ export const useAdkApplicationAssetReviewStore = create<AdkApplicationAssetRevie
       return { reviewStack: state.reviewStack.slice(0, -1) };
     }),
   clearAllReviews: () => set({ reviewStack: [] }),
+  clearReviewsByAssistantIds: assistantIds => {
+    const drop = new Set([...assistantIds].filter(Boolean));
+    if (drop.size === 0) return;
+    set(state => ({
+      reviewStack: state.reviewStack.filter(card => !card.assistantMessageId || !drop.has(card.assistantMessageId)),
+    }));
+  },
 }));
