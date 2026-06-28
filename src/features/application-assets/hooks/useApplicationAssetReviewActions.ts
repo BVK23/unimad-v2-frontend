@@ -9,7 +9,9 @@ import { useAdkApplicationAssetReviewStore } from "@/features/adk-chat/stores/us
 import { syncAdkContentStateOnAccept } from "@/features/adk-chat/sync-adk-content-on-accept";
 import { APPLICATION_ASSET_EVENTS } from "@/features/application-assets/api/application-asset-events";
 import { syncApplicationAssetOnAccept } from "@/features/application-assets/api/syncApplicationAssetOnAccept";
+import { useApplicationAssetDiffReviewUiStore } from "@/features/application-assets/store/useApplicationAssetDiffReviewUiStore";
 import { useApplicationAssetStudioStore } from "@/features/application-assets/store/useApplicationAssetStudioStore";
+import { resolveReconciledApplicationAssetDraft } from "@/features/application-assets/utils/resolveReconciledApplicationAssetDraft";
 
 export const useApplicationAssetReviewActions = (options?: { userId?: string; mainSessionId?: string }) => {
   const userId = options?.userId ?? "";
@@ -17,15 +19,15 @@ export const useApplicationAssetReviewActions = (options?: { userId?: string; ma
   const [adkReviewBusy, setAdkReviewBusy] = useState(false);
 
   const acceptApplicationAssetReview = useCallback(
-    async (reconciledHtml?: string) => {
+    async (reconciledHtml?: string): Promise<boolean> => {
       const card = useAdkApplicationAssetReviewStore.getState().getActiveCard();
       if (!card) {
-        return;
+        return false;
       }
       const studio = useApplicationAssetStudioStore.getState();
       setAdkReviewBusy(true);
       try {
-        const finalDraft = reconciledHtml ?? card.proposedDraft;
+        const finalDraft = reconciledHtml ?? resolveReconciledApplicationAssetDraft(card);
         const jobDescription = card.jobDescription.trim() || studio.jobDescription;
         const result = await syncApplicationAssetOnAccept({
           assetType: card.assetType,
@@ -38,6 +40,7 @@ export const useApplicationAssetReviewActions = (options?: { userId?: string; ma
           applicationId: studio.applicationId,
         });
         useAdkApplicationAssetReviewStore.getState().markReviewAccepted();
+        useApplicationAssetDiffReviewUiStore.getState().clearSession();
         if (userId && mainSessionId && card.assistantMessageId) {
           const contentKey = buildApplicationAssetContentKey({
             assetType: card.assetType,
@@ -75,6 +78,7 @@ export const useApplicationAssetReviewActions = (options?: { userId?: string; ma
           await persistReviewDecisionForSession(userId, mainSessionId, card.assistantMessageId, "accepted");
         }
         useApplicationAssetStudioStore.getState().clearSelection();
+        useApplicationAssetStudioStore.getState().clearConsumedSelectionSuggestions();
         useApplicationAssetStudioStore.getState().setRegenerateAnotherInFlight(false);
         window.dispatchEvent(
           new CustomEvent(APPLICATION_ASSET_EVENTS.applyContext, {
@@ -93,11 +97,14 @@ export const useApplicationAssetReviewActions = (options?: { userId?: string; ma
             detail: {
               assetType: card.assetType,
               assetId: result.assetId,
+              draft: finalDraft,
             },
           })
         );
+        return true;
       } catch (err) {
         console.error("Application asset accept failed:", err);
+        return false;
       } finally {
         setAdkReviewBusy(false);
       }
@@ -112,6 +119,7 @@ export const useApplicationAssetReviewActions = (options?: { userId?: string; ma
     }
     void persistReviewDecisionForSession(userId, mainSessionId, card.assistantMessageId, "discarded");
     useAdkApplicationAssetReviewStore.getState().popReviewAfterDiscard();
+    useApplicationAssetDiffReviewUiStore.getState().clearSession();
     useApplicationAssetStudioStore.getState().syncFromStudio({
       assetType: card.assetType,
       assetId: card.baselineAssetId,
@@ -123,6 +131,7 @@ export const useApplicationAssetReviewActions = (options?: { userId?: string; ma
       acceptedContent: card.baselineDraft,
     });
     useApplicationAssetStudioStore.getState().clearSelection();
+    useApplicationAssetStudioStore.getState().clearConsumedSelectionSuggestions();
     useApplicationAssetStudioStore.getState().clearRefineAnchor();
     useApplicationAssetStudioStore.getState().setRegenerateAnotherInFlight(false);
     window.dispatchEvent(

@@ -1,9 +1,11 @@
 "use client";
 
+import { useAdkApplicationAssetReviewStore } from "@/features/adk-chat/stores/useAdkApplicationAssetReviewStore";
 import { useApplicationAssetDiffReviewUiStore } from "@/features/application-assets/store/useApplicationAssetDiffReviewUiStore";
 import { Check, ChevronLeft, ChevronRight, RotateCcw } from "lucide-react";
 
 const ApplicationAssetReviewStepperCard = () => {
+  const activeReview = useAdkApplicationAssetReviewStore(s => s.reviewStack.at(-1) ?? null);
   const sessionId = useApplicationAssetDiffReviewUiStore(s => s.sessionId);
   const regionIds = useApplicationAssetDiffReviewUiStore(s => s.regionIds);
   const decisions = useApplicationAssetDiffReviewUiStore(s => s.decisions);
@@ -12,11 +14,32 @@ const ApplicationAssetReviewStepperCard = () => {
   const keepRegion = useApplicationAssetDiffReviewUiStore(s => s.keepRegion);
   const undoRegion = useApplicationAssetDiffReviewUiStore(s => s.undoRegion);
 
-  if (!sessionId || regionIds.length === 0) {
+  if (!activeReview || !sessionId || regionIds.length === 0) {
     return null;
   }
 
-  const activeIndex = activeRegionId ? regionIds.indexOf(activeRegionId) : 0;
+  const undecidedIds = regionIds.filter(id => !decisions[id]);
+  const keepCount = regionIds.filter(id => decisions[id] === "keep").length;
+  const undoCount = regionIds.filter(id => decisions[id] === "undo").length;
+  const allDecided = undecidedIds.length === 0;
+
+  if (allDecided && undoCount === 0) {
+    return null;
+  }
+
+  if (allDecided && undoCount > 0) {
+    return (
+      <div className="my-4 rounded-xl border border-slate-200 bg-white p-4 shadow-sm dark:border-slate-700 dark:bg-slate-900">
+        <span className="text-xs font-semibold text-slate-600 dark:text-slate-300">Review summary</span>
+        <p className="mt-2 text-xs leading-relaxed text-slate-500 dark:text-slate-400">
+          {keepCount > 0 ? `${keepCount} edit${keepCount === 1 ? "" : "s"} kept` : "No edits kept"}
+          {undoCount > 0 ? ` · ${undoCount} edit${undoCount === 1 ? "" : "s"} discarded` : ""}. Accept in Studio or chat to save.
+        </p>
+      </div>
+    );
+  }
+
+  const activeIndex = activeRegionId ? regionIds.indexOf(activeRegionId) : undecidedIds[0] ? regionIds.indexOf(undecidedIds[0]) : 0;
   const safeIndex = activeIndex >= 0 ? activeIndex : 0;
   const currentRegionId = regionIds[safeIndex];
   const currentDecision = currentRegionId ? decisions[currentRegionId] : undefined;

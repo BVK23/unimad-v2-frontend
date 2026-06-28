@@ -422,7 +422,7 @@ const ResumeDashboard: React.FC<ResumeDashboardProps> = ({ onEditResume, onCreat
   return (
     <div
       ref={scrollContainerRef}
-      className="flex-1 bg-slate-50 h-full overflow-y-auto p-8 relative scrollbar-on-hover"
+      className="relative flex h-full min-h-0 flex-1 flex-col overflow-x-hidden overflow-y-auto bg-slate-50 p-8"
       onClick={() => closeActionsMenu()}
     >
       <div className="max-w-6xl mx-auto">

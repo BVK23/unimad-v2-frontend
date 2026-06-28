@@ -60,14 +60,18 @@ import {
   IMPROVE_WITH_UNIBOT_ACTION_LABEL,
   withPersistedActionLabel,
 } from "@/features/application-assets/api/asset-action-message";
+import { fetchDocumentImproveSuggestions } from "@/features/application-assets/api/fetchDocumentImproveSuggestions";
 import { offerApplicationAssetDraftReview } from "@/features/application-assets/api/offerApplicationAssetDraftReview";
 import {
-  APPLICATION_ASSET_SELECTION_PRESETS,
+  APPLICATION_ASSET_FULL_DOCUMENT_IMPROVE_FALLBACK,
+  buildFullDocumentImproveMessage,
+  suggestionToFullDocumentPreset,
+  type FullDocumentImprovePreset,
+} from "@/features/application-assets/config/improve-presets";
+import {
   assetTypeDisplayLabel,
   buildFreeformSelectionUserMessage,
   buildFullDocumentFreeformUserMessage,
-  buildFullDocumentRefineUserMessage,
-  type ApplicationAssetSelectionPreset,
 } from "@/features/application-assets/config/selection-presets";
 import { useApplicationAssetReviewActions } from "@/features/application-assets/hooks/useApplicationAssetReviewActions";
 import { useApplicationAssetDiffReviewUiStore } from "@/features/application-assets/store/useApplicationAssetDiffReviewUiStore";
@@ -109,6 +113,12 @@ import { buildAdkPortfolioDataMap, buildAdkPortfolioStateDelta } from "@/feature
 import { portfolioQueryKey } from "@/features/portfolio/hooks/usePortfolio";
 import { usePortfolioStore } from "@/features/portfolio/store/usePortfolioStore";
 import { buildAdkResumeDataMap } from "@/features/resume/api/mappers";
+import {
+  RESUME_FULL_IMPROVE_PRESETS,
+  RESUME_OPEN_FULL_IMPROVE_EVENT,
+  type ResumeOpenFullImproveDetail,
+  type ResumeFullImprovePreset,
+} from "@/features/resume/api/resume-full-improve-presets";
 import { resumeByIdQueryKey } from "@/features/resume/hooks/useResume";
 import { useResumeStore } from "@/features/resume/store/useResumeStore";
 import { MODAL_OVERLAY_Z_CLASS } from "@/lib/ui/modal-overlay";
@@ -690,9 +700,46 @@ const ChatSidebar: React.FC<ChatSidebarProps> = ({ incomingRequest, onRequestHan
     role: string;
     company: string;
   } | null>(null);
+  const [resumeFullImproveContext, setResumeFullImproveContext] = useState<{
+    resumeId: string;
+    role: string;
+    company: string;
+  } | null>(null);
   const [selectionSentPill, setSelectionSentPill] = useState<string | null>(null);
   const selectionSentPillTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const [documentImprovePool, setDocumentImprovePool] = useState<FullDocumentImprovePreset[]>([]);
+  const [usedDocumentImproveIds, setUsedDocumentImproveIds] = useState<Set<string>>(() => new Set());
+  const [documentImproveSuggestionsLoading, setDocumentImproveSuggestionsLoading] = useState(false);
+  const documentImproveFetchKeyRef = useRef<string | null>(null);
   const seededTitlePromptByMainIdRef = useRef<Record<string, string>>({});
+
+  const isResumePrepareImproveRoute = useMemo(() => {
+    if (!pathname.startsWith("/uniboard/resume")) return false;
+    return searchParams?.get("improve") === "1" && Boolean(searchParams?.get("jobId")?.trim());
+  }, [pathname, searchParams]);
+
+  const isStudioPrepareImproveRoute = useMemo(() => {
+    if (!pathname.startsWith("/uniboard/studio")) return false;
+    const type = searchParams?.get("type");
+    if (type !== "cover-letter" && type !== "cold-email") return false;
+    return searchParams?.get("improve") === "1" && Boolean(searchParams?.get("jobId")?.trim());
+  }, [pathname, searchParams]);
+
+  const showPrepareImproveFooter = Boolean(
+    (resumeFullImproveContext && isResumePrepareImproveRoute) || (fullDocumentImproveContext && isStudioPrepareImproveRoute)
+  );
+
+  useEffect(() => {
+    if (resumeFullImproveContext && !isResumePrepareImproveRoute) {
+      setResumeFullImproveContext(null);
+    }
+    if (fullDocumentImproveContext && !isStudioPrepareImproveRoute) {
+      setFullDocumentImproveContext(null);
+      setUsedDocumentImproveIds(new Set());
+      setDocumentImprovePool([]);
+      documentImproveFetchKeyRef.current = null;
+    }
+  }, [fullDocumentImproveContext, isResumePrepareImproveRoute, isStudioPrepareImproveRoute, resumeFullImproveContext]);
 
   useEffect(() => {
     sidebarWidthRef.current = sidebarWidth;
@@ -1282,6 +1329,10 @@ const ChatSidebar: React.FC<ChatSidebarProps> = ({ incomingRequest, onRequestHan
       const botMsg = topicCard?.messages?.find(m => m.id === aaJob.botMsgId);
       applicationAssetAdkDraftJobRef.current = null;
 
+      if (applicationAssetTurnAlreadySatisfied(aaJob.botMsgId)) {
+        return;
+      }
+
       if (botMsg?.isError) {
         window.dispatchEvent(
           new CustomEvent(APPLICATION_ASSET_EVENTS.draftFailed, {
@@ -1400,6 +1451,7 @@ const ChatSidebar: React.FC<ChatSidebarProps> = ({ incomingRequest, onRequestHan
     }
   }, [
     attemptContentGenDjangoFallback,
+    applicationAssetTurnAlreadySatisfied,
     isAgentLoading,
     isLoadingHistory,
     messages,
@@ -2066,25 +2118,24 @@ const ChatSidebar: React.FC<ChatSidebarProps> = ({ incomingRequest, onRequestHan
       return;
     }
 
-    const isImproveSubSession = Boolean(req.featureId && req.section) && (req.improveType === "resume" || req.improveType === "linkedin");
+    const isResumeSectionImprove = req.improveType === "resume" && Boolean(req.featureId && req.section);
+    const isLinkedInSectionImprove = req.improveType === "linkedin" && Boolean(req.featureId && req.section);
+    const isImproveSubSession = isResumeSectionImprove || isLinkedInSectionImprove;
 
-    const resumeSection = req.improveType === "resume" && req.section ? (req.section as UnibotResumeSection) : undefined;
-    const resumePromptInput =
-      resumeSection != null
-        ? {
-            section: resumeSection,
-            hasContent: req.hasContent ?? req.text.trim().length > 0,
-            entryId: req.entryId,
-          }
-        : null;
-    const resumeDisplayText = resumePromptInput ? buildResumeImproveDisplayMessage(resumePromptInput) : "";
-    const resumeAgentText = resumePromptInput ? buildResumeImproveAgentMessage(resumePromptInput) : "";
-
-    const promptText =
-      req.improveType === "linkedin"
-        ? req.text.trim()
-        : resumeAgentText || `Please improve the following text for my resume:\n\n"${req.text}"`;
-    const improveDisplayText = req.improveType === "linkedin" ? promptText : resumeDisplayText || promptText;
+    const promptText = isResumeSectionImprove
+      ? buildResumeImproveAgentMessage({
+          section: req.section as UnibotResumeSection,
+          hasContent: req.hasContent ?? false,
+          entryId: req.entryId,
+        })
+      : req.text.trim();
+    const improveDisplayText = isResumeSectionImprove
+      ? buildResumeImproveDisplayMessage({
+          section: req.section as UnibotResumeSection,
+          hasContent: req.hasContent ?? false,
+          entryId: req.entryId,
+        })
+      : promptText;
 
     void (async () => {
       try {
@@ -2154,13 +2205,14 @@ const ChatSidebar: React.FC<ChatSidebarProps> = ({ incomingRequest, onRequestHan
           await openImproveSubTopic(
             resolved.adkSessionId,
             resolved.title ??
-              (req.improveType === "linkedin"
-                ? buildLinkedInImproveTitle(req.section)
-                : (req.topicTitle ?? buildResumeImproveTitle(req.section))),
+              (req.improveType === "linkedin" ? buildLinkedInImproveTitle(req.section) : buildResumeImproveTitle(req.section)),
             improveDisplayText,
             promptText
           );
-        } else {
+        } else if (req.improveType === "resume" && promptText) {
+          setImproveReplyTopicId(null);
+          await sendMainMessage(promptText, { excludeFromTitleGeneration: true });
+        } else if (req.improveType !== "resume") {
           setImproveReplyTopicId(null);
           await sendMainMessage(promptText, { excludeFromTitleGeneration: true });
         }
@@ -2784,13 +2836,6 @@ const ChatSidebar: React.FC<ChatSidebarProps> = ({ incomingRequest, onRequestHan
       };
       const botMsgId = typeof crypto !== "undefined" && crypto.randomUUID ? crypto.randomUUID() : newId("bot");
       const placeholderMsg: ChatMessage = { id: botMsgId, role: "model", text: "", timestamp: new Date() };
-      if (actionMeta && topic?.topicKind === "application_asset") {
-        applicationAssetAdkDraftJobRef.current = {
-          topicId: effectiveTopicId,
-          botMsgId,
-          assetType: actionMeta.assetType as ApplicationAssetApiType,
-        };
-      }
       setMessages(prev =>
         prev.map(msg => {
           if (msg.id !== topicId && msg.id !== effectiveTopicId) return msg;
@@ -2936,6 +2981,7 @@ const ChatSidebar: React.FC<ChatSidebarProps> = ({ incomingRequest, onRequestHan
         const pendingReview = findPendingReviewInTopic(existingTopic, adkApplicationAssetReviewStack, adkApplicationAssetActiveReviewId);
         if (pendingReview) {
           useApplicationAssetStudioStore.getState().setSelectionRefineLoading(false);
+          useApplicationAssetStudioStore.getState().clearRefineAnchor();
           handleActionItemSpamGuard({
             topicId: existingTopic.id,
             actionMessageId: pendingReview.messageId,
@@ -2966,11 +3012,6 @@ const ChatSidebar: React.FC<ChatSidebarProps> = ({ incomingRequest, onRequestHan
         role: "model",
         text: "",
         timestamp: new Date(),
-      };
-      applicationAssetAdkDraftJobRef.current = {
-        topicId,
-        botMsgId,
-        assetType,
       };
 
       try {
@@ -3013,12 +3054,6 @@ const ChatSidebar: React.FC<ChatSidebarProps> = ({ incomingRequest, onRequestHan
           };
           return insertTopicInMainThread(prev, newTopic);
         });
-        if (applicationAssetAdkDraftJobRef.current?.topicId === topicId) {
-          applicationAssetAdkDraftJobRef.current = {
-            ...applicationAssetAdkDraftJobRef.current,
-            topicId: stableTopicId,
-          };
-        }
         await sendTopicMessage(outboundText, botMsgId, { sessionIdOverride: subAdkId });
         pendingRetryRef.current = null;
         maybeGenerateMainSessionTitleFromThreadPrompt(outboundText);
@@ -3142,25 +3177,123 @@ const ChatSidebar: React.FC<ChatSidebarProps> = ({ incomingRequest, onRequestHan
         role: d.role,
         company: d.company,
       });
+      setUsedDocumentImproveIds(new Set());
+      useApplicationAssetStudioStore.getState().clearConsumedSelectionSuggestions();
+      setResumeFullImproveContext(null);
+    };
+
+    const onResumeOpenFullImprove = (e: Event) => {
+      const d = (e as CustomEvent<ResumeOpenFullImproveDetail>).detail;
+      if (!d?.resumeId?.trim() || !d.fromPrepareApplication) {
+        return;
+      }
+      setIsCollapsed(false);
+      setSelectionQuoteContext(null);
+      setFullDocumentImproveContext(null);
+      setResumeFullImproveContext({
+        resumeId: d.resumeId.trim(),
+        role: d.role?.trim() ?? "",
+        company: d.company?.trim() ?? "",
+      });
     };
 
     window.addEventListener(APPLICATION_ASSET_EVENTS.selectionRefine, onSelectionRefine);
     window.addEventListener(APPLICATION_ASSET_EVENTS.selectionFreeform, onSelectionFreeform);
     window.addEventListener(APPLICATION_ASSET_EVENTS.openImprove, onOpenImprove);
+    window.addEventListener(RESUME_OPEN_FULL_IMPROVE_EVENT, onResumeOpenFullImprove);
     return () => {
       window.removeEventListener(APPLICATION_ASSET_EVENTS.selectionRefine, onSelectionRefine);
       window.removeEventListener(APPLICATION_ASSET_EVENTS.selectionFreeform, onSelectionFreeform);
       window.removeEventListener(APPLICATION_ASSET_EVENTS.openImprove, onOpenImprove);
+      window.removeEventListener(RESUME_OPEN_FULL_IMPROVE_EVENT, onResumeOpenFullImprove);
     };
   }, [sendApplicationAssetRefinement, showSelectionSentPill]);
 
+  const loadDocumentImproveSuggestions = useCallback(
+    async (ctx: { assetType: ApplicationAssetApiType; assetId: string; role: string; company: string }, excludeLabels: string[] = []) => {
+      const fetchKey = `${ctx.assetId}:${excludeLabels.join("|")}`;
+      documentImproveFetchKeyRef.current = fetchKey;
+      setDocumentImproveSuggestionsLoading(true);
+      const studio = useApplicationAssetStudioStore.getState();
+      const documentBody = studio.acceptedContent.trim() || studio.draftPreview.trim();
+      try {
+        const result = await fetchDocumentImproveSuggestions({
+          type: ctx.assetType,
+          documentBody,
+          role: ctx.role,
+          company: ctx.company,
+          jobDescription: studio.jobDescription,
+          contactName: studio.contactName,
+          assetId: ctx.assetId,
+          excludeLabels,
+        });
+        if (documentImproveFetchKeyRef.current !== fetchKey) return;
+        setDocumentImprovePool(prev => {
+          const merged = [...prev];
+          for (const preset of result.data.map(suggestionToFullDocumentPreset)) {
+            if (!merged.some(item => item.id === preset.id)) {
+              merged.push(preset);
+            }
+          }
+          return merged.length > 0 ? merged : result.data.map(suggestionToFullDocumentPreset);
+        });
+      } catch {
+        if (documentImproveFetchKeyRef.current !== fetchKey) return;
+        setDocumentImprovePool(APPLICATION_ASSET_FULL_DOCUMENT_IMPROVE_FALLBACK[ctx.assetType]);
+      } finally {
+        if (documentImproveFetchKeyRef.current === fetchKey) {
+          setDocumentImproveSuggestionsLoading(false);
+        }
+      }
+    },
+    []
+  );
+
+  useEffect(() => {
+    if (!fullDocumentImproveContext) {
+      setDocumentImprovePool([]);
+      setDocumentImproveSuggestionsLoading(false);
+      documentImproveFetchKeyRef.current = null;
+      return;
+    }
+    void loadDocumentImproveSuggestions(fullDocumentImproveContext);
+  }, [fullDocumentImproveContext, loadDocumentImproveSuggestions]);
+
+  useEffect(() => {
+    if (!fullDocumentImproveContext || documentImproveSuggestionsLoading) return;
+    const pool =
+      documentImprovePool.length > 0
+        ? documentImprovePool
+        : APPLICATION_ASSET_FULL_DOCUMENT_IMPROVE_FALLBACK[fullDocumentImproveContext.assetType];
+    const unused = pool.filter(preset => !usedDocumentImproveIds.has(preset.id));
+    if (unused.length >= 2 || usedDocumentImproveIds.size < pool.length) return;
+    const excludeLabels = pool.map(preset => preset.label);
+    void loadDocumentImproveSuggestions(fullDocumentImproveContext, excludeLabels);
+  }, [
+    documentImprovePool,
+    documentImproveSuggestionsLoading,
+    fullDocumentImproveContext,
+    loadDocumentImproveSuggestions,
+    usedDocumentImproveIds,
+  ]);
+
+  const visibleDocumentImprovePresets = useMemo(() => {
+    if (!fullDocumentImproveContext) return [];
+    const pool =
+      documentImprovePool.length > 0
+        ? documentImprovePool
+        : APPLICATION_ASSET_FULL_DOCUMENT_IMPROVE_FALLBACK[fullDocumentImproveContext.assetType];
+    return pool.filter(preset => !usedDocumentImproveIds.has(preset.id)).slice(0, 2);
+  }, [documentImprovePool, fullDocumentImproveContext, usedDocumentImproveIds]);
+
   const handleFullDocumentPreset = useCallback(
-    (preset: ApplicationAssetSelectionPreset) => {
-      if (!fullDocumentImproveContext || !preset.fullDocumentInstruction) {
+    (preset: FullDocumentImprovePreset) => {
+      if (!fullDocumentImproveContext) {
         return;
       }
       const { assetType } = fullDocumentImproveContext;
-      const message = buildFullDocumentRefineUserMessage(assetType, preset.fullDocumentInstruction);
+      setUsedDocumentImproveIds(prev => new Set([...prev, preset.id]));
+      const message = buildFullDocumentImproveMessage(assetType, preset.instruction);
       showSelectionSentPill(preset.label);
       const meta: AssetActionMeta = {
         kind: "preset",
@@ -3173,6 +3306,30 @@ const ChatSidebar: React.FC<ChatSidebarProps> = ({ incomingRequest, onRequestHan
     },
     [fullDocumentImproveContext, sendApplicationAssetRefinement, showSelectionSentPill]
   );
+
+  const handleResumeFullImprovePreset = useCallback(
+    (preset: ResumeFullImprovePreset) => {
+      if (!resumeFullImproveContext) {
+        return;
+      }
+      showSelectionSentPill(preset.label);
+      void sendMainMessage(preset.instruction, {
+        excludeFromTitleGeneration: true,
+        patchResumeId: resumeFullImproveContext.resumeId,
+      });
+    },
+    [resumeFullImproveContext, sendMainMessage, showSelectionSentPill]
+  );
+
+  useEffect(() => {
+    if (!showPrepareImproveFooter) {
+      return;
+    }
+    const timer = window.setTimeout(() => {
+      footerInputCardRef.current?.scrollIntoView({ behavior: "smooth", block: "nearest" });
+    }, 350);
+    return () => window.clearTimeout(timer);
+  }, [showPrepareImproveFooter, fullDocumentImproveContext, resumeFullImproveContext]);
 
   useEffect(() => {
     return () => {
@@ -3204,7 +3361,7 @@ const ChatSidebar: React.FC<ChatSidebarProps> = ({ incomingRequest, onRequestHan
       if (!options?.afterRetry && streamError) return;
       clearStreamError();
 
-      if (fullDocumentImproveContext) {
+      if (fullDocumentImproveContext && isStudioPrepareImproveRoute) {
         const improveCtx = fullDocumentImproveContext;
         const message = buildFullDocumentFreeformUserMessage(improveCtx.assetType, textToSend);
         const meta: AssetActionMeta = {
@@ -3215,6 +3372,15 @@ const ChatSidebar: React.FC<ChatSidebarProps> = ({ incomingRequest, onRequestHan
         };
         setInput("");
         await sendApplicationAssetRefinement(message, improveCtx.assetType, meta);
+        return;
+      }
+
+      if (resumeFullImproveContext && isResumePrepareImproveRoute) {
+        setInput("");
+        await sendMainMessage(textToSend, {
+          excludeFromTitleGeneration: true,
+          patchResumeId: resumeFullImproveContext.resumeId,
+        });
         return;
       }
 
@@ -3312,6 +3478,9 @@ const ChatSidebar: React.FC<ChatSidebarProps> = ({ incomingRequest, onRequestHan
       setInput,
       selectionQuoteContext,
       fullDocumentImproveContext,
+      resumeFullImproveContext,
+      isResumePrepareImproveRoute,
+      isStudioPrepareImproveRoute,
       sendApplicationAssetRefinement,
     ]
   );
@@ -4595,7 +4764,9 @@ const ChatSidebar: React.FC<ChatSidebarProps> = ({ incomingRequest, onRequestHan
       <div className="p-4 bg-slate-50 dark:bg-slate-950 border-t border-slate-100 dark:border-white/5">
         <div
           ref={footerInputCardRef}
-          className="relative rounded-xl border border-slate-200/90 bg-white px-3 pt-3 pb-2 shadow-sm dark:border-slate-700/80 dark:bg-slate-900"
+          className={`relative rounded-xl border border-slate-200/90 bg-white px-3 pt-3 pb-2 shadow-sm dark:border-slate-700/80 dark:bg-slate-900 ${
+            showPrepareImproveFooter ? "unibot-action-item-highlight" : ""
+          }`}
         >
           {selectionSentPill ? (
             <div className="mb-2">
@@ -4605,17 +4776,20 @@ const ChatSidebar: React.FC<ChatSidebarProps> = ({ incomingRequest, onRequestHan
               </span>
             </div>
           ) : null}
-          {fullDocumentImproveContext ? (
+          {fullDocumentImproveContext && isStudioPrepareImproveRoute && !selectionSentPill && visibleDocumentImprovePresets.length > 0 ? (
             <div className="mb-2 flex flex-wrap gap-1.5">
-              {APPLICATION_ASSET_SELECTION_PRESETS[fullDocumentImproveContext.assetType].map(preset => {
+              {documentImproveSuggestionsLoading && visibleDocumentImprovePresets.length === 0 ? (
+                <span className="text-[11px] text-slate-400">Loading suggestions…</span>
+              ) : null}
+              {visibleDocumentImprovePresets.map(preset => {
                 const Icon = preset.icon;
                 return (
                   <button
                     key={preset.id}
                     type="button"
+                    disabled={isAgentLoading}
                     onClick={() => handleFullDocumentPreset(preset)}
-                    disabled={!preset.fullDocumentInstruction}
-                    className="inline-flex items-center gap-1 rounded-full border border-slate-200 bg-slate-50 px-2.5 py-1 text-[11px] font-medium text-slate-700 transition-colors hover:border-brand-200 hover:bg-brand-50 hover:text-brand-800 disabled:opacity-50 dark:border-slate-600 dark:bg-slate-800 dark:text-slate-200 dark:hover:border-brand-500/40 dark:hover:bg-brand-500/10 dark:hover:text-brand-200"
+                    className="inline-flex items-center gap-1 rounded-full border border-slate-200 bg-slate-50 px-2.5 py-1 text-[11px] font-medium text-slate-700 transition-colors hover:border-brand-200 hover:bg-brand-50 hover:text-brand-800 disabled:cursor-not-allowed disabled:opacity-50 dark:border-slate-600 dark:bg-slate-800 dark:text-slate-200 dark:hover:border-brand-500/40 dark:hover:bg-brand-500/10 dark:hover:text-brand-200"
                   >
                     <Icon size={12} className="shrink-0 opacity-80" aria-hidden />
                     {preset.label}
@@ -4624,7 +4798,25 @@ const ChatSidebar: React.FC<ChatSidebarProps> = ({ incomingRequest, onRequestHan
               })}
             </div>
           ) : null}
-          {fullDocumentImproveContext ? (
+          {resumeFullImproveContext && isResumePrepareImproveRoute ? (
+            <div className="mb-2 flex flex-wrap gap-1.5">
+              {RESUME_FULL_IMPROVE_PRESETS.map(preset => {
+                const Icon = preset.icon;
+                return (
+                  <button
+                    key={preset.id}
+                    type="button"
+                    onClick={() => handleResumeFullImprovePreset(preset)}
+                    className="inline-flex items-center gap-1 rounded-full border border-slate-200 bg-slate-50 px-2.5 py-1 text-[11px] font-medium text-slate-700 transition-colors hover:border-brand-200 hover:bg-brand-50 hover:text-brand-800 dark:border-slate-600 dark:bg-slate-800 dark:text-slate-200 dark:hover:border-brand-500/40 dark:hover:bg-brand-500/10 dark:hover:text-brand-200"
+                  >
+                    <Icon size={12} className="shrink-0 opacity-80" aria-hidden />
+                    {preset.label}
+                  </button>
+                );
+              })}
+            </div>
+          ) : null}
+          {fullDocumentImproveContext && isStudioPrepareImproveRoute ? (
             <div className="mb-2">
               <span className="inline-flex max-w-full items-center gap-1 rounded-full border border-brand-200 bg-brand-50 py-1 pl-2.5 pr-1 text-[11px] font-medium text-brand-900 dark:border-brand-500/40 dark:bg-brand-500/15 dark:text-brand-100">
                 <span className="truncate">
@@ -4633,9 +4825,33 @@ const ChatSidebar: React.FC<ChatSidebarProps> = ({ incomingRequest, onRequestHan
                 </span>
                 <button
                   type="button"
-                  onClick={() => setFullDocumentImproveContext(null)}
+                  onClick={() => {
+                    setFullDocumentImproveContext(null);
+                  }}
                   className="shrink-0 rounded-full p-0.5"
                   aria-label="Clear improve context"
+                >
+                  <X size={13} />
+                </button>
+              </span>
+            </div>
+          ) : null}
+          {resumeFullImproveContext && isResumePrepareImproveRoute ? (
+            <div className="mb-2">
+              <span className="inline-flex max-w-full items-center gap-1 rounded-full border border-brand-200 bg-brand-50 py-1 pl-2.5 pr-1 text-[11px] font-medium text-brand-900 dark:border-brand-500/40 dark:bg-brand-500/15 dark:text-brand-100">
+                <span className="truncate">
+                  Improving resume
+                  {resumeFullImproveContext.role
+                    ? ` · ${resumeFullImproveContext.role}${resumeFullImproveContext.company ? ` @ ${resumeFullImproveContext.company}` : ""}`
+                    : ""}
+                </span>
+                <button
+                  type="button"
+                  onClick={() => {
+                    setResumeFullImproveContext(null);
+                  }}
+                  className="shrink-0 rounded-full p-0.5"
+                  aria-label="Clear resume improve context"
                 >
                   <X size={13} />
                 </button>
@@ -4703,13 +4919,15 @@ const ChatSidebar: React.FC<ChatSidebarProps> = ({ incomingRequest, onRequestHan
             placeholder={
               streamError
                 ? "Fix the error above to continue…"
-                : fullDocumentImproveContext
+                : fullDocumentImproveContext && isStudioPrepareImproveRoute
                   ? "Tell Unibot how to improve this document…"
-                  : selectionQuoteContext
-                    ? "How should Unibot change this section?"
-                    : improveReplyTopicId && improveContextTopic
-                      ? "Reply in this topic…"
-                      : "Ask anything"
+                  : resumeFullImproveContext && isResumePrepareImproveRoute
+                    ? "Tell Unibot how to improve your resume…"
+                    : selectionQuoteContext
+                      ? "How should Unibot change this section?"
+                      : improveReplyTopicId && improveContextTopic
+                        ? "Reply in this topic…"
+                        : "Ask anything"
             }
             rows={1}
             disabled={!canSend}

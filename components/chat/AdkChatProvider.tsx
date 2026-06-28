@@ -82,6 +82,8 @@ export interface SendMainMessageOptions {
   excludeFromTitleGeneration?: boolean;
   /** Retry the same turn: do not append another user bubble; reuse this assistant placeholder. */
   retryAssistantId?: string;
+  /** Force `current_resume` in the pre-send PATCH (resume improve from editor). */
+  patchResumeId?: string;
 }
 
 export interface AdkChatContextValue {
@@ -368,7 +370,10 @@ export function AdkChatProvider({ userId, children }: { userId: string; children
       }
 
       try {
-        const { hadAssistantText } = await submitMessage(text, { aiMessageId: assistantId });
+        const { hadAssistantText } = await submitMessage(text, {
+          aiMessageId: assistantId,
+          patchResumeId: options?.patchResumeId,
+        });
         if (!hadAssistantText) {
           queueMicrotask(() => markIncompleteAssistantTurn(assistantId));
         }

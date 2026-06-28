@@ -2,6 +2,52 @@
 @tailwind components;
 @tailwind utilities;
 
+@layer base {
+  :root {
+    --scrollbar-size: 6px;
+    /* Match chat sidebar / studio scrollbar-on-hover thumb (slate-300) */
+    --scrollbar-thumb: rgb(203 213 225);
+    --scrollbar-thumb-hover: rgb(148 163 184);
+  }
+
+  .dark {
+    --scrollbar-thumb: rgb(71 85 105 / 0.65);
+    --scrollbar-thumb-hover: rgb(71 85 105 / 0.9);
+  }
+
+  /**
+   * App-wide faint light-grey scrollbars (Resume, LinkedIn, Studio, etc.).
+   * Excludes .no-scrollbar / .hide-scrollbar and masterclass pages.
+   */
+  html:not(.masterclass-page) {
+    scrollbar-width: thin;
+    scrollbar-color: var(--scrollbar-thumb) transparent;
+  }
+
+  html:not(.masterclass-page) *:not(.no-scrollbar):not(.hide-scrollbar) {
+    scrollbar-width: thin;
+    scrollbar-color: var(--scrollbar-thumb) transparent;
+  }
+
+  html:not(.masterclass-page) *:not(.no-scrollbar):not(.hide-scrollbar)::-webkit-scrollbar {
+    width: var(--scrollbar-size);
+    height: var(--scrollbar-size);
+  }
+
+  html:not(.masterclass-page) *:not(.no-scrollbar):not(.hide-scrollbar)::-webkit-scrollbar-track {
+    background: transparent;
+  }
+
+  html:not(.masterclass-page) *:not(.no-scrollbar):not(.hide-scrollbar)::-webkit-scrollbar-thumb {
+    background-color: var(--scrollbar-thumb);
+    border-radius: 9999px;
+  }
+
+  html:not(.masterclass-page) *:not(.no-scrollbar):not(.hide-scrollbar)::-webkit-scrollbar-thumb:hover {
+    background-color: var(--scrollbar-thumb-hover);
+  }
+}
+
 @layer utilities {
   .animate-gradient-x {
     background-size: 200% 200%;
@@ -26,11 +72,13 @@
    * Hide the native scrollbar entirely. Used for nav rails and horizontal
    * carousels where the scrollbar would be visual noise.
    */
-  .no-scrollbar {
+  .no-scrollbar,
+  .hide-scrollbar {
     scrollbar-width: none;
     -ms-overflow-style: none;
   }
-  .no-scrollbar::-webkit-scrollbar {
+  .no-scrollbar::-webkit-scrollbar,
+  .hide-scrollbar::-webkit-scrollbar {
     display: none;
   }
 
@@ -46,11 +94,11 @@
   }
   .scrollbar-on-hover:hover,
   .scrollbar-on-hover:focus-within {
-    scrollbar-color: rgb(203 213 225) transparent;
+    scrollbar-color: var(--scrollbar-thumb-hover) transparent;
   }
   .scrollbar-on-hover::-webkit-scrollbar {
-    width: 6px;
-    height: 6px;
+    width: var(--scrollbar-size);
+    height: var(--scrollbar-size);
   }
   .scrollbar-on-hover::-webkit-scrollbar-track {
     background: transparent;
@@ -62,11 +110,7 @@
   }
   .scrollbar-on-hover:hover::-webkit-scrollbar-thumb,
   .scrollbar-on-hover:focus-within::-webkit-scrollbar-thumb {
-    background-color: rgb(203 213 225 / 0.9);
-  }
-  .dark .scrollbar-on-hover:hover::-webkit-scrollbar-thumb,
-  .dark .scrollbar-on-hover:focus-within::-webkit-scrollbar-thumb {
-    background-color: rgb(71 85 105 / 0.9);
+    background-color: var(--scrollbar-thumb-hover);
   }
 
   @keyframes linkedin-unicoach-cta-shimmer {
@@ -111,30 +155,33 @@
   }
 
   .minimal-scrollbar,
-  .scrollbar-thin {
+  .scrollbar-thin,
+  .scrollbar-subtle {
     scrollbar-width: thin;
-    scrollbar-color: #b8d4f8 #ffffff;
+    scrollbar-color: var(--scrollbar-thumb) transparent;
   }
-  .scrollbar-thin::-webkit-scrollbar {
-    width: 6px;
-    height: 6px;
+  .minimal-scrollbar::-webkit-scrollbar,
+  .scrollbar-thin::-webkit-scrollbar,
+  .scrollbar-subtle::-webkit-scrollbar {
+    width: var(--scrollbar-size);
+    height: var(--scrollbar-size);
   }
-  .scrollbar-thin::-webkit-scrollbar-track {
-    background: #ffffff;
+  .minimal-scrollbar::-webkit-scrollbar-track,
+  .scrollbar-thin::-webkit-scrollbar-track,
+  .scrollbar-subtle::-webkit-scrollbar-track {
+    background: transparent;
     border-radius: 9999px;
   }
-  .scrollbar-thin::-webkit-scrollbar-thumb {
-    background-color: #b8d4f8;
+  .minimal-scrollbar::-webkit-scrollbar-thumb,
+  .scrollbar-thin::-webkit-scrollbar-thumb,
+  .scrollbar-subtle::-webkit-scrollbar-thumb {
+    background-color: var(--scrollbar-thumb);
     border-radius: 9999px;
   }
-  .dark .scrollbar-thin {
-    scrollbar-color: #3b4f6b #0f172a;
-  }
-  .dark .scrollbar-thin::-webkit-scrollbar-track {
-    background: #0f172a;
-  }
-  .dark .scrollbar-thin::-webkit-scrollbar-thumb {
-    background-color: #3b4f6b;
+  .minimal-scrollbar::-webkit-scrollbar-thumb:hover,
+  .scrollbar-thin::-webkit-scrollbar-thumb:hover,
+  .scrollbar-subtle::-webkit-scrollbar-thumb:hover {
+    background-color: var(--scrollbar-thumb-hover);
   }
 
   .animate-portfolio-indeterminate {

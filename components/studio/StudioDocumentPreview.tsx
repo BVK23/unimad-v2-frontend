@@ -49,7 +49,7 @@ interface StudioDocumentPreviewProps {
   /** The text the user selected to anchor the diff. */
   anchorSelectedText?: string;
   /** Called when the user applies a reconciled diff result. */
-  onApplyReconciled?: (reconciledHtml: string) => void;
+  onApplyReconciled?: (reconciledHtml: string) => void | Promise<void> | Promise<boolean>;
   /** Remount diff review when a new ADK revision arrives. */
   reviewSessionKey?: string;
   onImproveWithUnibot?: () => void;
@@ -102,6 +102,7 @@ const StudioDocumentPreview = ({
 
   const selectedText = useApplicationAssetStudioStore(s => s.selectedText);
   const selectionRect = useApplicationAssetStudioStore(s => s.selectionRect);
+  const selectionRefineLoading = useApplicationAssetStudioStore(s => s.selectionRefineLoading);
   const refineAnchorText = useApplicationAssetStudioStore(s => s.refineAnchorText);
   const setSelection = useApplicationAssetStudioStore(s => s.setSelection);
   const clearSelection = useApplicationAssetStudioStore(s => s.clearSelection);
@@ -147,7 +148,12 @@ const StudioDocumentPreview = ({
     Boolean(selectionRect) &&
     selectedText.trim().length >= APPLICATION_ASSET_MIN_SELECTION_CHARS &&
     !isGenerating &&
-    hasContent;
+    hasContent &&
+    !selectionRefineLoading &&
+    !hasPendingRevision &&
+    !isAdkLoading;
+
+  const activeRefineAnchorText = selectionRefineLoading || hasPendingRevision || isAdkLoading || refineInProgress ? "" : refineAnchorText;
 
   const selectionImproveSlot =
     showQuickActions && assetType ? (
@@ -278,7 +284,7 @@ const StudioDocumentPreview = ({
                 forceExternalSync={hasPendingRevision}
                 unifiedSelectionToolbar={Boolean(assetType)}
                 selectionImproveSlot={selectionImproveSlot}
-                refineAnchorText={refineAnchorText}
+                refineAnchorText={activeRefineAnchorText}
               />
               {isGenerating || refineInProgress ? (
                 <div className="absolute inset-0 z-10 flex items-center justify-center bg-white/80 backdrop-blur-[1px] dark:bg-slate-900/80">

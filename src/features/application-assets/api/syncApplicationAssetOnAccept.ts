@@ -25,6 +25,10 @@ export const syncApplicationAssetOnAccept = async (params: SyncApplicationAssetO
 
   if (existingId) {
     await acceptApplicationAsset(params.assetType, existingId, params.proposedDraft);
+    useApplicationAssetStudioStore.getState().syncFromStudio({
+      acceptedContent: params.proposedDraft,
+      draftPreview: params.proposedDraft,
+    });
   } else {
     const role = params.role?.trim() || studio.role.trim();
     const company = params.company?.trim() || studio.company.trim();

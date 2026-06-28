@@ -9,7 +9,6 @@ import { buildApplicationAssetContentKey, buildContentGenContentKey } from "@/fe
 import { useAdkApplicationAssetReviewStore } from "@/features/adk-chat/stores/useAdkApplicationAssetReviewStore";
 import {
   APPLICATION_ASSET_EVENTS,
-  IMPROVE_INITIAL_DRAFT_PROMPT,
   type ApplicationAssetDraftFailedDetail,
   type ApplicationAssetDraftPreviewDetail,
   type ApplicationAssetDraftReadyDetail,
@@ -152,6 +151,12 @@ const DOCUMENT_TOPIC_LABELS: Record<"cover-letter" | "cold-email" | "referral", 
   "cover-letter": "Cover Letters",
   "cold-email": "Cold Emails",
   referral: "Referral Requests",
+};
+
+const NEW_APPLICATION_ASSET_LABELS: Record<ApplicationAssetStudioTopic, string> = {
+  "cover-letter": "New Cover Letter",
+  "cold-email": "New Cold Email",
+  referral: "New Referral",
 };
 
 const isDocumentTopic = (topic: string): topic is ApplicationAssetStudioTopic =>
@@ -835,9 +840,10 @@ const StudioMainV2: React.FC<StudioMainProps> = ({ initialContext, initialAssetI
   updateStudioUrlRef.current = updateStudioUrl;
 
   const canAutosaveDocument =
-    (selectedTopic === "cover-letter" && Boolean(currentCoverLetterDraft?.id)) ||
-    (selectedTopic === "cold-email" && Boolean(currentColdEmailDraft?.id)) ||
-    (selectedTopic === "referral" && Boolean(currentReferralDraft?.id));
+    !hasApplicationAssetPendingRevision &&
+    ((selectedTopic === "cover-letter" && Boolean(currentCoverLetterDraft?.id)) ||
+      (selectedTopic === "cold-email" && Boolean(currentColdEmailDraft?.id)) ||
+      (selectedTopic === "referral" && Boolean(currentReferralDraft?.id)));
 
   const documentRewindSyncContentKey = useMemo(() => {
     const apiType =
@@ -1307,6 +1313,8 @@ const StudioMainV2: React.FC<StudioMainProps> = ({ initialContext, initialAssetI
       }
       setApplicationAssetDraftLoading(false);
       setGeneratedContent(d.draft);
+      documentContentRef.current = d.draft;
+      resetDocumentSaveStatus();
       if (d.role?.trim()) {
         setRole(d.role.trim());
       }
@@ -1351,6 +1359,7 @@ const StudioMainV2: React.FC<StudioMainProps> = ({ initialContext, initialAssetI
     const onStreamComplete = () => {
       setApplicationAssetDraftLoading(false);
       useApplicationAssetStudioStore.getState().setSelectionRefineLoading(false);
+      useApplicationAssetStudioStore.getState().clearRefineAnchor();
       useApplicationAssetStudioStore.getState().setRegenerateAnotherInFlight(false);
     };
     const onReviewAccepted = (e: Event) => {
@@ -1358,6 +1367,10 @@ const StudioMainV2: React.FC<StudioMainProps> = ({ initialContext, initialAssetI
       const topic = d?.assetType ? API_TYPE_TO_STUDIO_TOPIC[d.assetType] : null;
       if (!topic || topic !== selectedTopic) {
         return;
+      }
+      if (d.draft?.trim()) {
+        documentContentRef.current = d.draft;
+        resetDocumentSaveStatus();
       }
       clearReviewAcceptSaveTimers();
       setReviewAcceptSavedVisible(false);
@@ -1410,6 +1423,7 @@ const StudioMainV2: React.FC<StudioMainProps> = ({ initialContext, initialAssetI
     jobDescription,
     managerName,
     queryClient,
+    resetDocumentSaveStatus,
     role,
     selectedTopic,
     updateStudioUrl,
@@ -1803,21 +1817,35 @@ const StudioMainV2: React.FC<StudioMainProps> = ({ initialContext, initialAssetI
 
     let returnTab: PrepareApplicationTab = prepareReturn.tab;
     if (selectedTopic === "cover-letter" && currentCoverLetterDraft?.id) {
-      const content = currentCoverLetterDraft.content ?? "";
+      const content =
+        useApplicationAssetStudioStore.getState().acceptedContent.trim() ||
+        currentCoverLetterDraft.content?.trim() ||
+        documentContentRef.current;
       documentContentRef.current = content;
       await runDocumentSave();
+      const assetId = String(currentCoverLetterDraft.id);
+      await queryClient.invalidateQueries({ queryKey: COVER_LETTER_LIST_QUERY_KEY });
+      await queryClient.invalidateQueries({ queryKey: ["cover-letter", assetId] });
+      await queryClient.invalidateQueries({ queryKey: ["applications"] });
       setPrepareReturnContentSnapshot({
-        assetId: String(currentCoverLetterDraft.id),
+        assetId,
         kind: "cover-letter",
         content,
       });
       returnTab = "cover-letter";
     } else if (selectedTopic === "cold-email" && currentColdEmailDraft?.id) {
-      const content = currentColdEmailDraft.content ?? "";
+      const content =
+        useApplicationAssetStudioStore.getState().acceptedContent.trim() ||
+        currentColdEmailDraft.content?.trim() ||
+        documentContentRef.current;
       documentContentRef.current = content;
       await runDocumentSave();
+      const assetId = String(currentColdEmailDraft.id);
+      await queryClient.invalidateQueries({ queryKey: COLD_EMAIL_LIST_QUERY_KEY });
+      await queryClient.invalidateQueries({ queryKey: ["cold-email", assetId] });
+      await queryClient.invalidateQueries({ queryKey: ["applications"] });
       setPrepareReturnContentSnapshot({
-        assetId: String(currentColdEmailDraft.id),
+        assetId,
         kind: "cold-email",
         content,
       });
@@ -1936,6 +1964,16 @@ const StudioMainV2: React.FC<StudioMainProps> = ({ initialContext, initialAssetI
           setSelectedTopic("referral");
           applyReferralDraftToForm(asset);
           setSelectedDocumentId(asset.id);
+          dispatchOpenImproveForAsset({
+            assetType: "referral",
+            assetId: String(asset.id),
+            applicationId: initialContext?.jobId,
+            role: asset.role ?? "",
+            company: asset.company ?? "",
+            jobDescription: "",
+            contactName: connectionName || asset.conname || "",
+            content: asset.content ?? "",
+          });
           return;
         }
         if (urlType === "linkedin-post") {
@@ -2453,6 +2491,48 @@ const StudioMainV2: React.FC<StudioMainProps> = ({ initialContext, initialAssetI
     updateStudioUrl({ type: "linkedin-post" });
   }, [clearLinkedinPendingMedia, updateStudioUrl]);
 
+  const handleNewApplicationAsset = useCallback(() => {
+    if (!isDocumentTopic(selectedTopic)) return;
+
+    resetDocumentSaveStatus();
+    clearApplicationAssetSelection();
+    clearReviewAcceptSaveTimers();
+    useApplicationAssetStudioStore.getState().reset();
+    useAdkApplicationAssetReviewStore.getState().clearAllReviews();
+    syncedDocumentUrlIdRef.current = null;
+
+    setGeneratedContent("");
+    setSelectedDocumentId(null);
+    setIsGenerating(false);
+
+    if (selectedTopic === "cover-letter") {
+      setCurrentCoverLetterDraft(null);
+      setCoverLetterFormError(null);
+    } else if (selectedTopic === "cold-email") {
+      setCurrentColdEmailDraft(null);
+      setColdEmailFormError(null);
+    } else {
+      setCurrentReferralDraft(null);
+      setReferralFormError(null);
+    }
+
+    clearDocumentFormFields();
+    if (prepareReturn) {
+      applyPrepareJobFormDefaults();
+    }
+
+    updateStudioUrl({ type: selectedTopic });
+  }, [
+    applyPrepareJobFormDefaults,
+    clearApplicationAssetSelection,
+    clearDocumentFormFields,
+    clearReviewAcceptSaveTimers,
+    prepareReturn,
+    resetDocumentSaveStatus,
+    selectedTopic,
+    updateStudioUrl,
+  ]);
+
   const handleImproveWithUnibot = useCallback(() => {
     if (selectedTopic === "linkedin-post") {
       const content = generatedContent.trim();
@@ -2508,8 +2588,6 @@ const StudioMainV2: React.FC<StudioMainProps> = ({ initialContext, initialAssetI
           jobDescription: jobDescription.trim(),
           contactName: contactName || undefined,
           content,
-          initialPrompt: IMPROVE_INITIAL_DRAFT_PROMPT,
-          autoSend: true,
         },
       })
     );
@@ -3213,9 +3291,7 @@ const StudioMainV2: React.FC<StudioMainProps> = ({ initialContext, initialAssetI
         ) : null}
 
         {(showGenerateDraftCta || showGenerateAnotherCta) && (
-          <div
-            className={showGenerateAnotherCta && selectedTopic === "linkedin-post" ? "mt-4 grid grid-cols-1 gap-3 sm:grid-cols-2" : "mt-4"}
-          >
+          <div className={showNewAssetCtaGrid ? "mt-4 grid grid-cols-1 gap-3 sm:grid-cols-2" : "mt-4"}>
             {showGenerateAnotherCta && selectedTopic === "linkedin-post" ? (
               <button
                 type="button"
@@ -3225,6 +3301,22 @@ const StudioMainV2: React.FC<StudioMainProps> = ({ initialContext, initialAssetI
               >
                 <Plus size={18} />
                 New Post
+              </button>
+            ) : null}
+            {showGenerateAnotherCta && isDocumentTopic(selectedTopic) ? (
+              <button
+                type="button"
+                onClick={handleNewApplicationAsset}
+                disabled={isNewApplicationAssetDisabled}
+                title={
+                  isNewApplicationAssetDisabled && prepareReturn
+                    ? "Start a fresh asset from Studio after you return to the job tracker."
+                    : undefined
+                }
+                className="flex w-full items-center justify-center gap-2 rounded-xl border border-slate-200 bg-white py-4 font-medium text-slate-700 shadow-sm transition-all hover:border-slate-300 hover:bg-slate-50 active:scale-95 disabled:cursor-not-allowed disabled:opacity-70 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-200 dark:hover:bg-slate-800"
+              >
+                <Plus size={18} />
+                {NEW_APPLICATION_ASSET_LABELS[selectedTopic]}
               </button>
             ) : null}
             <button
@@ -3475,6 +3567,14 @@ const StudioMainV2: React.FC<StudioMainProps> = ({ initialContext, initialAssetI
 
   const isDocumentGenerateAnotherBusy =
     showGenerateAnotherCta && isDocumentTopic(selectedTopic) && (isApplicationAssetSubThreadBusy || hasApplicationAssetPendingRevision);
+
+  const isNewApplicationAssetDisabled =
+    isStudioPrimaryActionLoading ||
+    isDocumentAdkLoading ||
+    isDocumentGenerateAnotherBusy ||
+    (!!prepareReturn && (selectedTopic === "cover-letter" || selectedTopic === "cold-email"));
+
+  const showNewAssetCtaGrid = showGenerateAnotherCta && (selectedTopic === "linkedin-post" || isDocumentTopic(selectedTopic));
 
   const showGenerateDraftCta = (isDocumentTopic(selectedTopic) || selectedTopic === "linkedin-post") && !topicHasGeneratedDraft;
 
@@ -3740,7 +3840,7 @@ const StudioMainV2: React.FC<StudioMainProps> = ({ initialContext, initialAssetI
                       baselineDraft={activeApplicationAssetReview?.baselineDraft ?? ""}
                       anchorSelectedText={activeApplicationAssetReview?.anchorSelectedText}
                       reviewSessionKey={activeApplicationAssetReview?.id}
-                      onApplyReconciled={(html: string) => void acceptApplicationAssetReview(html)}
+                      onApplyReconciled={async (html: string) => acceptApplicationAssetReview(html)}
                       onCopy={() => {
                         if (selectedTopic === "cover-letter") {
                           setCopyToast(true);

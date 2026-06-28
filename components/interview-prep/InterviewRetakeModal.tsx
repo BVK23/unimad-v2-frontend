@@ -16,7 +16,7 @@ interface InterviewRetakeModalProps {
 }
 
 const InterviewRetakeModal: React.FC<InterviewRetakeModalProps> = ({ roundLabel, roundMode, isLoading = false, onClose, onConfirm }) => {
-  // const isVoice = roundMode === "voice"; // Gemini Live — temporarily disabled
+  const isVoice = roundMode === "voice";
 
   return (
     <ModalPortalOverlay className="flex items-center justify-center bg-black/50 p-4 backdrop-blur-sm">
@@ -43,7 +43,6 @@ const InterviewRetakeModal: React.FC<InterviewRetakeModalProps> = ({ roundLabel,
           feedback will be archived. You&apos;ll start a fresh session for this round.
         </p>
 
-        {/* Gemini Live — temporarily disabled
         {isVoice ? (
           <p className="mb-6 text-xs text-slate-500">
             Live voice mocks don&apos;t resume mid-conversation — a new session gives you a clean practice run.
@@ -54,32 +53,28 @@ const InterviewRetakeModal: React.FC<InterviewRetakeModalProps> = ({ roundLabel,
             questions.
           </p>
         )}
-        */}
-        <p className="mb-6 text-xs text-slate-500">
-          Prefer more practice without losing history? Use &quot;Add more questions&quot; to continue on the same interview with new
-          questions.
-        </p>
 
         <div className="flex flex-col gap-2">
           <button
             type="button"
             disabled={isLoading}
-            onClick={() => onConfirm("replace", "questions")}
+            onClick={() => onConfirm("replace", isVoice ? "live" : "questions")}
             className="flex w-full items-center justify-center gap-2 rounded-xl bg-blue-600 px-4 py-2.5 text-sm font-medium text-white hover:bg-blue-700 disabled:opacity-50"
           >
             {isLoading ? <Loader2 size={16} className="animate-spin" /> : <Mic2 size={16} />}
             Start fresh round
           </button>
 
-          <button
-            type="button"
-            disabled={isLoading}
-            onClick={() => onConfirm("continue", "questions")}
-            className="w-full rounded-xl border border-slate-200 px-4 py-2.5 text-sm font-medium text-slate-700 hover:bg-slate-50 disabled:opacity-50 dark:border-slate-700 dark:text-slate-300 dark:hover:bg-slate-800"
-          >
-            Add more questions
-          </button>
-          {/* Gemini Live — temporarily disabled: {!isVoice && ( ... Add more questions button ... )} */}
+          {!isVoice && (
+            <button
+              type="button"
+              disabled={isLoading}
+              onClick={() => onConfirm("continue", "questions")}
+              className="w-full rounded-xl border border-slate-200 px-4 py-2.5 text-sm font-medium text-slate-700 hover:bg-slate-50 disabled:opacity-50 dark:border-slate-700 dark:text-slate-300 dark:hover:bg-slate-800"
+            >
+              Add more questions
+            </button>
+          )}
 
           <button
             type="button"

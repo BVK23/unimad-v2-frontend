@@ -72,7 +72,9 @@ const JobDiscovery: React.FC<JobDiscoveryProps> = ({
     isFetchingNextPage: isSearchFetchingNextPage,
     isLoading: isSearchLoading,
     fetchNextPage: fetchMoreSearchJobs,
-  } = useSearchJobs(submittedSearch, { enabled: !!submittedSearch?.q?.trim() });
+  } = useSearchJobs(submittedSearch, {
+    enabled: Boolean(submittedSearch?.q?.trim() || submittedSearch?.location?.trim()),
+  });
 
   useEffect(() => {
     if (filterType !== "Saved" || !savedData?.pagination?.has_next) return;
@@ -150,6 +152,7 @@ const JobDiscovery: React.FC<JobDiscoveryProps> = ({
     [searchResultsJobs, searchUIPage]
   );
   const searchTotalUIPages = Math.max(1, Math.ceil(searchResultsJobs.length / SEARCH_JOBS_PER_PAGE));
+  const searchPaginationLabel = searchHasNextPage ? `Page ${searchUIPage} · more results` : `Page ${searchUIPage} of ${searchTotalUIPages}`;
   const searchPageNeedsMoreJobs = !!submittedSearch && searchHasNextPage && searchResultsJobs.length < searchUIPage * SEARCH_JOBS_PER_PAGE;
   const showSearchPageSkeletons = isSearchFetchingNextPage || searchPageNeedsMoreJobs;
 
@@ -237,8 +240,9 @@ const JobDiscovery: React.FC<JobDiscoveryProps> = ({
   const handleSearchSubmit = (q: string, location: string, activeFilters: string[]) => {
     setFilterType("Recommended");
     const trimmedQ = q.trim();
-    if (!trimmedQ) return;
-    setSubmittedSearch({ q: trimmedQ, location: location.trim(), activeFilters });
+    const trimmedLocation = location.trim();
+    if (!trimmedQ && !trimmedLocation) return;
+    setSubmittedSearch({ q: trimmedQ, location: trimmedLocation, activeFilters });
     setSearchUIPage(1);
   };
 
@@ -529,7 +533,8 @@ const JobDiscovery: React.FC<JobDiscoveryProps> = ({
             <div className="col-span-full flex flex-col items-center justify-center rounded-2xl border border-dashed border-slate-200 bg-slate-50/50 px-4 py-16 dark:border-slate-700 dark:bg-slate-900/20">
               <Search className="mb-4 h-12 w-12 text-slate-300 dark:text-slate-600" />
               <p className="max-w-sm text-center text-sm text-slate-500 dark:text-slate-400">
-                Search by role, company, or keywords above and press Enter or choose a suggestion to see jobs here.
+                Search by role, company, or keywords above and press Enter or choose a suggestion to see jobs here. You can also search by
+                location only — type a place and press Enter.
               </p>
             </div>
           ) : isSearchResultsLoading && searchResultsJobs.length === 0 ? (
@@ -576,9 +581,7 @@ const JobDiscovery: React.FC<JobDiscoveryProps> = ({
             >
               <ChevronLeft size={18} />
             </button>
-            <span className="text-sm text-slate-500 dark:text-slate-400">
-              Page {searchUIPage} of {searchTotalUIPages}
-            </span>
+            <span className="text-sm text-slate-500 dark:text-slate-400">{searchPaginationLabel}</span>
             <button
               type="button"
               onClick={handleSearchNextPage}

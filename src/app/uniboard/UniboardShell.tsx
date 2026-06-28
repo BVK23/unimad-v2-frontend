@@ -285,7 +285,7 @@ export default function UniboardShell({ children, userData }: { children: React.
               </div>
             </header>
 
-            <main className="flex-1 flex flex-col min-h-0 overflow-auto">{children}</main>
+            <main className="flex min-h-0 flex-1 flex-col overflow-hidden">{children}</main>
           </div>
 
           <DebugConsole context={pathname} popups={getAvailablePopups()} onAddPopup={() => alert(`Add new popup for ${pathname}`)} />

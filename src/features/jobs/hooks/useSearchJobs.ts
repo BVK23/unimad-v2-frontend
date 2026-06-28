@@ -13,18 +13,19 @@ export interface UseSearchJobsParams {
 
 export function useSearchJobs(params: UseSearchJobsParams | null, options: { enabled?: boolean } = {}) {
   const { enabled = true } = options;
-  const effectiveEnabled = !!params?.q?.trim() && enabled;
+  const hasSearchQuery = Boolean(params?.q?.trim() || params?.location?.trim());
+  const effectiveEnabled = hasSearchQuery && enabled;
   const filterKey = (params?.activeFilters ?? []).slice().sort().join("|");
 
   const query = useInfiniteQuery<JobListResponse>({
     queryKey: ["searchJobs", params?.q ?? "", params?.location ?? "", filterKey],
     queryFn: async ({ pageParam }) => {
       const p: JobSearchParams = {
-        q: params!.q.trim(),
         page: pageParam as number,
         page_size: SEARCH_PAGE_SIZE,
         ...activeFiltersToSearchParams(params!.activeFilters ?? []),
       };
+      if (params!.q?.trim()) p.q = params!.q.trim();
       if (params!.location?.trim()) p.location = params!.location.trim();
       return getJobs(p);
     },

@@ -81,7 +81,7 @@ export interface UseAdkStreamingManagerReturn {
   isSyncingContext: boolean;
   submitMessage: (
     message: string,
-    options?: { aiMessageId?: string; sessionIdOverride?: string }
+    options?: { aiMessageId?: string; sessionIdOverride?: string; patchResumeId?: string }
   ) => Promise<{ hadAssistantText: boolean }>;
 }
 
@@ -174,13 +174,12 @@ export function useAdkStreamingManager({
     });
   }
   const [streamActivityLabel, setStreamActivityLabel] = useState<string | null>(null);
-  const resumeId = useMemo(() => resolveActiveResumeIdForPatch(searchParams), [searchParams]);
-
   const resolveResumeIdForSessionPull = useCallback((): string | null => {
-    if (resumeId?.trim()) return resumeId.trim();
+    const activeId = resolveActiveResumeIdForPatch(searchParams);
+    if (activeId?.trim()) return activeId.trim();
     const keys = Object.keys(useResumeStore.getState().resumeData);
     return keys[0] ?? null;
-  }, [resumeId]);
+  }, [searchParams]);
 
   const captureResumeBaselineBeforeMutatingPull = useCallback(
     (scopeOverride: ContentScope | null): void => {
@@ -241,198 +240,204 @@ export function useAdkStreamingManager({
     pendingLinkedInPrePullBaselineRef.current = null;
   }, []);
 
-  const getStateDeltaForCurrentRoute = useCallback((): {
-    stateDelta: Record<string, unknown>;
-    source: AdkStateSyncSource;
-  } => {
-    const isResumeRoute = pathname.startsWith("/uniboard/resume");
-    const isPortfolioRoute = pathname.startsWith("/uniboard/portfolio");
-    const isStudioRoute = pathname.startsWith("/uniboard/studio");
-    const isJobsRoute = pathname.startsWith("/uniboard/jobs");
-    const allStoreResumes = useResumeStore.getState().resumeData;
-    const allStorePortfolios = usePortfolioStore.getState().portfolioData;
-    const warmResumeData = buildAdkResumeDataMap(allStoreResumes);
-    const warmPortfolioData = buildAdkPortfolioDataMap(allStorePortfolios);
+  const getStateDeltaForCurrentRoute = useCallback(
+    (
+      resumeIdOverride?: string | null
+    ): {
+      stateDelta: Record<string, unknown>;
+      source: AdkStateSyncSource;
+    } => {
+      const activeResumeId = resumeIdOverride?.trim() || resolveActiveResumeIdForPatch(searchParams);
+      const isResumeRoute = pathname.startsWith("/uniboard/resume");
+      const isPortfolioRoute = pathname.startsWith("/uniboard/portfolio");
+      const isStudioRoute = pathname.startsWith("/uniboard/studio");
+      const isJobsRoute = pathname.startsWith("/uniboard/jobs");
+      const allStoreResumes = useResumeStore.getState().resumeData;
+      const allStorePortfolios = usePortfolioStore.getState().portfolioData;
+      const warmResumeData = buildAdkResumeDataMap(allStoreResumes);
+      const warmPortfolioData = buildAdkPortfolioDataMap(allStorePortfolios);
 
-    if (isLinkedInRoute) {
-      const snapshot = linkedInSnapshot ?? queryClient.getQueryData<LinkedInAnalysisSnapshot | null>(linkedinAnalysisQueryKey);
-      if (snapshot?.result) {
+      if (isLinkedInRoute) {
+        const snapshot = linkedInSnapshot ?? queryClient.getQueryData<LinkedInAnalysisSnapshot | null>(linkedinAnalysisQueryKey);
+        if (snapshot?.result) {
+          return {
+            stateDelta: buildAdkLinkedInStateDelta(snapshot),
+            source: "linkedin_query",
+          };
+        }
         return {
-          stateDelta: buildAdkLinkedInStateDelta(snapshot),
+          stateDelta: {
+            active_context: "linkedin",
+            current_linkedin: null,
+            linkedin_data: {},
+          },
           source: "linkedin_query",
         };
       }
-      return {
-        stateDelta: {
-          active_context: "linkedin",
-          current_linkedin: null,
-          linkedin_data: {},
-        },
-        source: "linkedin_query",
-      };
-    }
 
-    if (isStudioRoute) {
-      const studioTypeParam = searchParams?.get("type") ?? null;
-      const documentTopics: ApplicationAssetStudioTopic[] = ["cover-letter", "cold-email", "referral"];
-      const isDocumentStudioTopic = (t: string | null): t is ApplicationAssetStudioTopic =>
-        Boolean(t && documentTopics.includes(t as ApplicationAssetStudioTopic));
-      if (isDocumentStudioTopic(studioTypeParam)) {
-        const aa = useApplicationAssetStudioStore.getState();
-        const apiType = STUDIO_TOPIC_TO_API_TYPE[studioTypeParam];
+      if (isStudioRoute) {
+        const studioTypeParam = searchParams?.get("type") ?? null;
+        const documentTopics: ApplicationAssetStudioTopic[] = ["cover-letter", "cold-email", "referral"];
+        const isDocumentStudioTopic = (t: string | null): t is ApplicationAssetStudioTopic =>
+          Boolean(t && documentTopics.includes(t as ApplicationAssetStudioTopic));
+        if (isDocumentStudioTopic(studioTypeParam)) {
+          const aa = useApplicationAssetStudioStore.getState();
+          const apiType = STUDIO_TOPIC_TO_API_TYPE[studioTypeParam];
+          return {
+            stateDelta: buildAdkApplicationAssetStateDelta({
+              assetType: apiType,
+              assetId: aa.assetId,
+              applicationId: aa.applicationId,
+              role: aa.role,
+              company: aa.company,
+              jobDescription: aa.jobDescription,
+              contactName: aa.contactName,
+              draftPreview: aa.draftPreview,
+              acceptedBody: aa.acceptedContent,
+              regenerateDraft: aa.regenerateAnotherInFlight,
+            }),
+            source: "application_asset_studio",
+          };
+        }
+        const cg = useContentGenStudioStore.getState();
         return {
-          stateDelta: buildAdkApplicationAssetStateDelta({
-            assetType: apiType,
-            assetId: aa.assetId,
-            applicationId: aa.applicationId,
-            role: aa.role,
-            company: aa.company,
-            jobDescription: aa.jobDescription,
-            contactName: aa.contactName,
-            draftPreview: aa.draftPreview,
-            acceptedBody: aa.acceptedContent,
-            regenerateDraft: aa.regenerateAnotherInFlight,
+          stateDelta: buildAdkContentGenStateDelta({
+            topic: cg.topic,
+            funnel: cg.funnel,
+            mood: cg.mood,
+            assetId: cg.assetId,
+            draftPreview: cg.draftPreview,
           }),
-          source: "application_asset_studio",
+          source: "content_gen_studio",
         };
       }
-      const cg = useContentGenStudioStore.getState();
-      return {
-        stateDelta: buildAdkContentGenStateDelta({
-          topic: cg.topic,
-          funnel: cg.funnel,
-          mood: cg.mood,
-          assetId: cg.assetId,
-          draftPreview: cg.draftPreview,
-        }),
-        source: "content_gen_studio",
-      };
-    }
 
-    if (isJobsRoute) {
-      const applications = queryClient.getQueryData<Application[]>(["applications"]) ?? [];
-      const tab = (searchParams?.get("tab") || "discovery").toLowerCase();
-      const activeContext = tab === "tracker" ? "application_tracker" : tab === "interview" ? "interview_prep" : "jobs";
-      return {
-        stateDelta: {
-          active_context: activeContext,
-          application_tracker_data: applications,
-          interview_prep_data: {},
-        },
-        source: "jobs_query",
-      };
-    }
-
-    if (isPortfolioRoute) {
-      const queryPortfolio = queryClient.getQueryData<PortfolioData | null>(portfolioQueryKey);
-      const activePortfolioId = queryPortfolio?.id ?? Object.keys(allStorePortfolios).find(id => allStorePortfolios[id]) ?? null;
-      const storePortfolio = activePortfolioId ? usePortfolioStore.getState().getPortfolioData(activePortfolioId) : undefined;
-      const sourcePortfolio = storePortfolio ?? queryPortfolio ?? null;
-
-      if (sourcePortfolio?.id) {
-        const mergedPortfolios = {
-          ...allStorePortfolios,
-          [sourcePortfolio.id]: sourcePortfolio,
-        };
-        const base = buildAdkPortfolioStateDelta(sourcePortfolio);
+      if (isJobsRoute) {
+        const applications = queryClient.getQueryData<Application[]>(["applications"]) ?? [];
+        const tab = (searchParams?.get("tab") || "discovery").toLowerCase();
+        const activeContext = tab === "tracker" ? "application_tracker" : tab === "interview" ? "interview_prep" : "jobs";
         return {
           stateDelta: {
-            ...base,
-            portfolio_data: buildAdkPortfolioDataMap(mergedPortfolios),
+            active_context: activeContext,
+            application_tracker_data: applications,
+            interview_prep_data: {},
+          },
+          source: "jobs_query",
+        };
+      }
+
+      if (isPortfolioRoute) {
+        const queryPortfolio = queryClient.getQueryData<PortfolioData | null>(portfolioQueryKey);
+        const activePortfolioId = queryPortfolio?.id ?? Object.keys(allStorePortfolios).find(id => allStorePortfolios[id]) ?? null;
+        const storePortfolio = activePortfolioId ? usePortfolioStore.getState().getPortfolioData(activePortfolioId) : undefined;
+        const sourcePortfolio = storePortfolio ?? queryPortfolio ?? null;
+
+        if (sourcePortfolio?.id) {
+          const mergedPortfolios = {
+            ...allStorePortfolios,
+            [sourcePortfolio.id]: sourcePortfolio,
+          };
+          const base = buildAdkPortfolioStateDelta(sourcePortfolio);
+          return {
+            stateDelta: {
+              ...base,
+              portfolio_data: buildAdkPortfolioDataMap(mergedPortfolios),
+              resume_data: warmResumeData,
+              current_resume: null,
+            },
+            source: storePortfolio ? "portfolio_zustand" : "portfolio_react_query",
+          };
+        }
+
+        return {
+          stateDelta: {
+            active_context: "portfolio",
+            current_portfolio: null,
+            portfolio_data: warmPortfolioData,
             resume_data: warmResumeData,
             current_resume: null,
           },
-          source: storePortfolio ? "portfolio_zustand" : "portfolio_react_query",
+          source: "portfolio_zustand",
         };
       }
 
-      return {
-        stateDelta: {
-          active_context: "portfolio",
-          current_portfolio: null,
-          portfolio_data: warmPortfolioData,
-          resume_data: warmResumeData,
-          current_resume: null,
-        },
-        source: "portfolio_zustand",
-      };
-    }
-
-    if (isResumeRoute && !resumeId) {
-      return {
-        stateDelta: {
-          active_context: "resume",
-          current_resume: null,
-          resume_data: warmResumeData,
-          portfolio_data: warmPortfolioData,
-          current_portfolio: null,
-        },
-        source: "list_zustand",
-      };
-    }
-
-    if (isResumeRoute && resumeId) {
-      const storeResume = useResumeStore.getState().getResumeData(resumeId);
-      const queryResume = queryClient.getQueryData<ResumeData>(resumeByIdQueryKey(resumeId));
-      const listResume = queryClient
-        .getQueryData<ResumeData[]>(resumesListQueryKey)
-        ?.find(resume => String(resume.id) === String(resumeId));
-      const sourceResume = storeResume ?? queryResume ?? listResume;
-
-      if (sourceResume) {
-        const mergedResumes = {
-          ...allStoreResumes,
-          [resumeId]: { ...sourceResume, id: resumeId },
-        };
-        const base = buildAdkResumeStateDelta({ ...sourceResume, id: resumeId });
+      if (isResumeRoute && !activeResumeId) {
         return {
           stateDelta: {
-            ...base,
-            resume_data: buildAdkResumeDataMap(mergedResumes),
+            active_context: "resume",
+            current_resume: null,
+            resume_data: warmResumeData,
             portfolio_data: warmPortfolioData,
             current_portfolio: null,
           },
-          source: storeResume ? "zustand" : "react_query",
+          source: "list_zustand",
         };
       }
 
-      const warmOnly = allStoreResumes[resumeId];
-      if (warmOnly) {
-        const mergedResumes = { ...allStoreResumes, [resumeId]: { ...warmOnly, id: resumeId } };
+      if (isResumeRoute && activeResumeId) {
+        const storeResume = useResumeStore.getState().getResumeData(activeResumeId);
+        const queryResume = queryClient.getQueryData<ResumeData>(resumeByIdQueryKey(activeResumeId));
+        const listResume = queryClient
+          .getQueryData<ResumeData[]>(resumesListQueryKey)
+          ?.find(resume => String(resume.id) === String(activeResumeId));
+        const sourceResume = storeResume ?? queryResume ?? listResume;
+
+        if (sourceResume) {
+          const mergedResumes = {
+            ...allStoreResumes,
+            [activeResumeId]: { ...sourceResume, id: activeResumeId },
+          };
+          const base = buildAdkResumeStateDelta({ ...sourceResume, id: activeResumeId });
+          return {
+            stateDelta: {
+              ...base,
+              resume_data: buildAdkResumeDataMap(mergedResumes),
+              portfolio_data: warmPortfolioData,
+              current_portfolio: null,
+            },
+            source: storeResume ? "zustand" : "react_query",
+          };
+        }
+
+        const warmOnly = allStoreResumes[activeResumeId];
+        if (warmOnly) {
+          const mergedResumes = { ...allStoreResumes, [activeResumeId]: { ...warmOnly, id: activeResumeId } };
+          return {
+            stateDelta: {
+              ...buildAdkResumeStateDelta({ ...warmOnly, id: activeResumeId }),
+              resume_data: buildAdkResumeDataMap(mergedResumes),
+              portfolio_data: warmPortfolioData,
+              current_portfolio: null,
+            },
+            source: "zustand",
+          };
+        }
+
         return {
           stateDelta: {
-            ...buildAdkResumeStateDelta({ ...warmOnly, id: resumeId }),
-            resume_data: buildAdkResumeDataMap(mergedResumes),
+            active_context: "resume",
+            current_resume: activeResumeId,
+            resume_data: warmResumeData,
             portfolio_data: warmPortfolioData,
             current_portfolio: null,
           },
-          source: "zustand",
+          source: "resume_id_only",
         };
       }
 
       return {
         stateDelta: {
-          active_context: "resume",
-          current_resume: resumeId,
-          resume_data: warmResumeData,
-          portfolio_data: warmPortfolioData,
+          active_context: "none",
+          current_resume: null,
+          resume_data: {},
           current_portfolio: null,
+          portfolio_data: {},
         },
-        source: "resume_id_only",
+        source: "clear_context",
       };
-    }
-
-    return {
-      stateDelta: {
-        active_context: "none",
-        current_resume: null,
-        resume_data: {},
-        current_portfolio: null,
-        portfolio_data: {},
-      },
-      source: "clear_context",
-    };
-  }, [pathname, resumeId, searchParams, queryClient, linkedInSnapshot, isLinkedInRoute]);
+    },
+    [pathname, searchParams, queryClient, linkedInSnapshot, isLinkedInRoute]
+  );
 
   const getStateDeltaForScope = useCallback(
     (scope: ContentScope): { stateDelta: Record<string, unknown>; source: AdkStateSyncSource } => {
@@ -544,13 +549,14 @@ export function useAdkStreamingManager({
   const patchSessionContextBeforeSend = useCallback(
     async (
       targetSessionId: string,
-      scopeOverride?: ContentScope | null
+      scopeOverride?: ContentScope | null,
+      resumeIdOverride?: string | null
     ): Promise<{ success: boolean; effectiveAppName?: string; error?: string }> => {
       if (!userId || !targetSessionId) {
         return { success: false, error: "userId and sessionId are required" };
       }
 
-      const { stateDelta } = scopeOverride ? getStateDeltaForScope(scopeOverride) : getStateDeltaForCurrentRoute();
+      const { stateDelta } = scopeOverride ? getStateDeltaForScope(scopeOverride) : getStateDeltaForCurrentRoute(resumeIdOverride);
 
       const subThreadExtras: Record<string, unknown> = {};
       if (scopeOverride?.sessionKind === "sub") {
@@ -717,7 +723,10 @@ export function useAdkStreamingManager({
   );
 
   const submitMessage = useCallback(
-    async (message: string, options?: { aiMessageId?: string; sessionIdOverride?: string }): Promise<{ hadAssistantText: boolean }> => {
+    async (
+      message: string,
+      options?: { aiMessageId?: string; sessionIdOverride?: string; patchResumeId?: string }
+    ): Promise<{ hadAssistantText: boolean }> => {
       const targetSessionId = options?.sessionIdOverride?.trim() || sessionId;
       if (!message.trim() || !userId || !targetSessionId) {
         throw new Error("Message, userId, and sessionId are required");
@@ -756,7 +765,7 @@ export function useAdkStreamingManager({
           const sessionRow = options?.sessionIdOverride ? getRegistryRow(targetSessionId) : undefined;
           const scopeOverride = sessionRow ? deriveScopeFromRegistryRow(sessionRow) : null;
           captureResumeBaselineBeforeMutatingPull(scopeOverride);
-          const patchResult = await patchSessionContextBeforeSend(targetSessionId, scopeOverride);
+          const patchResult = await patchSessionContextBeforeSend(targetSessionId, scopeOverride, options?.patchResumeId);
           if (!patchResult.success) {
             throw new Error(patchResult.error ?? "Could not sync your editor context with Unibot.");
           }

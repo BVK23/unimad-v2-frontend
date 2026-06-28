@@ -107,8 +107,7 @@ const JobsMain: React.FC<JobsMainProps> = ({
     onTabChange("interview");
     onInterviewUrlChange({
       setup: null,
-      // view: payload.mode === "live" ? "voice" : null, // Gemini Live — temporarily disabled
-      view: null,
+      view: payload.mode === "live" ? "voice" : null,
       interview_id: null,
       round: payload.roundType,
     });
@@ -165,7 +164,7 @@ const JobsMain: React.FC<JobsMainProps> = ({
         </div>
       </div>
 
-      <div className="flex-1 overflow-y-auto">
+      <div className="flex min-h-0 flex-1 overflow-x-hidden overflow-y-auto">
         {activeTab === "discovery" && (
           <JobDiscovery
             onNavigateToStudio={onNavigateToStudio}

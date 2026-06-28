@@ -58,6 +58,7 @@ export const SelectionImproveActions = ({
   const lastFireRef = useRef(0);
 
   const assetId = useApplicationAssetStudioStore(s => s.assetId);
+  const consumedSuggestionIds = useApplicationAssetStudioStore(s => s.consumedSelectionSuggestionIds);
   const role = useApplicationAssetStudioStore(s => s.role);
   const company = useApplicationAssetStudioStore(s => s.company);
   const jobDescription = useApplicationAssetStudioStore(s => s.jobDescription);
@@ -93,12 +94,18 @@ export const SelectionImproveActions = ({
     return studio.acceptedContent.trim() || studio.draftPreview.trim();
   }, [baselineDraftProp]);
 
+  const visibleSuggestions = suggestions.filter(suggestion => !consumedSuggestionIds.includes(suggestion.id)).slice(0, 2);
+
   const fireRefine = useCallback(
-    (presetLabel: string, instruction: string) => {
+    (presetLabel: string, instruction: string, suggestionId?: string) => {
       if (disabled) return;
       const now = Date.now();
       if (now - lastFireRef.current < STRIP_DEBOUNCE_MS) return;
       lastFireRef.current = now;
+
+      if (suggestionId) {
+        useApplicationAssetStudioStore.getState().markSelectionSuggestionUsed(suggestionId);
+      }
 
       const baselineDraft = resolveBaselineDraft();
       const message = buildSelectionRefineUserMessage(assetType, selectedText, instruction);
@@ -154,7 +161,7 @@ export const SelectionImproveActions = ({
           <SuggestionPillSkeleton textWidth="w-[5.5rem]" />
         </>
       ) : (
-        suggestions.map(suggestion => {
+        visibleSuggestions.map(suggestion => {
           const Icon = getSuggestionIcon(suggestion.id);
           return (
             <button
@@ -163,7 +170,7 @@ export const SelectionImproveActions = ({
               disabled={disabled}
               title={suggestion.label}
               aria-label={suggestion.label}
-              onClick={() => fireRefine(suggestion.label, suggestion.instruction)}
+              onClick={() => fireRefine(suggestion.label, suggestion.instruction, suggestion.id)}
               className="flex items-center gap-1.5 rounded-md px-2.5 py-1.5 text-[13px] font-medium text-slate-700 transition-colors hover:bg-slate-100 disabled:cursor-not-allowed dark:text-slate-300 dark:hover:bg-slate-800"
             >
               <Icon size={14} aria-hidden />

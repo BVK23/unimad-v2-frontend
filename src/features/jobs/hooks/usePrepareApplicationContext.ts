@@ -4,6 +4,9 @@ import { useCallback, useMemo } from "react";
 import { getLinkedAssetId, parseApplicationAssets, type ApplicationAssets } from "@/features/application-tracker/application-assets";
 import { useApplications } from "@/features/application-tracker/hooks/useApplications";
 import type { Application } from "@/features/application-tracker/types";
+import { COLD_EMAIL_LIST_QUERY_KEY } from "@/features/cold-email/hooks/useColdEmailHistory";
+import { COVER_LETTER_LIST_QUERY_KEY } from "@/features/cover-letter/hooks/useCoverLetterHistory";
+import { resumeByIdQueryKey } from "@/features/resume/hooks/useResume";
 import type { Job } from "@/types/jobs";
 import { useQueryClient } from "@tanstack/react-query";
 import { useEnsureJobApplication } from "./useEnsureJobApplication";
@@ -49,7 +52,21 @@ export function usePrepareApplicationContext(job: Job) {
     async (resumeId?: string) => {
       await queryClient.invalidateQueries({ queryKey: ["resumes"] });
       if (resumeId) {
-        await queryClient.invalidateQueries({ queryKey: ["resumes", resumeId] });
+        await queryClient.invalidateQueries({ queryKey: resumeByIdQueryKey(resumeId) });
+      }
+    },
+    [queryClient]
+  );
+
+  const invalidateTextAssetCaches = useCallback(
+    async (opts?: { coverLetterId?: string | null; coldEmailId?: string | null }) => {
+      await queryClient.invalidateQueries({ queryKey: COVER_LETTER_LIST_QUERY_KEY });
+      await queryClient.invalidateQueries({ queryKey: COLD_EMAIL_LIST_QUERY_KEY });
+      if (opts?.coverLetterId) {
+        await queryClient.invalidateQueries({ queryKey: ["cover-letter", opts.coverLetterId] });
+      }
+      if (opts?.coldEmailId) {
+        await queryClient.invalidateQueries({ queryKey: ["cold-email", opts.coldEmailId] });
       }
     },
     [queryClient]
@@ -66,6 +83,7 @@ export function usePrepareApplicationContext(job: Job) {
     syncApplicationAssets,
     resolveApplicationId,
     invalidateResumeCaches,
+    invalidateTextAssetCaches,
     resetResolved,
   };
 }

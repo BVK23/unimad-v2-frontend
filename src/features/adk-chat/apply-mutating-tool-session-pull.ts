@@ -37,6 +37,7 @@ import { getRegistryRow } from "./session-registry";
 import { useAdkLinkedInReviewStore } from "./stores/useAdkLinkedInReviewStore";
 import { useAdkPortfolioReviewStore } from "./stores/useAdkPortfolioReviewStore";
 import { useAdkResumeReviewStore } from "./stores/useAdkResumeReviewStore";
+import { isAdkActivityTraceEnabled } from "./streaming/activity-trace";
 
 export type MutatingToolPullContext = {
   userId: string;
@@ -180,39 +181,71 @@ function applyContentGenState(state: Record<string, unknown>, ctx: MutatingToolP
   });
 }
 
+function resolveReviewSessionId(sessionId: string): string {
+  const row = getRegistryRow(sessionId);
+  if (row?.kind === "sub" && row.parent_adk_session_id?.trim()) {
+    return row.parent_adk_session_id.trim();
+  }
+  return sessionId;
+}
+
 function applyApplicationAssetState(state: Record<string, unknown>, ctx: MutatingToolPullContext): void {
   const draft = extractApplicationAssetDraftFromSessionState(state);
-  if (!draft) return;
+  if (!draft || !ctx.assistantMessageId) {
+    if (process.env.NODE_ENV !== "production" && ctx.toolName.toLowerCase().includes("application_asset")) {
+      console.warn("[application-asset-pull] skip: empty draft or missing assistantMessageId", {
+        tool: ctx.toolName,
+        draftChars: draft?.length ?? 0,
+        assistantMessageId: ctx.assistantMessageId,
+      });
+    }
+    return;
+  }
 
   const studio = useApplicationAssetStudioStore.getState();
+  const pendingRefine = studio.pendingRefineContext;
+  const baselineDraft = pendingRefine?.baselineDraft?.trim() || studio.acceptedContent.trim() || studio.draftPreview.trim();
   const assetType = parseAssetType(state.application_asset_type) ?? studio.assetType ?? "coverletter";
   const role = typeof state.application_role === "string" ? state.application_role : studio.role;
   const company = typeof state.application_company === "string" ? state.application_company : studio.company;
   const jobDescription = typeof state.application_jd === "string" ? state.application_jd : studio.jobDescription;
   const contactName = typeof state.application_contact_name === "string" ? state.application_contact_name : studio.contactName;
+  const reviewSessionId = resolveReviewSessionId(ctx.sessionId);
 
-  studio.syncFromStudio({
-    assetType,
-    assetId: typeof state.application_asset_id === "string" ? state.application_asset_id : studio.assetId,
-    role,
-    company,
-    jobDescription,
-    contactName,
-    draftPreview: draft,
-  });
-
-  if (!ctx.assistantMessageId) return;
-
-  offerApplicationAssetDraftReview({
+  const offered = offerApplicationAssetDraftReview({
     botMessage: "",
     assistantMessageId: ctx.assistantMessageId,
     pathname: ctx.pathname,
     assetTypeOverride: assetType,
     proposedDraftOverride: draft,
+    baselineDraftOverride: baselineDraft,
     userId: ctx.userId,
-    sessionId: ctx.sessionId,
+    sessionId: reviewSessionId,
     forceStudioPreview: true,
   });
+
+  if (isAdkActivityTraceEnabled()) {
+    console.info("[application-asset-pull] session GET applied", {
+      tool: ctx.toolName,
+      offered,
+      draftChars: draft.length,
+      baselineChars: baselineDraft.length,
+      reviewSessionId,
+      pullSessionId: ctx.sessionId,
+      assistantMessageId: ctx.assistantMessageId,
+    });
+  }
+
+  if (!offered && process.env.NODE_ENV !== "production") {
+    console.warn("[application-asset-pull] offerApplicationAssetDraftReview returned false", {
+      tool: ctx.toolName,
+      draftChars: draft.length,
+      reviewSessionId,
+      pullSessionId: ctx.sessionId,
+      assetType,
+      baselineChars: baselineDraft.length,
+    });
+  }
 }
 
 function applyDomainState(domain: MutatingSessionDomain, state: Record<string, unknown>, ctx: MutatingToolPullContext): void {
@@ -237,7 +270,7 @@ function applyDomainState(domain: MutatingSessionDomain, state: Record<string, u
   }
 }
 
-const APPLICATION_ASSET_PULL_INITIAL_DELAY_MS = 900;
+const APPLICATION_ASSET_PULL_INITIAL_DELAY_MS = 1000;
 const APPLICATION_ASSET_PULL_RETRY_DELAY_MS = 600;
 const APPLICATION_ASSET_PULL_MAX_ATTEMPTS = 3;
 

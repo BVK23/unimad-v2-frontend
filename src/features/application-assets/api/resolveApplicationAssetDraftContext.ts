@@ -87,9 +87,28 @@ export const resolveApplicationAssetDraftContext = (params: {
   studioContactName?: string;
   threadMessages?: ThreadMessageLike[];
   beforeMessageId?: string;
+  /** Session GET path: draft comes from ADK state, not chat prose. */
+  sessionDraftOverride?: string;
 }): ResolvedApplicationAssetContext | null => {
   const payload = extractApplicationAssetDraftPayload(params.botMessage);
-  if (payload.draft.length < 40) {
+  const sessionDraft = params.sessionDraftOverride?.trim() ?? "";
+  const hasBotDraft = payload.draft.length >= 40;
+
+  if (!hasBotDraft && sessionDraft.length >= 40) {
+    const assetType = params.assetTypeOverride ?? params.studioAssetType ?? null;
+    if (!assetType) {
+      return null;
+    }
+    return {
+      assetType,
+      role: params.studioRole?.trim() || "",
+      company: params.studioCompany?.trim() || "",
+      jobDescription: params.studioJobDescription?.trim() || "",
+      contactName: params.studioContactName?.trim() || "",
+    };
+  }
+
+  if (!hasBotDraft) {
     return null;
   }
 

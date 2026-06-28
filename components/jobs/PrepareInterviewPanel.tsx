@@ -3,9 +3,7 @@
 import React, { useState } from "react";
 import type { InterviewRoundType, InterviewSessionMode } from "@/src/features/interview-prep/types";
 import type { Job } from "@/types/jobs";
-import { Mic2, ChevronRight, Loader2, AlertCircle, MessageSquare } from "lucide-react";
-
-// import { Radio } from "lucide-react"; // Gemini Live — temporarily disabled
+import { Mic2, ChevronRight, Loader2, AlertCircle, MessageSquare, Radio } from "lucide-react";
 
 const ROUNDS: { id: InterviewRoundType; label: string; description: string }[] = [
   { id: "screening", label: "Screening", description: "Intro, motivation, and fit" },
@@ -64,7 +62,6 @@ const PrepareInterviewPanel: React.FC<PrepareInterviewPanelProps> = ({ job, isSt
       <div className="mb-8">
         <label className="mb-3 block text-sm font-medium text-slate-700 dark:text-slate-300">Session type</label>
         <div className="grid grid-cols-1 gap-2 sm:grid-cols-2">
-          {/* Gemini Live — temporarily disabled
           <button
             type="button"
             disabled={isStarting}
@@ -79,7 +76,6 @@ const PrepareInterviewPanel: React.FC<PrepareInterviewPanelProps> = ({ job, isSt
               <span className="mt-0.5 block text-xs text-slate-500">Conversational AI interviewer</span>
             </div>
           </button>
-          */}
           <button
             type="button"
             disabled={isStarting}

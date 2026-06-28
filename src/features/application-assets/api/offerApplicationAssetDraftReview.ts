@@ -139,22 +139,15 @@ export const offerApplicationAssetDraftReview = (params: OfferApplicationAssetDr
 
   const resolved = resolveApplicationAssetDraftContext({
     botMessage: params.botMessage,
-
     assetTypeOverride: params.assetTypeOverride ?? studio.assetType,
-
     studioAssetType: studio.assetType,
-
     studioRole: studio.role,
-
     studioCompany: studio.company,
-
     studioJobDescription: studio.jobDescription,
-
     studioContactName: studio.contactName,
-
     threadMessages: params.threadMessages,
-
     beforeMessageId: params.assistantMessageId,
+    sessionDraftOverride: params.proposedDraftOverride,
   });
 
   if (!resolved) {
@@ -164,9 +157,7 @@ export const offerApplicationAssetDraftReview = (params: OfferApplicationAssetDr
   const { assetType, role, company, jobDescription, contactName } = resolved;
 
   const refineCtx = useApplicationAssetStudioStore.getState().consumePendingRefineContext();
-  if (refineCtx) {
-    useApplicationAssetStudioStore.getState().clearRefineAnchor();
-  }
+  useApplicationAssetStudioStore.getState().clearRefineAnchor();
 
   const baselineDraft =
     params.baselineDraftOverride?.trim() || refineCtx?.baselineDraft?.trim() || studio.acceptedContent.trim() || studio.draftPreview.trim();

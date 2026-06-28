@@ -12,6 +12,7 @@ import { mapFrontendResumeToBackend } from "@/features/resume/api/mappers";
 import { useCalculateAtsScore } from "@/features/resume/hooks/useCalculateAtsScore";
 import { useDebouncedResumePreview } from "@/features/resume/hooks/useDebouncedResumePreview";
 import { useGeolocationTemplate } from "@/features/resume/hooks/useGeolocationTemplate";
+import { resumeByIdQueryKey } from "@/features/resume/hooks/useResume";
 import { resumeAtsQueryKey, useResumeAtsScore } from "@/features/resume/hooks/useResumeAtsScore";
 import { useUpdateResume } from "@/features/resume/hooks/useUpdateResume";
 import { publishResumeAsset } from "@/features/resume/server-actions/resume-actions";
@@ -495,7 +496,7 @@ const ResumeEditor: React.FC<ResumeEditorProps> = ({
     }
   }, [resumeId, getInitialResume]);
 
-  const resumeFromStore = useResumeStore(s => s.getResumeData(resumeId));
+  const resumeFromStore = useResumeStore(s => s.resumeData[resumeId]);
   const resume = resumeFromStore ?? getInitialResume();
   const resumeForPreview = useDebouncedResumePreview(resume);
 
@@ -869,6 +870,7 @@ const ResumeEditor: React.FC<ResumeEditorProps> = ({
   const atsScoreClass = atsTone === "green" ? "text-green-600" : atsTone === "yellow" ? "text-yellow-600" : "text-red-600";
   const atsBarClass = atsTone === "green" ? "bg-green-500" : atsTone === "yellow" ? "bg-yellow-500" : "bg-red-500";
   const atsHeaderBg = atsTone === "green" ? "bg-green-50/50" : atsTone === "yellow" ? "bg-yellow-50/50" : "bg-red-50/50";
+  const isFirstAtsCalculation = atsCalcCount === 0 && !atsVm;
 
   const handleFixWithUnibot = () => {
     if (fixAllUsed || !atsVm?.improvements.length) return;
@@ -1384,6 +1386,9 @@ const ResumeEditor: React.FC<ResumeEditorProps> = ({
   const handleSaveAndReturnToPrepare = async () => {
     if (!prepareReturn) return;
     await runSave("manual");
+    await queryClient.invalidateQueries({ queryKey: ["resumes"] });
+    await queryClient.invalidateQueries({ queryKey: resumeByIdQueryKey(resumeId) });
+    await queryClient.invalidateQueries({ queryKey: ["applications"] });
     const { jobId, tab, navigate } = prepareReturn;
     clearPrepareReturnSession();
     setPrepareReturn(null);
@@ -3266,7 +3271,7 @@ const ResumeEditor: React.FC<ResumeEditorProps> = ({
                         ) : (
                           <RefreshCw size={16} className="text-slate-500" />
                         )}
-                        {atsScorePending ? "Recalculating…" : "Recalculate"}
+                        {atsScorePending ? (isFirstAtsCalculation ? "Calculating…" : "Recalculating…") : "Recalculate"}
                       </button>
                       {atsRecalculateState.message && !atsScorePending ? (
                         <p className="max-w-[220px] text-right text-xs text-slate-500 dark:text-slate-400">{atsRecalculateState.message}</p>

@@ -1,5 +1,6 @@
 "use client";
 import React, { useState, useRef, useEffect, useLayoutEffect, useCallback } from "react";
+import { DocumentSaveStatusBar } from "@/components/application-assets/DocumentSaveStatusBar";
 import { EMPTY_PORTFOLIO_HIGHLIGHT_MAP } from "@/features/adk-chat/adkPortfolioHighlightDiff";
 import { useAdkPortfolioReviewStore } from "@/features/adk-chat/stores/useAdkPortfolioReviewStore";
 import { mapFrontendPortfolioToBackend } from "@/features/portfolio/api/mappers";
@@ -315,7 +316,7 @@ const Portfolio: React.FC<PortfolioProps> = ({ portfolioId, initialData, onBack,
     s.hasPendingReviewForPortfolio(portfolioId) ? s.getActiveHighlights() : EMPTY_PORTFOLIO_HIGHLIGHT_MAP
   );
 
-  const { saveStatusLabel, runSave } = usePortfolioAutosave(portfolioId, {
+  const { hasPendingUnsavedChanges, isSaving, savedConfirmationVisible, runSave } = usePortfolioAutosave(portfolioId, {
     enabled: !isReadOnly && !hasPendingAdkReview,
   });
 
@@ -1696,10 +1697,14 @@ const Portfolio: React.FC<PortfolioProps> = ({ portfolioId, initialData, onBack,
                 <div className="text-sm font-medium text-slate-500 dark:text-slate-400">{portfolio.title || "Portfolio"}</div>
               )}
               <div className="flex items-center gap-3">
-                {isEditMode && saveStatusLabel ? (
-                  <span className="text-xs text-slate-500 dark:text-slate-400 tabular-nums" aria-live="polite">
-                    {saveStatusLabel}
-                  </span>
+                {isEditMode && !hasPendingAdkReview && !isReadOnly ? (
+                  <DocumentSaveStatusBar
+                    hasPendingUnsavedChanges={hasPendingUnsavedChanges}
+                    isSaving={isSaving}
+                    savedConfirmationVisible={savedConfirmationVisible}
+                    onSaveNow={() => void runSave("manual")}
+                    visible={hasPendingUnsavedChanges || isSaving || savedConfirmationVisible}
+                  />
                 ) : null}
                 {isEditMode ? (
                   <>

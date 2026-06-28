@@ -1,6 +1,6 @@
 "use client";
 
-import { runApplicationAssetDraftGeneration } from "@/features/application-assets/api/runApplicationAssetDraftGeneration";
+import { runPrepareApplicationAssetDraft } from "@/features/application-assets/api/runPrepareApplicationAssetDraft";
 import { checkApplicationAssetAvailability } from "@/features/application-assets/server-actions/application-asset-actions";
 import { generateResume } from "@/features/resume/server-actions/resume-actions";
 import type { Job } from "@/types/jobs";
@@ -77,7 +77,7 @@ async function generatePrepareTabAsset(
     return { status: "ready", error: null };
   }
 
-  const genResult = await runApplicationAssetDraftGeneration({
+  const genResult = await runPrepareApplicationAssetDraft({
     assetType,
     role: job.role,
     company: job.company,
@@ -85,16 +85,12 @@ async function generatePrepareTabAsset(
     applicationId,
   });
 
-  const assetId = genResult.assetId;
-  if (!assetId) {
-    await applySyncedAsset(tab);
-    return { status: "ready", error: null };
-  }
-
   await syncApplicationAssets();
+  await applySyncedAsset(tab, genResult.assetId);
+
   return {
     status: "ready",
-    assetId,
+    assetId: genResult.assetId,
     content: genResult.draft,
     error: null,
   };

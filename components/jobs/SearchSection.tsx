@@ -85,6 +85,7 @@ const SearchSection: React.FC<SearchSectionProps> = ({
   const [activeFilters, setActiveFilters] = useState<string[]>([]);
   const roleContainerRef = useRef<HTMLDivElement>(null);
   const locationContainerRef = useRef<HTMLDivElement>(null);
+  const filtersContainerRef = useRef<HTMLDivElement>(null);
 
   const debouncedSearchTerm = useDebounce(searchTerm, 300);
   const { suggestions, isLoading: isSuggestionsLoading } = useJobSuggestions(debouncedSearchTerm);
@@ -98,6 +99,9 @@ const SearchSection: React.FC<SearchSectionProps> = ({
       }
       if (locationContainerRef.current && !locationContainerRef.current.contains(e.target as Node)) {
         setShowLocationDropdown(false);
+      }
+      if (filtersContainerRef.current && !filtersContainerRef.current.contains(e.target as Node)) {
+        setShowFilters(false);
       }
     };
     document.addEventListener("mousedown", handleClickOutside);
@@ -139,9 +143,11 @@ const SearchSection: React.FC<SearchSectionProps> = ({
     }
   };
 
-  const submitWithFilters = (q: string) => {
-    if (!q.trim()) return;
-    onSearchSubmit(q.trim(), locationTerm.trim(), activeFilters);
+  const submitWithFilters = (q: string, locationOverride?: string) => {
+    const trimmedQ = q.trim();
+    const trimmedLocation = (locationOverride ?? locationTerm).trim();
+    if (!trimmedQ && !trimmedLocation) return;
+    onSearchSubmit(trimmedQ, trimmedLocation, activeFilters);
     setShowRoleDropdown(false);
     setShowLocationDropdown(false);
   };
@@ -158,6 +164,14 @@ const SearchSection: React.FC<SearchSectionProps> = ({
   const handleLocationSelect = (loc: string) => {
     setLocationTerm(loc);
     setShowLocationDropdown(false);
+    if (searchTerm.trim()) {
+      submitWithFilters(searchTerm, loc);
+    }
+  };
+
+  const handleLocationEnter = () => {
+    if (!searchTerm.trim() && !locationTerm.trim()) return;
+    submitWithFilters(searchTerm);
   };
 
   const toggleSavedBrowse = () => {
@@ -208,25 +222,27 @@ const SearchSection: React.FC<SearchSectionProps> = ({
           )}
         </div>
 
-        <div
-          ref={locationContainerRef}
-          className="relative flex flex-1 items-center border-b border-slate-200 py-3 transition-colors focus-within:border-brand-400 dark:border-slate-700 dark:focus-within:border-brand-500 md:max-w-xs"
-        >
-          <MapPin size={18} className="mr-3 shrink-0 text-slate-400" />
-          <input
-            type="text"
-            placeholder="City, state, or remote"
-            className="w-full border-none bg-transparent text-sm text-slate-900 outline-none placeholder:text-slate-400 dark:text-white"
-            value={locationTerm}
-            onChange={e => {
-              setLocationTerm(e.target.value);
-              setShowLocationDropdown(true);
-            }}
-            onFocus={() => setShowLocationDropdown(locationTerm.trim().length >= 1)}
-            onKeyDown={e => {
-              if (e.key === "Enter") handleSearch();
-            }}
-          />
+        <div ref={locationContainerRef} className="relative flex flex-1 flex-col md:max-w-xs">
+          <div className="flex items-center border-b border-slate-200 py-3 transition-colors focus-within:border-brand-400 dark:border-slate-700 dark:focus-within:border-brand-500">
+            <MapPin size={18} className="mr-3 shrink-0 text-slate-400" />
+            <input
+              type="text"
+              placeholder="City, state, or remote"
+              className="w-full border-none bg-transparent text-sm text-slate-900 outline-none placeholder:text-slate-400 dark:text-white"
+              value={locationTerm}
+              onChange={e => {
+                setLocationTerm(e.target.value);
+                setShowLocationDropdown(true);
+              }}
+              onFocus={() => setShowLocationDropdown(locationTerm.trim().length >= 1)}
+              onKeyDown={e => {
+                if (e.key === "Enter") handleLocationEnter();
+              }}
+            />
+          </div>
+          {!searchTerm.trim() && locationTerm.trim() ? (
+            <p className="mt-1 text-xs text-slate-500 dark:text-slate-400">Press Enter to search jobs in this area</p>
+          ) : null}
           {showLocationDropdown && locationTerm.trim().length >= 1 && (
             <div className="absolute top-full left-0 right-0 z-50 mt-1 max-h-[280px] overflow-y-auto rounded-xl border border-slate-200 bg-white shadow-lg dark:border-slate-800 dark:bg-slate-900">
               {isLocationsLoading ? (
@@ -263,7 +279,7 @@ const SearchSection: React.FC<SearchSectionProps> = ({
             <span className="hidden whitespace-nowrap md:inline">Saved Jobs</span>
           </button>
 
-          <div className="relative">
+          <div className="relative" ref={filtersContainerRef}>
             <button
               type="button"
               onClick={() => setShowFilters(!showFilters)}
@@ -328,15 +344,6 @@ const SearchSection: React.FC<SearchSectionProps> = ({
                   onToggle={toggleFilter}
                 />
                 */}
-                <div className="mt-4 flex justify-end border-t border-slate-100 pt-4 dark:border-slate-800">
-                  <button
-                    type="button"
-                    onClick={() => setShowFilters(false)}
-                    className="text-xs font-medium text-brand-600 hover:text-brand-700 dark:text-brand-400"
-                  >
-                    Done
-                  </button>
-                </div>
               </div>
             )}
           </div>
@@ -364,8 +371,6 @@ const SearchSection: React.FC<SearchSectionProps> = ({
         ))}
         {activeFilters.length === 0 && <span className="py-1 text-xs text-slate-400">No active filters</span>}
       </div>
-
-      {showFilters && <div className="fixed inset-0 z-10" onClick={() => setShowFilters(false)} aria-hidden />}
     </div>
   );
 };

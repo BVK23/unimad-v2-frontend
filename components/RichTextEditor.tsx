@@ -186,6 +186,7 @@ const RichTextEditor: React.FC<RichTextEditorProps> = ({
         clearRefineAnchorMarks(root);
       }
       anchorMarkRef.current = null;
+      setAnchorCueRect(null);
     };
   }, [refineAnchorText, value, updateAnchorCuePosition]);
 

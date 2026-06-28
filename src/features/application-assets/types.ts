@@ -50,6 +50,17 @@ export type SelectionSuggestion = {
   instruction: string;
 };
 
+export type FetchDocumentImproveSuggestionsParams = {
+  type: ApplicationAssetApiType;
+  documentBody?: string;
+  role?: string;
+  company?: string;
+  jobDescription?: string;
+  contactName?: string;
+  assetId?: string | null;
+  excludeLabels?: string[];
+};
+
 export type FetchSelectionSuggestionsParams = {
   type: ApplicationAssetApiType;
   selectedText: string;

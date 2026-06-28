@@ -49,15 +49,25 @@ export const useApplicationAssetDiffReviewUiStore = create<ApplicationAssetDiffR
   },
 
   keepRegion: regionId => {
-    set(state => ({
-      decisions: { ...state.decisions, [regionId]: "keep" },
-    }));
+    set(state => {
+      const decisions = { ...state.decisions, [regionId]: "keep" as const };
+      const nextUndecided = state.regionIds.find(id => !decisions[id]) ?? null;
+      return {
+        decisions,
+        activeRegionId: nextUndecided ?? state.activeRegionId,
+      };
+    });
   },
 
   undoRegion: regionId => {
-    set(state => ({
-      decisions: { ...state.decisions, [regionId]: "undo" },
-    }));
+    set(state => {
+      const decisions = { ...state.decisions, [regionId]: "undo" as const };
+      const nextUndecided = state.regionIds.find(id => !decisions[id]) ?? null;
+      return {
+        decisions,
+        activeRegionId: nextUndecided ?? state.activeRegionId,
+      };
+    });
   },
 
   keepAll: () => {

@@ -8,6 +8,7 @@ import type {
   ApplicationAssetStatus,
   CreateApplicationAssetShellParams,
   FetchSelectionSuggestionsParams,
+  FetchDocumentImproveSuggestionsParams,
   SelectionSuggestion,
 } from "@/features/application-assets/types";
 import { messageFromFailedResponse } from "@/utils/message-from-failed-response";
@@ -184,6 +185,30 @@ export async function fetchSelectionSuggestions(params: FetchSelectionSuggestion
   const data = await res.json().catch(() => ({}));
   if (!res.ok) {
     throw new Error((data as { error?: string })?.error ?? "Failed to fetch selection suggestions");
+  }
+  return data as { data: SelectionSuggestion[] };
+}
+
+/** Studio Improve footer: fetch 4 dynamic whole-document improvement suggestions. */
+export async function fetchDocumentImproveSuggestions(
+  params: FetchDocumentImproveSuggestionsParams
+): Promise<{ data: SelectionSuggestion[] }> {
+  const res = await authedFetch("/api/application-assets/document-improve-suggestions/", {
+    method: "POST",
+    body: JSON.stringify({
+      type: params.type,
+      document_body: params.documentBody ?? "",
+      role: params.role ?? "",
+      company: params.company ?? "",
+      job_description: params.jobDescription ?? "",
+      contact_name: params.contactName ?? "",
+      asset_id: params.assetId ?? undefined,
+      exclude_labels: params.excludeLabels ?? [],
+    }),
+  });
+  const data = await res.json().catch(() => ({}));
+  if (!res.ok) {
+    throw new Error((data as { error?: string })?.error ?? "Failed to fetch document improve suggestions");
   }
   return data as { data: SelectionSuggestion[] };
 }

@@ -63,6 +63,7 @@ export type ApplicationAssetDraftFailedDetail = {
 export type ApplicationAssetReviewAcceptedDetail = {
   assetType: ApplicationAssetApiType;
   assetId?: string | null;
+  draft?: string;
 };
 
 export type ApplicationAssetOpenDraftDetail = {

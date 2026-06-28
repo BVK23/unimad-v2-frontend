@@ -7,7 +7,7 @@ import { DocumentSaveStatusBar } from "@/components/application-assets/DocumentS
 import InterviewLaunchOverlay from "@/components/interview-prep/InterviewLaunchOverlay";
 import { getLinkedAssetId } from "@/features/application-tracker/application-assets";
 import { useDocumentAutosave } from "@/hooks/useDocumentAutosave";
-import { setPrepareReturnSession } from "@/lib/jobs/prepare-application-return";
+import { setPrepareReturnSession, consumePrepareReturnContentSnapshot } from "@/lib/jobs/prepare-application-return";
 import { buildResumePrepareHref, type PrepareNavigateTarget } from "@/lib/jobs/prepare-application-url";
 import { MODAL_OVERLAY_Z_CLASS } from "@/lib/ui/modal-overlay";
 import { fetchColdEmailById, updateColdEmail } from "@/src/features/cold-email/server-actions/cold-email-actions";
@@ -111,6 +111,7 @@ const PrepareApplicationModal: React.FC<PrepareApplicationModalProps> = ({
     syncApplicationAssets,
     resolveApplicationId,
     invalidateResumeCaches,
+    invalidateTextAssetCaches,
     resetResolved,
   } = usePrepareApplicationContext(job);
 
@@ -125,30 +126,58 @@ const PrepareApplicationModal: React.FC<PrepareApplicationModalProps> = ({
     if (applicationId) applicationIdRef.current = applicationId;
   }, [applicationId]);
 
-  /** Hydrate tabs from application.assets in React Query (linked resume, cover letter, etc.). */
   useEffect(() => {
-    const hydrate = (tab: GeneratableTab, assetId: string | null) => {
-      if (!assetId) return;
+    void syncApplicationAssets();
+  }, [job.id, syncApplicationAssets]);
+
+  const fetchAndSetTextAssetContent = useCallback(
+    async (tab: "cover-letter" | "cold-email", assetId: string) => {
+      const snapshot = consumePrepareReturnContentSnapshot(assetId, tab);
+      if (snapshot != null) {
+        setTabState(tab, { status: "ready", assetId, content: snapshot, error: null });
+      }
+
+      await invalidateTextAssetCaches({
+        coverLetterId: tab === "cover-letter" ? assetId : undefined,
+        coldEmailId: tab === "cold-email" ? assetId : undefined,
+      });
+
+      const asset = tab === "cover-letter" ? await fetchCoverLetterById(assetId) : await fetchColdEmailById(assetId);
+      if (asset?.content != null) {
+        setTabState(tab, {
+          status: "ready",
+          assetId,
+          content: asset.content,
+          error: null,
+        });
+      } else if (snapshot == null) {
+        setTabState(tab, { status: "ready", assetId, content: "", error: null });
+      }
+    },
+    [invalidateTextAssetCaches]
+  );
+
+  /** Hydrate tabs from application.assets — always refetch document body from the server. */
+  useEffect(() => {
+    if (linkedResumeId) {
       setTabStates(prev => {
-        if (tab !== "vpd" && isTabPendingRef.current(tab as GeneratablePrepareTab)) return prev;
-        if (prev[tab].status === "loading") return prev;
-        if (prev[tab].assetId === assetId && prev[tab].status === "ready") return prev;
+        if (prev.resume.assetId === linkedResumeId && prev.resume.status === "ready") return prev;
         return {
           ...prev,
-          [tab]: {
-            status: "ready",
-            assetId,
-            content: prev[tab].content,
-            error: null,
-          },
+          resume: { ...prev.resume, status: "ready", assetId: linkedResumeId, error: null },
         };
       });
-    };
+      void invalidateResumeCaches(linkedResumeId);
+    }
 
-    hydrate("resume", linkedResumeId);
-    hydrate("cover-letter", linkedCoverLetterId);
-    hydrate("cold-email", linkedColdEmailId);
-  }, [linkedResumeId, linkedCoverLetterId, linkedColdEmailId]);
+    if (linkedCoverLetterId && !isTabPendingRef.current("cover-letter")) {
+      void fetchAndSetTextAssetContent("cover-letter", linkedCoverLetterId);
+    }
+
+    if (linkedColdEmailId && !isTabPendingRef.current("cold-email")) {
+      void fetchAndSetTextAssetContent("cold-email", linkedColdEmailId);
+    }
+  }, [linkedResumeId, linkedCoverLetterId, linkedColdEmailId, fetchAndSetTextAssetContent, invalidateResumeCaches]);
 
   const tabHasLinkedAsset = (tab: GeneratableTab) => {
     const state = tabStates[tab];
@@ -174,6 +203,7 @@ const PrepareApplicationModal: React.FC<PrepareApplicationModalProps> = ({
       }
 
       if (tab === "cover-letter") {
+        await invalidateTextAssetCaches({ coverLetterId: syncedId });
         const asset = await fetchCoverLetterById(syncedId);
         setTabState(tab, {
           status: "ready",
@@ -185,6 +215,7 @@ const PrepareApplicationModal: React.FC<PrepareApplicationModalProps> = ({
       }
 
       if (tab === "cold-email") {
+        await invalidateTextAssetCaches({ coldEmailId: syncedId });
         const asset = await fetchColdEmailById(syncedId);
         setTabState(tab, {
           status: "ready",
@@ -194,7 +225,7 @@ const PrepareApplicationModal: React.FC<PrepareApplicationModalProps> = ({
         });
       }
     },
-    [syncApplicationAssets, invalidateResumeCaches]
+    [syncApplicationAssets, invalidateResumeCaches, invalidateTextAssetCaches]
   );
 
   const runEnsureApplication = useCallback(async (): Promise<string> => {
@@ -227,6 +258,25 @@ const PrepareApplicationModal: React.FC<PrepareApplicationModalProps> = ({
   });
 
   isTabPendingRef.current = isTabPending;
+
+  const activeTextAssetIdForRefetch =
+    activeTab === "cover-letter" || activeTab === "cold-email"
+      ? (tabStates[activeTab].assetId ?? (activeTab === "cover-letter" ? linkedCoverLetterId : linkedColdEmailId))
+      : null;
+
+  /** Refetch when user opens a text tab so Studio edits appear after Save & Return. */
+  useEffect(() => {
+    if (activeTab !== "cover-letter" && activeTab !== "cold-email") return;
+    if (!activeTextAssetIdForRefetch || isTabPendingRef.current(activeTab)) return;
+    void fetchAndSetTextAssetContent(activeTab, activeTextAssetIdForRefetch);
+  }, [activeTab, activeTextAssetIdForRefetch, fetchAndSetTextAssetContent]);
+
+  const activeResumeIdForRefetch = activeTab === "resume" ? (tabStates.resume.assetId ?? linkedResumeId) : null;
+
+  useEffect(() => {
+    if (!activeResumeIdForRefetch) return;
+    void invalidateResumeCaches(activeResumeIdForRefetch);
+  }, [activeResumeIdForRefetch, invalidateResumeCaches]);
 
   const isActiveTabGenerating =
     !isInterviewTab && (activeTab === "vpd" ? tabStates.vpd.status === "loading" : isTabPending(activeTab as GeneratablePrepareTab));
@@ -321,7 +371,6 @@ const PrepareApplicationModal: React.FC<PrepareApplicationModalProps> = ({
         applicationId: appId,
       };
 
-      /* Gemini Live — temporarily disabled
       if (payload.mode === "live") {
         storeInterviewLaunch({
           context,
@@ -332,7 +381,6 @@ const PrepareApplicationModal: React.FC<PrepareApplicationModalProps> = ({
         onClose();
         return;
       }
-      */
 
       const result = await startInterviewSession({
         role: job.role,

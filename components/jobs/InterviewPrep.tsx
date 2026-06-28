@@ -4,7 +4,7 @@ import React, { useCallback, useEffect, useMemo, useRef, useState } from "react"
 import { ModalPortalOverlay } from "@/components/ui/ModalPortalOverlay";
 import { consumeInterviewLaunch } from "@/src/features/interview-prep/interview-launch";
 import {
-  // analyzeVoiceInterview, // Gemini Live — temporarily disabled
+  analyzeVoiceInterview,
   deleteInterviewSession,
   fetchInterviewSessions,
   startInterviewSession,
@@ -24,8 +24,7 @@ import InterviewAnalyzingView from "../interview-prep/InterviewAnalyzingView";
 import InterviewLaunchOverlay from "../interview-prep/InterviewLaunchOverlay";
 import InterviewReportView from "../interview-prep/InterviewReportView";
 import InterviewSetupModal from "../interview-prep/InterviewSetupModal";
-
-// import VoiceInterviewSession from "../interview-prep/VoiceInterviewSession"; // Gemini Live — temporarily disabled
+import VoiceInterviewSession from "../interview-prep/VoiceInterviewSession";
 
 type View = InterviewView;
 
@@ -157,13 +156,11 @@ const InterviewPrep: React.FC<InterviewPrepProps> = ({
       setInitialQuestionIndex(0);
 
       try {
-        /* Gemini Live — temporarily disabled
         if (payload.mode === "live") {
           setInterviewId(null);
           navigate({ view: "voice", interviewId: null, round: payload.roundType, setup: null });
           return;
         }
-        */
 
         const result = await startInterviewSession({
           role: payload.role,
@@ -214,7 +211,6 @@ const InterviewPrep: React.FC<InterviewPrepProps> = ({
     });
   }, [autoStart, initialContext, handleStart, onAutoStartConsumed]);
 
-  /* Gemini Live — temporarily disabled
   const handleVoiceEnd = async (transcript: { role: "user" | "model"; text: string; timestamp?: number }[]) => {
     navigate({ view: "analyzing", setup: null });
     setIsAnalyzing(true);
@@ -246,7 +242,6 @@ const InterviewPrep: React.FC<InterviewPrepProps> = ({
       setIsAnalyzing(false);
     }
   };
-  */
 
   const handleDelete = async (id: string) => {
     try {
@@ -292,13 +287,11 @@ const InterviewPrep: React.FC<InterviewPrepProps> = ({
       setInitialQuestionIndex(0);
 
       try {
-        /* Gemini Live — temporarily disabled
         if (opts.mode === "live") {
           setInterviewId(opts.interviewId);
           navigate({ view: "voice", interviewId: opts.interviewId, round: opts.roundType, setup: null });
           return;
         }
-        */
 
         const result = await startInterviewSession({
           role: opts.role,
@@ -377,7 +370,6 @@ const InterviewPrep: React.FC<InterviewPrepProps> = ({
     );
   }
 
-  /* Gemini Live — temporarily disabled
   if (view === "voice") {
     return (
       <VoiceInterviewSession
@@ -393,7 +385,6 @@ const InterviewPrep: React.FC<InterviewPrepProps> = ({
       />
     );
   }
-  */
 
   if (view === "analyzing") {
     return <InterviewAnalyzingView />;
@@ -432,8 +423,7 @@ const InterviewPrep: React.FC<InterviewPrepProps> = ({
           <h2 className="mb-4 text-4xl font-medium tracking-tight">Ace Your Next Interview</h2>
           <p className="mb-8 text-lg font-light leading-relaxed text-slate-400">
             Practice screening, technical, or behavioral rounds tailored to your target company and job description with guided AI questions
-            and live speech-to-text answers.
-            {/* or a live voice mock interview. — Gemini Live temporarily disabled */}
+            and live speech-to-text answers, or a live voice mock interview.
           </p>
           <button
             type="button"

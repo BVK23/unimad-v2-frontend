@@ -96,6 +96,7 @@ export function useDebouncedResumePreview(resume: ResumeData) {
     // If we’re editing a different resume, clear timers and sync immediately.
     if (prev.id !== resume.id) {
       clearTimer(profileTimerRef);
+      clearTimer(immediateTimerRef);
       clearTimer(experienceTimerRef);
       clearTimer(educationTimerRef);
       clearTimer(projectsTimerRef);
@@ -127,6 +128,7 @@ export function useDebouncedResumePreview(resume: ResumeData) {
         customSections: toSignature(resume.customSections),
       };
 
+      queueMicrotask(() => setResumeForPreview(resume));
       return;
     }
 

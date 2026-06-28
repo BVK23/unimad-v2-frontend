@@ -1,16 +1,19 @@
 "use client";
 
-import { useEffect, useState, type ReactNode } from "react";
+import { useEffect, useRef, useState, type ReactNode } from "react";
 import ResumeDashboard from "@/components/ResumeDashboard";
 import ResumeEditor from "@/components/ResumeEditor";
 import { ModalPortalOverlay } from "@/components/ui/ModalPortalOverlay";
+import { RESUME_OPEN_FULL_IMPROVE_EVENT } from "@/features/resume/api/resume-full-improve-presets";
 import { useResume, resumeByIdQueryKey } from "@/features/resume/hooks/useResume";
 import { useResumeUrlActions, useResumeUrlState } from "@/features/resume/hooks/useResumeUrlState";
 import { resumesListQueryKey } from "@/features/resume/hooks/useResumesList";
+import { getPrepareReturnSession } from "@/lib/jobs/prepare-application-return";
+import { parseResumePrepareSearchParams } from "@/lib/jobs/prepare-application-url";
 import type { ResumeData } from "@/types";
 import { useQueryClient } from "@tanstack/react-query";
 import { Loader2 } from "lucide-react";
-import { usePathname } from "next/navigation";
+import { usePathname, useSearchParams } from "next/navigation";
 
 const NEW_RESUME_TEMPLATE: ResumeData = {
   id: "",
@@ -25,6 +28,9 @@ const NEW_RESUME_TEMPLATE: ResumeData = {
     country: "",
     summary: "",
     title: "",
+    linkedin: "",
+    github: "",
+    portfolio: "",
   },
   experience: [],
   education: [],
@@ -115,7 +121,9 @@ function ResumeEditorById({
 
 function ResumePageContent({ initialResumeId, initialIsNewDraft = false }: ResumePageClientProps) {
   const pathname = usePathname() ?? "";
+  const searchParams = useSearchParams();
   const queryClient = useQueryClient();
+  const improveDispatchedRef = useRef(false);
   const { resumeId, isNewDraft } = useResumeUrlState({
     resumeId: initialResumeId,
     isNewDraft: initialIsNewDraft,
@@ -137,6 +145,28 @@ function ResumePageContent({ initialResumeId, initialIsNewDraft = false }: Resum
     openLanding();
   }, [resumeId, resumeQuery.isError, resumeQuery.error, openLanding]);
   /* eslint-enable react-hooks/set-state-in-effect */
+
+  useEffect(() => {
+    const parsed = parseResumePrepareSearchParams(searchParams);
+    if (!parsed.improve || !parsed.resumeId) {
+      improveDispatchedRef.current = false;
+      return;
+    }
+    if (improveDispatchedRef.current) return;
+    improveDispatchedRef.current = true;
+
+    const stored = getPrepareReturnSession();
+    window.dispatchEvent(
+      new CustomEvent(RESUME_OPEN_FULL_IMPROVE_EVENT, {
+        detail: {
+          resumeId: parsed.resumeId,
+          role: stored?.role ?? "",
+          company: stored?.company ?? "",
+          fromPrepareApplication: true,
+        },
+      })
+    );
+  }, [searchParams, resumeId]);
 
   const handleEditResume = (resume: ResumeData) => {
     if (!resume.id) return;

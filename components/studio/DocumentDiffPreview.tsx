@@ -13,7 +13,7 @@ type DocumentDiffPreviewProps = {
   proposedDraft: string;
   anchorSelectedText?: string;
   reviewSessionKey?: string;
-  onApply: (reconciledHtml: string) => void;
+  onApply: (reconciledHtml: string) => void | Promise<void> | Promise<boolean>;
   onRevertAll: () => void;
   busy?: boolean;
   editorClassName?: string;
@@ -36,6 +36,9 @@ const buildReviewDisplayHtml = (regions: DiffRegion[], decisions: Record<string,
         return region.html;
       }
       if (region.kind === "removed") {
+        if (decisions[region.id] === "keep") {
+          return "";
+        }
         if (decisions[region.id] === "undo") {
           return `<div data-diff-region="${region.id}" class="${DIFF_REGION_UNDONE_CLASS}">${region.baselineHtml ?? ""}</div>`;
         }
@@ -73,6 +76,8 @@ const DocumentDiffPreview = ({
 }: DocumentDiffPreviewProps) => {
   const scrollContainerRef = useRef<HTMLDivElement>(null);
   const [hoveredRegionId, setHoveredRegionId] = useState<string | null>(null);
+  const autoApplyAttemptedRef = useRef(false);
+  const [applyFailed, setApplyFailed] = useState(false);
 
   const decisions = useApplicationAssetDiffReviewUiStore(s => s.decisions);
   const activeRegionId = useApplicationAssetDiffReviewUiStore(s => s.activeRegionId);
@@ -114,6 +119,35 @@ const DocumentDiffPreview = ({
 
   const allDecided = changedRegions.length > 0 && changedRegions.every(r => decisions[r.id]);
   const decidedCount = changedRegions.filter(r => decisions[r.id]).length;
+  const hasUndo = changedRegions.some(r => decisions[r.id] === "undo");
+  const allKeep = allDecided && !hasUndo;
+  const showBottomBar = changedRegions.length > 0 && (!allKeep || applyFailed) && !busy;
+
+  const handleApply = useCallback(async () => {
+    const html = buildReconciledHtml(regions, decisions);
+    const result = await Promise.resolve(onApply(html));
+    if (result === false) {
+      throw new Error("Application asset accept failed");
+    }
+  }, [regions, decisions, onApply]);
+
+  useEffect(() => {
+    autoApplyAttemptedRef.current = false;
+    queueMicrotask(() => setApplyFailed(false));
+  }, [reviewSessionKey, changedRegionIdsKey]);
+
+  useEffect(() => {
+    if (!allKeep || busy || autoApplyAttemptedRef.current || applyFailed) {
+      return;
+    }
+    autoApplyAttemptedRef.current = true;
+    void handleApply()
+      .then(() => setApplyFailed(false))
+      .catch(() => {
+        autoApplyAttemptedRef.current = true;
+        setApplyFailed(true);
+      });
+  }, [allKeep, applyFailed, busy, handleApply]);
 
   const handleHoverRegionChange = useCallback((regionId: string | null) => {
     setHoveredRegionId(regionId);
@@ -132,11 +166,6 @@ const DocumentDiffPreview = ({
     },
     [changedRegionIds, decisions]
   );
-
-  const handleApply = useCallback(() => {
-    const html = buildReconciledHtml(regions, decisions);
-    onApply(html);
-  }, [regions, decisions, onApply]);
 
   useEffect(() => {
     const container = scrollContainerRef.current;
@@ -194,17 +223,19 @@ const DocumentDiffPreview = ({
           layoutKey={layoutKey}
         />
       </div>
-      <DocumentReviewBottomBar
-        reviewedCount={decidedCount}
-        totalCount={changedRegions.length}
-        onKeepAll={keepAll}
-        onUndoAll={undoAll}
-        onRevertAll={onRevertAll}
-        onApply={handleApply}
-        busy={busy}
-        applyDisabled={changedRegions.length > 0 && !allDecided}
-        applyDisabledReason="Review each change first"
-      />
+      {showBottomBar ? (
+        <DocumentReviewBottomBar
+          reviewedCount={decidedCount}
+          totalCount={changedRegions.length}
+          onKeepAll={keepAll}
+          onUndoAll={undoAll}
+          onRevertAll={onRevertAll}
+          onApply={() => void handleApply()}
+          busy={busy}
+          applyDisabled={changedRegions.length > 0 && !allDecided}
+          applyDisabledReason="Review each change first"
+        />
+      ) : null}
     </div>
   );
 };

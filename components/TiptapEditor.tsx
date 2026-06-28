@@ -11,7 +11,7 @@ interface TiptapEditorProps {
   value: string;
   onChange: (val: string) => void;
   onImprove: (val: string) => void;
-  /** Opens a resume improve sub-session (reused per entry/section under the active main chat). */
+  /** Opens resume improve in main Unibot chat (suggestion pills, no sub-thread). */
   unibotImproveTarget?: UnibotImproveTarget;
   placeholder?: string;
   className?: string;
@@ -110,18 +110,15 @@ const TiptapEditor: React.FC<TiptapEditorProps> = ({
           type="button"
           onClick={() => {
             if (unibotImproveTarget) {
-              const text = editor.getText().trim();
               window.dispatchEvent(
                 new CustomEvent("open-unibot", {
                   detail: {
-                    type: "improve",
                     improveType: "resume",
-                    text: "",
-                    hasContent: text.length > 0,
                     feature: "resume",
                     featureId: unibotImproveTarget.resumeId,
                     section: unibotImproveTarget.section,
-                    entryId: unibotImproveTarget.entryId ?? "",
+                    entryId: unibotImproveTarget.entryId,
+                    hasContent: editor.getText().trim().length > 0,
                     requestKey: Date.now(),
                   },
                 })
