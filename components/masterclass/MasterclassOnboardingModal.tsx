@@ -153,7 +153,7 @@ export function MasterclassOnboardingModal({ open, intent = "booking", onClose, 
 
   return (
     <div
-      className="fixed inset-0 z-[100] flex items-center justify-center p-4 sm:p-6"
+      className="fixed inset-0 z-[100] flex items-end justify-center p-0 sm:items-center sm:p-6"
       role="dialog"
       aria-modal="true"
       aria-labelledby="masterclass-onboarding-title"
@@ -163,14 +163,14 @@ export function MasterclassOnboardingModal({ open, intent = "booking", onClose, 
       <button
         type="button"
         onClick={onClose}
-        className="fixed right-3 top-3 z-[101] p-1.5 text-[#eaeaea]/40 transition-colors hover:text-[#eaeaea]/70 sm:right-5 sm:top-5"
+        className="fixed right-3 top-[max(0.75rem,env(safe-area-inset-top))] z-[101] p-1.5 text-[#eaeaea]/40 transition-colors hover:text-[#eaeaea]/70 sm:right-5 sm:top-5"
         aria-label="Close"
       >
         <X size={16} strokeWidth={2} />
       </button>
 
-      <div className="masterclass-onboarding-modal relative z-10 w-full max-w-[440px]">
-        <div className="px-6 pb-6 pt-8 sm:px-8 sm:pb-8 sm:pt-9">
+      <div className="masterclass-onboarding-modal relative z-10 max-h-[min(92dvh,760px)] w-full max-w-[440px] overflow-y-auto rounded-t-[18px] sm:rounded-[14px]">
+        <div className="px-5 pb-[calc(1.5rem+env(safe-area-inset-bottom))] pt-7 sm:px-8 sm:pb-8 sm:pt-9">
           <h2
             id="masterclass-onboarding-title"
             className="text-[22px] font-medium leading-[1.2] tracking-[-0.44px] text-[#eaeaea] sm:text-[24px]"

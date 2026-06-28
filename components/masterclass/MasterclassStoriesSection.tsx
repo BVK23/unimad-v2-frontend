@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { Star } from "lucide-react";
 import Image from "next/image";
 
@@ -56,7 +56,7 @@ const STORIES: Story[] = [
 
 const STATS = [
   { value: "$2M+", label: "In job offers" },
-  { value: "4k+", label: "Happy students" },
+  { value: "5k+", label: "Happy students" },
   { value: "500+", label: "Interviews booked" },
   { value: "100+", label: "Companies hired" },
 ] as const;
@@ -104,12 +104,15 @@ function StoryCard({ story }: { story: Story }) {
 export function MasterclassStoriesSection() {
   const [activePage, setActivePage] = useState(0);
   const [cardsPerPage, setCardsPerPage] = useState(1);
+  const touchStartX = useRef<number | null>(null);
 
   useEffect(() => {
     const media = window.matchMedia("(min-width: 1024px)");
 
     const updateCardsPerPage = () => {
-      setCardsPerPage(media.matches ? 3 : 1);
+      const nextCardsPerPage = media.matches ? 3 : 1;
+      setCardsPerPage(nextCardsPerPage);
+      setActivePage(0);
     };
 
     updateCardsPerPage();
@@ -118,29 +121,46 @@ export function MasterclassStoriesSection() {
   }, []);
 
   const pageCount = Math.ceil(STORIES.length / cardsPerPage);
-
-  useEffect(() => {
-    if (activePage > pageCount - 1) {
-      // eslint-disable-next-line react-hooks/set-state-in-effect -- clamp page when cards-per-page changes
-      setActivePage(Math.max(0, pageCount - 1));
-    }
-  }, [cardsPerPage, activePage, pageCount]);
+  const safeActivePage = Math.max(0, Math.min(activePage, pageCount - 1));
 
   const pages = Array.from({ length: pageCount }, (_, pageIndex) =>
     STORIES.slice(pageIndex * cardsPerPage, pageIndex * cardsPerPage + cardsPerPage)
   );
 
+  const goToPreviousPage = () => {
+    setActivePage(current => Math.max(0, current - 1));
+  };
+
+  const goToNextPage = () => {
+    setActivePage(current => Math.min(pageCount - 1, current + 1));
+  };
+
+  const handleTouchStart = (event: React.TouchEvent<HTMLDivElement>) => {
+    touchStartX.current = event.touches[0]?.clientX ?? null;
+  };
+
+  const handleTouchEnd = (event: React.TouchEvent<HTMLDivElement>) => {
+    if (touchStartX.current === null) return;
+
+    const deltaX = (event.changedTouches[0]?.clientX ?? touchStartX.current) - touchStartX.current;
+    touchStartX.current = null;
+
+    if (Math.abs(deltaX) < 48) return;
+    if (deltaX < 0) goToNextPage();
+    else goToPreviousPage();
+  };
+
   return (
-    <section className="mb-16 lg:mb-24" aria-labelledby="masterclass-stories-heading">
+    <section className="mb-12 sm:mb-16 lg:mb-24" aria-labelledby="masterclass-stories-heading">
       <h2
         id="masterclass-stories-heading"
-        className="mb-8 text-center text-[24px] font-medium leading-none tracking-[-0.6px] text-[#eaeaea] sm:text-[28px] lg:mb-10 lg:text-[30px]"
+        className="mb-6 text-center text-[22px] font-medium leading-[1.1] tracking-[-0.55px] text-[#eaeaea] sm:mb-8 sm:text-[28px] lg:mb-10 lg:text-[30px] lg:tracking-[-0.6px]"
       >
         Real outcomes from the system
       </h2>
 
-      <div className="overflow-hidden">
-        <div className="flex transition-transform duration-300 ease-out" style={{ transform: `translateX(-${activePage * 100}%)` }}>
+      <div className="overflow-hidden touch-pan-y" onTouchStart={handleTouchStart} onTouchEnd={handleTouchEnd}>
+        <div className="flex transition-transform duration-300 ease-out" style={{ transform: `translateX(-${safeActivePage * 100}%)` }}>
           {pages.map((pageStories, pageIndex) => (
             <div key={pageIndex} className="flex w-full shrink-0 gap-4 lg:gap-5">
               {pageStories.map(story => (
@@ -151,23 +171,27 @@ export function MasterclassStoriesSection() {
         </div>
       </div>
 
-      <div className="mt-5 flex items-center justify-center gap-2">
+      <div className="mt-4 flex items-center justify-center gap-2 sm:mt-5">
         {Array.from({ length: pageCount }).map((_, index) => (
           <button
             key={index}
             type="button"
             onClick={() => setActivePage(index)}
-            className={`size-1.5 rounded-full transition-colors ${index === activePage ? "bg-[#eaeaea]" : "bg-[#eaeaea]/25"}`}
+            className={`h-2 w-2 rounded-full transition-colors sm:size-1.5 ${
+              index === safeActivePage ? "bg-[#eaeaea]" : "bg-[#eaeaea]/25"
+            }`}
             aria-label={`Go to stories page ${index + 1}`}
-            aria-current={index === activePage ? "true" : undefined}
+            aria-current={index === safeActivePage ? "true" : undefined}
           />
         ))}
       </div>
 
-      <div className="mt-8 grid grid-cols-2 gap-6 sm:mt-10 lg:grid-cols-4 lg:gap-8">
+      <p className="mt-3 text-center text-[11px] font-medium tracking-[-0.2px] text-[#eaeaea]/35 lg:hidden">Swipe for more stories</p>
+
+      <div className="mt-6 grid grid-cols-2 gap-4 sm:mt-10 sm:gap-6 lg:grid-cols-4 lg:gap-8">
         {STATS.map(stat => (
           <div key={stat.label} className="text-center">
-            <p className="text-[28px] font-extralight leading-none tracking-[-0.56px] text-[#eaeaea] sm:text-[32px] lg:text-[36px]">
+            <p className="text-[24px] font-extralight leading-none tracking-[-0.48px] text-[#eaeaea] sm:text-[32px] sm:tracking-[-0.56px] lg:text-[36px]">
               {stat.value}
             </p>
             <p className="mt-2 text-[11px] font-medium uppercase tracking-[0.12em] text-[#eaeaea]/45">{stat.label}</p>

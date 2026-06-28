@@ -10,9 +10,9 @@ import {
 import { MasterclassPlacementsSection } from "@/components/masterclass/MasterclassPlacementsSection";
 import { MasterclassStoriesSection } from "@/components/masterclass/MasterclassStoriesSection";
 import { UnimadLogo } from "@/components/unimad-logo";
+import { ChevronDown } from "lucide-react";
 import Image from "next/image";
 import Link from "next/link";
-import { useRouter } from "next/navigation";
 import Script from "next/script";
 
 declare global {
@@ -128,7 +128,7 @@ function GoldButton({
 }: {
   children: React.ReactNode;
   className?: string;
-  onClick?: () => void;
+  onClick?: React.MouseEventHandler<HTMLButtonElement>;
   size?: ButtonSize;
 }) {
   return (
@@ -150,7 +150,7 @@ function BlackButton({
 }: {
   children: React.ReactNode;
   className?: string;
-  onClick?: () => void;
+  onClick?: React.MouseEventHandler<HTMLButtonElement>;
   size?: ButtonSize;
 }) {
   return (
@@ -173,7 +173,7 @@ function OutlineButton({
 }: {
   children: React.ReactNode;
   className?: string;
-  onClick?: () => void;
+  onClick?: React.MouseEventHandler<HTMLButtonElement>;
   size?: ButtonSize;
   theme?: "dark" | "light";
 }) {
@@ -181,10 +181,10 @@ function OutlineButton({
     size === "lg"
       ? "h-[49px] rounded-full text-[18px] font-semibold tracking-[-0.54px]"
       : size === "nav"
-        ? "h-[32px] rounded-full px-4 text-[12px] font-semibold tracking-[-0.36px]"
+        ? "h-[32px] rounded-full px-3 text-[11px] font-semibold tracking-[-0.33px] sm:px-4 sm:text-[12px] sm:tracking-[-0.36px]"
         : "h-[31px] rounded-full text-[12px] font-semibold tracking-[-0.36px]";
 
-  const widthClass = size === "nav" ? "w-auto shrink-0" : "w-full";
+  const widthClass = size === "nav" ? "w-auto shrink-0 max-w-[calc(100vw-7rem)]" : "w-full";
 
   const themeClasses =
     theme === "light"
@@ -210,7 +210,7 @@ function BlueButton({
 }: {
   children: React.ReactNode;
   className?: string;
-  onClick?: () => void;
+  onClick?: React.MouseEventHandler<HTMLButtonElement>;
   size?: ButtonSize;
 }) {
   return (
@@ -259,21 +259,28 @@ function MasterclassPlayButton({ className = "" }: { className?: string }) {
   );
 }
 
-function CoachAvatars() {
-  return (
-    <div className="flex shrink-0 items-center pl-0.5">
-      {[0, 1, 2].map(i => (
-        <div
-          key={i}
-          className="relative size-[33px] overflow-hidden rounded-full border border-white bg-white"
-          style={{ marginLeft: i === 0 ? 0 : -17 }}
-        >
-          <Image src="/images/unicoach/webinar/shaki.jpg" alt="Career coach" fill className="object-cover object-top" sizes="33px" />
-        </div>
-      ))}
-    </div>
-  );
-}
+// need to think another Design from design team
+// function CoachAvatars() {
+//   return (
+//     <div className="flex shrink-0 items-center pl-0.5">
+//       {[0, 1, 2].map(i => (
+//         <div
+//           key={i}
+//           className="relative size-[33px] overflow-hidden rounded-full border border-white bg-white"
+//           style={{ marginLeft: i === 0 ? 0 : -17 }}
+//         >
+//           <Image
+//             src="/images/unicoach/webinar/shaki.jpg"
+//             alt="Career coach"
+//             fill
+//             className="object-cover object-top"
+//             sizes="33px"
+//           />
+//         </div>
+//       ))}
+//     </div>
+//   );
+// }
 
 function StrikethroughPrice({ children, className = "" }: { children: React.ReactNode; className?: string }) {
   return (
@@ -334,9 +341,9 @@ function FreeCornerRibbon() {
   );
 }
 
-function PricingCardButtonSubtext({ subtext }: { subtext?: PricingCardButtonSubtext }) {
+function PricingCardButtonSubtext({ subtext, className = "" }: { subtext?: PricingCardButtonSubtext; className?: string }) {
   return (
-    <p className="mt-2.5 min-h-[16px] text-center text-[11px] font-medium leading-[1.2] tracking-[-0.22px]">
+    <p className={`mt-2.5 min-h-[16px] text-center text-[11px] font-medium leading-[1.2] tracking-[-0.22px] ${className}`}>
       {!subtext ? (
         <span className="invisible select-none" aria-hidden>
           ·
@@ -377,11 +384,13 @@ function PricingCard({
     .filter(Boolean)
     .join(" ");
 
+  const heightClasses = compact ? "h-[360px] sm:h-[382px]" : "h-[384px] sm:h-[408px]";
+
   return (
     <div
-      className={`masterclass-pricing-card group relative flex w-[245px] shrink-0 flex-col lg:w-auto lg:min-w-0 lg:flex-1 ${cardModifierClasses}`}
+      className={`masterclass-pricing-card group relative flex w-[min(82vw,260px)] shrink-0 snap-center flex-col sm:w-[245px] lg:w-auto lg:min-w-0 lg:flex-1 ${cardModifierClasses}`}
     >
-      <div className={`relative w-full ${compact ? "h-[382px]" : "h-[408px]"}`}>
+      <div className={`relative w-full ${heightClasses}`}>
         {freeRibbon && <FreeCornerRibbon />}
         {discountPercent > 0 && <DiscountCornerSticker percent={discountPercent} />}
 
@@ -415,23 +424,13 @@ function PricingCard({
             </div>
 
             <div className="px-5 pb-5">
-              {buttonVariant === "black" && (
-                <BlackButton size="sm" onClick={onButtonClick}>
-                  {buttonLabel}
-                </BlackButton>
-              )}
-              {buttonVariant === "gold" && (
-                <GoldButton size="sm" onClick={onButtonClick}>
-                  {buttonLabel}
-                </GoldButton>
-              )}
-              {buttonVariant === "outline" && (
-                <OutlineButton size="sm" theme="light" onClick={onButtonClick}>
-                  {buttonLabel}
-                </OutlineButton>
-              )}
-              {buttonVariant === "blue" && <BlueButton onClick={onButtonClick}>{buttonLabel}</BlueButton>}
-              {!compact && <PricingCardButtonSubtext subtext={buttonSubtext} />}
+              <PricingCardActions
+                buttonLabel={buttonLabel}
+                buttonVariant={buttonVariant}
+                buttonSubtext={buttonSubtext}
+                compact={compact}
+                onAction={onButtonClick}
+              />
             </div>
           </div>
         </article>
@@ -515,8 +514,214 @@ const PRICING_CARDS: PricingCardData[] = [
   },
 ];
 
+function MobilePricingPrice({
+  price,
+  originalPrice,
+  crossOutPrice = false,
+}: {
+  price: string;
+  originalPrice?: string;
+  crossOutPrice?: boolean;
+}) {
+  const priceClass = "text-[18px] tracking-[-0.36px]";
+  const strikeClass = `!text-[18px] !leading-none tracking-[-0.36px]`;
+
+  return (
+    <div className="flex shrink-0 items-center justify-end gap-1">
+      {originalPrice && <StrikethroughPrice className={`text-slate-300 ${strikeClass}`}>{originalPrice}</StrikethroughPrice>}
+      {crossOutPrice ? (
+        <StrikethroughPrice className={`text-slate-300 ${strikeClass}`}>{price}</StrikethroughPrice>
+      ) : (
+        <span className={`font-medium leading-none ${priceClass} ${parsePrice(price) === 0 ? "text-[#22c55e]" : "text-slate-900"}`}>
+          {price}
+        </span>
+      )}
+    </div>
+  );
+}
+
+function PricingCardActions({
+  buttonLabel,
+  buttonVariant,
+  buttonSubtext,
+  compact = false,
+  onAction,
+}: Pick<PricingCardData, "buttonLabel" | "buttonVariant" | "buttonSubtext" | "compact"> & {
+  onAction: () => void;
+}) {
+  return (
+    <>
+      {buttonVariant === "black" && (
+        <BlackButton size="sm" onClick={onAction}>
+          {buttonLabel}
+        </BlackButton>
+      )}
+      {buttonVariant === "gold" && (
+        <GoldButton size="sm" onClick={onAction}>
+          {buttonLabel}
+        </GoldButton>
+      )}
+      {buttonVariant === "outline" && (
+        <OutlineButton size="sm" theme="light" onClick={onAction}>
+          {buttonLabel}
+        </OutlineButton>
+      )}
+      {buttonVariant === "blue" && <BlueButton onClick={onAction}>{buttonLabel}</BlueButton>}
+      {!compact && <PricingCardButtonSubtext subtext={buttonSubtext} />}
+    </>
+  );
+}
+
+function MobilePricingSleekCta({
+  buttonLabel,
+  buttonVariant,
+  onAction,
+}: Pick<PricingCardData, "buttonLabel" | "buttonVariant"> & {
+  onAction: () => void;
+}) {
+  const compactClass =
+    "!w-full !max-w-[158px] shrink-0 !h-8 !min-h-8 whitespace-nowrap px-2 !text-[14px] !font-semibold !leading-none tracking-[-0.28px] [&_span]:px-1";
+
+  const handleClick = (event: React.MouseEvent<HTMLButtonElement>) => {
+    event.stopPropagation();
+    onAction();
+  };
+
+  if (buttonVariant === "black") {
+    return (
+      <BlackButton size="sm" onClick={handleClick} className={compactClass}>
+        {buttonLabel}
+      </BlackButton>
+    );
+  }
+
+  if (buttonVariant === "gold") {
+    return (
+      <GoldButton size="sm" onClick={handleClick} className={compactClass}>
+        {buttonLabel}
+      </GoldButton>
+    );
+  }
+
+  if (buttonVariant === "blue") {
+    return (
+      <BlueButton size="sm" onClick={handleClick} className={compactClass}>
+        {buttonLabel}
+      </BlueButton>
+    );
+  }
+
+  return (
+    <OutlineButton size="sm" theme="light" onClick={handleClick} className={`${compactClass} !rounded-full`}>
+      {buttonLabel}
+    </OutlineButton>
+  );
+}
+
+function MobilePricingAccordionItem({
+  card,
+  expanded,
+  onToggle,
+  onAction,
+}: {
+  card: PricingCardData;
+  expanded: boolean;
+  onToggle: () => void;
+  onAction: () => void;
+}) {
+  const discountPercent = card.featured && card.originalPrice ? getDiscountPercent(card.originalPrice, card.price) : 0;
+
+  const cardModifierClasses = [
+    card.freeRibbon ? "masterclass-pricing-card--discovery" : "",
+    card.featured ? "masterclass-pricing-card--featured" : "",
+    card.compact ? "masterclass-pricing-card--compact" : "",
+  ]
+    .filter(Boolean)
+    .join(" ");
+
+  return (
+    <article
+      className={`masterclass-pricing-card group relative overflow-hidden rounded-[14px] border bg-white ${cardModifierClasses} ${
+        card.featured ? "border-brand-300 shadow-sm shadow-brand-500/10" : "border-slate-300"
+      }`}
+    >
+      {card.freeRibbon && <FreeCornerRibbon />}
+      {discountPercent > 0 && <DiscountCornerSticker percent={discountPercent} />}
+
+      <div className="masterclass-mobile-pricing-row grid grid-cols-[18px_minmax(0,1fr)_72px_158px] items-center gap-x-2 py-2.5 pl-2 pr-3 sm:pl-2.5 sm:pr-4">
+        <button
+          type="button"
+          onClick={onToggle}
+          aria-expanded={expanded}
+          aria-label={`${expanded ? "Collapse" : "Expand"} ${card.title} features`}
+          className="flex shrink-0 items-center justify-center self-center p-0 text-slate-400"
+        >
+          <ChevronDown size={16} className={`transition-transform duration-200 ${expanded ? "rotate-180" : ""}`} aria-hidden />
+        </button>
+
+        <button type="button" onClick={onToggle} aria-expanded={expanded} className="min-w-0 self-center text-left">
+          <p className="line-clamp-2 pr-1 text-[16px] font-medium leading-snug tracking-[-0.32px] text-slate-900">{card.title}</p>
+        </button>
+
+        <div className="flex items-center justify-end">
+          <MobilePricingPrice price={card.price} originalPrice={card.originalPrice} crossOutPrice={card.crossOutPrice} />
+        </div>
+
+        <div className="flex h-8 items-center justify-end">
+          <MobilePricingSleekCta buttonLabel={card.buttonLabel} buttonVariant={card.buttonVariant} onAction={onAction} />
+        </div>
+      </div>
+
+      {expanded ? (
+        <div className="border-t border-slate-100 py-3 pl-2 pr-3 sm:pl-2.5 sm:pr-4">
+          {!card.compact && card.buttonSubtext ? (
+            <PricingCardButtonSubtext subtext={card.buttonSubtext} className="!mt-0 mb-3 text-right" />
+          ) : null}
+          <ul className="space-y-2.5 text-[13px] leading-[1.35] tracking-[-0.26px] text-slate-600">
+            {card.features.map(feature => (
+              <li key={feature} className="flex gap-2">
+                <span className="text-brand-600" aria-hidden>
+                  •
+                </span>
+                <span>{feature}</span>
+              </li>
+            ))}
+          </ul>
+        </div>
+      ) : null}
+    </article>
+  );
+}
+
+function MobilePricingSection({ cards, onCardAction }: { cards: PricingCardData[]; onCardAction: (card: PricingCardData) => void }) {
+  const [expandedPlans, setExpandedPlans] = useState<Set<string>>(new Set());
+
+  const togglePlan = (title: string) => {
+    setExpandedPlans(previous => {
+      const next = new Set(previous);
+      if (next.has(title)) next.delete(title);
+      else next.add(title);
+      return next;
+    });
+  };
+
+  return (
+    <div className="flex flex-col gap-3 md:hidden">
+      {cards.map(card => (
+        <MobilePricingAccordionItem
+          key={card.title}
+          card={card}
+          expanded={expandedPlans.has(card.title)}
+          onToggle={() => togglePlan(card.title)}
+          onAction={() => onCardAction(card)}
+        />
+      ))}
+      <p className="pt-1 text-center text-[11px] font-medium tracking-[-0.2px] text-slate-400">Tap the arrow to see what&apos;s included</p>
+    </div>
+  );
+}
+
 export default function MasterclassLandingPage() {
-  const router = useRouter();
   const [onboardingOpen, setOnboardingOpen] = useState(false);
   const [onboardingIntent, setOnboardingIntent] = useState<MasterclassOnboardingIntent>("booking");
 
@@ -565,7 +770,7 @@ export default function MasterclassLandingPage() {
   };
 
   const handleSignUp = () => {
-    router.push("/uniboard/unicoach");
+    window.location.href = "/uniboard/unicoach";
   };
 
   const handleCardAction = (card: PricingCardData) => {
@@ -577,43 +782,44 @@ export default function MasterclassLandingPage() {
   };
 
   return (
-    <div className="masterclass-page-bg relative isolate min-h-screen font-sans text-[#eaeaea] selection:bg-[#346de0]/30">
+    <div className="masterclass-page-bg relative isolate min-h-screen overflow-x-hidden font-sans text-[#eaeaea] selection:bg-[#346de0]/30">
       <div className="masterclass-hero-glow" aria-hidden />
       <div className="masterclass-dot-grid-overlay" aria-hidden />
 
       {/* Nav — fixed (sticky breaks due to overflow-x-hidden on page sections) */}
-      <header className="fixed inset-x-0 top-0 z-50 border-b border-white/[0.05] bg-[#0a0a0a]/85 backdrop-blur-md">
-        <div className="mx-auto flex max-w-[1440px] items-center justify-between px-6 py-3 sm:px-10 lg:px-[90px] lg:py-3.5">
+      <header className="fixed inset-x-0 top-0 z-50 border-b border-white/[0.05] bg-[#0a0a0a]/85 backdrop-blur-md pt-[env(safe-area-inset-top)]">
+        <div className="mx-auto flex max-w-[1440px] items-center justify-between gap-3 px-4 py-2.5 sm:px-10 sm:py-3 lg:px-[90px] lg:py-3.5">
           <Link href="/" className="relative z-10 shrink-0">
-            <UnimadLogo className="h-[18px] w-auto text-white sm:h-[20px]" />
+            <UnimadLogo className="h-[17px] w-auto text-white sm:h-[20px]" />
           </Link>
 
           <OutlineButton size="nav" onClick={() => openOnboardingModal("booking")}>
-            Book Free Discovery Call
+            <span className="sm:hidden">Book Free Call</span>
+            <span className="hidden sm:inline">Book Free Discovery Call</span>
           </OutlineButton>
         </div>
       </header>
 
       <div className="relative z-[1]">
-        <div className="relative mx-auto w-full max-w-[1440px] px-6 pt-[62px] sm:px-10 lg:px-[90px] lg:pt-[66px]">
+        <div className="relative mx-auto w-full max-w-[1440px] px-4 pt-[calc(58px+env(safe-area-inset-top))] sm:px-10 lg:px-[90px] lg:pt-[calc(66px+env(safe-area-inset-top))]">
           <div className="relative z-[1]">
             {/* Hero headline */}
-            <div className="mb-6 mt-10 lg:mb-8 lg:mt-16">
-              <h1 className="text-[32px] font-medium leading-none tracking-[-1px] sm:text-[40px] lg:text-[50px]">
+            <div className="mb-5 mt-6 sm:mb-6 sm:mt-10 lg:mb-8 lg:mt-16">
+              <h1 className="text-[28px] font-medium leading-[1.05] tracking-[-0.9px] sm:text-[40px] sm:tracking-[-1px] lg:text-[50px]">
                 Your <span className="masterclass-gold-text font-medium">Masterclass</span> is ready.
               </h1>
-              <p className="mt-4 max-w-[437px] text-[16px] leading-normal tracking-[-0.36px] text-[#e7e7e7] lg:mt-5 lg:text-[18px]">
-                The exact playbook 5000+ international students used to land interviews.
+              <p className="mt-3 max-w-[437px] text-[15px] leading-normal tracking-[-0.32px] text-[#e7e7e7] sm:mt-4 sm:text-[16px] lg:mt-5 lg:text-[18px] lg:tracking-[-0.36px]">
+                Forty minutes. One system. Everything that actually changes how recruiters read your profile.
               </p>
             </div>
 
             {/* Hero content */}
-            <div className="mb-16 flex flex-col gap-6 lg:mb-20 lg:flex-row lg:gap-[41px]">
+            <div className="mb-12 flex flex-col gap-5 sm:mb-16 sm:gap-6 lg:mb-20 lg:flex-row lg:gap-[41px]">
               {/* Video */}
               <MasterclassFrame
                 clip
-                className="relative z-[1] h-[280px] w-full shrink-0 sm:h-[360px] lg:h-[456px] lg:w-[809px]"
-                contentClassName="relative h-full"
+                className="relative z-[1] aspect-[16/10] h-auto w-full shrink-0 sm:aspect-auto sm:h-[360px] lg:h-[456px] lg:w-[809px]"
+                contentClassName="relative h-full min-h-[220px] sm:min-h-0"
               >
                 <Image
                   src="/images/masterclass/video-thumbnail.jpg"
@@ -629,20 +835,20 @@ export default function MasterclassLandingPage() {
                   className="absolute inset-0 z-10 flex items-center justify-center transition-transform hover:scale-[1.01]"
                   aria-label="Play masterclass preview"
                 >
-                  <MasterclassPlayButton className="size-[72px] transition-transform hover:scale-105 sm:size-[88px] lg:size-[104px]" />
+                  <MasterclassPlayButton className="size-16 transition-transform hover:scale-105 sm:size-[88px] lg:size-[104px]" />
                 </button>
               </MasterclassFrame>
 
               {/* CTA card */}
-              <MasterclassFrame className="w-full lg:h-[456px] lg:w-[410px]" contentClassName="flex h-full flex-col p-6 sm:p-7 lg:p-[27px]">
-                <p className="text-[28px] leading-[1.2] tracking-[-0.8px] text-[#eaeaea] sm:text-[32px] lg:text-[40px]">
+              <MasterclassFrame className="w-full lg:h-[456px] lg:w-[410px]" contentClassName="flex h-full flex-col p-5 sm:p-7 lg:p-[27px]">
+                <p className="hidden text-[28px] leading-[1.2] tracking-[-0.8px] text-[#eaeaea] sm:block sm:text-[32px] lg:text-[40px]">
                   The exact playbook 5000+ international students used to land interviews.
                 </p>
 
-                <div className="mt-8 flex flex-col lg:mt-auto">
-                  <div className="mb-4 flex items-center gap-3">
-                    <CoachAvatars />
-                    <p className="text-[16px] leading-normal tracking-[-0.36px] text-[#e7e7e7] lg:text-[18px]">
+                <div className="mt-0 flex flex-col sm:mt-8 lg:mt-auto">
+                  <div className="mb-4">
+                    {/* need to think another Design from design team */}
+                    <p className="text-[15px] leading-snug tracking-[-0.32px] text-[#e7e7e7] sm:text-[16px] lg:text-[18px] lg:tracking-[-0.36px]">
                       Career coaches with a 90% Success Rate
                     </p>
                   </div>
@@ -656,54 +862,65 @@ export default function MasterclassLandingPage() {
 
           <MasterclassPlacementsSection />
 
-          <div className="relative left-1/2 w-screen -translate-x-1/2 masterclass-light-band">
+          <div className="relative left-1/2 w-screen max-w-[100vw] -translate-x-1/2 masterclass-light-band">
             <div className="masterclass-light-band__dots" aria-hidden />
-            <div className="relative z-[1] mx-auto w-full max-w-[1440px] px-6 py-16 sm:px-10 lg:px-[90px] lg:py-24">
+            <div className="relative z-[1] mx-auto w-full max-w-[1440px] px-4 py-12 sm:px-10 sm:py-16 lg:px-[90px] lg:py-24">
               <section className="masterclass-pricing-band" aria-labelledby="masterclass-pricing-heading">
-                <div className="mb-8 text-center lg:mb-10">
+                <div className="mb-6 text-center sm:mb-8 lg:mb-10">
                   <h2
                     id="masterclass-pricing-heading"
-                    className="text-[24px] font-medium leading-none tracking-[-0.6px] text-slate-900 sm:text-[28px] lg:text-[30px]"
+                    className="text-[22px] font-medium leading-[1.1] tracking-[-0.55px] text-slate-900 sm:text-[28px] lg:text-[30px] lg:tracking-[-0.6px]"
                   >
                     The Unimad Career Positioning System
                   </h2>
-                  <p className="mx-auto mt-3 max-w-[520px] text-[14px] leading-normal tracking-[-0.28px] text-slate-500 sm:text-[15px]">
-                    Start with a free discovery call, add the modules you need, or unlock the full system.
+                  <p className="mx-auto mt-2.5 max-w-[520px] px-1 text-[13px] leading-normal tracking-[-0.26px] text-slate-500 sm:mt-3 sm:text-[15px] sm:tracking-[-0.28px]">
+                    Start free with a discovery call. Add the modules you need. Or take the full system in one go.
                   </p>
                 </div>
 
-                <div className="-mx-6 overflow-x-auto overflow-y-visible px-6 sm:-mx-10 sm:px-10 lg:mx-0 lg:overflow-visible lg:px-0">
-                  <div className="flex w-max items-center gap-4 pb-2 lg:w-full lg:max-w-[1260px] lg:gap-3">
-                    {PRICING_CARDS.map(card => (
-                      <PricingCard key={card.title} {...card} onButtonClick={() => handleCardAction(card)} />
-                    ))}
+                <MobilePricingSection cards={PRICING_CARDS} onCardAction={handleCardAction} />
+
+                <div className="hidden md:block">
+                  <div className="masterclass-pricing-scroll -mx-4 overflow-x-auto overflow-y-visible px-4 sm:-mx-10 sm:px-10 lg:mx-0 lg:overflow-visible lg:px-0">
+                    <div className="flex w-max items-stretch gap-3 pb-2 sm:gap-4 lg:w-full lg:max-w-[1260px] lg:gap-3">
+                      {PRICING_CARDS.map(card => (
+                        <PricingCard key={card.title} {...card} onButtonClick={() => handleCardAction(card)} />
+                      ))}
+                    </div>
                   </div>
+                  <p className="mt-3 text-center text-[11px] font-medium tracking-[-0.2px] text-slate-400 lg:hidden">
+                    Swipe to explore all plans
+                  </p>
                 </div>
               </section>
 
               <MasterclassFaqSection />
             </div>
 
-            <footer className="relative z-[1] w-full border-t border-slate-200 px-6 pb-8 pt-14 sm:px-10 lg:px-[90px] lg:pb-12 lg:pt-16">
-              <div className="flex w-full flex-col gap-8 lg:flex-row lg:items-start lg:justify-between">
+            <footer className="relative z-[1] w-full border-t border-slate-200 px-4 pb-[calc(2rem+env(safe-area-inset-bottom))] pt-10 sm:px-10 sm:pb-8 sm:pt-14 lg:px-[90px] lg:pb-12 lg:pt-16">
+              <div className="flex w-full flex-col gap-6 sm:gap-8 lg:flex-row lg:items-start lg:justify-between">
                 <Link href="/">
-                  <UnimadLogo className="h-[29px] w-auto text-[#346de0] sm:h-[35px]" />
+                  <UnimadLogo className="h-[26px] w-auto text-[#346de0] sm:h-[35px]" />
                 </Link>
 
                 <div className="max-w-[463px] lg:ml-auto">
-                  <p className="text-[17px] font-medium leading-[1.2] tracking-[-0.35px] text-slate-900">Need a hand? Talk to us.</p>
-                  <p className="mt-3 text-[12px] leading-[1.25] tracking-[-0.23px] text-slate-500">
+                  <p className="text-[16px] font-medium leading-[1.2] tracking-[-0.32px] text-slate-900 sm:text-[17px] sm:tracking-[-0.35px]">
+                    Need a hand? Talk to us.
+                  </p>
+                  <p className="mt-2.5 text-[12px] leading-[1.35] tracking-[-0.23px] text-slate-500 sm:mt-3 sm:leading-[1.25]">
                     Questions about the Masterclass, the tools, or coaching? The team&apos;s one message away.
                   </p>
-                  <p className="mt-4 text-[18px] tracking-[-0.36px] text-[#346de0]">
+                  <div className="mt-3 flex flex-col gap-2 text-[16px] tracking-[-0.32px] text-[#346de0] sm:mt-4 sm:flex-row sm:flex-wrap sm:items-center sm:gap-x-3 sm:gap-y-1 sm:text-[18px] sm:tracking-[-0.36px]">
                     <a href="mailto:grow@unimad.ai" className="hover:underline">
                       grow@unimad.ai
                     </a>
-                    <span className="mx-3 text-slate-300">|</span>
+                    <span className="hidden text-slate-300 sm:inline" aria-hidden>
+                      |
+                    </span>
                     <a href="tel:+441234567890" className="hover:underline">
                       +44 12345 67890
                     </a>
-                  </p>
+                  </div>
                 </div>
               </div>
             </footer>

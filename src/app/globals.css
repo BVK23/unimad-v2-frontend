@@ -305,8 +305,8 @@ html.masterclass-page *::-webkit-scrollbar-thumb {
   inset: 0;
   z-index: 0;
   pointer-events: none;
-  opacity: 0.09;
-  background-image: radial-gradient(circle, rgba(255, 255, 255, 0.55) 1px, transparent 1px);
+  opacity: 0.16;
+  background-image: radial-gradient(circle, rgba(255, 255, 255, 0.7) 1px, transparent 1px);
   background-size: 36px 36px;
 }
 
@@ -382,6 +382,23 @@ html.masterclass-page *::-webkit-scrollbar-thumb {
   height: 49px;
   font-size: 18px;
   letter-spacing: -0.54px;
+}
+
+@media (max-width: 639px) {
+  .masterclass-gold-btn--lg {
+    height: 44px;
+    font-size: 16px;
+    letter-spacing: -0.4px;
+  }
+
+  .masterclass-hero-glow::before {
+    background: radial-gradient(ellipse 52% 42% at 0% 42%, rgba(52, 109, 224, 0.22) 0%, rgba(52, 109, 224, 0.08) 42%, transparent 72%);
+  }
+
+  .masterclass-dot-grid-overlay {
+    opacity: 0.12;
+    background-size: 28px 28px;
+  }
 }
 
 .masterclass-gold-btn--sm {
@@ -866,6 +883,57 @@ html.masterclass-page *::-webkit-scrollbar-thumb {
   animation-play-state: paused;
 }
 
+.masterclass-logo-marquee__slot {
+  display: flex;
+  width: 7.25rem;
+  height: 2rem;
+  flex-shrink: 0;
+  align-items: center;
+  justify-content: center;
+}
+
+.masterclass-logo-marquee__logo {
+  display: block;
+  width: 100%;
+  height: 100%;
+  object-fit: contain;
+  object-position: center;
+  opacity: 0.62;
+  filter: brightness(0) invert(1);
+  transition: opacity 0.2s ease;
+}
+
+.masterclass-logo-marquee__track:hover .masterclass-logo-marquee__logo {
+  opacity: 0.85;
+}
+
+@media (min-width: 640px) {
+  .masterclass-logo-marquee__slot {
+    width: 8.5rem;
+    height: 2.5rem;
+  }
+}
+
+.masterclass-pricing-scroll {
+  -webkit-overflow-scrolling: touch;
+  scroll-snap-type: x mandatory;
+  scrollbar-width: none;
+}
+
+.masterclass-pricing-scroll::-webkit-scrollbar {
+  display: none;
+}
+
+@media (min-width: 1024px) {
+  .masterclass-pricing-scroll {
+    scroll-snap-type: none;
+  }
+}
+
+.masterclass-mobile-pricing-row {
+  align-items: center;
+}
+
 .masterclass-light-band {
   position: relative;
   isolation: isolate;
@@ -877,7 +945,7 @@ html.masterclass-page *::-webkit-scrollbar-thumb {
   inset: 0;
   z-index: 0;
   pointer-events: none;
-  opacity: 0.055;
+  opacity: 0.09;
   background-image: radial-gradient(circle, #0f172a 1px, transparent 1px);
   background-size: 36px 36px;
 }
