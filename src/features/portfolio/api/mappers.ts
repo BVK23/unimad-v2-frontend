@@ -99,10 +99,20 @@ function readItemsAboveProfileCount(dto: Record<string, unknown>): number {
   return Math.max(0, Math.floor(raw));
 }
 
-function readProfileLayoutFields(dto: Record<string, unknown>): Pick<UserProfile, "showProfileSection" | "itemsAboveProfileCount"> {
+function readCoverPosition(dto: Record<string, unknown>): UserProfile["coverPosition"] {
+  const raw = safeObject<Record<string, unknown>>(dto.coverPosition, {});
+  const x = typeof raw.x === "number" && Number.isFinite(raw.x) ? raw.x : 50;
+  const y = typeof raw.y === "number" && Number.isFinite(raw.y) ? raw.y : 50;
+  return { x: Math.max(0, Math.min(100, x)), y: Math.max(0, Math.min(100, y)) };
+}
+
+function readProfileLayoutFields(
+  dto: Record<string, unknown>
+): Pick<UserProfile, "showProfileSection" | "itemsAboveProfileCount" | "coverPosition"> {
   return {
     showProfileSection: dto.showProfileSection !== false,
     itemsAboveProfileCount: readItemsAboveProfileCount(dto),
+    coverPosition: readCoverPosition(dto),
   };
 }
 
@@ -170,6 +180,7 @@ function normalizePortfolioItemMedia(item: PortfolioItem): PortfolioItem {
   return {
     ...item,
     content: readMediaUrl(item.content),
+    canvasCover: item.canvasCover ? readMediaUrl(item.canvasCover) : item.canvasCover,
     linkIcon: item.linkIcon ? readMediaUrl(item.linkIcon) : item.linkIcon,
     detailedBlocks: item.detailedBlocks?.map(normalizePortfolioItemMedia),
   };
@@ -194,7 +205,11 @@ export function mapBackendPortfolioToFrontend(dto: Record<string, unknown>): Por
     )
   );
 
-  const profile = Object.keys(documentProfile).length ? mapProfile(documentProfile) : mapLegacyProfile(fallbackProfile);
+  const profileBase = Object.keys(documentProfile).length ? mapProfile(documentProfile) : mapLegacyProfile(fallbackProfile);
+  const profile =
+    documentProfile.coverPosition === undefined && fallbackProfile.coverPosition !== undefined
+      ? { ...profileBase, coverPosition: readCoverPosition(fallbackProfile) }
+      : profileBase;
 
   return {
     id: String(dto.portfolio_id ?? dto.id ?? ""),
@@ -234,6 +249,7 @@ export function mapFrontendPortfolioToBackend(portfolio: PortfolioData): Record<
       infoAlignment: syncedProfile.infoAlignment ?? "left",
       showAvatar: syncedProfile.showAvatar ?? true,
       showCover: syncedProfile.showCover ?? true,
+      coverPosition: syncedProfile.coverPosition ?? { x: 50, y: 50 },
       showProfileSection: syncedProfile.showProfileSection !== false,
       itemsAboveProfileCount: Math.max(0, syncedProfile.itemsAboveProfileCount ?? 0),
       contactButtons: syncedProfile.contactButtons?.map(mapContactButtonToBackend) ?? [],

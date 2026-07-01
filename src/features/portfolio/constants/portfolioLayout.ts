@@ -29,21 +29,14 @@ export const DEFAULT_ITEM_HEIGHT_BY_TYPE: Partial<Record<ContentType, number>> =
 
 export const getDefaultItemHeightPx = (type: ContentType): number => DEFAULT_ITEM_HEIGHT_BY_TYPE[type] ?? DEFAULT_ITEM_HEIGHT_PX;
 
-/**
- * Fine row height for the portfolio grid. Small rows keep the track height close to the
- * block's content height so the leftover slack (and therefore the inter-block gap) stays
- * consistent. The vertical gap is provided via `PORTFOLIO_BLOCK_GAP_PX` baked into the span.
- */
-export const PORTFOLIO_GRID_ROW_HEIGHT_PX = 4;
+/** Dense grid row track height (UIUX portfolio grid uses auto-rows-[12px]). */
+export const PORTFOLIO_GRID_ROW_HEIGHT_PX = 12;
 
-/** Consistent visual gap between vertically stacked blocks (added into each block's row span). */
+/** Visual gap between vertically stacked blocks (real CSS grid row-gap). */
 export const PORTFOLIO_BLOCK_GAP_PX = 24;
 
-/** Vertical resize snap step (px). Manual height resize pins to multiples of this for a grid feel. */
-export const PORTFOLIO_RESIZE_SNAP_PX = 24;
-
-/** Max height (px) a block can take, via manual resize or content auto-grow. Generous so long content is not clipped. */
-export const MAX_PORTFOLIO_ITEM_HEIGHT_PX = 4000;
+/** Max manual resize height (px) on the portfolio grid. */
+export const MAX_PORTFOLIO_ITEM_HEIGHT_PX = 1200;
 
 /** Upper bound on row span; derived from the max block height (+ gap) at the fine row height, with buffer. */
 const MAX_GRID_ROW_SPAN = Math.ceil((MAX_PORTFOLIO_ITEM_HEIGHT_PX + PORTFOLIO_BLOCK_GAP_PX) / PORTFOLIO_GRID_ROW_HEIGHT_PX) + 4;

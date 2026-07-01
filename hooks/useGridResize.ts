@@ -1,89 +1,82 @@
-import { useState, useRef, useEffect, type Dispatch, type SetStateAction } from "react";
-import { MAX_PORTFOLIO_ITEM_HEIGHT_PX, PORTFOLIO_RESIZE_SNAP_PX } from "@/features/portfolio/constants/portfolioLayout";
+import { useState, useRef, useEffect, type Dispatch, type MutableRefObject, type SetStateAction } from "react";
+import { MAX_PORTFOLIO_ITEM_HEIGHT_PX } from "@/features/portfolio/constants/portfolioLayout";
 import { ColumnSpan, PortfolioItem } from "../types";
 
-type ResizeSession = {
-  id: string;
-  axis: "x" | "y" | "both";
-  xHandle: "left" | "right";
-  startX: number;
-  startY: number;
-  startSpan: number;
-  startCol: number;
-  startHeight: number;
-};
-
-export const useGridResize = (_items: PortfolioItem[], setItems: Dispatch<SetStateAction<PortfolioItem[]>>) => {
-  const [resizing, setResizing] = useState<ResizeSession | null>(null);
-  const resizingRef = useRef<ResizeSession | null>(null);
+export const useGridResize = (
+  items: PortfolioItem[],
+  setItems: Dispatch<SetStateAction<PortfolioItem[]>>,
+  blockRefs?: MutableRefObject<Record<string, HTMLElement | null>>
+) => {
+  const [resizing, setResizing] = useState<{
+    id: string;
+    axis: "x" | "y" | "both";
+    xHandle: "left" | "right";
+    yHandle: "top" | "bottom";
+    startX: number;
+    startY: number;
+    startSpan: number;
+    startCol: number;
+    startHeight: number;
+    contentMinHeight: number;
+  } | null>(null);
   const gridRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
-    resizingRef.current = resizing;
-  }, [resizing]);
-
-  useEffect(() => {
     const handleMouseMove = (e: MouseEvent) => {
-      const session = resizingRef.current;
-      if (!session || !gridRef.current) return;
+      if (!resizing || !gridRef.current) return;
 
-      setItems(prev => {
-        const targetItem = prev.find(i => i.id === session.id);
-        if (!targetItem) return prev;
+      let nextSpan = resizing.startSpan;
+      let nextCol = resizing.startCol;
+      let nextHeight = resizing.startHeight;
 
-        let nextSpan = session.startSpan;
-        let nextCol = session.startCol;
-        let nextHeight = session.startHeight;
-        const minHeight = targetItem.type === "link-box" || targetItem.type === "text" ? 36 : 96;
+      const staticFloor = 80;
+      const minHeight = Math.max(staticFloor, resizing.contentMinHeight);
 
-        if (session.axis === "x" || session.axis === "both") {
-          const gridWidth = gridRef.current!.offsetWidth;
-          let columns = 3;
-
-          try {
-            const template = window.getComputedStyle(gridRef.current!).gridTemplateColumns;
-            const parsed = template.split(" ").filter(Boolean).length;
-            if (parsed >= 1) columns = parsed;
-          } catch {
-            // Keep fallback
-          }
-
-          const oneColWidth = gridWidth / columns;
-          const deltaX = e.clientX - session.startX;
-          const colShift = Math.round(deltaX / oneColWidth);
-
-          if (session.xHandle === "left") {
-            const rightEdge = session.startCol + session.startSpan - 1;
-            const nextColStart = Math.max(1, Math.min(rightEdge, session.startCol + colShift));
-            nextCol = nextColStart;
-            nextSpan = Math.max(1, rightEdge - nextColStart + 1);
-          } else {
-            const spanChange = Math.round(deltaX / oneColWidth);
-            const maxSpan = Math.max(1, columns - session.startCol + 1);
-            nextSpan = Math.max(1, Math.min(maxSpan, session.startSpan + spanChange));
-            nextCol = session.startCol;
-          }
+      if (resizing.axis === "x" || resizing.axis === "both") {
+        const gridWidth = gridRef.current.offsetWidth;
+        let columns = 3;
+        try {
+          const template = window.getComputedStyle(gridRef.current).gridTemplateColumns;
+          const parsed = template.split(" ").filter(Boolean).length;
+          if (parsed >= 1) columns = parsed;
+        } catch {
+          // ignore
         }
+        const oneColWidth = gridWidth / columns;
+        const deltaX = e.clientX - resizing.startX;
+        const colShift = Math.round(deltaX / oneColWidth);
 
-        if (session.axis === "y" || session.axis === "both") {
-          const deltaY = e.clientY - session.startY;
-          // Snap to grid increments so dragging pins to the nearest grid pointer (matches column snap).
-          const snapped = Math.round((session.startHeight + deltaY) / PORTFOLIO_RESIZE_SNAP_PX) * PORTFOLIO_RESIZE_SNAP_PX;
-          nextHeight = Math.max(minHeight, Math.min(MAX_PORTFOLIO_ITEM_HEIGHT_PX, snapped));
+        if (resizing.xHandle === "left") {
+          const rightEdge = resizing.startCol + resizing.startSpan - 1;
+          const nextColStart = Math.max(1, Math.min(rightEdge, resizing.startCol + colShift));
+          nextCol = nextColStart;
+          nextSpan = Math.max(1, rightEdge - nextColStart + 1);
+        } else {
+          const spanChange = Math.round(deltaX / oneColWidth);
+          const maxSpan = Math.max(1, columns - resizing.startCol + 1);
+          nextSpan = Math.max(1, Math.min(maxSpan, resizing.startSpan + spanChange));
+          nextCol = resizing.startCol;
         }
+      }
 
-        const shouldResizeWidth = session.axis === "x" || session.axis === "both";
-        const shouldResizeHeight = session.axis === "y" || session.axis === "both";
-        const storedHeight = targetItem.height ?? session.startHeight;
-        const widthChanged = shouldResizeWidth && targetItem.span !== nextSpan;
-        const colChanged = shouldResizeWidth && (targetItem.colStart ?? session.startCol) !== nextCol;
-        const heightChanged = shouldResizeHeight && storedHeight !== nextHeight;
+      if (resizing.axis === "y" || resizing.axis === "both") {
+        const deltaY = e.clientY - resizing.startY;
+        if (resizing.yHandle === "top") {
+          nextHeight = Math.max(minHeight, Math.min(MAX_PORTFOLIO_ITEM_HEIGHT_PX, resizing.startHeight - deltaY));
+        } else {
+          nextHeight = Math.max(minHeight, Math.min(MAX_PORTFOLIO_ITEM_HEIGHT_PX, resizing.startHeight + deltaY));
+        }
+      }
 
-        if (!widthChanged && !heightChanged && !colChanged) return prev;
-
-        return prev.map(item => {
-          if (item.id !== session.id) return item;
-
+      setItems(prev =>
+        prev.map(item => {
+          if (item.id !== resizing.id) return item;
+          const shouldResizeWidth = resizing.axis === "x" || resizing.axis === "both";
+          const shouldResizeHeight = resizing.axis === "y" || resizing.axis === "both";
+          const widthChanged = shouldResizeWidth && item.span !== nextSpan;
+          const colChanged = shouldResizeWidth && (item.colStart ?? resizing.startCol) !== nextCol;
+          const heightChanged = shouldResizeHeight && (item.height ?? resizing.startHeight) !== nextHeight;
+          if (!widthChanged && !heightChanged && !colChanged) return item;
           return {
             ...item,
             span: shouldResizeWidth ? (nextSpan as ColumnSpan) : item.span,
@@ -91,26 +84,22 @@ export const useGridResize = (_items: PortfolioItem[], setItems: Dispatch<SetSta
             height: shouldResizeHeight ? nextHeight : item.height,
             heightUserSet: shouldResizeHeight ? true : item.heightUserSet,
           };
-        });
-      });
+        })
+      );
     };
 
     const handleMouseUp = () => {
-      const ended = resizingRef.current;
-      if (ended && (ended.axis === "y" || ended.axis === "both")) {
-        setItems(current => current.map(item => (item.id === ended.id ? { ...item, heightUserSet: true } : item)));
-      }
       setResizing(null);
       document.body.style.cursor = "default";
       document.body.style.userSelect = "auto";
     };
 
-    if (!resizing) return;
-
-    window.addEventListener("mousemove", handleMouseMove);
-    window.addEventListener("mouseup", handleMouseUp);
-    document.body.style.cursor = resizing.axis === "y" ? "ns-resize" : resizing.axis === "both" ? "nwse-resize" : "ew-resize";
-    document.body.style.userSelect = "none";
+    if (resizing) {
+      window.addEventListener("mousemove", handleMouseMove);
+      window.addEventListener("mouseup", handleMouseUp);
+      document.body.style.cursor = resizing.axis === "y" ? "ns-resize" : resizing.axis === "both" ? "nwse-resize" : "ew-resize";
+      document.body.style.userSelect = "none";
+    }
 
     return () => {
       window.removeEventListener("mousemove", handleMouseMove);
@@ -118,9 +107,15 @@ export const useGridResize = (_items: PortfolioItem[], setItems: Dispatch<SetSta
       document.body.style.cursor = "default";
       document.body.style.userSelect = "auto";
     };
-  }, [resizing, setItems]);
+  }, [resizing, items, setItems]);
 
-  const initResize = (e: React.MouseEvent, item: PortfolioItem, axis: "x" | "y" | "both" = "x", xHandle: "left" | "right" = "right") => {
+  const initResize = (
+    e: React.MouseEvent,
+    item: PortfolioItem,
+    axis: "x" | "y" | "both" = "x",
+    xHandle: "left" | "right" = "right",
+    yHandle: "top" | "bottom" = "bottom"
+  ) => {
     e.stopPropagation();
     e.preventDefault();
     if (e.button !== 0) return;
@@ -131,22 +126,32 @@ export const useGridResize = (_items: PortfolioItem[], setItems: Dispatch<SetSta
       const parsedStart = Number.parseInt(style.gridColumnStart, 10);
       if (Number.isFinite(parsedStart) && parsedStart > 0) startCol = parsedStart;
     } catch {
-      // Keep fallback
+      // ignore
     }
 
-    if (axis === "y" || axis === "both") {
-      setItems(prev => prev.map(entry => (entry.id === item.id ? { ...entry, heightUserSet: true } : entry)));
+    const contentMinHeight = 80;
+    let actualHeight = item.height ?? 220;
+
+    if (!["media", "link-box", "embed"].includes(item.type)) {
+      const blockEl = blockRefs?.current?.[item.id];
+      if (blockEl) {
+        if (item.height === undefined) {
+          actualHeight = blockEl.offsetHeight;
+        }
+      }
     }
 
     setResizing({
       id: item.id,
       axis,
       xHandle,
+      yHandle,
       startX: e.clientX,
       startY: e.clientY,
       startSpan: item.span,
       startCol,
-      startHeight: item.height ?? 160,
+      startHeight: actualHeight,
+      contentMinHeight,
     });
   };
 

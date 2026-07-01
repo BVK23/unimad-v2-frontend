@@ -1,18 +1,25 @@
 "use client";
 
+import type { CSSProperties, ComponentProps } from "react";
 import { resolveMediaDisplayUrl, shouldUseUnoptimizedMedia } from "@/utils/resolve-media-url";
 import Image from "next/image";
+
+type ImageEventProps = Pick<
+  ComponentProps<typeof Image>,
+  "onPointerDown" | "onPointerMove" | "onPointerUp" | "onPointerCancel" | "draggable"
+>;
 
 type PortfolioImageProps = {
   src: string;
   alt: string;
   className?: string;
+  style?: CSSProperties;
   fill?: boolean;
   width?: number;
   height?: number;
   sizes?: string;
   priority?: boolean;
-};
+} & ImageEventProps;
 
 const logPortfolioImageFailure = (rawSrc: string, displaySrc: string) => {
   const absoluteUrl = typeof window !== "undefined" && displaySrc.startsWith("/") ? `${window.location.origin}${displaySrc}` : displaySrc;
@@ -26,7 +33,22 @@ const logPortfolioImageFailure = (rawSrc: string, displaySrc: string) => {
   });
 };
 
-const PortfolioImage = ({ src, alt, className, fill = false, width = 400, height = 300, sizes, priority = false }: PortfolioImageProps) => {
+const PortfolioImage = ({
+  src,
+  alt,
+  className,
+  style,
+  fill = false,
+  width = 400,
+  height = 300,
+  sizes,
+  priority = false,
+  onPointerDown,
+  onPointerMove,
+  onPointerUp,
+  onPointerCancel,
+  draggable,
+}: PortfolioImageProps) => {
   const displaySrc = resolveMediaDisplayUrl(src);
   if (!displaySrc) return null;
 
@@ -40,9 +62,15 @@ const PortfolioImage = ({ src, alt, className, fill = false, width = 400, height
         alt={alt}
         fill
         className={className}
+        style={style}
         sizes={sizes ?? "100vw"}
         unoptimized={unoptimized}
         priority={priority}
+        onPointerDown={onPointerDown}
+        onPointerMove={onPointerMove}
+        onPointerUp={onPointerUp}
+        onPointerCancel={onPointerCancel}
+        draggable={draggable}
         onError={onError}
       />
     );
@@ -55,8 +83,14 @@ const PortfolioImage = ({ src, alt, className, fill = false, width = 400, height
       width={width}
       height={height}
       className={className}
+      style={style}
       unoptimized={unoptimized}
       priority={priority}
+      onPointerDown={onPointerDown}
+      onPointerMove={onPointerMove}
+      onPointerUp={onPointerUp}
+      onPointerCancel={onPointerCancel}
+      draggable={draggable}
       onError={onError}
     />
   );

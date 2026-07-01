@@ -29,7 +29,7 @@ export interface PortfolioItem {
   span: ColumnSpan;
   colStart?: number; // Optional fixed grid start column for predictable horizontal resizing
   height?: number; // Optional fixed block height in px for stretch resize
-  /** True after manual Y edge resize; auto-grow will not shrink below stored height */
+  /** True after manual vertical resize; grid layout uses stored height as a floor above measured content */
   heightUserSet?: boolean;
   fontSize?: "sm" | "base" | "lg" | "xl" | "2xl";
   fontWeight?: "normal" | "medium" | "bold";
@@ -44,6 +44,8 @@ export interface PortfolioItem {
   mediaMimeType?: string;
   cropRatio?: "1:1" | "3:4" | "4:5" | "16:9";
   showCoverImage?: boolean; // For page-card/project blocks
+  /** Grid-card-only cover preview; does not replace the page's main cover image */
+  canvasCover?: string;
   linkUrl?: string;
   linkIcon?: string;
   detailedBlocks?: PortfolioItem[]; // For rich project pages
@@ -90,6 +92,8 @@ export interface UserProfile {
   profileAlignment?: "left" | "center" | "right";
   infoAlignment?: "left" | "center" | "right";
   coverCropRatio?: "1:1" | "3:4" | "4:5" | "16:9";
+  /** Inline drag-to-pan position for the live cover banner, stored as percentages. */
+  coverPosition?: { x: number; y: number };
   showAvatar?: boolean;
   showCover?: boolean;
   /** When false, the profile card is hidden; blocks can still sit above where it was. */

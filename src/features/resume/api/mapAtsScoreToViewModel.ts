@@ -1,6 +1,7 @@
-import type { AtsScorePayload, AtsScoreViewModel, AtsSectionScore, AtsSectionUiStatus } from "./ats-types";
+import { buildDisplayFeedback, buildFullFeedback, buildScoreLabel } from "./ats-section-display";
+import type { AtsScorePayload, AtsScoreViewModel, AtsSectionKey, AtsSectionScore, AtsSectionUiStatus } from "./ats-types";
 
-const SECTION_ORDER: { key: keyof NonNullable<AtsScorePayload["section_scores"]>; label: string }[] = [
+export const ATS_SECTION_ORDER: { key: AtsSectionKey; label: string }[] = [
   { key: "header", label: "Header" },
   { key: "profile", label: "Summary" },
   { key: "experience", label: "Experience" },
@@ -23,23 +24,31 @@ const formatDeltaSuffix = (delta: number | undefined): string => {
 };
 
 const rowFromSection = (
+  key: AtsSectionKey,
   label: string,
   sec: AtsSectionScore | undefined,
   sectionDelta?: number
 ): AtsScoreViewModel["sectionAnalysis"][0] => {
   if (!sec) {
     return {
+      key,
       name: label,
       status: "critical",
-      feedback: "Not analyzed.",
+      displayFeedback: "Not analyzed.",
+      fullFeedback: "Not analyzed.",
     };
   }
   const scoreSuffix = typeof sec.score === "number" && typeof sec.max_score === "number" ? ` (${sec.score}/${sec.max_score})` : "";
   const baseFeedback = typeof sec.feedback === "string" && sec.feedback.trim() ? sec.feedback : "—";
+  const status = mapBackendStatusToUi(typeof sec.status === "string" ? sec.status : undefined);
+  const deltaSuffix = formatDeltaSuffix(sectionDelta);
   return {
+    key,
     name: label,
-    status: mapBackendStatusToUi(typeof sec.status === "string" ? sec.status : undefined),
-    feedback: `${baseFeedback}${scoreSuffix}${formatDeltaSuffix(sectionDelta)}`,
+    status,
+    displayFeedback: buildDisplayFeedback(baseFeedback, status, key),
+    fullFeedback: buildFullFeedback(baseFeedback, scoreSuffix, deltaSuffix),
+    scoreLabel: buildScoreLabel(sec.score, sec.max_score),
   };
 };
 
@@ -58,9 +67,9 @@ export const mapAtsScoreToViewModel = (payload: AtsScorePayload | null | undefin
   const section_scores = payload?.section_scores;
   const sectionDeltas = delta?.sections;
 
-  const sectionAnalysis = SECTION_ORDER.map(({ key, label }) => rowFromSection(label, section_scores?.[key], sectionDeltas?.[key])).filter(
-    row => row.feedback !== "Not analyzed."
-  );
+  const sectionAnalysis = ATS_SECTION_ORDER.map(({ key, label }) =>
+    rowFromSection(key, label, section_scores?.[key], sectionDeltas?.[key])
+  ).filter(row => row.fullFeedback !== "Not analyzed.");
 
   const generalRaw = payload?.general_score;
   const jdRaw = payload?.jd_match_score;

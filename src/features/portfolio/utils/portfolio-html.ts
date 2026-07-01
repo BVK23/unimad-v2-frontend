@@ -133,6 +133,43 @@ export const resolvePortfolioTextTitlePresentation = (
   };
 };
 
+/** Wrap plain (or single bold-wrapped) title HTML in a semantic heading when missing. */
+export const wrapPortfolioTitleWithHeadingLevel = (html: string, level: PortfolioTitleHeadingLevel): string => {
+  const normalized = normalizePortfolioHtmlForRender(html).trim();
+  if (!normalized) return "";
+  if (extractTitleHeadingLevel(normalized)) return normalized;
+
+  let inner = normalized;
+  const singleBold = normalized.match(/^<(strong|b)>([\s\S]*)<\/\1>$/i);
+  if (singleBold) {
+    inner = singleBold[2].trim();
+  }
+
+  return `<${level}>${inner}</${level}>`;
+};
+
+/**
+ * Materialize template heading semantics into stored title HTML (h1 section / h2 entry).
+ * Used on portfolio load so RichTextEditor toolbar matches preview typography.
+ */
+export const resolvePortfolioTitleHtmlForItem = (
+  item: Pick<PortfolioItem, "type" | "title" | "templateSectionTitle" | "portfolioEntryTitle">
+): string | undefined => {
+  if (item.type !== "text" || !item.title?.trim()) return item.title;
+
+  const normalized = normalizePortfolioHtmlForRender(item.title);
+  if (extractTitleHeadingLevel(normalized)) return normalized;
+
+  if (item.templateSectionTitle === true) {
+    return wrapPortfolioTitleWithHeadingLevel(normalized, "h1");
+  }
+  if (item.portfolioEntryTitle === true) {
+    return wrapPortfolioTitleWithHeadingLevel(normalized, "h2");
+  }
+
+  return normalized;
+};
+
 /** Clear pipeline heading locks when the user picks a different heading level in the title field. */
 export const buildPortfolioTitleUpdate = (
   item: Pick<PortfolioItem, "title" | "templateSectionTitle" | "portfolioEntryTitle">,
@@ -144,19 +181,24 @@ export const buildPortfolioTitleUpdate = (
 
   const nextLevel = extractTitleHeadingLevel(nextTitle);
 
-  if (item.templateSectionTitle) {
-    if (nextLevel !== null && nextLevel !== "h1") {
-      updates.templateSectionTitle = false;
-    }
+  if (item.templateSectionTitle && nextLevel !== "h1") {
+    updates.templateSectionTitle = false;
   }
 
-  if (item.portfolioEntryTitle) {
-    if (nextLevel !== null && nextLevel !== "h2") {
-      updates.portfolioEntryTitle = false;
-    }
+  if (item.portfolioEntryTitle && nextLevel !== "h2") {
+    updates.portfolioEntryTitle = false;
   }
 
   return updates;
+};
+
+/** True when a text block has no visible title after normalization. */
+export const isPortfolioTextTitleEmpty = (title?: string): boolean => {
+  const plain = normalizePortfolioHtmlForRender(title || "")
+    .replace(/<[^>]+>/g, "")
+    .replace(/&nbsp;/gi, " ")
+    .trim();
+  return !plain;
 };
 
 /** True when a text block has no visible body content after normalization. */
@@ -168,32 +210,51 @@ export const isPortfolioTextContentEmpty = (content?: string): boolean => {
   return !plain;
 };
 
+/** Text block with body content and no title — content-only tier in preview. */
+export const isContentOnlyTextItem = (
+  item: Pick<PortfolioItem, "type" | "title" | "content" | "isCollapsed" | "isCollapsible">
+): boolean => {
+  if (item.type !== "text") return false;
+  if (item.isCollapsible && item.isCollapsed) return false;
+  if (isPortfolioTextContentEmpty(item.content)) return false;
+  return isPortfolioTextTitleEmpty(item.title);
+};
+
+/** Text block with a title and no body — section heading tier (template or user-created). */
+export const isTitleOnlyTextItem = (item: Pick<PortfolioItem, "type" | "title" | "content" | "isCollapsed" | "isCollapsible">): boolean => {
+  if (item.type !== "text") return false;
+  if (item.isCollapsible && item.isCollapsed) return false;
+  if (isPortfolioTextTitleEmpty(item.title)) return false;
+  return isPortfolioTextContentEmpty(item.content);
+};
+
 /** Template-generated title-only block (section header / empty entry). Gated to template flags only. */
 export const isTemplateTitleOnlyTextItem = (
   item: Pick<PortfolioItem, "type" | "title" | "content" | "templateSectionTitle" | "portfolioEntryTitle" | "isCollapsed" | "isCollapsible">
 ): boolean => {
-  if (item.type !== "text") return false;
-  if (!(item.templateSectionTitle || item.portfolioEntryTitle)) return false;
-  if (item.isCollapsible && item.isCollapsed) return false;
-  if (!item.title?.trim()) return false;
-  return isPortfolioTextContentEmpty(item.content);
+  if (!isTitleOnlyTextItem(item)) return false;
+  return Boolean(item.templateSectionTitle || item.portfolioEntryTitle);
 };
 
-/** Natural card height for a title-only block: p-6 (48) + title line + mb-3 (12), by typography. */
+/** Natural card height for a content-only block: p-6 (48) + one body line. */
+export const estimateContentOnlyTextLayoutHeightPx = (): number => 48 + 28;
+
+/** Natural card height for a title-only heading: standard p-6 (48) + one title line, by typography. */
 export const estimateTitleOnlyTextLayoutHeightPx = (
   item: Pick<PortfolioItem, "type" | "title" | "templateSectionTitle" | "portfolioEntryTitle">
 ): number => {
   const presentation = resolvePortfolioTextTitlePresentation(item);
-  if (presentation.useLargeTypography) return 96;
-  if (presentation.tag === "h2") return 88;
-  return 84;
+  const padding = 48;
+  if (presentation.useLargeTypography) return padding + 36;
+  if (presentation.tag === "h2") return padding + 32;
+  return padding + 28;
 };
 
 /** Typography for text block titles from resolved presentation. */
 export const portfolioSectionTitleClassName = (
   presentation: Pick<PortfolioTextTitlePresentation, "useLargeTypography" | "tag">
 ): string => {
-  if (presentation.useLargeTypography) {
+  if (presentation.useLargeTypography || presentation.tag === "h1") {
     return "font-semibold text-2xl md:text-3xl tracking-tight text-slate-900 dark:text-white";
   }
   if (presentation.tag === "h2") {

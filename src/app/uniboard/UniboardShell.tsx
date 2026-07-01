@@ -9,6 +9,7 @@ import { AdkChatProvider } from "@/components/chat/AdkChatProvider";
 import type { UnibotIncomingRequest, UnibotResumeSection } from "@/components/chat/unibot-incoming-request";
 import OnboardingGateModal from "@/components/onboarding/OnboardingGateModal";
 import { OnboardingGateProvider, useOnboardingGate } from "@/features/onboarding/context/OnboardingGateContext";
+import type { AtsFixPlanSection } from "@/features/resume/api/ats-fix-plan";
 import { useUnicoachInit } from "@/features/unicoach/hooks/use-uniboard-unicoach";
 import { useProfileData } from "@/features/user-profile/hooks/use-profile-data";
 import { computeAdkUserId } from "@/utils/adkUserId";
@@ -122,9 +123,22 @@ export default function UniboardShell({ children, userData }: { children: React.
           featureId?: string;
           entryId?: string;
           hasContent?: boolean;
+          resumeId?: string;
+          sections?: AtsFixPlanSection[];
+          mainSessionTitle?: string;
         }>
       ).detail;
       if (!d) return;
+      if (d.type === "ats_fix_batch" && d.resumeId && d.sections?.length) {
+        setPendingAIRequest({
+          type: "ats_fix_batch",
+          resumeId: d.resumeId,
+          sections: d.sections,
+          mainSessionTitle: d.mainSessionTitle,
+          requestKey: typeof d.requestKey === "number" ? d.requestKey : Date.now(),
+        });
+        return;
+      }
       if (d.type === "improve" || ((d.improveType === "resume" || d.improveType === "linkedin") && d.featureId && d.section)) {
         setPendingAIRequest({
           type: "improve",

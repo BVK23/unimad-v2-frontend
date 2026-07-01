@@ -4,29 +4,28 @@ import { DocumentSaveStatusBar } from "@/components/application-assets/DocumentS
 import { EMPTY_PORTFOLIO_HIGHLIGHT_MAP } from "@/features/adk-chat/adkPortfolioHighlightDiff";
 import { useAdkPortfolioReviewStore } from "@/features/adk-chat/stores/useAdkPortfolioReviewStore";
 import { mapFrontendPortfolioToBackend } from "@/features/portfolio/api/mappers";
-import {
-  getDefaultItemHeightPx,
-  getDefaultSpanForContentType,
-  getMinGridRowsForItem,
-  gridRowSpanForHeightPx,
-  PORTFOLIO_BLOCK_GAP_PX,
-  PORTFOLIO_GRID_ROW_HEIGHT_PX,
-} from "@/features/portfolio/constants/portfolioLayout";
-import { useAutoItemHeights } from "@/features/portfolio/hooks/useAutoItemHeights";
+import { PORTFOLIO_MIN_SELECTION_CHARS } from "@/features/portfolio/config/selection-presets";
+import { getDefaultItemHeightPx, getDefaultSpanForContentType } from "@/features/portfolio/constants/portfolioLayout";
 import { usePortfolioAutosave } from "@/features/portfolio/hooks/usePortfolioAutosave";
-import { usePortfolioGridRemeasure } from "@/features/portfolio/hooks/usePortfolioGridRemeasure";
-import { flushPortfolioLayoutRemeasure } from "@/features/portfolio/layout/portfolioLayoutRemeasure";
+import { usePortfolioContentHeights } from "@/features/portfolio/hooks/usePortfolioContentHeights";
+import { usePortfolioGridMetrics } from "@/features/portfolio/hooks/usePortfolioGridMetrics";
+import {
+  getPortfolioEdgeResizeCursor,
+  getPortfolioEdgeResizeZone,
+  isInteractiveResizeTarget,
+  resolvePortfolioEdgeResizeAxis,
+} from "@/features/portfolio/layout/portfolioEdgeResize";
+import { getRowSpanForPortfolioItem, PORTFOLIO_DENSE_GRID_CLASS } from "@/features/portfolio/layout/portfolioGridSpan";
 import { publishPortfolioAsset } from "@/features/portfolio/server-actions/portfolio-actions";
 import { usePortfolioStore } from "@/features/portfolio/store/usePortfolioStore";
 import { getPortfolioBlockDeleteLabel } from "@/features/portfolio/utils/getPortfolioBlockDeleteLabel";
+import { getPortfolioHistorySignature } from "@/features/portfolio/utils/getPortfolioHistorySignature";
 import { normalizePortfolioItems } from "@/features/portfolio/utils/normalizePortfolioItems";
-import { estimateTitleOnlyTextLayoutHeightPx, isTemplateTitleOnlyTextItem } from "@/features/portfolio/utils/portfolio-html";
 import { UploadError, uploadHeroImageFromDataUrl } from "@/features/portfolio/utils/upload";
 import { profileQk } from "@/features/user-profile/hooks/use-profile-data";
 import { loadPublishedUrl, savePublishedUrl } from "@/lib/portfolio/portfolioStorage";
 import { resolveMediaDisplayUrl } from "@/utils/resolve-media-url";
 import { useQueryClient } from "@tanstack/react-query";
-import { motion } from "framer-motion";
 import {
   Edit3,
   Layout,
@@ -34,7 +33,6 @@ import {
   Type,
   Link as LinkIcon,
   Video,
-  GripVertical,
   Trash2,
   Briefcase,
   MapPin,
@@ -62,11 +60,13 @@ import {
 } from "lucide-react";
 import { useGridResize } from "../hooks/useGridResize";
 import { PortfolioItem, UserProfile, ContentType, PortfolioData, ContactButton } from "../types";
-import BlockRenderer from "./BlockRenderer";
 import ProjectDetailView from "./ProjectDetailView";
+import type { RichTextEditorSelectionInfo } from "./RichTextEditor";
 import DeleteBlockConfirmModal from "./portfolio/DeleteBlockConfirmModal";
 import { PortfolioAdkBlockHighlight } from "./portfolio/PortfolioAdkBlockHighlight";
+import { PortfolioGridBlock } from "./portfolio/PortfolioGridBlock";
 import PortfolioImage from "./portfolio/PortfolioImage";
+import { PortfolioSelectionImproveActions } from "./portfolio/PortfolioSelectionImprove";
 
 const PortfolioLiveDot = () => (
   <span className="relative flex h-2 w-2 shrink-0" aria-hidden>
@@ -131,6 +131,8 @@ interface PortfolioSnapshot {
   items: PortfolioItem[];
   profile: UserProfile;
 }
+
+const PORTFOLIO_HISTORY_DEBOUNCE_MS = 250;
 
 const buildLocationButtonUrl = (location: string) => {
   const trimmed = location.trim();
@@ -253,7 +255,10 @@ const buildFallbackPortfolio = (portfolioId: string, initialData?: PortfolioData
   isBase: initialData?.isBase,
   themeMode: initialData?.themeMode,
   profile: initialData?.profile ?? INITIAL_PROFILE,
-  items: normalizePortfolioItems(initialData?.items ?? INITIAL_ITEMS, { clampTitleOnlyHeights: true }),
+  items: normalizePortfolioItems(initialData?.items ?? INITIAL_ITEMS, {
+    clampTitleOnlyHeights: true,
+    normalizeTemplateTitleHeadings: true,
+  }),
 });
 
 const getMaxPrefixedNumericId = (ids: string[], prefix: string) => {
@@ -269,9 +274,6 @@ const getMaxPrefixedNumericId = (ids: string[], prefix: string) => {
 };
 
 const AVATAR_CROP_MAX_OUTPUT_PX = 512;
-const COVER_CROP_MAX_OUTPUT_PX = 1920;
-/** Portfolio cover banner is always cropped to a horizontal 4:1 frame. */
-const COVER_BANNER_ASPECT_RATIO = 4;
 
 const Portfolio: React.FC<PortfolioProps> = ({ portfolioId, initialData, onBack, isReadOnly = false }) => {
   const queryClient = useQueryClient();
@@ -293,20 +295,28 @@ const Portfolio: React.FC<PortfolioProps> = ({ portfolioId, initialData, onBack,
 
   const setProfile = useCallback(
     (profileOrUpdater: UserProfile | ((prev: UserProfile) => UserProfile)) => {
-      updatePortfolio(portfolioId, prev => ({
-        ...prev,
-        profile: typeof profileOrUpdater === "function" ? profileOrUpdater(prev.profile) : profileOrUpdater,
-      }));
+      updatePortfolio(
+        portfolioId,
+        prev => ({
+          ...prev,
+          profile: typeof profileOrUpdater === "function" ? profileOrUpdater(prev.profile) : profileOrUpdater,
+        }),
+        { skipNormalize: true }
+      );
     },
     [portfolioId, updatePortfolio]
   );
 
   const setItems = useCallback(
     (itemsOrUpdater: PortfolioItem[] | ((prev: PortfolioItem[]) => PortfolioItem[])) => {
-      updatePortfolio(portfolioId, prev => ({
-        ...prev,
-        items: typeof itemsOrUpdater === "function" ? itemsOrUpdater(prev.items) : itemsOrUpdater,
-      }));
+      updatePortfolio(
+        portfolioId,
+        prev => ({
+          ...prev,
+          items: typeof itemsOrUpdater === "function" ? itemsOrUpdater(prev.items) : itemsOrUpdater,
+        }),
+        { skipNormalize: true }
+      );
     },
     [portfolioId, updatePortfolio]
   );
@@ -316,9 +326,26 @@ const Portfolio: React.FC<PortfolioProps> = ({ portfolioId, initialData, onBack,
     s.hasPendingReviewForPortfolio(portfolioId) ? s.getActiveHighlights() : EMPTY_PORTFOLIO_HIGHLIGHT_MAP
   );
 
-  const { hasPendingUnsavedChanges, isSaving, savedConfirmationVisible, runSave } = usePortfolioAutosave(portfolioId, {
-    enabled: !isReadOnly && !hasPendingAdkReview,
-  });
+  const { saveStatusLabel, runSave, hasPendingUnsavedChanges, isSavingRemote, savedConfirmationVisible } = usePortfolioAutosave(
+    portfolioId,
+    {
+      enabled: !isReadOnly && !hasPendingAdkReview,
+    }
+  );
+
+  const [textSelection, setTextSelection] = useState<RichTextEditorSelectionInfo | null>(null);
+
+  const handleTextSelectionChange = useCallback((info: RichTextEditorSelectionInfo | null) => {
+    if (!info || info.text.trim().length < PORTFOLIO_MIN_SELECTION_CHARS) {
+      setTextSelection(null);
+      return;
+    }
+    setTextSelection(info);
+  }, []);
+
+  const handleForceSave = useCallback(() => {
+    void runSave("manual");
+  }, [runSave]);
 
   useEffect(() => {
     useAdkPortfolioReviewStore.getState().registerSaveHandler(portfolioId, async () => {
@@ -330,6 +357,16 @@ const Portfolio: React.FC<PortfolioProps> = ({ portfolioId, initialData, onBack,
   }, [portfolioId, runSave]);
 
   const [isEditMode, setIsEditMode] = useState(!isReadOnly);
+
+  const selectionImproveSlot =
+    isEditMode && textSelection && textSelection.text.trim().length >= PORTFOLIO_MIN_SELECTION_CHARS ? (
+      <PortfolioSelectionImproveActions
+        selectedText={textSelection.text}
+        disabled={hasPendingAdkReview}
+        onActionFired={() => setTextSelection(null)}
+      />
+    ) : null;
+
   const selectedProjectId = usePortfolioStore(s => s.getFocusedPageCardId(portfolioId));
   const setFocusedPageCardId = usePortfolioStore(s => s.setFocusedPageCardId);
   const [contextMenu, setContextMenu] = useState<{ x: number; y: number; targetId: string | null } | null>(null);
@@ -343,14 +380,8 @@ const Portfolio: React.FC<PortfolioProps> = ({ portfolioId, initialData, onBack,
   const publishMenuRef = useRef<HTMLDivElement>(null);
   const pendingPublishedTabUrlRef = useRef<string | null>(null);
   const [toastMessage, setToastMessage] = useState<string | null>(null);
-  const [coverCropModal, setCoverCropModal] = useState<{
-    source: string;
-    mimeType?: string;
-    mode: "upload" | "reposition";
-  } | null>(null);
-  const [coverCropZoom, setCoverCropZoom] = useState(1);
-  const [coverCropPan, setCoverCropPan] = useState({ x: 0, y: 0 });
-  const [coverCropImageSize, setCoverCropImageSize] = useState({ width: 0, height: 0 });
+  const [isRepositioningCover, setIsRepositioningCover] = useState(false);
+  const [tempCoverPos, setTempCoverPos] = useState<{ x: number; y: number }>(() => profile.coverPosition ?? { x: 50, y: 50 });
   const [avatarCropModal, setAvatarCropModal] = useState<{ source: string; mimeType?: string } | null>(null);
   const [avatarCropZoom, setAvatarCropZoom] = useState(1);
   const [avatarCropPan, setAvatarCropPan] = useState({ x: 0, y: 0 });
@@ -359,10 +390,12 @@ const Portfolio: React.FC<PortfolioProps> = ({ portfolioId, initialData, onBack,
 
   const coverInputRef = useRef<HTMLInputElement>(null);
   const avatarInputRef = useRef<HTMLInputElement>(null);
-  const { gridRef, resizing, initResize } = useGridResize(items, setItems);
+  const itemRefs = useRef<Record<string, HTMLDivElement | null>>({});
+  const { gridRef, resizing, initResize } = useGridResize(items, setItems, itemRefs);
   const toastTimeoutRef = useRef<number | null>(null);
-  const coverCropPreviewRef = useRef<HTMLDivElement>(null);
-  const coverCropDragStateRef = useRef<{ x: number; y: number } | null>(null);
+  const coverBannerRef = useRef<HTMLDivElement>(null);
+  const coverDragStateRef = useRef<{ x: number; y: number } | null>(null);
+  const coverRepositionBaselineRef = useRef<{ x: number; y: number } | null>(null);
   const avatarCropPreviewRef = useRef<HTMLDivElement>(null);
   const avatarCropDragStateRef = useRef<{ x: number; y: number } | null>(null);
   const nextIdRef = useRef(0);
@@ -370,6 +403,9 @@ const Portfolio: React.FC<PortfolioProps> = ({ portfolioId, initialData, onBack,
   const historyFutureRef = useRef<PortfolioSnapshot[]>([]);
   const isApplyingHistoryRef = useRef(false);
   const lastSnapshotRef = useRef<PortfolioSnapshot | null>(null);
+  const historyDebounceTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const historySignatureRef = useRef("");
+  const itemsProfileRef = useRef<PortfolioSnapshot>({ items, profile });
 
   const cloneSnapshot = (snapshot: PortfolioSnapshot): PortfolioSnapshot => {
     if (typeof structuredClone === "function") {
@@ -377,7 +413,45 @@ const Portfolio: React.FC<PortfolioProps> = ({ portfolioId, initialData, onBack,
     }
     return JSON.parse(JSON.stringify(snapshot)) as PortfolioSnapshot;
   };
-  const [collapsedHeights, setCollapsedHeights] = useState<Record<string, number>>({});
+
+  itemsProfileRef.current = { items, profile };
+
+  const commitHistorySnapshot = useCallback((snapshot: PortfolioSnapshot) => {
+    if (!lastSnapshotRef.current) {
+      lastSnapshotRef.current = cloneSnapshot(snapshot);
+      historySignatureRef.current = getPortfolioHistorySignature(snapshot);
+      return;
+    }
+
+    const nextSignature = getPortfolioHistorySignature(snapshot);
+    const previousSignature = getPortfolioHistorySignature(lastSnapshotRef.current);
+    if (nextSignature === previousSignature) return;
+
+    historyPastRef.current.push(cloneSnapshot(lastSnapshotRef.current));
+    if (historyPastRef.current.length > 100) historyPastRef.current.shift();
+    historyFutureRef.current = [];
+    lastSnapshotRef.current = cloneSnapshot(snapshot);
+    historySignatureRef.current = nextSignature;
+  }, []);
+
+  const clearHistoryDebounce = useCallback(() => {
+    if (historyDebounceTimerRef.current) {
+      clearTimeout(historyDebounceTimerRef.current);
+      historyDebounceTimerRef.current = null;
+    }
+  }, []);
+
+  const flushPendingHistory = useCallback(() => {
+    clearHistoryDebounce();
+    commitHistorySnapshot(itemsProfileRef.current);
+  }, [clearHistoryDebounce, commitHistorySnapshot]);
+
+  const hasPendingUncommittedHistory = useCallback(() => {
+    if (!lastSnapshotRef.current) return false;
+    return getPortfolioHistorySignature(itemsProfileRef.current) !== getPortfolioHistorySignature(lastSnapshotRef.current);
+  }, []);
+  const { contentHeights, handleContentHeightMeasure } = usePortfolioContentHeights();
+  const gridMetrics = usePortfolioGridMetrics(gridRef);
 
   const getNextId = useCallback(
     (prefix = "item") => {
@@ -438,25 +512,36 @@ const Portfolio: React.FC<PortfolioProps> = ({ portfolioId, initialData, onBack,
     const currentSnapshot: PortfolioSnapshot = { items, profile };
     if (!lastSnapshotRef.current) {
       lastSnapshotRef.current = cloneSnapshot(currentSnapshot);
+      historySignatureRef.current = getPortfolioHistorySignature(currentSnapshot);
       return;
     }
 
-    const changed =
-      JSON.stringify(lastSnapshotRef.current.items) !== JSON.stringify(items) ||
-      JSON.stringify(lastSnapshotRef.current.profile) !== JSON.stringify(profile);
-    if (!changed) return;
+    const nextSignature = getPortfolioHistorySignature(currentSnapshot);
+    if (nextSignature === historySignatureRef.current) return;
 
     if (isApplyingHistoryRef.current) {
       isApplyingHistoryRef.current = false;
       lastSnapshotRef.current = cloneSnapshot(currentSnapshot);
+      historySignatureRef.current = nextSignature;
+      clearHistoryDebounce();
       return;
     }
 
-    historyPastRef.current.push(cloneSnapshot(lastSnapshotRef.current));
-    if (historyPastRef.current.length > 100) historyPastRef.current.shift();
-    historyFutureRef.current = [];
-    lastSnapshotRef.current = cloneSnapshot(currentSnapshot);
-  }, [items, profile]);
+    historySignatureRef.current = nextSignature;
+    clearHistoryDebounce();
+    historyDebounceTimerRef.current = setTimeout(() => {
+      historyDebounceTimerRef.current = null;
+      commitHistorySnapshot(itemsProfileRef.current);
+    }, PORTFOLIO_HISTORY_DEBOUNCE_MS);
+
+    return () => clearHistoryDebounce();
+  }, [items, profile, clearHistoryDebounce, commitHistorySnapshot]);
+
+  useEffect(() => {
+    return () => {
+      flushPendingHistory();
+    };
+  }, [flushPendingHistory]);
 
   useEffect(() => {
     const applySnapshot = (snapshot: PortfolioSnapshot) => {
@@ -465,32 +550,53 @@ const Portfolio: React.FC<PortfolioProps> = ({ portfolioId, initialData, onBack,
       setProfile(cloneSnapshot(snapshot).profile);
     };
 
+    const isNativeTextUndoTarget = (target: EventTarget | null) => {
+      const node = target instanceof HTMLElement ? target : null;
+      if (!node) return false;
+      if (node.isContentEditable) return true;
+      return Boolean(node.closest('[contenteditable="true"], input, textarea, select'));
+    };
+
     const onKeyDown = (e: KeyboardEvent) => {
       if (!isEditMode || !(e.metaKey || e.ctrlKey)) return;
       const key = e.key.toLowerCase();
       const isUndo = key === "z" && !e.shiftKey;
       const isRedo = key === "y" || (key === "z" && e.shiftKey);
       if (!isUndo && !isRedo) return;
+      if (isNativeTextUndoTarget(e.target)) return;
 
       if (isUndo) {
+        if (historyDebounceTimerRef.current && hasPendingUncommittedHistory() && lastSnapshotRef.current) {
+          e.preventDefault();
+          clearHistoryDebounce();
+          historyFutureRef.current.push(cloneSnapshot(itemsProfileRef.current));
+          applySnapshot(lastSnapshotRef.current);
+          return;
+        }
+
         const previous = historyPastRef.current.pop();
         if (!previous) return;
         e.preventDefault();
-        historyFutureRef.current.push(cloneSnapshot({ items, profile }));
+        historyFutureRef.current.push(cloneSnapshot(itemsProfileRef.current));
         applySnapshot(previous);
         return;
+      }
+
+      if (historyDebounceTimerRef.current) {
+        clearHistoryDebounce();
+        commitHistorySnapshot(itemsProfileRef.current);
       }
 
       const next = historyFutureRef.current.pop();
       if (!next) return;
       e.preventDefault();
-      historyPastRef.current.push(cloneSnapshot({ items, profile }));
+      historyPastRef.current.push(cloneSnapshot(itemsProfileRef.current));
       applySnapshot(next);
     };
 
     window.addEventListener("keydown", onKeyDown);
     return () => window.removeEventListener("keydown", onKeyDown);
-  }, [isEditMode, items, profile, setItems, setProfile]);
+  }, [isEditMode, clearHistoryDebounce, commitHistorySnapshot, hasPendingUncommittedHistory, setItems, setProfile]);
 
   useEffect(() => {
     const saved = loadPublishedUrl(portfolioId);
@@ -530,6 +636,11 @@ const Portfolio: React.FC<PortfolioProps> = ({ portfolioId, initialData, onBack,
       setProfile(p => ({ ...p, itemsAboveProfileCount: cap }));
     }
   }, [items.length, profile.itemsAboveProfileCount, setProfile]);
+
+  useEffect(() => {
+    if (isRepositioningCover) return;
+    setTempCoverPos(profile.coverPosition ?? { x: 50, y: 50 });
+  }, [isRepositioningCover, profile.coverPosition]);
 
   const showProfileSection = profile.showProfileSection !== false;
   const itemsAboveProfile = Math.min(Math.max(0, profile.itemsAboveProfileCount ?? 0), items.length);
@@ -700,9 +811,35 @@ const Portfolio: React.FC<PortfolioProps> = ({ portfolioId, initialData, onBack,
     </div>
   ) : null;
 
-  const updateItemContent = (id: string, updates: Partial<PortfolioItem>) => {
-    setItems(prev => prev.map(item => (item.id === id ? { ...item, ...updates } : item)));
-  };
+  const updateItemContent = useCallback(
+    (id: string, updates: Partial<PortfolioItem>) => {
+      setItems(prev => prev.map(item => (item.id === id ? { ...item, ...updates } : item)));
+    },
+    [setItems]
+  );
+
+  const handleGridItemRef = useCallback((id: string, el: HTMLDivElement | null) => {
+    itemRefs.current[id] = el;
+  }, []);
+
+  const handleSelectProject = useCallback(
+    (project: PortfolioItem) => {
+      setFocusedPageCardId(portfolioId, project.id);
+    },
+    [portfolioId, setFocusedPageCardId]
+  );
+
+  const handleGridDragHandleMouseUp = useCallback(() => {
+    dragHandleArmedItemIdRef.current = null;
+  }, []);
+
+  const handleGridDragHandleMouseDown = useCallback((itemId: string) => {
+    dragHandleArmedItemIdRef.current = itemId;
+  }, []);
+
+  const handleToggleInlineInserter = useCallback((index: number, isActive: boolean) => {
+    setInlineInsertIndex(isActive ? null : index + 1);
+  }, []);
 
   const addItem = (type: ContentType, preset?: Partial<PortfolioItem>) => {
     const newItem: PortfolioItem = {
@@ -718,120 +855,27 @@ const Portfolio: React.FC<PortfolioProps> = ({ portfolioId, initialData, onBack,
     setItems([...items, newItem]);
   };
 
-  const insertItemAfter = (index: number, type: ContentType = "text", preset?: Partial<PortfolioItem>) => {
-    const newItem: PortfolioItem = {
-      id: getNextId("item"),
-      type,
-      content: "",
-      span: getDefaultSpanForContentType(type),
-      title: type === "page-card" ? "New Page" : undefined,
-      fontSize: "base",
-      height: getDefaultItemHeightPx(type),
-      ...preset,
-    };
-    setItems(prev => {
-      const next = [...prev];
-      next.splice(index + 1, 0, newItem);
-      return next;
-    });
-    setInlineInsertIndex(null);
-  };
-
-  const renderInlineInserter = (index: number) => {
-    if (!isEditMode) return null;
-    const isActive = inlineInsertIndex === index + 1;
-    return (
-      <>
-        <div
-          style={{ overflow: "visible", pointerEvents: "auto" }}
-          className={`absolute -bottom-5 left-0 right-0 flex h-10 items-center justify-center transition-opacity duration-150 ${
-            isActive ? "z-[60]" : "z-30"
-          } ${isActive ? "opacity-100" : "opacity-0 hover:opacity-100"}`}
-        >
-          <div className="absolute inset-x-4 top-1/2 h-[2px] rounded-full bg-brand-400/40" />
-          <button
-            type="button"
-            onMouseDown={e => e.stopPropagation()}
-            onClick={e => {
-              e.preventDefault();
-              e.stopPropagation();
-              setInlineInsertIndex(isActive ? null : index + 1);
-            }}
-            className={`relative flex h-7 w-7 items-center justify-center rounded-full border shadow-md transition-all ${
-              isActive ? "z-[61]" : "z-[31]"
-            } ${
-              isActive
-                ? "scale-110 border-brand-500 bg-brand-500 text-white"
-                : "border-slate-200 bg-white text-slate-400 hover:scale-110 hover:border-brand-400 hover:text-brand-600 dark:border-white/10 dark:bg-slate-800"
-            }`}
-          >
-            <Plus size={15} />
-          </button>
-          {isActive ? (
-            <div
-              className="absolute left-1/2 top-full z-50 mt-2 flex w-max max-w-[90vw] flex-row items-center gap-1.5 overflow-x-auto rounded-full border border-slate-100 bg-white p-2 shadow-lg dark:border-white/10 dark:bg-slate-900"
-              onMouseDown={e => e.stopPropagation()}
-              onClick={e => e.stopPropagation()}
-            >
-              {[
-                { type: "text" as ContentType, icon: <Type size={14} />, label: "Text" },
-                { type: "media" as ContentType, icon: <ImageIcon size={14} />, label: "Media" },
-                { type: "page-card" as ContentType, icon: <FileText size={14} />, label: "Page" },
-                { type: "link-box" as ContentType, icon: <LinkIcon size={14} />, label: "Link" },
-                {
-                  type: "table" as ContentType,
-                  icon: <Table2 size={14} />,
-                  label: "Table",
-                  preset: {
-                    title: "Table",
-                    content: JSON.stringify([
-                      ["Header 1", "Header 2", "Header 3"],
-                      ["", "", ""],
-                      ["", "", ""],
-                    ]),
-                  },
-                },
-                {
-                  type: "embed" as ContentType,
-                  icon: <Code2 size={14} />,
-                  label: "Code",
-                  preset: { title: "Embed Code", variant: "code" as const },
-                },
-                {
-                  type: "embed" as ContentType,
-                  icon: <Figma size={14} />,
-                  label: "Figma",
-                  preset: { title: "Figma Embed", variant: "figma" as const },
-                },
-              ].map(opt => (
-                <button
-                  key={opt.label}
-                  type="button"
-                  onClick={e => {
-                    e.stopPropagation();
-                    insertItemAfter(index, opt.type, opt.preset);
-                  }}
-                  className="flex items-center gap-1.5 whitespace-nowrap rounded-full px-3 py-1.5 text-xs font-medium text-slate-600 transition-colors hover:bg-slate-50 hover:text-brand-600 dark:text-slate-300 dark:hover:bg-white/5"
-                >
-                  {opt.icon}
-                  {opt.label}
-                </button>
-              ))}
-            </div>
-          ) : null}
-        </div>
-        {isActive ? (
-          <div
-            className="fixed inset-0 z-[59]"
-            onClick={e => {
-              e.stopPropagation();
-              setInlineInsertIndex(null);
-            }}
-          />
-        ) : null}
-      </>
-    );
-  };
+  const handleInsertBlockAfter = useCallback(
+    (index: number, type: ContentType, preset?: Partial<PortfolioItem>) => {
+      const newItem: PortfolioItem = {
+        id: getNextId("item"),
+        type,
+        content: "",
+        span: getDefaultSpanForContentType(type),
+        title: type === "page-card" ? "New Page" : undefined,
+        fontSize: "base",
+        height: getDefaultItemHeightPx(type),
+        ...preset,
+      };
+      setItems(prev => {
+        const next = [...prev];
+        next.splice(index + 1, 0, newItem);
+        return next;
+      });
+      setInlineInsertIndex(null);
+    },
+    [getNextId, setItems]
+  );
 
   const fileToDataUrl = (file: File) =>
     new Promise<string>((resolve, reject) => {
@@ -901,14 +945,6 @@ const Portfolio: React.FC<PortfolioProps> = ({ portfolioId, initialData, onBack,
     img.src = source;
   };
 
-  const applyCoverBannerCrop = (
-    source: string,
-    zoom: number,
-    pan: { x: number; y: number },
-    callback: (croppedDataUrl: string) => void,
-    maxOutputPx?: number
-  ) => applyRatioCrop(source, COVER_BANNER_ASPECT_RATIO, zoom, pan, callback, maxOutputPx);
-
   const persistCroppedHeroImage = useCallback(
     async (croppedDataUrl: string, category: "profile-picture" | "cover-picture", applyUrl: (url: string) => void) => {
       setIsHeroImageUploading(true);
@@ -929,39 +965,83 @@ const Portfolio: React.FC<PortfolioProps> = ({ portfolioId, initialData, onBack,
     [queryClient, showToast]
   );
 
-  const resolveCoverCropSource = async (source: string, mode: "upload" | "reposition") => {
-    const resolvedSource = resolveMediaDisplayUrl(source);
-    if (mode !== "reposition" || resolvedSource.startsWith("data:")) {
-      return resolvedSource;
-    }
-
-    try {
-      const response = await fetch(resolvedSource, { credentials: "omit", mode: "cors" });
-      if (!response.ok) {
-        return resolvedSource;
-      }
-      const blob = await response.blob();
-      return fileToDataUrl(new File([blob], "cover.jpg", { type: blob.type || "image/jpeg" }));
-    } catch {
-      return resolvedSource;
-    }
-  };
-
-  const openCoverCropModal = async (source: string, mimeType?: string, mode: "upload" | "reposition" = "upload") => {
-    setCoverCropZoom(1);
-    setCoverCropPan({ x: 0, y: 0 });
-    const cropSource = await resolveCoverCropSource(source, mode);
-    setCoverCropModal({ source: cropSource, mimeType, mode });
+  const beginCoverReposition = (position: { x: number; y: number }) => {
+    coverRepositionBaselineRef.current = profile.coverPosition ?? { x: 50, y: 50 };
+    setTempCoverPos(position);
+    setIsRepositioningCover(true);
   };
 
   const handleCoverUpload = async (file: File) => {
     const dataUrl = await fileToDataUrl(file);
-    await openCoverCropModal(dataUrl, file.type || "image/jpeg", "upload");
+    const initialPos = { x: 50, y: 50 };
+    setIsHeroImageUploading(true);
+    try {
+      const url = await uploadHeroImageFromDataUrl(dataUrl, "cover-picture");
+      setProfile(prev => ({
+        ...prev,
+        coverUrl: url,
+        showCover: true,
+        coverPosition: initialPos,
+      }));
+      coverRepositionBaselineRef.current = initialPos;
+      setTempCoverPos(initialPos);
+      setIsRepositioningCover(true);
+    } catch (error) {
+      const message = error instanceof UploadError ? error.message : "Failed to upload cover";
+      showToast(message);
+    } finally {
+      setIsHeroImageUploading(false);
+    }
   };
 
   const handleRepositionCover = () => {
     if (!profile.coverUrl?.trim()) return;
-    void openCoverCropModal(profile.coverUrl, "image/jpeg", "reposition");
+    beginCoverReposition(profile.coverPosition ?? { x: 50, y: 50 });
+  };
+
+  const handleBannerPointerDown = (e: React.PointerEvent<HTMLDivElement>) => {
+    if (!isRepositioningCover) return;
+    e.preventDefault();
+    coverDragStateRef.current = { x: e.clientX, y: e.clientY };
+    e.currentTarget.setPointerCapture(e.pointerId);
+  };
+
+  const handleBannerPointerMove = (e: React.PointerEvent<HTMLDivElement>) => {
+    if (!isRepositioningCover || !coverDragStateRef.current || !coverBannerRef.current) return;
+    const rect = coverBannerRef.current.getBoundingClientRect();
+    const dx = e.clientX - coverDragStateRef.current.x;
+    const dy = e.clientY - coverDragStateRef.current.y;
+    coverDragStateRef.current = { x: e.clientX, y: e.clientY };
+    const pctDx = (dx / Math.max(1, rect.width)) * 100;
+    const pctDy = (dy / Math.max(1, rect.height)) * 100;
+    setTempCoverPos(prev => ({
+      x: clamp(prev.x - pctDx, 0, 100),
+      y: clamp(prev.y - pctDy, 0, 100),
+    }));
+  };
+
+  const handleBannerPointerUp = (e: React.PointerEvent<HTMLDivElement>) => {
+    coverDragStateRef.current = null;
+    if (e.currentTarget.hasPointerCapture(e.pointerId)) {
+      e.currentTarget.releasePointerCapture(e.pointerId);
+    }
+    if (isRepositioningCover) {
+      setProfile(prev => ({ ...prev, coverPosition: tempCoverPos }));
+    }
+  };
+
+  const handleSaveCoverLayout = () => {
+    setProfile(prev => ({ ...prev, coverPosition: tempCoverPos }));
+    coverRepositionBaselineRef.current = null;
+    setIsRepositioningCover(false);
+  };
+
+  const handleCancelCoverReposition = () => {
+    const baseline = coverRepositionBaselineRef.current ?? profile.coverPosition ?? { x: 50, y: 50 };
+    setProfile(prev => ({ ...prev, coverPosition: baseline }));
+    setTempCoverPos(baseline);
+    coverRepositionBaselineRef.current = null;
+    setIsRepositioningCover(false);
   };
 
   const openAvatarCropModal = (source: string, mimeType?: string) => {
@@ -988,15 +1068,6 @@ const Portfolio: React.FC<PortfolioProps> = ({ portfolioId, initialData, onBack,
   };
 
   useEffect(() => {
-    if (!coverCropModal) return;
-    const img = new Image();
-    img.onload = () => {
-      setCoverCropImageSize({ width: img.naturalWidth, height: img.naturalHeight });
-    };
-    img.src = coverCropModal.source;
-  }, [coverCropModal]);
-
-  useEffect(() => {
     if (!avatarCropModal) return;
     const img = new Image();
     img.onload = () => {
@@ -1004,43 +1075,6 @@ const Portfolio: React.FC<PortfolioProps> = ({ portfolioId, initialData, onBack,
     };
     img.src = avatarCropModal.source;
   }, [avatarCropModal]);
-
-  const coverCropGeometry =
-    coverCropModal && coverCropImageSize.width && coverCropImageSize.height
-      ? getCoverCropGeometry(coverCropImageSize.width, coverCropImageSize.height, COVER_BANNER_ASPECT_RATIO, coverCropZoom, coverCropPan)
-      : null;
-
-  const coverCropPreviewStyle =
-    coverCropGeometry && coverCropImageSize.width && coverCropImageSize.height
-      ? {
-          backgroundImage: `url(${coverCropModal?.source})`,
-          backgroundSize: `${(coverCropImageSize.width / coverCropGeometry.cropWidth) * 100}% ${(coverCropImageSize.height / coverCropGeometry.cropHeight) * 100}%`,
-          backgroundPosition: `${(coverCropGeometry.offsetX / Math.max(1, coverCropImageSize.width - coverCropGeometry.cropWidth)) * 100}% ${(coverCropGeometry.offsetY / Math.max(1, coverCropImageSize.height - coverCropGeometry.cropHeight)) * 100}%`,
-        }
-      : undefined;
-
-  const handleCoverCropPointerDown = (e: React.PointerEvent<HTMLDivElement>) => {
-    if (!coverCropPreviewRef.current) return;
-    coverCropDragStateRef.current = { x: e.clientX, y: e.clientY };
-    e.currentTarget.setPointerCapture(e.pointerId);
-  };
-
-  const handleCoverCropPointerMove = (e: React.PointerEvent<HTMLDivElement>) => {
-    if (!coverCropDragStateRef.current || !coverCropPreviewRef.current) return;
-    const rect = coverCropPreviewRef.current.getBoundingClientRect();
-    const dx = e.clientX - coverCropDragStateRef.current.x;
-    const dy = e.clientY - coverCropDragStateRef.current.y;
-    coverCropDragStateRef.current = { x: e.clientX, y: e.clientY };
-    setCoverCropPan(prev => ({
-      x: clamp(prev.x - dx / Math.max(1, rect.width), -1, 1),
-      y: clamp(prev.y - dy / Math.max(1, rect.height), -1, 1),
-    }));
-  };
-
-  const handleCoverCropPointerUp = (e: React.PointerEvent<HTMLDivElement>) => {
-    coverCropDragStateRef.current = null;
-    e.currentTarget.releasePointerCapture(e.pointerId);
-  };
 
   const avatarCropGeometry =
     avatarCropModal && avatarCropImageSize.width && avatarCropImageSize.height
@@ -1099,156 +1133,53 @@ const Portfolio: React.FC<PortfolioProps> = ({ portfolioId, initialData, onBack,
 
   const [draggedItemIndex, setDraggedItemIndex] = useState<number | null>(null);
   const [draggedItemId, setDraggedItemId] = useState<string | null>(null);
-  const itemRefs = useRef<Record<string, HTMLDivElement | null>>({});
   const dragHandleArmedItemIdRef = useRef<string | null>(null);
-  const [measuredHeights, setMeasuredHeights] = useState<Record<string, number>>({});
 
-  const COLLAPSIBLE_TEXT_COLLAPSED_HEIGHT_PX = 72;
-
-  const HEIGHT_MEASURE_EPSILON_PX = 2;
-
-  const handleMeasuredHeightOnly = useCallback(
-    (id: string, height: number) => {
-      if (!hasPendingAdkReview) return;
-      setMeasuredHeights(prev => {
-        const previous = prev[id];
-        if (previous !== undefined && Math.abs(previous - height) <= HEIGHT_MEASURE_EPSILON_PX) {
-          return prev;
-        }
-        if (previous === height) return prev;
-        return { ...prev, [id]: height };
-      });
-    },
-    [hasPendingAdkReview]
+  const getRowSpanForItem = useCallback(
+    (item: PortfolioItem) => getRowSpanForPortfolioItem(item, contentHeights, gridMetrics, { isEditMode }),
+    [contentHeights, gridMetrics, isEditMode]
   );
-
-  const handleAutoItemHeight = useCallback(
-    (id: string, height: number) => {
-      setItems(prev => {
-        const target = prev.find(item => item.id === id);
-        if (!target || target.heightUserSet) return prev;
-        const stored = target.height ?? getDefaultItemHeightPx(target.type);
-        if (Math.abs(stored - height) <= HEIGHT_MEASURE_EPSILON_PX) return prev;
-        return prev.map(item => (item.id === id ? { ...item, height } : item));
-      });
-    },
-    [setItems]
-  );
-
-  const { handleMeasureContentHeight } = useAutoItemHeights({
-    items,
-    onUpdateHeight: handleAutoItemHeight,
-    resizingId: resizing?.id ?? null,
-  });
-
-  const { handleMeasureContentHeight: handleMeasureForLayout } = useAutoItemHeights({
-    items,
-    onUpdateHeight: handleMeasuredHeightOnly,
-    resizingId: resizing?.id ?? null,
-  });
-
-  // Grid row spans use measuredHeights — keep measuring during ADK preview; only skip persisting height to store.
-  const blockContentMeasure = hasPendingAdkReview ? handleMeasureForLayout : handleMeasureContentHeight;
-
-  usePortfolioGridRemeasure({
-    portfolioId,
-    items,
-    itemRefs,
-    gridRef,
-    onMeasureContentHeight: hasPendingAdkReview ? handleMeasureForLayout : undefined,
-  });
 
   useEffect(() => {
-    if (!hasPendingAdkReview) return;
-    const raf = requestAnimationFrame(() => {
-      flushPortfolioLayoutRemeasure();
-    });
-    return () => cancelAnimationFrame(raf);
-  }, [hasPendingAdkReview, items]);
-
-  const handleCollapsedHeightMeasure = (id: string, measuredHeight: number) => {
-    setCollapsedHeights(prev => {
-      const nextHeight = Math.max(COLLAPSIBLE_TEXT_COLLAPSED_HEIGHT_PX, measuredHeight);
-      if (prev[id] && Math.abs(prev[id] - nextHeight) < 1) return prev;
-      return { ...prev, [id]: nextHeight };
-    });
-  };
-
-  const getLayoutHeightPx = (item: PortfolioItem) => {
-    if (item.type === "text" && item.isCollapsible && item.isCollapsed) {
-      return collapsedHeights[item.id] ?? COLLAPSIBLE_TEXT_COLLAPSED_HEIGHT_PX;
-    }
-
-    if (!item.heightUserSet) {
-      const stored = item.height ?? getDefaultItemHeightPx(item.type);
-      // Title-only template blocks hug the title in preview (edit mode keeps the editable content area).
-      if (!isEditMode && isTemplateTitleOnlyTextItem(item)) {
-        return Math.min(stored, estimateTitleOnlyTextLayoutHeightPx(item));
-      }
-      // Use live measure only during ADK review (heights are not persisted). Otherwise
-      // driving the grid from measuredHeights causes resize ↔ measure feedback loops.
-      if (hasPendingAdkReview) {
-        const live = measuredHeights[item.id];
-        if (live) return Math.max(stored, live);
-      }
-      return stored;
-    }
-
-    return item.height ?? getDefaultItemHeightPx(item.type);
-  };
-
-  const getRowSpanForItem = (item: PortfolioItem) => {
-    // The grid uses row-gap 0 with a fine row height; the inter-block gap is baked into the span
-    // so the slack below the block (track − content) becomes a consistent ~24px gap.
-    // rowGap is hardcoded to 0 (not read from the DOM) so the computed track is always
-    // >= content + gap — this makes overlap impossible even if computed styles lag the CSS.
-    const heightPx = getLayoutHeightPx(item) + PORTFOLIO_BLOCK_GAP_PX;
-    return gridRowSpanForHeightPx(heightPx, getMinGridRowsForItem(item.type), PORTFOLIO_GRID_ROW_HEIGHT_PX, 0);
-  };
-
-  const EDGE_RESIZE_HIT_AREA_PX = 18;
+    if (!gridRef.current || !items.some(i => i.colStart === undefined)) return;
+    const timer = window.setTimeout(() => {
+      const parentWidth = gridRef.current?.clientWidth;
+      if (!parentWidth) return;
+      setItems(currentItems => {
+        let changed = false;
+        const next = currentItems.map(item => {
+          if (item.colStart !== undefined) return item;
+          const el = itemRefs.current[item.id];
+          if (!el) return item;
+          const colStart = Math.max(1, Math.min(12, Math.round((el.offsetLeft / parentWidth) * 12) + 1));
+          changed = true;
+          return { ...item, colStart };
+        });
+        return changed ? next : currentItems;
+      });
+    }, 100);
+    return () => window.clearTimeout(timer);
+  }, [items, setItems, gridRef]);
 
   const handleEdgeResizeStart = (e: React.MouseEvent<HTMLDivElement>, item: PortfolioItem) => {
     if (!isEditMode || resizing || e.button !== 0) return;
+    if (isInteractiveResizeTarget(e.target as HTMLElement)) return;
 
-    const target = e.target as HTMLElement;
-    if (target.closest('input, textarea, button, select, [contenteditable="true"]')) return;
-
-    const edgeThreshold = EDGE_RESIZE_HIT_AREA_PX;
-    const rect = e.currentTarget.getBoundingClientRect();
-    const nearRight = rect.right - e.clientX <= edgeThreshold;
-    const nearLeft = e.clientX - rect.left <= edgeThreshold;
-    const nearTop = e.clientY - rect.top <= edgeThreshold;
-    const nearBottom = rect.bottom - e.clientY <= edgeThreshold;
-    const nearAnyEdge = nearLeft || nearRight || nearTop || nearBottom;
-
-    if (!nearAnyEdge) return;
-    const axis = (nearLeft || nearRight) && (nearTop || nearBottom) ? "both" : nearTop || nearBottom ? "y" : "x";
-    const xHandle = nearLeft ? "left" : "right";
-    initResize(e, item, axis, xHandle);
+    const zone = getPortfolioEdgeResizeZone(item, e.clientX, e.clientY, e.currentTarget.getBoundingClientRect());
+    const resolved = resolvePortfolioEdgeResizeAxis(zone);
+    if (!resolved) return;
+    initResize(e, item, resolved.axis, resolved.xHandle, resolved.yHandle);
   };
 
-  const handleEdgeResizeHover = (e: React.MouseEvent<HTMLDivElement>) => {
+  const handleEdgeResizeHover = (e: React.MouseEvent<HTMLDivElement>, item: PortfolioItem) => {
     if (!isEditMode || resizing) return;
-    const target = e.target as HTMLElement;
-    if (target.closest('input, textarea, button, select, [contenteditable="true"]')) {
+    if (isInteractiveResizeTarget(e.target as HTMLElement)) {
       e.currentTarget.style.cursor = "default";
       return;
     }
 
-    const edgeThreshold = EDGE_RESIZE_HIT_AREA_PX;
-    const rect = e.currentTarget.getBoundingClientRect();
-    const nearRight = rect.right - e.clientX <= edgeThreshold;
-    const nearLeft = e.clientX - rect.left <= edgeThreshold;
-    const nearTop = e.clientY - rect.top <= edgeThreshold;
-    const nearBottom = rect.bottom - e.clientY <= edgeThreshold;
-    const nearHorizontal = nearLeft || nearRight;
-    const nearVertical = nearTop || nearBottom;
-
-    if (nearHorizontal && nearVertical) e.currentTarget.style.cursor = "nwse-resize";
-    else if (nearVertical) e.currentTarget.style.cursor = "ns-resize";
-    else if (nearHorizontal) e.currentTarget.style.cursor = "ew-resize";
-    else e.currentTarget.style.cursor = "default";
+    const zone = getPortfolioEdgeResizeZone(item, e.clientX, e.clientY, e.currentTarget.getBoundingClientRect());
+    e.currentTarget.style.cursor = getPortfolioEdgeResizeCursor(zone);
   };
 
   const addContactButton = () => {
@@ -1493,6 +1424,21 @@ const Portfolio: React.FC<PortfolioProps> = ({ portfolioId, initialData, onBack,
       reorderRafRef.current = null;
     }
     pendingReorderRef.current = null;
+
+    window.setTimeout(() => {
+      if (!gridRef.current) return;
+      const parentWidth = gridRef.current.clientWidth;
+      if (parentWidth <= 0) return;
+      setItems(currentItems =>
+        currentItems.map(item => {
+          const el = itemRefs.current[item.id];
+          if (!el) return item;
+          const colStart = Math.max(1, Math.min(12, Math.round((el.offsetLeft / parentWidth) * 12) + 1));
+          if (item.colStart === colStart) return item;
+          return { ...item, colStart };
+        })
+      );
+    }, 0);
   };
 
   const handleGridDragOver = (e: React.DragEvent<HTMLDivElement>) => {
@@ -1532,104 +1478,42 @@ const Portfolio: React.FC<PortfolioProps> = ({ portfolioId, initialData, onBack,
   };
 
   const renderPortfolioGridItem = (item: PortfolioItem, index: number) => {
-    const fillsGridHeight = item.heightUserSet === true;
-    const layoutHeightPx = getLayoutHeightPx(item);
     const blockHighlight = adkPortfolioHighlights[`block:${item.id}`];
     const isResizingThis = resizing?.id === item.id;
 
     return (
-      <motion.div
+      <PortfolioGridBlock
         key={item.id}
-        ref={el => {
-          itemRefs.current[item.id] = el;
-        }}
-        onDragOver={e => handleDragOver(e, index)}
+        item={item}
+        index={index}
+        isEditMode={isEditMode}
+        isResizingThis={Boolean(isResizingThis)}
+        isGridResizing={Boolean(resizing)}
+        isDragging={draggedItemIndex === index}
+        rowSpan={getRowSpanForItem(item)}
+        spanClass={getSpanClass(item.span)}
+        blockHighlight={blockHighlight}
+        isInlineInserterActive={inlineInsertIndex === index + 1}
+        enableSelectionImprove={isEditMode && !hasPendingAdkReview}
+        onTextSelectionChange={handleTextSelectionChange}
+        selectionImproveSlot={selectionImproveSlot}
+        onItemRef={handleGridItemRef}
+        onDragOver={handleDragOver}
         onDragEnd={handleDragEnd}
-        onContextMenu={e => handleContextMenu(e, item.id)}
-        onMouseUpCapture={() => {
-          dragHandleArmedItemIdRef.current = null;
-        }}
-        className={`
-          ${getSpanClass(item.span)}
-          relative ${isResizingThis ? "transition-none" : "transition-all duration-300"}
-          ${isEditMode ? "rounded-[2rem]" : ""}
-          ${draggedItemIndex === index ? "opacity-30 scale-[0.98]" : "opacity-100"}
-        `}
-        style={{
-          gridColumnStart: item.colStart,
-          gridRowEnd: `span ${getRowSpanForItem(item)}`,
-          height: `${layoutHeightPx}px`,
-          alignSelf: "start",
-        }}
-      >
-        <PortfolioAdkBlockHighlight kind={blockHighlight} className="h-full w-full">
-          <div
-            className={`relative w-full h-full group/block ${fillsGridHeight ? "h-full" : ""}`}
-            onMouseDown={e => handleEdgeResizeStart(e, item)}
-            onMouseMove={handleEdgeResizeHover}
-            onMouseLeave={e => {
-              e.currentTarget.style.cursor = "default";
-            }}
-          >
-            {isEditMode && (
-              <div className="absolute -left-6 top-1/2 -translate-y-1/2 opacity-0 pointer-events-none group-hover/block:opacity-100 group-hover/block:pointer-events-auto transition-opacity flex flex-col gap-2 z-30">
-                <div
-                  className="p-1.5 cursor-move text-slate-400 hover:text-slate-600 bg-white dark:bg-slate-800 rounded-lg shadow-xl border border-slate-100 dark:border-white/5"
-                  draggable={!resizing}
-                  onMouseDown={e => {
-                    e.stopPropagation();
-                    dragHandleArmedItemIdRef.current = item.id;
-                  }}
-                  onDragStart={e => handleDragStart(e, index, item.id)}
-                  onDragEnd={handleDragEnd}
-                  onMouseUp={() => {
-                    dragHandleArmedItemIdRef.current = null;
-                  }}
-                  title="Move block"
-                >
-                  <GripVertical size={14} />
-                </div>
-
-                <button
-                  type="button"
-                  onClick={e => {
-                    e.stopPropagation();
-                    requestDeleteBlock(item.id);
-                  }}
-                  className="p-1.5 text-slate-400 hover:text-red-500 bg-white dark:bg-slate-800 rounded-lg shadow-xl border border-slate-100 dark:border-white/5 transition-colors"
-                  title="Delete block"
-                >
-                  <Trash2 size={14} />
-                </button>
-              </div>
-            )}
-            <BlockRenderer
-              item={item}
-              isEditMode={isEditMode}
-              onUpdate={updateItemContent}
-              onSelectProject={project => setFocusedPageCardId(portfolioId, project.id)}
-              onMeasureCollapsedHeight={handleCollapsedHeightMeasure}
-              onMeasureContentHeight={blockContentMeasure}
-            />
-            {renderInlineInserter(index)}
-
-            {isEditMode && (
-              <>
-                <div
-                  className="absolute inset-y-0 left-0 w-[18px] cursor-ew-resize z-20"
-                  onMouseDown={e => initResize(e, item, "x", "left")}
-                  title="Resize width"
-                />
-                <div
-                  className="absolute inset-y-0 right-0 w-[18px] cursor-ew-resize z-20"
-                  onMouseDown={e => initResize(e, item, "x", "right")}
-                  title="Resize width"
-                />
-              </>
-            )}
-          </div>
-        </PortfolioAdkBlockHighlight>
-      </motion.div>
+        onContextMenu={handleContextMenu}
+        onDragHandleMouseUp={handleGridDragHandleMouseUp}
+        onEdgeResizeStart={handleEdgeResizeStart}
+        onEdgeResizeHover={handleEdgeResizeHover}
+        onUpdate={updateItemContent}
+        onSelectProject={handleSelectProject}
+        onMeasureHeight={handleContentHeightMeasure}
+        onRequestDelete={requestDeleteBlock}
+        onDragStart={handleDragStart}
+        onDragHandleMouseDown={handleGridDragHandleMouseDown}
+        onToggleInlineInserter={handleToggleInlineInserter}
+        onInsertBlockAfter={handleInsertBlockAfter}
+        initResize={initResize}
+      />
     );
   };
 
@@ -1643,9 +1527,14 @@ const Portfolio: React.FC<PortfolioProps> = ({ portfolioId, initialData, onBack,
             updateItemContent(updated.id, updated);
             setFocusedPageCardId(portfolioId, updated.id);
           }}
+          isEditMode={isEditMode}
+          onToggleEditMode={() => setIsEditMode(prev => !prev)}
           adkHighlights={adkPortfolioHighlights}
           gridColumns={12}
           maxWidthClassName="max-w-5xl"
+          enableSelectionImprove={isEditMode && !hasPendingAdkReview}
+          onTextSelectionChange={handleTextSelectionChange}
+          selectionImproveSlot={selectionImproveSlot}
         />
       ) : (
         <div className="flex-1 bg-slate-50 dark:bg-slate-950 h-full overflow-y-auto no-scrollbar relative">
@@ -1671,15 +1560,8 @@ const Portfolio: React.FC<PortfolioProps> = ({ portfolioId, initialData, onBack,
               e.target.value = "";
             }}
           />
-          {/* Top Published Status Bar (Mock) */}
-          {!isEditMode && !isReadOnly && (
-            <div className="bg-brand-600 text-white text-[10px] uppercase font-medium tracking-[0.2em] py-2 text-center">
-              Live Portfolio Mode
-            </div>
-          )}
-
           {/* Editor / preview header */}
-          {(isEditMode || onBack) && (
+          {!isReadOnly && (
             <div
               className={`sticky top-0 isolate flex items-center justify-between border-b border-slate-100 bg-white/80 px-6 py-4 backdrop-blur-md dark:border-white/5 dark:bg-slate-950/80 ${
                 showPublishMenu ? "z-[100]" : "z-40"
@@ -1700,10 +1582,13 @@ const Portfolio: React.FC<PortfolioProps> = ({ portfolioId, initialData, onBack,
                 {isEditMode && !hasPendingAdkReview && !isReadOnly ? (
                   <DocumentSaveStatusBar
                     hasPendingUnsavedChanges={hasPendingUnsavedChanges}
-                    isSaving={isSaving}
+                    isSaving={isSavingRemote}
                     savedConfirmationVisible={savedConfirmationVisible}
-                    onSaveNow={() => void runSave("manual")}
-                    visible={hasPendingUnsavedChanges || isSaving || savedConfirmationVisible}
+                    onSaveNow={handleForceSave}
+                    saveNowLabel="Save Now"
+                    savingLabel={isSavingRemote ? "Saving..." : "Autosaving..."}
+                    visible={Boolean(saveStatusLabel)}
+                    variant="studio"
                   />
                 ) : null}
                 {isEditMode ? (
@@ -1729,7 +1614,7 @@ const Portfolio: React.FC<PortfolioProps> = ({ portfolioId, initialData, onBack,
                     <button
                       type="button"
                       onClick={() => setIsEditMode(false)}
-                      className="flex items-center gap-2 rounded-full bg-brand-600 px-6 py-2 text-xs font-semibold text-white shadow-lg shadow-brand-500/30 transition-all hover:scale-105 active:scale-95"
+                      className="flex items-center gap-2 rounded-xl bg-brand-600 px-6 py-2 text-xs font-semibold text-white shadow-lg shadow-brand-500/30 transition-all hover:bg-brand-700 active:scale-[0.99]"
                     >
                       <Eye size={14} /> Preview Mode
                     </button>
@@ -1759,7 +1644,7 @@ const Portfolio: React.FC<PortfolioProps> = ({ portfolioId, initialData, onBack,
                     <button
                       type="button"
                       onClick={() => setIsEditMode(true)}
-                      className="flex items-center gap-2 rounded-full bg-brand-600 px-6 py-2 text-xs font-semibold text-white shadow-lg shadow-brand-500/30 transition-all hover:scale-105 active:scale-95"
+                      className="flex items-center gap-2 rounded-xl bg-brand-600 px-6 py-2 text-xs font-semibold text-white shadow-lg shadow-brand-500/30 transition-all hover:bg-brand-700 active:scale-[0.99]"
                     >
                       <Edit3 size={14} /> Edit portfolio
                     </button>
@@ -1783,9 +1668,10 @@ const Portfolio: React.FC<PortfolioProps> = ({ portfolioId, initialData, onBack,
             profile.showCover !== false && (
               <div className="max-w-5xl mx-auto px-4 mt-6">
                 <div
+                  ref={coverBannerRef}
                   className={`aspect-[4/1] w-full relative group bg-slate-100 dark:bg-slate-900 border border-slate-200 dark:border-white/5 overflow-hidden ${
                     showProfileSection ? "rounded-t-2xl" : "rounded-2xl"
-                  }`}
+                  } ${isRepositioningCover ? "ring-2 ring-brand-500/60 ring-offset-2 ring-offset-white dark:ring-offset-slate-950" : ""}`}
                 >
                   {profile.coverUrl ? (
                     <PortfolioImage
@@ -1793,12 +1679,17 @@ const Portfolio: React.FC<PortfolioProps> = ({ portfolioId, initialData, onBack,
                       alt={profile.name ? `${profile.name} cover` : "Portfolio cover"}
                       fill
                       sizes="(max-width: 768px) 100vw, 1280px"
-                      className="object-cover"
+                      className={`object-cover ${isRepositioningCover ? "cursor-grab active:cursor-grabbing select-none" : ""}`}
+                      style={{ objectPosition: `${tempCoverPos.x}% ${tempCoverPos.y}%` }}
+                      onPointerDown={isRepositioningCover ? handleBannerPointerDown : undefined}
+                      onPointerMove={isRepositioningCover ? handleBannerPointerMove : undefined}
+                      onPointerUp={isRepositioningCover ? handleBannerPointerUp : undefined}
+                      onPointerCancel={isRepositioningCover ? handleBannerPointerUp : undefined}
                     />
                   ) : (
                     <div className="w-full h-full flex items-center justify-center text-slate-400 text-sm font-medium">No Cover Image</div>
                   )}
-                  {isEditMode && (
+                  {isEditMode && !isRepositioningCover && (
                     <div className="absolute inset-0 bg-black/40 hidden group-hover:flex items-center justify-center gap-4 backdrop-blur-sm transition-all z-10">
                       <button
                         onClick={() => coverInputRef.current?.click()}
@@ -1824,6 +1715,29 @@ const Portfolio: React.FC<PortfolioProps> = ({ portfolioId, initialData, onBack,
                       </button>
                     </div>
                   )}
+                  {isEditMode && isRepositioningCover && (
+                    <>
+                      <p className="absolute top-3 left-4 z-20 rounded-full bg-black/40 px-3 py-1 text-[11px] font-medium text-white/80 backdrop-blur-sm">
+                        Drag to reposition your cover
+                      </p>
+                      <div className="absolute bottom-4 right-4 z-20 flex items-center gap-2">
+                        <button
+                          type="button"
+                          onClick={handleCancelCoverReposition}
+                          className="inline-flex items-center gap-1.5 rounded-lg border border-white/20 bg-black/40 px-4 py-2 text-sm font-medium text-white backdrop-blur-sm transition-colors hover:bg-black/55"
+                        >
+                          Cancel
+                        </button>
+                        <button
+                          type="button"
+                          onClick={handleSaveCoverLayout}
+                          className="inline-flex items-center gap-1.5 rounded-lg border border-transparent bg-white px-4 py-2 text-sm font-semibold text-slate-900 shadow-sm transition-colors hover:bg-slate-100"
+                        >
+                          Save Layout
+                        </button>
+                      </div>
+                    </>
+                  )}
                 </div>
               </div>
             )
@@ -1844,7 +1758,7 @@ const Portfolio: React.FC<PortfolioProps> = ({ portfolioId, initialData, onBack,
 
             {showProfileSection && itemsAboveProfile > 0 && (
               <div
-                className="relative mb-6 grid min-h-[80px] grid-flow-row-dense auto-rows-[4px] grid-cols-1 gap-x-6 gap-y-0 md:grid-cols-12"
+                className={`relative mb-6 min-h-[80px] ${PORTFOLIO_DENSE_GRID_CLASS}`}
                 onDragOver={isEditMode ? handleGridDragOver : undefined}
               >
                 {items.slice(0, itemsAboveProfile).map((item, sliceIndex) => renderPortfolioGridItem(item, sliceIndex))}
@@ -2158,7 +2072,7 @@ const Portfolio: React.FC<PortfolioProps> = ({ portfolioId, initialData, onBack,
             {/* Notion-style Grid Canvas */}
             <div
               ref={gridRef}
-              className="grid grid-cols-1 md:grid-cols-12 gap-x-6 gap-y-0 relative min-h-[400px] grid-flow-row-dense auto-rows-[4px]"
+              className={`${PORTFOLIO_DENSE_GRID_CLASS} relative min-h-[400px]`}
               onClick={closeContextMenu}
               onDragOver={handleGridDragOver}
             >
@@ -2357,131 +2271,6 @@ const Portfolio: React.FC<PortfolioProps> = ({ portfolioId, initialData, onBack,
                 </div>
               </div>
             </div>
-          )}
-
-          {coverCropModal && (
-            <div
-              className="fixed inset-0 z-[220] bg-black/60 backdrop-blur-sm flex items-center justify-center p-4"
-              onClick={() => setCoverCropModal(null)}
-            >
-              <div
-                className="w-full max-w-3xl bg-white dark:bg-slate-950 rounded-3xl shadow-2xl border border-slate-200 dark:border-white/10 overflow-hidden"
-                onClick={e => e.stopPropagation()}
-              >
-                <div className="flex items-center justify-between px-5 py-4 border-b border-slate-100 dark:border-white/10">
-                  <div>
-                    <h3 className="text-sm font-semibold text-slate-900 dark:text-white">
-                      {coverCropModal.mode === "reposition" ? "Reposition Cover" : "Set Cover Image"}
-                    </h3>
-                    <p className="text-xs text-slate-500 dark:text-slate-400 mt-1">
-                      Drag to reposition and use zoom to frame your cover in a 4:1 banner.
-                    </p>
-                  </div>
-                  <button
-                    onClick={() => setCoverCropModal(null)}
-                    className="p-2 rounded-full text-slate-400 hover:text-slate-700 dark:hover:text-white transition-colors"
-                  >
-                    Close
-                  </button>
-                </div>
-
-                <div className="p-5 space-y-5">
-                  <div className="rounded-2xl bg-slate-100 dark:bg-slate-900 p-4 flex items-center justify-center">
-                    <div
-                      ref={coverCropPreviewRef}
-                      className="w-full max-w-xl overflow-hidden rounded-2xl bg-black/5 dark:bg-black/30 shadow-inner"
-                      style={{ aspectRatio: String(COVER_BANNER_ASPECT_RATIO) }}
-                      onPointerDown={handleCoverCropPointerDown}
-                      onPointerMove={handleCoverCropPointerMove}
-                      onPointerUp={handleCoverCropPointerUp}
-                      onPointerCancel={handleCoverCropPointerUp}
-                    >
-                      <div
-                        className="w-full h-full bg-center bg-no-repeat bg-cover cursor-grab active:cursor-grabbing"
-                        style={coverCropPreviewStyle}
-                      >
-                        <div
-                          className="w-full h-full pointer-events-none"
-                          style={{
-                            backgroundImage: `
-                                                            linear-gradient(to right, rgba(255,255,255,0.28) 1px, transparent 1px),
-                                                            linear-gradient(to bottom, rgba(255,255,255,0.28) 1px, transparent 1px)
-                                                        `,
-                            backgroundSize: "33.333% 100%, 100% 33.333%",
-                            boxShadow: "inset 0 0 0 1px rgba(255,255,255,0.4)",
-                          }}
-                        />
-                      </div>
-                    </div>
-                  </div>
-
-                  <div className="space-y-2">
-                    <div className="flex items-center justify-between text-xs font-medium text-slate-500 dark:text-slate-400">
-                      <span>Zoom</span>
-                      <span>{coverCropZoom.toFixed(1)}x</span>
-                    </div>
-                    <input
-                      type="range"
-                      min={1}
-                      max={3}
-                      step={0.1}
-                      value={coverCropZoom}
-                      onChange={e => setCoverCropZoom(Number(e.target.value))}
-                      className="w-full accent-brand-600"
-                    />
-                  </div>
-
-                  <div className="flex items-center justify-end gap-3">
-                    <button
-                      type="button"
-                      onClick={() => setCoverCropModal(null)}
-                      className="px-4 py-2 rounded-full text-xs font-semibold border border-slate-200 dark:border-white/10 text-slate-500 hover:text-slate-800 dark:hover:text-white transition-colors"
-                    >
-                      Cancel
-                    </button>
-                    <button
-                      type="button"
-                      disabled={isHeroImageUploading}
-                      onClick={() => {
-                        applyCoverBannerCrop(
-                          coverCropModal.source,
-                          coverCropZoom,
-                          coverCropPan,
-                          croppedDataUrl => {
-                            void persistCroppedHeroImage(croppedDataUrl, "cover-picture", url => {
-                              setProfile(prev => ({
-                                ...prev,
-                                coverUrl: url,
-                                showCover: true,
-                              }));
-                              setCoverCropModal(null);
-                            });
-                          },
-                          COVER_CROP_MAX_OUTPUT_PX
-                        );
-                      }}
-                      className="px-5 py-2 rounded-full text-xs font-semibold bg-brand-600 text-white hover:scale-105 active:scale-95 transition-all shadow-lg shadow-brand-500/25 disabled:opacity-60 disabled:pointer-events-none"
-                    >
-                      {isHeroImageUploading ? "Uploading…" : coverCropModal.mode === "reposition" ? "Save Position" : "Save Cover"}
-                    </button>
-                  </div>
-                </div>
-              </div>
-            </div>
-          )}
-
-          {!isEditMode && !isReadOnly && (
-            <button
-              type="button"
-              onClick={() => setIsEditMode(true)}
-              aria-label="Edit portfolio"
-              className="fixed bottom-10 right-10 z-50 rounded-full bg-slate-900 p-5 text-white shadow-2xl transition-all hover:scale-110 active:scale-90 group dark:bg-white dark:text-slate-900"
-            >
-              <Edit3 size={24} aria-hidden />
-              <span className="absolute right-full top-1/2 mr-4 -translate-y-1/2 whitespace-nowrap rounded-lg bg-slate-900 px-3 py-1.5 text-xs font-medium uppercase tracking-widest text-white opacity-0 shadow-xl transition-opacity group-hover:opacity-100 dark:bg-white dark:text-slate-900">
-                Edit Portfolio
-              </span>
-            </button>
           )}
 
           {pendingDeleteBlock && (

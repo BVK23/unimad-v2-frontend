@@ -39,11 +39,11 @@ export function getAtsRecalculateState(params: {
   const scoredMs = toTimestamp(params.scoredAt);
   const updatedMs = toTimestamp(params.resumeUpdatedAt);
 
-  if (scoredMs == null) {
+  if (params.atsCalcCount <= 0 && scoredMs == null) {
     return { allowed: true, reason: null, message: null };
   }
 
-  if (updatedMs == null) {
+  if (scoredMs == null || updatedMs == null) {
     return {
       allowed: false,
       reason: "missing_timestamps",

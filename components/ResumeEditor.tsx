@@ -1,12 +1,20 @@
 import React, { useState, useRef, useMemo, useEffect, useCallback } from "react";
 import { createPortal } from "react-dom";
 import { PrepareApplicationReturnBar } from "@/components/jobs/PrepareApplicationReturnBar";
+import {
+  AtsScoreModalFooterPlaceholder,
+  AtsScoreModalLoadingPanel,
+  AtsScoreModalRecalculateProgress,
+} from "@/components/resume/AtsScoreModalLoading";
+import { AtsSectionAnalysisRow } from "@/components/resume/AtsSectionAnalysisRow";
 import ResumeKnowledgeBaseModal from "@/components/resume/ResumeKnowledgeBaseModal";
 import { ModalPortalOverlay } from "@/components/ui/ModalPortalOverlay";
 import { PanelResizeHandle } from "@/components/ui/PanelResizeHandle";
 import { DOCUMENT_SAVED_CONFIRMATION_MS } from "@/constants/documentAutosave";
 import { EMPTY_PDF_HIGHLIGHT_MAP } from "@/features/adk-chat/adkResumeHighlightDiff";
 import { useAdkResumeReviewStore } from "@/features/adk-chat/stores/useAdkResumeReviewStore";
+import { buildAtsFixPlan, canRunAtsFix } from "@/features/resume/api/ats-fix-plan";
+import { buildAtsFixMainSessionTitle } from "@/features/resume/api/build-ats-improve-prompt";
 import { formatAtsDeltaLabel, mapAtsScoreToViewModel } from "@/features/resume/api/mapAtsScoreToViewModel";
 import { mapFrontendResumeToBackend } from "@/features/resume/api/mappers";
 import { useCalculateAtsScore } from "@/features/resume/hooks/useCalculateAtsScore";
@@ -26,7 +34,7 @@ import {
   type PrepareApplicationReturnSession,
 } from "@/lib/jobs/prepare-application-return";
 import { buildJobsPrepareReopenHref, buildResumeAssetOnlyHref, parseResumePrepareSearchParams } from "@/lib/jobs/prepare-application-url";
-import { ATS_COMPLETE_THRESHOLD } from "@/lib/resume/atsConstants";
+import { ATS_COMPLETE_THRESHOLD, ATS_IMPROVEMENTS_DISPLAY_LIMIT } from "@/lib/resume/atsConstants";
 import { getAtsRecalculateState } from "@/lib/resume/atsRecalculate";
 import { getAtsScoreQuote } from "@/lib/resume/atsScoreQuote";
 import { loadResumeAtsSession, saveResumeAtsSession } from "@/lib/resume/atsStorage";
@@ -844,11 +852,12 @@ const ResumeEditor: React.FC<ResumeEditorProps> = ({
   }, [atsCache]);
 
   const atsVm = atsMutationVm ?? cachedAtsVm;
+  const atsFixPlan = useMemo(() => (atsVm ? buildAtsFixPlan(atsVm, resume) : []), [atsVm, resume]);
+  const canAtsFix = canRunAtsFix(atsVm, resume);
   const atsCalcCount = atsMutationVm?.ats_calc_count ?? (atsCache?.ok ? atsCache.ats_calc_count : 0);
   const atsScoredAt = atsMutationVm?.scored_at ?? (atsCache?.ok ? atsCache.scored_at : null);
   const atsScoreStale = atsMutationVm?.score_stale ?? (atsCache?.ok ? atsCache.score_stale : false);
-  const atsResumeUpdatedAt =
-    atsMutationVm?.resume_updated_at ?? (atsCache?.ok ? atsCache.resume_updated_at : null) ?? resume.lastModified.toISOString();
+  const atsResumeUpdatedAt = atsMutationVm?.resume_updated_at ?? (atsCache?.ok ? atsCache.resume_updated_at : null);
 
   useEffect(() => {
     if (!showAtsModal || !resumeId?.trim()) return;
@@ -870,15 +879,25 @@ const ResumeEditor: React.FC<ResumeEditorProps> = ({
   const atsScoreClass = atsTone === "green" ? "text-green-600" : atsTone === "yellow" ? "text-yellow-600" : "text-red-600";
   const atsBarClass = atsTone === "green" ? "bg-green-500" : atsTone === "yellow" ? "bg-yellow-500" : "bg-red-500";
   const atsHeaderBg = atsTone === "green" ? "bg-green-50/50" : atsTone === "yellow" ? "bg-yellow-50/50" : "bg-red-50/50";
-  const isFirstAtsCalculation = atsCalcCount === 0 && !atsVm;
+  const isFirstAtsLoad = !atsVm && (atsScorePending || atsCacheLoading);
+  const isRecalculating = Boolean(atsVm) && atsScorePending;
 
   const handleFixWithUnibot = () => {
-    if (fixAllUsed || !atsVm?.improvements.length) return;
+    if (fixAllUsed || !canAtsFix || atsFixPlan.length === 0) return;
     setFixAllUsed(true);
     saveResumeAtsSession(resumeId, { recalcAttemptsUsed: atsCalcCount, fixAllUsed: true });
     setRecalcError(null);
-    const improvementList = atsVm.improvements.map(item => `- ${item}`).join("\n");
-    onImprove(`Please help me improve my resume based on these ATS recommendations:\n${improvementList}`);
+    window.dispatchEvent(
+      new CustomEvent("open-unibot", {
+        detail: {
+          type: "ats_fix_batch",
+          resumeId,
+          sections: atsFixPlan,
+          mainSessionTitle: buildAtsFixMainSessionTitle(resume.title),
+          requestKey: Date.now(),
+        },
+      })
+    );
     setShowAtsModal(false);
   };
 
@@ -3208,10 +3227,14 @@ const ResumeEditor: React.FC<ResumeEditorProps> = ({
                         Resume Strength
                       </span>
                       <div className="mt-4 w-full h-3 bg-white/50 rounded-full overflow-hidden border border-black/5">
-                        <div
-                          className={`h-full rounded-full transition-all duration-1000 ease-out ${atsVm ? atsBarClass : "bg-slate-300"}`}
-                          style={{ width: `${atsVm?.score ?? 0}%` }}
-                        />
+                        {isFirstAtsLoad ? (
+                          <div className="h-full w-full bg-gradient-to-r from-slate-200 via-slate-300 to-slate-200 dark:from-slate-700 dark:via-slate-600 dark:to-slate-700 animate-pulse" />
+                        ) : (
+                          <div
+                            className={`h-full rounded-full transition-all duration-1000 ease-out ${atsVm ? atsBarClass : "bg-slate-300"}`}
+                            style={{ width: `${atsVm?.score ?? 0}%` }}
+                          />
+                        )}
                       </div>
                       {atsVm && (
                         <>
@@ -3250,7 +3273,7 @@ const ResumeEditor: React.FC<ResumeEditorProps> = ({
                       )}
                     </div>
                     <div className="flex flex-col items-end gap-2 flex-shrink-0">
-                      <div className="flex flex-col items-end">
+                      <div className={`flex flex-col items-end ${isFirstAtsLoad ? "animate-pulse" : ""}`}>
                         <span className="font-semibold text-5xl text-slate-900 dark:text-white tabular-nums">
                           {atsScorePending && !atsVm ? "—" : atsVm != null ? atsVm.score : "—"}
                           {atsVm != null && <span className="text-2xl text-slate-500 dark:text-slate-400 font-medium">/100</span>}
@@ -3259,30 +3282,38 @@ const ResumeEditor: React.FC<ResumeEditorProps> = ({
                           <span className={`mt-1 text-sm font-medium tabular-nums ${atsDeltaTone}`}>{atsDeltaLabel}</span>
                         ) : null}
                       </div>
-                      <button
-                        type="button"
-                        onClick={() => void handleRecalculate()}
-                        disabled={atsScorePending || atsScoreError || !atsRecalculateState.allowed}
-                        title={atsRecalculateState.message ?? "Recalculate your ATS score"}
-                        className="inline-flex items-center justify-center gap-2 px-5 py-2.5 rounded-lg border text-sm font-medium shadow-sm transition-colors disabled:opacity-50 disabled:cursor-not-allowed border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 text-slate-800 dark:text-slate-100 hover:bg-slate-50 dark:hover:bg-slate-800"
-                      >
-                        {atsScorePending ? (
-                          <Loader2 size={16} className="animate-spin text-brand-600" />
-                        ) : (
-                          <RefreshCw size={16} className="text-slate-500" />
-                        )}
-                        {atsScorePending ? (isFirstAtsCalculation ? "Calculating…" : "Recalculating…") : "Recalculate"}
-                      </button>
-                      {atsRecalculateState.message && !atsScorePending ? (
-                        <p className="max-w-[220px] text-right text-xs text-slate-500 dark:text-slate-400">{atsRecalculateState.message}</p>
-                      ) : atsCalcCount > 0 ? (
-                        <p className="max-w-[220px] text-right text-xs text-slate-500 dark:text-slate-400">
-                          Calculated {atsCalcCount} {atsCalcCount === 1 ? "time" : "times"}
-                        </p>
+                      {!isFirstAtsLoad ? (
+                        <>
+                          <button
+                            type="button"
+                            onClick={() => void handleRecalculate()}
+                            disabled={atsScorePending || atsScoreError || !atsRecalculateState.allowed}
+                            title={atsRecalculateState.message ?? "Recalculate your ATS score"}
+                            className="inline-flex items-center justify-center gap-2 px-5 py-2.5 rounded-lg border text-sm font-medium shadow-sm transition-colors disabled:opacity-50 disabled:cursor-not-allowed border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 text-slate-800 dark:text-slate-100 hover:bg-slate-50 dark:hover:bg-slate-800"
+                          >
+                            {atsScorePending ? (
+                              <Loader2 size={16} className="animate-spin text-brand-600" />
+                            ) : (
+                              <RefreshCw size={16} className="text-slate-500" />
+                            )}
+                            {atsScorePending ? "Recalculating…" : "Recalculate"}
+                          </button>
+                          {atsRecalculateState.message && !atsScorePending ? (
+                            <p className="max-w-[220px] text-right text-xs text-slate-500 dark:text-slate-400">
+                              {atsRecalculateState.message}
+                            </p>
+                          ) : atsCalcCount > 0 ? (
+                            <p className="max-w-[220px] text-right text-xs text-slate-500 dark:text-slate-400">
+                              Calculated {atsCalcCount} {atsCalcCount === 1 ? "time" : "times"}
+                            </p>
+                          ) : null}
+                        </>
                       ) : null}
                     </div>
                   </div>
                 </div>
+
+                {isRecalculating ? <AtsScoreModalRecalculateProgress /> : null}
 
                 {atsScoreStale && atsVm && !atsScorePending && (
                   <div className="mx-8 flex items-start gap-3 rounded-lg border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-900 dark:border-amber-900/50 dark:bg-amber-950/40 dark:text-amber-200">
@@ -3309,12 +3340,9 @@ const ResumeEditor: React.FC<ResumeEditorProps> = ({
                 )}
 
                 <div className="flex-1 px-8 py-6 space-y-8 overflow-y-auto min-h-0 scrollbar-on-hover">
-                  {(atsScorePending || atsCacheLoading) && !atsVm && (
-                    <div className="flex flex-col items-center justify-center gap-3 py-12 text-slate-500">
-                      <Loader2 className="h-8 w-8 animate-spin text-brand-500" />
-                      <p className="text-sm">Analyzing your resume…</p>
-                    </div>
-                  )}
+                  {isFirstAtsLoad ? <AtsScoreModalLoadingPanel mode="first" /> : null}
+
+                  {isRecalculating ? <AtsScoreModalLoadingPanel mode="recalc" /> : null}
 
                   {atsScoreError && !atsScorePending && (
                     <div className="space-y-4">
@@ -3407,7 +3435,7 @@ const ResumeEditor: React.FC<ResumeEditorProps> = ({
                         <h4 className="text-xs font-medium text-slate-400 uppercase tracking-wider mb-3">Improvements Needed</h4>
                         {atsVm.improvements.length > 0 ? (
                           <ul className="space-y-3">
-                            {atsVm.improvements.map((imp, i) => (
+                            {atsVm.improvements.slice(0, ATS_IMPROVEMENTS_DISPLAY_LIMIT).map((imp, i) => (
                               <li
                                 key={i}
                                 className="flex items-start gap-3 text-sm text-slate-700 dark:text-slate-300 bg-slate-50 dark:bg-slate-800 p-3 rounded-lg"
@@ -3430,25 +3458,8 @@ const ResumeEditor: React.FC<ResumeEditorProps> = ({
                       <div>
                         <h4 className="text-xs font-medium text-slate-400 uppercase tracking-wider mb-3">Section Analysis</h4>
                         <div className="space-y-2">
-                          {atsVm.sectionAnalysis.map((sec, i) => (
-                            <div
-                              key={i}
-                              className="flex items-center justify-between p-3 rounded-lg border border-slate-100 dark:border-slate-800 hover:bg-slate-50 dark:hover:bg-slate-800/50 transition-colors"
-                            >
-                              <span className="font-medium text-slate-700 dark:text-slate-300 text-sm">{sec.name}</span>
-                              <div className="flex items-center gap-2">
-                                <span className="text-xs text-slate-500">{sec.feedback}</span>
-                                {sec.status === "good" && (
-                                  <div className="w-2.5 h-2.5 rounded-full bg-green-500 shadow-sm shadow-green-200" />
-                                )}
-                                {sec.status === "warning" && (
-                                  <div className="w-2.5 h-2.5 rounded-full bg-yellow-500 shadow-sm shadow-yellow-200" />
-                                )}
-                                {sec.status === "critical" && (
-                                  <div className="w-2.5 h-2.5 rounded-full bg-red-500 shadow-sm shadow-red-200" />
-                                )}
-                              </div>
-                            </div>
+                          {atsVm.sectionAnalysis.map(sec => (
+                            <AtsSectionAnalysisRow key={sec.key} section={sec} />
                           ))}
                         </div>
                       </div>
@@ -3456,12 +3467,14 @@ const ResumeEditor: React.FC<ResumeEditorProps> = ({
                   )}
                 </div>
 
-                {atsVm && !atsScoreError && (
+                {isFirstAtsLoad || isRecalculating ? <AtsScoreModalFooterPlaceholder fixAllUsed={fixAllUsed} /> : null}
+
+                {atsVm && !atsScoreError && !isRecalculating ? (
                   <div className="px-8 py-6 border-t border-slate-100 dark:border-slate-800 bg-slate-50/80 dark:bg-slate-900/80 flex flex-col sm:flex-row gap-4">
                     <button
                       type="button"
                       onClick={handleFixWithUnibot}
-                      disabled={fixAllUsed || atsVm.improvements.length === 0}
+                      disabled={fixAllUsed || !canAtsFix}
                       className="flex-1 px-5 py-3 rounded-xl bg-brand-600 hover:bg-brand-700 text-white text-sm font-medium transition-colors disabled:opacity-50 disabled:cursor-not-allowed inline-flex items-center justify-center gap-2"
                     >
                       <Wand2 size={18} />
@@ -3475,7 +3488,7 @@ const ResumeEditor: React.FC<ResumeEditorProps> = ({
                       Fix with a career coach
                     </button>
                   </div>
-                )}
+                ) : null}
               </div>
             </div>,
             document.body

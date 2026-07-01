@@ -1,6 +1,10 @@
 import { getDefaultItemHeightPx, resolvePortfolioLayoutRole } from "@/features/portfolio/constants/portfolioLayout";
 import { resolvePortfolioBlockType } from "@/features/portfolio/utils/normalizePortfolioBlockType";
-import { estimateTitleOnlyTextLayoutHeightPx, isTemplateTitleOnlyTextItem } from "@/features/portfolio/utils/portfolio-html";
+import {
+  estimateTitleOnlyTextLayoutHeightPx,
+  isTitleOnlyTextItem,
+  resolvePortfolioTitleHtmlForItem,
+} from "@/features/portfolio/utils/portfolio-html";
 import type { PortfolioItem } from "@/types";
 
 const COMPACT_ITEM_TYPES = new Set<PortfolioItem["type"]>(["link-box"]);
@@ -13,6 +17,8 @@ const COMPACT_ITEM_TYPES = new Set<PortfolioItem["type"]>(["link-box"]);
  */
 type NormalizePortfolioOptions = {
   clampTitleOnlyHeights?: boolean;
+  /** On load: wrap template section/entry titles in h1/h2 so the editor toolbar matches preview. */
+  normalizeTemplateTitleHeadings?: boolean;
 };
 
 export const normalizePortfolioItem = (item: PortfolioItem, options: NormalizePortfolioOptions = {}): PortfolioItem => {
@@ -26,19 +32,24 @@ export const normalizePortfolioItem = (item: PortfolioItem, options: NormalizePo
   const defaultHeight = getDefaultItemHeightPx(item.type);
   let height = item.height ?? defaultHeight;
 
-  if (!item.heightUserSet && item.type === "link-box" && height > 112) {
+  if (item.type === "link-box" && height > 112) {
     height = defaultHeight;
-  } else if (!item.heightUserSet && COMPACT_ITEM_TYPES.has(item.type) && height > defaultHeight * 1.5) {
+  } else if (COMPACT_ITEM_TYPES.has(item.type) && height > defaultHeight * 1.5) {
     height = defaultHeight;
-  } else if (options.clampTitleOnlyHeights && !item.heightUserSet && isTemplateTitleOnlyTextItem(item)) {
+  } else if (options.clampTitleOnlyHeights && isTitleOnlyTextItem(item)) {
     const estimate = estimateTitleOnlyTextLayoutHeightPx(item);
-    if (height > estimate * 1.25) height = estimate;
+    if (height < estimate) height = estimate;
+    else if (height > estimate * 1.25) height = estimate;
   }
 
   const type = resolvePortfolioBlockType(item);
+  const { heightUserSet: _legacyHeightUserSet, ...itemWithoutLegacyHeightLock } = item;
+  const resolvedTitle =
+    options.normalizeTemplateTitleHeadings && item.type === "text" ? (resolvePortfolioTitleHtmlForItem(item) ?? item.title) : item.title;
   const normalizedItem: PortfolioItem = {
-    ...item,
+    ...itemWithoutLegacyHeightLock,
     type,
+    title: resolvedTitle,
     span: normalizedSpan as PortfolioItem["span"],
     colStart: item.colStart ? Math.max(1, Math.min(12, Math.round(item.colStart))) : item.colStart,
     height,

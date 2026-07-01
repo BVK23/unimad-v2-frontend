@@ -1,8 +1,5 @@
 import React, { useState, useRef, type SetStateAction } from "react";
 import type { PortfolioHighlightMap } from "@/features/adk-chat/adkPortfolioHighlightDiff";
-import { getDefaultItemHeightPx, getMinGridRowsForItem, gridRowSpanForHeightPx } from "@/features/portfolio/constants/portfolioLayout";
-import { useAutoItemHeights } from "@/features/portfolio/hooks/useAutoItemHeights";
-import { usePortfolioGridRemeasure } from "@/features/portfolio/hooks/usePortfolioGridRemeasure";
 import { getPortfolioBlockDeleteLabel } from "@/features/portfolio/utils/getPortfolioBlockDeleteLabel";
 import { normalizePortfolioHtmlForRender } from "@/features/portfolio/utils/portfolio-html";
 import { UploadError, uploadPortfolioFile } from "@/features/portfolio/utils/upload";
@@ -26,7 +23,7 @@ import {
 import { useGridResize } from "../hooks/useGridResize";
 import { PortfolioItem, ContentType } from "../types";
 import BlockRenderer from "./BlockRenderer";
-import RichTextEditor from "./RichTextEditor";
+import RichTextEditor, { type RichTextEditorSelectionInfo } from "./RichTextEditor";
 import DeleteBlockConfirmModal from "./portfolio/DeleteBlockConfirmModal";
 import { PortfolioAdkBlockHighlight } from "./portfolio/PortfolioAdkBlockHighlight";
 import PortfolioImage from "./portfolio/PortfolioImage";
@@ -42,9 +39,13 @@ interface ProjectDetailViewProps {
   maxWidthClassName?: string;
   gridColumns?: 3 | 12;
   adkHighlights?: PortfolioHighlightMap;
-  enableDenseLayoutParity?: boolean;
   backLabel?: string;
   hideToolbar?: boolean;
+  isEditMode?: boolean;
+  onToggleEditMode?: () => void;
+  enableSelectionImprove?: boolean;
+  onTextSelectionChange?: (info: RichTextEditorSelectionInfo | null) => void;
+  selectionImproveSlot?: React.ReactNode;
 }
 
 const ProjectDetailView: React.FC<ProjectDetailViewProps> = ({
@@ -55,21 +56,35 @@ const ProjectDetailView: React.FC<ProjectDetailViewProps> = ({
   maxWidthClassName,
   gridColumns = 3,
   adkHighlights,
-  enableDenseLayoutParity = true,
   backLabel = "Back to Portfolio",
   hideToolbar = false,
+  isEditMode: isEditModeProp,
+  onToggleEditMode,
+  enableSelectionImprove = false,
+  onTextSelectionChange,
+  selectionImproveSlot,
 }) => {
-  const [isEditMode, setIsEditMode] = useState(true);
+  const [uncontrolledEditMode, setUncontrolledEditMode] = useState(true);
+  const isEditMode = isEditModeProp ?? uncontrolledEditMode;
+  const handleToggleEditMode = onToggleEditMode ?? (() => setUncontrolledEditMode(prev => !prev));
+
   const [draggedBlockIndex, setDraggedBlockIndex] = useState<number | null>(null);
   const [contextMenu, setContextMenu] = useState<{ x: number; y: number; targetId?: string } | null>(null);
   const [pendingDeleteBlockId, setPendingDeleteBlockId] = useState<string | null>(null);
   const [coverUploadError, setCoverUploadError] = useState<string | null>(null);
   const [isCoverUploading, setIsCoverUploading] = useState(false);
-  const [collapsedHeights, setCollapsedHeights] = useState<Record<string, number>>({});
-  const [gridMetrics, setGridMetrics] = useState({ rowHeight: 12, rowGap: 24 });
   const fileInputRef = useRef<HTMLInputElement>(null);
   const dragHandleArmedBlockIdRef = useRef<string | null>(null);
   const itemRefs = useRef<Record<string, HTMLDivElement | null>>({});
+
+  const selectionEditorProps =
+    enableSelectionImprove && isEditMode
+      ? {
+          unifiedSelectionToolbar: true as const,
+          selectionImproveSlot,
+          onSelectionChange: onTextSelectionChange,
+        }
+      : {};
 
   const blocks: PortfolioItem[] = (project.detailedBlocks || []).map(b => {
     const rawSpan = Number(b.span ?? 1);
@@ -95,7 +110,6 @@ const ProjectDetailView: React.FC<ProjectDetailViewProps> = ({
   });
   const allowedTypes: ContentType[] = allowedBlockTypes || ["text", "media", "page-card", "link-box", "table", "embed"];
   const editorMaxWidth = maxWidthClassName || "max-w-4xl";
-  const GRID_ROW_PX = 12;
 
   const handleUpdateBlock = (id: string, updates: Partial<PortfolioItem>) => {
     const newBlocks = blocks.map(b => (b.id === id ? { ...b, ...updates } : b));
@@ -107,46 +121,7 @@ const ProjectDetailView: React.FC<ProjectDetailViewProps> = ({
     onUpdateProject({ ...project, detailedBlocks: newBlocks });
   };
 
-  const { gridRef, resizing, initResize } = useGridResize(blocks, handleUpdateBlocks);
-  const updateItemHeight = (id: string, height: number) => {
-    handleUpdateBlock(id, { height });
-  };
-  const { handleMeasureContentHeight } = useAutoItemHeights({
-    items: blocks,
-    onUpdateHeight: updateItemHeight,
-    resizingId: resizing?.id ?? null,
-  });
-  const handleMeasureForLayout = (id: string, measuredHeight: number) => {
-    handleMeasureContentHeight(id, measuredHeight);
-  };
-
-  usePortfolioGridRemeasure({
-    portfolioId: project.id,
-    items: blocks,
-    itemRefs,
-    gridRef,
-    onMeasureContentHeight: handleMeasureForLayout,
-  });
-
-  const handleCollapsedHeightMeasure = (id: string, measuredHeight: number) => {
-    setCollapsedHeights(prev => {
-      const nextHeight = Math.max(80, measuredHeight);
-      if (prev[id] && Math.abs(prev[id] - nextHeight) < 1) return prev;
-      return { ...prev, [id]: nextHeight };
-    });
-  };
-
-  const getLayoutHeightPx = (block: PortfolioItem) => {
-    if (block.type === "text" && block.isCollapsible && block.isCollapsed) {
-      return collapsedHeights[block.id] ?? 80;
-    }
-    return block.height ?? getDefaultItemHeightPx(block.type);
-  };
-
-  const getRowSpanForBlock = (block: PortfolioItem) => {
-    const heightPx = getLayoutHeightPx(block);
-    return gridRowSpanForHeightPx(heightPx, getMinGridRowsForItem(block.type), gridMetrics.rowHeight, gridMetrics.rowGap);
-  };
+  const { gridRef, resizing, initResize } = useGridResize(blocks, handleUpdateBlocks, itemRefs);
 
   const handleAddBlock = (type: ContentType, preset?: Partial<PortfolioItem>) => {
     const getDefaultSpanForType = (contentType: ContentType): PortfolioItem["span"] => {
@@ -323,18 +298,25 @@ const ProjectDetailView: React.FC<ProjectDetailViewProps> = ({
     const rect = e.currentTarget.getBoundingClientRect();
     const nearLeft = e.clientX - rect.left <= edgeThreshold;
     const nearRight = rect.right - e.clientX <= edgeThreshold;
-    const nearTop = e.clientY - rect.top <= edgeThreshold;
-    const nearBottom = rect.bottom - e.clientY <= edgeThreshold;
+    let nearTop = e.clientY - rect.top <= edgeThreshold;
+    let nearBottom = rect.bottom - e.clientY <= edgeThreshold;
+
+    if (block.type === "text") {
+      nearTop = false;
+      nearBottom = false;
+    }
+
     const nearLeftOrRight = nearLeft || nearRight;
     const nearTopOrBottom = nearTop || nearBottom;
 
     if (!nearLeftOrRight && !nearTopOrBottom) return;
     const axis = nearLeftOrRight && nearTopOrBottom ? "both" : nearTopOrBottom ? "y" : "x";
     const xHandle = nearLeft ? "left" : "right";
-    initResize(e, block, axis, xHandle);
+    const yHandle = nearTop ? "top" : "bottom";
+    initResize(e, block, axis, xHandle, yHandle);
   };
 
-  const handleEdgeResizeHover = (e: React.MouseEvent<HTMLDivElement>) => {
+  const handleEdgeResizeHover = (e: React.MouseEvent<HTMLDivElement>, block: PortfolioItem) => {
     if (!isEditMode || Boolean(resizing)) return;
     const target = e.target as HTMLElement;
     if (target.closest('input, textarea, button, select, [contenteditable="true"]')) {
@@ -346,8 +328,13 @@ const ProjectDetailView: React.FC<ProjectDetailViewProps> = ({
     const rect = e.currentTarget.getBoundingClientRect();
     const nearLeft = e.clientX - rect.left <= edgeThreshold;
     const nearRight = rect.right - e.clientX <= edgeThreshold;
-    const nearTop = e.clientY - rect.top <= edgeThreshold;
-    const nearBottom = rect.bottom - e.clientY <= edgeThreshold;
+    let nearTop = e.clientY - rect.top <= edgeThreshold;
+    let nearBottom = rect.bottom - e.clientY <= edgeThreshold;
+
+    if (block.type === "text") {
+      nearTop = false;
+      nearBottom = false;
+    }
     const nearHorizontal = nearLeft || nearRight;
     const nearVertical = nearTop || nearBottom;
 
@@ -356,21 +343,6 @@ const ProjectDetailView: React.FC<ProjectDetailViewProps> = ({
     else if (nearHorizontal) e.currentTarget.style.cursor = "ew-resize";
     else e.currentTarget.style.cursor = "default";
   };
-
-  React.useEffect(() => {
-    if (!enableDenseLayoutParity || !gridRef.current) return;
-    const node = gridRef.current;
-    const updateGridMetrics = () => {
-      const styles = window.getComputedStyle(node);
-      const parsedRowGap = Number.parseFloat(styles.rowGap || "24");
-      const rowGap = Number.isFinite(parsedRowGap) ? parsedRowGap : 24;
-      setGridMetrics(prev => (prev.rowHeight === GRID_ROW_PX && prev.rowGap === rowGap ? prev : { rowHeight: GRID_ROW_PX, rowGap }));
-    };
-    updateGridMetrics();
-    const observer = new ResizeObserver(updateGridMetrics);
-    observer.observe(node);
-    return () => observer.disconnect();
-  }, [enableDenseLayoutParity, GRID_ROW_PX, gridRef]);
 
   return (
     <div className="flex-1 bg-slate-50 dark:bg-slate-950 h-full overflow-y-auto no-scrollbar relative animate-in slide-in-from-right duration-300">
@@ -396,8 +368,13 @@ const ProjectDetailView: React.FC<ProjectDetailViewProps> = ({
           </button>
           <div className="flex items-center gap-3">
             <button
-              onClick={() => setIsEditMode(!isEditMode)}
-              className={`flex items-center gap-2 px-6 py-2 rounded-full text-xs font-black uppercase tracking-widest transition-all ${isEditMode ? "bg-brand-50 text-brand-600 shadow-sm" : "bg-slate-900 text-white shadow-xl hover:scale-105 active:scale-95"}`}
+              type="button"
+              onClick={handleToggleEditMode}
+              className={`flex items-center gap-2 px-6 py-2 rounded-xl text-xs font-semibold transition-all active:scale-[0.99] ${
+                isEditMode
+                  ? "bg-brand-50 text-brand-600 shadow-sm"
+                  : "bg-brand-600 text-white shadow-lg shadow-brand-500/25 hover:bg-brand-700"
+              }`}
             >
               {isEditMode ? (
                 <>
@@ -438,7 +415,7 @@ const ProjectDetailView: React.FC<ProjectDetailViewProps> = ({
           <PortfolioImage src={project.content} alt={project.title || "Project cover"} fill sizes="100vw" className="object-cover" />
         ) : (
           <div className="w-full h-full flex items-center justify-center border-b border-slate-200 dark:border-white/10 border-dashed">
-            <span className="text-slate-300 font-bold uppercase tracking-widest text-sm flex items-center gap-2">
+            <span className="text-slate-300 font-bold text-sm flex items-center gap-2">
               <ImageIcon size={20} /> No Cover Image
             </span>
           </div>
@@ -449,14 +426,15 @@ const ProjectDetailView: React.FC<ProjectDetailViewProps> = ({
           </div>
         )}
 
-        <div className="absolute inset-0 bg-gradient-to-t from-[#080808] via-[#080808]/20 to-transparent flex flex-col justify-end p-8 md:p-16">
+        <div className="absolute inset-0 bg-gradient-to-t from-slate-950 via-slate-950/20 to-transparent flex flex-col justify-end p-8 md:p-16">
           <div className={`${editorMaxWidth} mx-auto w-full group/text`}>
             {isEditMode ? (
               <RichTextEditor
                 value={normalizePortfolioHtmlForRender(project.title || "")}
                 onChange={value => onUpdateProject({ ...project, title: value })}
-                className={`block w-full bg-transparent text-4xl md:text-6xl font-semibold text-white outline-none mb-2 min-h-[2.5rem] placeholder:text-white/50 ${PAGE_HERO_RICH_TEXT_CLASSES}`}
+                className={`block w-full bg-transparent text-4xl md:text-6xl font-semibold text-white outline-none mb-2 placeholder:text-white/50 ${PAGE_HERO_RICH_TEXT_CLASSES}`}
                 placeholder="Page Title"
+                {...selectionEditorProps}
               />
             ) : (
               <h1
@@ -471,13 +449,14 @@ const ProjectDetailView: React.FC<ProjectDetailViewProps> = ({
               <RichTextEditor
                 value={normalizePortfolioHtmlForRender(project.description || "")}
                 onChange={value => onUpdateProject({ ...project, description: value })}
-                className={`block w-full max-w-2xl bg-transparent text-xl text-white/80 outline-none min-h-[3rem] placeholder:text-white/40 ${PAGE_HERO_RICH_TEXT_CLASSES}`}
+                className={`block w-full max-w-2xl resize-none bg-transparent text-xl text-white/80 outline-none placeholder:text-white/40 ${PAGE_HERO_RICH_TEXT_CLASSES}`}
                 placeholder="Add a description..."
+                {...selectionEditorProps}
               />
             ) : (
               project.description && (
                 <p
-                  className="text-xl text-white/80 max-w-2xl leading-relaxed text-balance drop-shadow-md [&_em]:italic [&_strong]:font-bold"
+                  className={`text-xl text-white/80 max-w-2xl leading-relaxed text-balance drop-shadow-md ${PAGE_HERO_RICH_TEXT_CLASSES}`}
                   dangerouslySetInnerHTML={{ __html: normalizePortfolioHtmlForRender(project.description) }}
                 />
               )
@@ -487,33 +466,24 @@ const ProjectDetailView: React.FC<ProjectDetailViewProps> = ({
       </div>
 
       {/* Grid Container */}
-      <div className={`${editorMaxWidth} mx-auto px-4 pt-16 pb-40 min-h-[500px]`} onClick={() => setContextMenu(null)}>
+      <div className={`${editorMaxWidth} mx-auto px-6 py-16 pb-40 min-h-[500px]`} onClick={() => setContextMenu(null)}>
         <div
           ref={gridRef as React.RefObject<HTMLDivElement>}
-          className={`grid grid-cols-1 ${gridColumns === 12 ? "md:grid-cols-12" : "md:grid-cols-3"} gap-6 relative ${enableDenseLayoutParity ? "grid-flow-row-dense auto-rows-[12px]" : ""}`}
+          className={`grid grid-cols-1 ${gridColumns === 12 ? "md:grid-cols-12" : "md:grid-cols-3"} gap-6 relative`}
         >
           {blocks.map((block, index) => (
             <div
               key={block.id}
               style={{
                 gridColumnStart: block.colStart,
-                ...(enableDenseLayoutParity
-                  ? {
-                      gridRowEnd: `span ${getRowSpanForBlock(block)}`,
-                      height: block.heightUserSet ? "100%" : `${getLayoutHeightPx(block)}px`,
-                      alignSelf: "start",
-                    }
-                  : {
-                      ...(block.height ? { height: `${block.height}px` } : {}),
-                      alignSelf: "start",
-                    }),
+                ...(block.height && block.type !== "text" ? { height: `${block.height}px` } : {}),
               }}
               className={`
                 ${getSpanClass(block.span)} 
                 relative group transition-all duration-300
                 ${isEditMode ? "rounded-[2rem]" : ""}
                 ${draggedBlockIndex === index ? "opacity-30 scale-[0.98]" : "opacity-100"}
-                ${block.type === "link-box" || block.type === "page-card" || block.type === "project" ? "self-start" : ""}
+                ${block.type === "link-box" ? "self-start" : ""}
               `}
             >
               <PortfolioAdkBlockHighlight kind={adkHighlights?.[`page:${project.id}:block:${block.id}`]} className="h-full w-full">
@@ -525,14 +495,14 @@ const ProjectDetailView: React.FC<ProjectDetailViewProps> = ({
                   onDragEnd={resetDragState}
                   onContextMenu={e => handleContextMenu(e, block.id)}
                   onMouseDown={e => handleEdgeResizeStart(e, block)}
-                  onMouseMove={handleEdgeResizeHover}
+                  onMouseMove={e => handleEdgeResizeHover(e, block)}
                   onMouseLeave={e => {
                     e.currentTarget.style.cursor = "default";
                   }}
                   onMouseUpCapture={() => {
                     dragHandleArmedBlockIdRef.current = null;
                   }}
-                  className={`w-full relative ${block.heightUserSet || enableDenseLayoutParity ? "h-full" : "h-auto"}`}
+                  className="w-full relative h-auto"
                 >
                   {/* Block Controls */}
                   {isEditMode && (
@@ -570,9 +540,10 @@ const ProjectDetailView: React.FC<ProjectDetailViewProps> = ({
                     item={block}
                     isEditMode={isEditMode}
                     onUpdate={handleUpdateBlock}
-                    onMeasureCollapsedHeight={handleCollapsedHeightMeasure}
-                    onMeasureContentHeight={handleMeasureForLayout}
                     isNestedDetailView
+                    enableSelectionImprove={enableSelectionImprove}
+                    onTextSelectionChange={onTextSelectionChange}
+                    selectionImproveSlot={selectionImproveSlot}
                   />
 
                   {isEditMode && (

@@ -1,6 +1,37 @@
 import type { UnibotResumeSection } from "@/components/chat/unibot-incoming-request";
 import { RESUME_IMPROVE_PREFIX } from "@/features/adk-chat/handoff-prompts";
 
+const ATS_IMPROVE_BODY_MARKER = "based on an ATS score report";
+
+const ATS_SECTION_LABELS: Record<string, string> = {
+  summary: "Summary",
+  profile: "Summary",
+  experience: "Experience",
+  skills: "Skills",
+  education: "Education",
+  projects: "Projects",
+  certifications: "Certifications",
+  custom: "Custom",
+};
+
+export const isAtsImproveAgentMessage = (text: string): boolean => {
+  const trimmed = text.trim();
+  return trimmed.includes("You are improving the") && trimmed.includes(ATS_IMPROVE_BODY_MARKER);
+};
+
+/** Map stored ADK user turn (full ATS bootstrap) back to the short UI bubble after reload. */
+export const resumeDisplayTextForAtsImproveAgentMessage = (text: string, sectionFallback?: string): string | null => {
+  if (!isAtsImproveAgentMessage(text)) return null;
+  const match = text.match(/You are improving the (.+?) section based on an ATS score report/i);
+  const label = match?.[1]?.trim();
+  if (label) return `ATS fix: Improve ${label}`;
+  if (sectionFallback?.trim()) {
+    const key = sectionFallback.trim().toLowerCase();
+    return `ATS fix: Improve ${ATS_SECTION_LABELS[key] ?? sectionFallback}`;
+  }
+  return "ATS fix: Improve Resume";
+};
+
 export type ResumeImprovePromptInput = {
   section: UnibotResumeSection;
   /** Whether the editor field already has user-written content. */
@@ -82,6 +113,9 @@ const ALL_DISPLAY_MESSAGES = new Set([...Object.values(DISPLAY_WHEN_CONTENT), ..
 export function resumeImproveUserDisplayText(sentText: string, section?: string, entryId?: string): string {
   const trimmed = sentText.trim();
   if (!trimmed) return trimmed;
+  if (trimmed.startsWith("ATS fix: Improve ")) return trimmed;
+  const atsDisplay = resumeDisplayTextForAtsImproveAgentMessage(trimmed, section);
+  if (atsDisplay) return atsDisplay;
   if (ALL_DISPLAY_MESSAGES.has(trimmed)) return trimmed;
   if (ALL_AGENT_BOOTSTRAPS.has(trimmed)) {
     const hasContent = !trimmed.toLowerCase().includes("craft ") && !trimmed.toLowerCase().includes("add ");
@@ -114,6 +148,7 @@ export function isResumeImproveHandoffPrompt(text: string): boolean {
   const trimmed = text.trim();
   if (!trimmed) return false;
   if (trimmed.startsWith(RESUME_IMPROVE_PREFIX)) return true;
+  if (resumeDisplayTextForAtsImproveAgentMessage(trimmed) != null) return true;
   if (ALL_AGENT_BOOTSTRAPS.has(trimmed)) return true;
   if (ALL_DISPLAY_MESSAGES.has(trimmed)) return true;
   return false;

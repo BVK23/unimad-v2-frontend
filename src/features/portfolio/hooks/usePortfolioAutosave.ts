@@ -1,11 +1,13 @@
 "use client";
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { DOCUMENT_AUTOSAVE_DELAY_MS, DOCUMENT_SAVED_CONFIRMATION_MS } from "@/constants/documentAutosave";
-import { flushPortfolioLayoutRemeasure, waitForPortfolioLayoutSettle } from "@/features/portfolio/layout/portfolioLayoutRemeasure";
+import { DOCUMENT_SAVED_CONFIRMATION_MS } from "@/constants/documentAutosave";
+import { waitForPortfolioLayoutSettle } from "@/features/portfolio/layout/portfolioLayoutRemeasure";
 import { usePortfolioStore } from "@/features/portfolio/store/usePortfolioStore";
 import { getPortfolioContentSignature } from "@/features/portfolio/utils/getPortfolioContentSignature";
 import { useUpdatePortfolio } from "./useUpdatePortfolio";
+
+const AUTOSAVE_DELAY_MS = 5000;
 
 export function usePortfolioAutosave(portfolioId: string, options?: { enabled?: boolean }) {
   const enabled = options?.enabled !== false && Boolean(portfolioId?.trim());
@@ -17,11 +19,38 @@ export function usePortfolioAutosave(portfolioId: string, options?: { enabled?: 
   const [savedConfirmationVisible, setSavedConfirmationVisible] = useState(false);
 
   const saveInFlightRef = useRef(false);
+  const savedConfirmationTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const queuedSaveRef = useRef(false);
   const latestSnapshotRef = useRef("");
   const runSaveRef = useRef<((source: "auto" | "manual") => Promise<void>) | null>(null);
   const acknowledgedSeededForIdRef = useRef<string | null>(null);
-  const savedConfirmationTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  const currentSnapshot = useMemo(() => (portfolio ? getPortfolioContentSignature(portfolio) : ""), [portfolio]);
+
+  useEffect(() => {
+    latestSnapshotRef.current = currentSnapshot;
+  }, [currentSnapshot]);
+
+  useEffect(() => {
+    if (!portfolio) return;
+    if (acknowledgedSeededForIdRef.current === portfolioId) return;
+
+    acknowledgedSeededForIdRef.current = portfolioId;
+    const initialSnapshot = getPortfolioContentSignature(portfolio);
+    setLastAcknowledgedSnapshot(initialSnapshot);
+    latestSnapshotRef.current = initialSnapshot;
+    saveInFlightRef.current = false;
+    queuedSaveRef.current = false;
+    setActiveSaveSource(null);
+  }, [portfolioId, portfolio]);
+
+  useEffect(() => {
+    if (acknowledgedSeededForIdRef.current !== portfolioId) {
+      acknowledgedSeededForIdRef.current = null;
+    }
+  }, [portfolioId]);
+
+  const hasPendingUnsavedChanges = Boolean(portfolio) && currentSnapshot !== lastAcknowledgedSnapshot;
 
   const clearSavedConfirmationTimer = useCallback(() => {
     if (savedConfirmationTimerRef.current) {
@@ -39,44 +68,23 @@ export function usePortfolioAutosave(portfolioId: string, options?: { enabled?: 
     }, DOCUMENT_SAVED_CONFIRMATION_MS);
   }, [clearSavedConfirmationTimer]);
 
-  const currentSnapshot = useMemo(() => (portfolio ? getPortfolioContentSignature(portfolio) : ""), [portfolio]);
-  const hasPendingUnsavedChanges = Boolean(portfolio) && currentSnapshot !== lastAcknowledgedSnapshot;
-  const isSaving = isSavingRemote || activeSaveSource !== null;
-
-  useEffect(() => {
-    latestSnapshotRef.current = currentSnapshot;
-  }, [currentSnapshot]);
-
-  useEffect(() => {
-    if (!portfolio) return;
-    if (acknowledgedSeededForIdRef.current === portfolioId) return;
-
-    acknowledgedSeededForIdRef.current = portfolioId;
-    const initialSnapshot = getPortfolioContentSignature(portfolio);
-    setLastAcknowledgedSnapshot(initialSnapshot);
-    latestSnapshotRef.current = initialSnapshot;
-    saveInFlightRef.current = false;
-    queuedSaveRef.current = false;
-    setActiveSaveSource(null);
-    setSavedConfirmationVisible(false);
-    clearSavedConfirmationTimer();
-  }, [clearSavedConfirmationTimer, portfolioId, portfolio]);
-
-  useEffect(() => {
-    if (acknowledgedSeededForIdRef.current !== portfolioId) {
-      acknowledgedSeededForIdRef.current = null;
-    }
-  }, [portfolioId]);
-
-  useEffect(() => {
-    if (!hasPendingUnsavedChanges) return;
-    setSavedConfirmationVisible(false);
-    clearSavedConfirmationTimer();
-  }, [clearSavedConfirmationTimer, hasPendingUnsavedChanges]);
-
   useEffect(() => {
     return () => clearSavedConfirmationTimer();
   }, [clearSavedConfirmationTimer]);
+
+  useEffect(() => {
+    if (hasPendingUnsavedChanges) {
+      setSavedConfirmationVisible(false);
+      clearSavedConfirmationTimer();
+    }
+  }, [clearSavedConfirmationTimer, hasPendingUnsavedChanges]);
+
+  const saveStatusLabel = useMemo(() => {
+    if (!enabled) return "";
+    if (isSavingRemote) return activeSaveSource === "manual" ? "Saving..." : "Autosaving...";
+    if (hasPendingUnsavedChanges) return "Unsaved changes";
+    return "All changes saved";
+  }, [activeSaveSource, enabled, hasPendingUnsavedChanges, isSavingRemote]);
 
   const runSave = useCallback(
     async (source: "auto" | "manual") => {
@@ -89,7 +97,6 @@ export function usePortfolioAutosave(portfolioId: string, options?: { enabled?: 
 
       const snapshotAtStart = latestSnapshotRef.current;
 
-      flushPortfolioLayoutRemeasure();
       await waitForPortfolioLayoutSettle();
 
       const dataToSave = usePortfolioStore.getState().getPortfolioData(portfolioId);
@@ -101,7 +108,9 @@ export function usePortfolioAutosave(portfolioId: string, options?: { enabled?: 
       try {
         await updatePortfolioMutation(dataToSave);
         setLastAcknowledgedSnapshot(snapshotAtStart);
-        showSavedConfirmation();
+        if (latestSnapshotRef.current === snapshotAtStart) {
+          showSavedConfirmation();
+        }
 
         if (latestSnapshotRef.current !== snapshotAtStart) {
           queuedSaveRef.current = true;
@@ -132,7 +141,7 @@ export function usePortfolioAutosave(portfolioId: string, options?: { enabled?: 
 
     const timer = window.setTimeout(() => {
       void runSave("auto");
-    }, DOCUMENT_AUTOSAVE_DELAY_MS);
+    }, AUTOSAVE_DELAY_MS);
 
     return () => window.clearTimeout(timer);
   }, [enabled, hasPendingUnsavedChanges, runSave]);
@@ -150,7 +159,7 @@ export function usePortfolioAutosave(portfolioId: string, options?: { enabled?: 
   }, [enabled, hasPendingUnsavedChanges]);
 
   return {
-    isSaving,
+    saveStatusLabel,
     isSavingRemote,
     hasPendingUnsavedChanges,
     savedConfirmationVisible,

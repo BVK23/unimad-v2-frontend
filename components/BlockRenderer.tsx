@@ -1,10 +1,10 @@
-import React, { useEffect, useLayoutEffect, useRef, useState } from "react";
+import React, { useEffect, useRef, useState } from "react";
 import { resolveLinkTitle } from "@/features/portfolio/server-actions/resolve-link-title";
 import { hostnameLooksLikeWebAddress, normalizeExternalUrl } from "@/features/portfolio/utils/external-url";
-import { measurePortfolioBlockRootHeight } from "@/features/portfolio/utils/measurePortfolioBlockHeight";
 import { resolvePortfolioBlockType } from "@/features/portfolio/utils/normalizePortfolioBlockType";
 import {
   buildPortfolioTitleUpdate,
+  isPortfolioTextContentEmpty,
   normalizePortfolioHtmlForRender,
   portfolioSectionTitleClassName,
   resolvePortfolioTextTitlePresentation,
@@ -24,7 +24,7 @@ import {
   Edit3,
 } from "lucide-react";
 import { PortfolioItem } from "../types";
-import RichTextEditor from "./RichTextEditor";
+import RichTextEditor, { type RichTextEditorSelectionInfo } from "./RichTextEditor";
 import PortfolioImage from "./portfolio/PortfolioImage";
 
 // Restores visible rendering for HTML emitted by RichTextEditor's execCommand output.
@@ -40,7 +40,8 @@ const RICH_TEXT_CONTENT_CLASSES =
   "[&_h3]:text-xl [&_h3]:font-semibold " +
   "[&_strong]:font-bold [&_b]:font-bold " +
   "[&_em]:italic [&_i]:italic " +
-  "[&_u]:underline";
+  "[&_u]:underline " +
+  "break-words [overflow-wrap:anywhere]";
 
 interface BlockRendererProps {
   item: PortfolioItem;
@@ -50,45 +51,40 @@ interface BlockRendererProps {
   onMeasureCollapsedHeight?: (id: string, height: number) => void;
   onMeasureContentHeight?: (id: string, height: number) => void;
   isNestedDetailView?: boolean;
+  enableSelectionImprove?: boolean;
+  onTextSelectionChange?: (info: RichTextEditorSelectionInfo | null) => void;
+  selectionImproveSlot?: React.ReactNode;
 }
 
-/** Fills the grid row when the user resized; otherwise grows with content for measurement. */
-const blockCellSizingClass = (heightUserSet?: boolean) => (heightUserSet ? "h-full overflow-hidden" : "h-auto w-full");
+const GRID_MEASURED_BLOCK_TYPES = new Set<PortfolioItem["type"]>(["text", "table", "page-card", "media"]);
+const TEXT_BLOCK_OUTER_PADDING_PX = 48;
 
-const useBlockContentMeasure = (
-  itemId: string,
+const usePortfolioGridContentMeasure = (
+  item: PortfolioItem,
   enabled: boolean,
-  onMeasure: BlockRendererProps["onMeasureContentHeight"],
+  onMeasure: ((id: string, height: number) => void) | undefined,
+  measurerRef: React.RefObject<HTMLDivElement | null>,
   deps: React.DependencyList
 ) => {
-  const rootRef = useRef<HTMLDivElement>(null);
-
   useEffect(() => {
-    if (!enabled || !onMeasure || !rootRef.current) return;
+    if (!enabled || !onMeasure || !GRID_MEASURED_BLOCK_TYPES.has(item.type)) return;
 
-    const node = rootRef.current;
+    const node = measurerRef.current;
+    if (!node) return;
+
     const report = () => {
-      onMeasure(itemId, measurePortfolioBlockRootHeight(node));
+      let height = Math.ceil(node.getBoundingClientRect().height);
+      if (item.type === "text") {
+        height += TEXT_BLOCK_OUTER_PADDING_PX;
+      }
+      onMeasure(item.id, height);
     };
-    report();
 
+    report();
     const observer = new ResizeObserver(() => report());
     observer.observe(node);
-
-    const raf = requestAnimationFrame(report);
-    return () => {
-      cancelAnimationFrame(raf);
-      observer.disconnect();
-    };
-  }, [deps, enabled, itemId, onMeasure]);
-
-  useLayoutEffect(() => {
-    if (!enabled || !onMeasure || !rootRef.current) return;
-    const node = rootRef.current;
-    onMeasure(itemId, measurePortfolioBlockRootHeight(node));
-  }, [deps, enabled, itemId, onMeasure]);
-
-  return rootRef;
+    return () => observer.disconnect();
+  }, [deps, enabled, item.id, item.type, measurerRef, onMeasure]);
 };
 
 type LinkBoxBlockProps = {
@@ -146,8 +142,7 @@ const LinkBoxBlock = React.forwardRef<HTMLDivElement, LinkBoxBlockProps>(functio
   const hasPreviewImage = Boolean(item.content);
   const compact = !isEditMode && (item.height ?? 96) <= 110;
 
-  const fillsCardHeight = item.heightUserSet === true;
-  const linkCardClassName = `w-full flex items-center p-4 border rounded-2xl bg-white dark:bg-white/5 transition-all group/link ${fillsCardHeight ? "h-full" : ""} ${isEditMode ? "border-slate-100 dark:border-white/10 hover:border-brand-500/30" : "border-slate-100 dark:border-white/10 hover:shadow-lg hover:-translate-y-1"} ${isMediaDragOver && isEditMode ? "border-brand-500 ring-2 ring-brand-200" : ""}`;
+  const linkCardClassName = `w-full flex items-center p-4 border rounded-2xl bg-white dark:bg-white/5 transition-all group/link ${shellClassName.includes("h-full") ? "h-full min-h-0" : ""} ${isEditMode ? "border-slate-100 dark:border-white/10 hover:border-brand-500/30" : "border-slate-100 dark:border-white/10 hover:shadow-lg hover:-translate-y-1"} ${isMediaDragOver && isEditMode ? "border-brand-500 ring-2 ring-brand-200" : ""}`;
 
   const onDropLinkPreview = (e: React.DragEvent<HTMLDivElement>) => {
     if (!isEditMode) return;
@@ -369,10 +364,15 @@ const BlockRenderer: React.FC<BlockRendererProps> = ({
   onMeasureCollapsedHeight,
   onMeasureContentHeight,
   isNestedDetailView = false,
+  enableSelectionImprove = false,
+  onTextSelectionChange,
+  selectionImproveSlot,
 }) => {
   const item: PortfolioItem = { ...rawItem, type: resolvePortfolioBlockType(rawItem) };
   const mediaInputRef = useRef<HTMLInputElement>(null);
+  const canvasCoverInputRef = useRef<HTMLInputElement>(null);
   const collapsedTextRef = useRef<HTMLDivElement>(null);
+  const contentMeasurerRef = useRef<HTMLDivElement>(null);
   const [isMediaDragOver, setIsMediaDragOver] = useState(false);
   const [isUploading, setIsUploading] = useState(false);
   const [uploadError, setUploadError] = useState<string | null>(null);
@@ -381,20 +381,6 @@ const BlockRenderer: React.FC<BlockRendererProps> = ({
       .replace(/<[^>]*>/g, "")
       .replace(/&nbsp;/g, " ")
       .trim();
-
-  useEffect(() => {
-    if (!onMeasureCollapsedHeight || item.type !== "text" || !item.isCollapsible || !item.isCollapsed || !collapsedTextRef.current) {
-      return;
-    }
-
-    const node = collapsedTextRef.current;
-    const report = () => onMeasureCollapsedHeight(item.id, Math.ceil(node.getBoundingClientRect().height));
-    report();
-
-    const observer = new ResizeObserver(() => report());
-    observer.observe(node);
-    return () => observer.disconnect();
-  }, [item.id, item.type, item.isCollapsible, item.isCollapsed, item.title, isEditMode, onMeasureCollapsedHeight]);
 
   const parseTableContent = (value?: string): string[][] => {
     if (!value) return Array.from({ length: 3 }, () => Array.from({ length: 3 }, () => ""));
@@ -447,98 +433,154 @@ const BlockRenderer: React.FC<BlockRendererProps> = ({
     e.target.value = "";
   };
 
-  const shouldMeasureContentHeight = Boolean(onMeasureContentHeight && !(item.type === "text" && item.isCollapsible && item.isCollapsed));
+  const handleCanvasCoverUpload = async (file: File) => {
+    setUploadError(null);
+    setIsUploading(true);
+    try {
+      const uploaded = await uploadPortfolioFile(file);
+      onUpdate(item.id, { canvasCover: uploaded.url, showCoverImage: true });
+    } catch (error) {
+      const message = error instanceof UploadError ? error.message : "Upload failed";
+      setUploadError(message);
+    } finally {
+      setIsUploading(false);
+    }
+  };
 
-  const contentMeasureRef = useBlockContentMeasure(item.id, shouldMeasureContentHeight, onMeasureContentHeight, [
-    item.type,
-    item.content,
-    item.title,
-    item.description,
+  const onCanvasCoverInputChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    e.stopPropagation();
+    const file = e.target.files?.[0];
+    if (!file) return;
+    void handleCanvasCoverUpload(file);
+    e.target.value = "";
+  };
+
+  const selectionEditorProps =
+    enableSelectionImprove && isEditMode
+      ? {
+          unifiedSelectionToolbar: true as const,
+          selectionImproveSlot,
+          onSelectionChange: onTextSelectionChange,
+        }
+      : {};
+
+  const onGridHeightMeasure = onMeasureContentHeight ?? onMeasureCollapsedHeight;
+  const fillsMainGridCell = Boolean(onGridHeightMeasure) && !isNestedDetailView;
+  const nestedShellClass = "h-auto w-full";
+  const mainGridShellClass = "h-full min-h-0 w-full";
+
+  const gridMeasureDeps = [
     item.isCollapsed,
     item.isCollapsible,
-    item.heightUserSet,
     item.showCoverImage,
+    item.canvasCover,
     item.mediaType,
     isEditMode,
     item.fontSize,
     item.fontWeight,
     item.linkUrl,
-  ]);
+  ];
+
+  usePortfolioGridContentMeasure(
+    item,
+    fillsMainGridCell && !(item.type === "text" && item.isCollapsible && item.isCollapsed),
+    onGridHeightMeasure,
+    contentMeasurerRef,
+    gridMeasureDeps
+  );
+
+  useEffect(() => {
+    if (!onGridHeightMeasure || item.type !== "text" || !item.isCollapsible || !item.isCollapsed || !collapsedTextRef.current) {
+      return;
+    }
+
+    const node = collapsedTextRef.current;
+    const report = () => {
+      const height = Math.ceil(node.getBoundingClientRect().height) + (fillsMainGridCell ? TEXT_BLOCK_OUTER_PADDING_PX : 0);
+      onGridHeightMeasure(item.id, height);
+    };
+    report();
+
+    const observer = new ResizeObserver(() => report());
+    observer.observe(node);
+    return () => observer.disconnect();
+  }, [fillsMainGridCell, item.id, item.type, item.isCollapsible, item.isCollapsed, item.title, isEditMode, onGridHeightMeasure]);
 
   // -- Text Block --
   if (item.type === "text") {
     const heightPx = item.height ?? 160;
-    const compact = heightPx <= 96;
-    const fillsCell = item.heightUserSet === true;
+    const hasBodyContent = !isPortfolioTextContentEmpty(item.content);
+    // Height-based compact layout is for short blocks with body text — not title-only section headers.
+    const useCompactEditorLayout = hasBodyContent && heightPx <= 96;
     const toggleCollapsed = () => onUpdate(item.id, { isCollapsed: !item.isCollapsed });
     const titlePresentation = resolvePortfolioTextTitlePresentation(item, { isNestedDetailView });
     const TitleTag = titlePresentation.tag;
     const sectionTitleClassName = `${portfolioSectionTitleClassName(titlePresentation)} ${RICH_TEXT_CONTENT_CLASSES}`;
+    const showBodyInPreview = hasBodyContent;
+    const showTitleBodyGap = isEditMode || hasBodyContent;
 
     return (
       <div
-        ref={node => {
-          if (item.isCollapsible && item.isCollapsed) {
-            collapsedTextRef.current = node;
-          } else {
-            contentMeasureRef.current = node;
-          }
-        }}
-        className={`relative flex flex-col group/text bg-white dark:bg-white/5 rounded-2xl shadow-sm border border-slate-100 dark:border-white/10 transition-all ${isEditMode ? "hover:border-brand-500/30" : ""} p-6 ${item.isCollapsed ? "overflow-hidden" : blockCellSizingClass(fillsCell)}`}
+        ref={item.isCollapsible && item.isCollapsed ? collapsedTextRef : undefined}
+        className={`relative flex flex-col group/text bg-white dark:bg-white/5 rounded-2xl shadow-sm border border-slate-100 dark:border-white/10 transition-all overflow-hidden ${isEditMode ? "hover:border-brand-500/30" : ""} p-6 ${fillsMainGridCell ? "h-full" : nestedShellClass}`}
       >
-        {(item.title || isEditMode || item.isCollapsible) && (
-          <div className={`flex items-center gap-2 ${item.isCollapsed ? "" : "mb-3"}`}>
-            {item.isCollapsible && (
-              <button
-                onClick={e => {
-                  e.stopPropagation();
-                  toggleCollapsed();
-                }}
-                className="p-1 hover:bg-slate-100 dark:hover:bg-white/10 rounded-full transition-colors text-slate-400 hover:text-brand-600 z-10"
-              >
-                {item.isCollapsed ? <ChevronRight size={18} /> : <ChevronDown size={18} />}
-              </button>
-            )}
-            {isEditMode ? (
-              <RichTextEditor
-                value={normalizePortfolioHtmlForRender(item.title || "")}
-                onChange={value => onUpdate(item.id, buildPortfolioTitleUpdate(item, value))}
-                onToggleCollapsible={() => onUpdate(item.id, { isCollapsible: !item.isCollapsible })}
-                isCollapsible={Boolean(item.isCollapsible)}
-                className={`w-full bg-transparent text-slate-900 dark:text-white ${compact ? "text-base font-semibold min-h-0" : portfolioSectionTitleClassName(titlePresentation)} min-h-[1.5rem] ${RICH_TEXT_CONTENT_CLASSES}`}
-                placeholder="Section Title (Optional)"
-              />
-            ) : (
-              item.title && <TitleTag className={sectionTitleClassName} dangerouslySetInnerHTML={{ __html: titlePresentation.html }} />
-            )}
-          </div>
-        )}
+        <div ref={fillsMainGridCell ? contentMeasurerRef : undefined} className="flex h-max w-full min-w-0 flex-col">
+          {(item.title || isEditMode || item.isCollapsible) && (
+            <div className={`flex min-w-0 items-center gap-2 ${item.isCollapsed || !showTitleBodyGap ? "" : "mb-3"}`}>
+              {item.isCollapsible && (
+                <button
+                  onClick={e => {
+                    e.stopPropagation();
+                    toggleCollapsed();
+                  }}
+                  className="p-1 hover:bg-slate-100 dark:hover:bg-white/10 rounded-full transition-colors text-slate-400 hover:text-brand-600 z-10"
+                >
+                  {item.isCollapsed ? <ChevronRight size={18} /> : <ChevronDown size={18} />}
+                </button>
+              )}
+              {isEditMode ? (
+                <RichTextEditor
+                  value={normalizePortfolioHtmlForRender(item.title || "")}
+                  onChange={value => onUpdate(item.id, buildPortfolioTitleUpdate(item, value))}
+                  onToggleCollapsible={() => onUpdate(item.id, { isCollapsible: !item.isCollapsible })}
+                  isCollapsible={Boolean(item.isCollapsible)}
+                  className={`w-full bg-transparent text-slate-900 dark:text-white ${useCompactEditorLayout ? "text-base font-semibold min-h-0" : portfolioSectionTitleClassName(titlePresentation)} min-h-[1.5rem] ${RICH_TEXT_CONTENT_CLASSES}`}
+                  placeholder="Section Title (Optional)"
+                  {...selectionEditorProps}
+                />
+              ) : (
+                item.title && <TitleTag className={sectionTitleClassName} dangerouslySetInnerHTML={{ __html: titlePresentation.html }} />
+              )}
+            </div>
+          )}
 
-        {!item.isCollapsed && (
-          <div className={fillsCell ? "flex-1 min-h-0 overflow-y-auto" : "w-full"}>
-            {isEditMode ? (
-              <RichTextEditor
-                value={normalizePortfolioHtmlForRender(item.content || "")}
-                onChange={value => onUpdate(item.id, { content: value })}
-                className={`w-full outline-none bg-transparent min-h-[4rem] text-slate-600 dark:text-slate-300 ${fillsCell ? "h-full" : ""}
+          {!item.isCollapsed && (isEditMode || showBodyInPreview) && (
+            <div className={`w-full min-w-0 ${fillsMainGridCell ? "min-h-0 flex-1" : ""}`}>
+              {isEditMode ? (
+                <RichTextEditor
+                  value={normalizePortfolioHtmlForRender(item.content || "")}
+                  onChange={value => onUpdate(item.id, { content: value })}
+                  className={`w-full min-w-0 outline-none bg-transparent ${hasBodyContent ? "min-h-[4rem]" : "min-h-0"} text-slate-600 dark:text-slate-300
                                     ${item.fontSize === "2xl" ? "text-2xl font-semibold" : item.fontSize === "xl" ? "text-xl font-semibold" : "text-base"}
                                     ${item.fontWeight === "bold" ? "font-semibold" : item.fontWeight === "medium" ? "font-medium" : "font-normal"}
                                     ${RICH_TEXT_CONTENT_CLASSES}
                                 `}
-                placeholder="New content block..."
-              />
-            ) : (
-              <div
-                className={`
-                                    max-w-none text-slate-600 dark:text-slate-300
+                  placeholder={useCompactEditorLayout ? "" : "New content block..."}
+                  {...selectionEditorProps}
+                />
+              ) : (
+                <div
+                  className={`
+                                    w-full min-w-0 text-slate-600 dark:text-slate-300
                                     ${item.fontSize === "2xl" ? "text-2xl font-semibold" : item.fontSize === "xl" ? "text-xl font-semibold" : "text-base"}
                                     ${RICH_TEXT_CONTENT_CLASSES}
                                 `}
-                dangerouslySetInnerHTML={{ __html: normalizePortfolioHtmlForRender(item.content || "") }}
-              />
-            )}
-          </div>
-        )}
+                  dangerouslySetInnerHTML={{ __html: normalizePortfolioHtmlForRender(item.content || "") }}
+                />
+              )}
+            </div>
+          )}
+        </div>
       </div>
     );
   }
@@ -558,8 +600,7 @@ const BlockRenderer: React.FC<BlockRendererProps> = ({
 
     return (
       <div
-        ref={contentMeasureRef}
-        className={`rounded-2xl overflow-hidden bg-slate-50 dark:bg-white/5 border border-slate-100 dark:border-white/5 group/media relative shadow-sm transition-all ${isEditMode ? "hover:border-brand-500/30" : ""} ${isMediaDragOver ? "border-brand-500 ring-2 ring-brand-200" : ""} ${blockCellSizingClass(item.heightUserSet)}`}
+        className={`${fillsMainGridCell ? "h-full" : nestedShellClass} rounded-2xl overflow-hidden bg-slate-50 dark:bg-white/5 border border-slate-100 dark:border-white/5 group/media relative shadow-sm transition-all ${isEditMode ? "hover:border-brand-500/30" : ""} ${isMediaDragOver ? "border-brand-500 ring-2 ring-brand-200" : ""}`}
         onDragOver={e => {
           if (!isEditMode) return;
           e.preventDefault();
@@ -574,12 +615,35 @@ const BlockRenderer: React.FC<BlockRendererProps> = ({
       >
         <input ref={mediaInputRef} type="file" accept="image/*,video/*,application/pdf" className="hidden" onChange={onMediaInputChange} />
 
+        {fillsMainGridCell && (
+          <div ref={contentMeasurerRef} className="pointer-events-none absolute top-0 left-0 z-[-1] h-max w-full opacity-0 invisible">
+            {item.content ? (
+              isVideo ? (
+                <video src={item.content} preload="metadata" className="h-auto w-full" />
+              ) : isPDF ? (
+                <div className="h-[160px] w-full" />
+              ) : (
+                // eslint-disable-next-line @next/next/no-img-element
+                <img src={item.content} alt="" className="h-auto w-full" />
+              )
+            ) : (
+              <div className="h-[100px] w-full" />
+            )}
+          </div>
+        )}
+
         {item.content ? (
           <>
             {isVideo ? (
-              <video src={item.content} controls className="w-full h-full min-h-[220px] object-cover bg-black" />
+              <video
+                src={item.content}
+                controls
+                className={`w-full bg-black object-cover ${fillsMainGridCell ? "absolute inset-0 z-10 h-full" : "min-h-[220px] h-full"}`}
+              />
             ) : isPDF ? (
-              <div className="h-full min-h-[220px] p-8 flex flex-col items-center justify-center text-center bg-white dark:bg-slate-900">
+              <div
+                className={`flex flex-col items-center justify-center bg-white p-8 text-center dark:bg-slate-900 ${fillsMainGridCell ? "absolute inset-0 z-10 h-full w-full" : "min-h-[220px] h-full"}`}
+              >
                 <Copy size={42} className="text-slate-300 mb-4" />
                 <p className="font-semibold text-slate-700 dark:text-slate-100">{item.mediaName || item.title || "Uploaded document"}</p>
                 <a
@@ -592,7 +656,7 @@ const BlockRenderer: React.FC<BlockRendererProps> = ({
                 </a>
               </div>
             ) : (
-              <div className="relative w-full min-h-[220px] h-full">
+              <div className={`relative w-full ${fillsMainGridCell ? "absolute inset-0 z-10 h-full min-h-0" : "min-h-[220px] h-full"}`}>
                 <PortfolioImage
                   src={item.content}
                   alt={item.mediaName || "Media content"}
@@ -620,7 +684,7 @@ const BlockRenderer: React.FC<BlockRendererProps> = ({
             type="button"
             onClick={openMediaPicker}
             disabled={isUploading}
-            className="w-full min-h-[220px] h-full p-8 border-2 border-dashed border-slate-200 dark:border-white/10 hover:border-brand-500 hover:text-brand-600 transition-colors flex flex-col items-center justify-center gap-3 text-slate-400 disabled:opacity-60 disabled:cursor-wait"
+            className={`flex flex-col items-center justify-center gap-3 border-2 border-dashed border-slate-200 p-8 text-slate-400 transition-colors hover:border-brand-500 hover:text-brand-600 disabled:cursor-wait disabled:opacity-60 dark:border-white/10 ${fillsMainGridCell ? "absolute inset-0 h-full w-full" : "min-h-[220px] h-full w-full"}`}
           >
             <UploadCloud size={30} />
             <span className="text-sm font-semibold">{isUploading ? "Uploading..." : "Upload Media"}</span>
@@ -640,11 +704,9 @@ const BlockRenderer: React.FC<BlockRendererProps> = ({
 
   // -- Link Box Block --
   if (item.type === "link-box") {
-    const linkShellClassName = item.heightUserSet ? "h-full overflow-visible" : "h-auto w-full";
     return (
       <LinkBoxBlock
-        ref={contentMeasureRef}
-        shellClassName={linkShellClassName}
+        shellClassName={fillsMainGridCell ? mainGridShellClass : nestedShellClass}
         item={item}
         isEditMode={isEditMode}
         onUpdate={onUpdate}
@@ -664,133 +726,153 @@ const BlockRenderer: React.FC<BlockRendererProps> = ({
     const hasDescription = Boolean(normalizedDescription);
     const hasAnyText = hasTitle || hasDescription;
     const coverEnabled = item.showCoverImage !== false;
-    const showTextArea = isEditMode || hasAnyText;
-    const showSubtitle = isEditMode || hasDescription;
+    const heightPx = item.height ?? 160;
+    const TITLE_ONLY_MIN_PX = 108;
+    const TITLE_AND_SUBTITLE_MIN_PX = 144;
+    const showTextArea = coverEnabled ? heightPx >= TITLE_ONLY_MIN_PX : true;
+    const showSubtitle = coverEnabled ? heightPx >= TITLE_AND_SUBTITLE_MIN_PX : true;
 
     const onDropCover = (e: React.DragEvent<HTMLDivElement>) => {
       e.preventDefault();
       e.stopPropagation();
       const file = e.dataTransfer.files?.[0];
-      if (file && isEditMode) void handleMediaFileUpload(file);
+      if (file && isEditMode) void handleCanvasCoverUpload(file);
     };
 
-    const shellOverflowClass = isNestedDetailView && !item.heightUserSet ? "overflow-visible" : "overflow-hidden";
+    const shellOverflowClass = isNestedDetailView ? "overflow-visible" : "overflow-hidden";
 
     return (
       <div
-        ref={contentMeasureRef}
         onClick={() => (!isEditMode && onSelectProject ? onSelectProject(item) : undefined)}
         className={`rounded-2xl bg-white dark:bg-slate-900 ${shellOverflowClass} group/card transition-all duration-500 flex flex-col border border-slate-100 dark:border-white/5 shadow-sm relative
                     ${isEditMode ? "hover:border-brand-500/30" : "cursor-pointer hover:shadow-2xl hover:-translate-y-1 hover:border-slate-200"}
-                    ${blockCellSizingClass(item.heightUserSet)}
+                    ${fillsMainGridCell ? "h-full overflow-hidden" : nestedShellClass}
                 `}
       >
-        <input ref={mediaInputRef} type="file" accept="image/*" className="hidden" onChange={onMediaInputChange} />
+        <div ref={fillsMainGridCell ? contentMeasurerRef : undefined} className="flex h-max w-full flex-col">
+          <input ref={mediaInputRef} type="file" accept="image/*" className="hidden" onChange={onMediaInputChange} />
+          <input ref={canvasCoverInputRef} type="file" accept="image/*" className="hidden" onChange={onCanvasCoverInputChange} />
 
-        {coverEnabled ? (
-          <div
-            className="relative overflow-hidden rounded-t-2xl w-full shrink-0 min-h-[180px] max-h-[240px] h-[200px] bg-slate-100 dark:bg-slate-800 transition-all duration-500"
-            onDragOver={e => {
-              e.preventDefault();
-              e.stopPropagation();
-            }}
-            onDrop={onDropCover}
-          >
-            {isEditMode && (
-              <div className="absolute inset-0 z-10 opacity-0 group-hover/card:opacity-100 bg-black/40 flex flex-col items-center justify-center p-4 transition-opacity gap-2">
+          {coverEnabled ? (
+            <div
+              className="relative overflow-hidden rounded-t-2xl w-full bg-slate-100 dark:bg-slate-800 transition-all duration-500 flex-shrink-0 h-[140px]"
+              onDragOver={e => {
+                e.preventDefault();
+                e.stopPropagation();
+              }}
+              onDrop={onDropCover}
+            >
+              {isEditMode && (
+                <div className="absolute inset-0 z-20 flex flex-col items-center justify-center gap-2 opacity-0 group-hover/card:opacity-100 transition-opacity bg-slate-100/60 dark:bg-slate-800/60 backdrop-blur-[2px] pointer-events-none">
+                  <div className="flex items-center gap-2">
+                    <button
+                      type="button"
+                      onClick={e => {
+                        e.stopPropagation();
+                        canvasCoverInputRef.current?.click();
+                      }}
+                      disabled={isUploading}
+                      className="pointer-events-auto inline-flex items-center gap-1.5 bg-white text-slate-700 rounded-lg border border-slate-200 px-4 py-2 text-xs font-semibold shadow-lg hover:scale-105 active:scale-95 transition-all disabled:opacity-50"
+                    >
+                      <UploadCloud size={13} /> {isUploading ? "Uploading..." : "Upload Cover"}
+                    </button>
+                    {onSelectProject ? (
+                      <button
+                        type="button"
+                        onClick={e => {
+                          e.stopPropagation();
+                          onSelectProject(item);
+                        }}
+                        className="pointer-events-auto inline-flex items-center gap-1.5 bg-white text-slate-700 rounded-lg border border-slate-200 px-4 py-2 text-xs font-semibold shadow-lg hover:scale-105 active:scale-95 transition-all"
+                      >
+                        <Edit3 size={13} /> Edit Content
+                      </button>
+                    ) : null}
+                  </div>
+                  <span className="text-[10px] text-slate-500 dark:text-slate-400 font-medium">
+                    Cover is canvas-only · won&apos;t affect page
+                  </span>
+                  {uploadError ? <span className="pointer-events-none text-[10px] font-medium text-red-500">{uploadError}</span> : null}
+                </div>
+              )}
+              {item.content ? (
+                <PortfolioImage
+                  src={item.content}
+                  alt={item.title || "Project cover"}
+                  fill
+                  sizes="(max-width: 768px) 50vw, 33vw"
+                  className="object-cover group-hover/card:scale-105 transition-transform duration-700"
+                />
+              ) : item.canvasCover ? (
+                <PortfolioImage
+                  src={item.canvasCover}
+                  alt="Canvas cover"
+                  fill
+                  sizes="(max-width: 768px) 50vw, 33vw"
+                  className="object-cover group-hover/card:scale-105 transition-transform duration-700"
+                />
+              ) : (
+                <div className="w-full h-full flex items-center justify-center bg-slate-50 dark:bg-slate-800/50">
+                  <UploadCloud size={20} className="text-slate-300" />
+                </div>
+              )}
+            </div>
+          ) : (
+            isEditMode && (
+              <div className="p-4 flex flex-col gap-1">
                 <button
+                  type="button"
                   onClick={openMediaPicker}
                   disabled={isUploading}
-                  className="text-[10px] font-medium uppercase tracking-widest bg-white/95 text-slate-700 rounded-full px-4 py-2 shadow-xl border border-slate-200 hover:bg-white transition-colors disabled:opacity-50"
+                  className="w-full px-4 py-2 rounded-full bg-white dark:bg-slate-900 border border-slate-200 dark:border-white/10 text-slate-700 dark:text-slate-200 hover:border-brand-500/40 transition-all disabled:opacity-50"
                 >
-                  {isUploading ? "Uploading..." : "Replace Image"}
+                  {isUploading ? "Uploading..." : "Add Cover Image"}
                 </button>
-                {item.content && (
-                  <button
-                    onClick={e => {
-                      e.stopPropagation();
-                      onUpdate(item.id, { showCoverImage: false });
-                    }}
-                    className="text-[10px] font-medium uppercase tracking-widest bg-white/95 text-slate-700 rounded-full px-4 py-2 shadow-xl border border-slate-200 hover:bg-white transition-colors"
-                  >
-                    Hide Cover
-                  </button>
-                )}
-                <span className="text-[9px] text-white/60 mt-1 font-bold uppercase tracking-tighter">or drag & drop</span>
-                {uploadError && (
-                  <span className="text-[10px] font-medium text-red-300 bg-black/70 rounded px-2 py-1 mt-1">{uploadError}</span>
-                )}
+                {uploadError && <span className="text-[11px] font-medium text-red-500">{uploadError}</span>}
               </div>
-            )}
-            {item.content ? (
-              <PortfolioImage
-                src={item.content}
-                alt={item.title || "Project cover"}
-                fill
-                sizes="(max-width: 768px) 50vw, 33vw"
-                className="object-cover group-hover/card:scale-105 transition-transform duration-700"
-              />
-            ) : (
-              <div className="w-full h-full flex items-center justify-center">
-                <span className="text-slate-300 font-medium uppercase tracking-widest text-xs">No Cover Image</span>
-              </div>
-            )}
-          </div>
-        ) : (
-          isEditMode && (
-            <div className="p-4 flex flex-col gap-1">
-              <button
-                type="button"
-                onClick={openMediaPicker}
-                disabled={isUploading}
-                className="w-full px-4 py-2 rounded-full bg-white dark:bg-slate-900 border border-slate-200 dark:border-white/10 text-slate-700 dark:text-slate-200 hover:border-brand-500/40 transition-all disabled:opacity-50"
-              >
-                {isUploading ? "Uploading..." : "Add Cover Image"}
-              </button>
-              {uploadError && <span className="text-[11px] font-medium text-red-500">{uploadError}</span>}
-            </div>
-          )
-        )}
+            )
+          )}
 
-        {showTextArea && (
-          <div
-            className={`px-4 md:px-4 flex flex-col justify-center w-full ${showSubtitle && hasDescription ? "py-6 md:py-8" : "py-4 md:py-6"}`}
-          >
-            {isEditMode ? (
-              <div className={`space-y-3 ${showSubtitle ? "" : "space-y-2"}`}>
-                <RichTextEditor
-                  value={normalizePortfolioHtmlForRender(item.title || "")}
-                  onChange={value => onUpdate(item.id, { title: value })}
-                  className={`w-full bg-transparent text-2xl font-semibold text-slate-900 dark:text-white min-h-[2rem] ${RICH_TEXT_CONTENT_CLASSES}`}
-                  placeholder="Page Title"
-                />
-                {showSubtitle && (
+          {(isEditMode || hasAnyText) && showTextArea && (
+            <div className={`px-4 md:px-4 flex flex-col flex-1 w-full overflow-hidden ${showSubtitle ? "py-6 md:py-8" : "py-4 md:py-6"}`}>
+              {isEditMode ? (
+                <div className={`space-y-3 ${showSubtitle ? "" : "space-y-2"}`} onClick={e => e.stopPropagation()}>
                   <RichTextEditor
-                    value={normalizePortfolioHtmlForRender(item.description || "")}
-                    onChange={value => onUpdate(item.id, { description: value })}
-                    className={`w-full bg-transparent text-base text-slate-500 dark:text-slate-400 min-h-[3rem] ${RICH_TEXT_CONTENT_CLASSES}`}
-                    placeholder="Subtitle (optional)"
+                    value={normalizePortfolioHtmlForRender(item.title || "")}
+                    onChange={value => onUpdate(item.id, { title: value })}
+                    className={`w-full bg-transparent text-2xl font-semibold text-slate-900 dark:text-white min-h-[2rem] ${RICH_TEXT_CONTENT_CLASSES}`}
+                    placeholder="Page Title"
+                    {...selectionEditorProps}
                   />
-                )}
-              </div>
-            ) : (
-              <div className={`space-y-3 ${showSubtitle ? "" : "space-y-2"}`}>
-                {hasTitle && (
-                  <h3
-                    className={`font-semibold text-2xl text-slate-900 dark:text-white leading-tight ${RICH_TEXT_CONTENT_CLASSES}`}
-                    dangerouslySetInnerHTML={{ __html: normalizePortfolioHtmlForRender(normalizedTitle) }}
-                  />
-                )}
-                {showSubtitle && hasDescription && (
-                  <p
-                    className={`text-base text-slate-500 dark:text-slate-400 mt-3 text-pretty ${RICH_TEXT_CONTENT_CLASSES}`}
-                    dangerouslySetInnerHTML={{ __html: normalizePortfolioHtmlForRender(normalizedDescription) }}
-                  />
-                )}
-              </div>
-            )}
-          </div>
-        )}
+                  {showSubtitle && (
+                    <RichTextEditor
+                      value={normalizePortfolioHtmlForRender(item.description || "")}
+                      onChange={value => onUpdate(item.id, { description: value })}
+                      className={`w-full bg-transparent text-base text-slate-500 dark:text-slate-400 min-h-[3rem] ${RICH_TEXT_CONTENT_CLASSES}`}
+                      placeholder="Subtitle (optional)"
+                      {...selectionEditorProps}
+                    />
+                  )}
+                </div>
+              ) : (
+                <div className={`space-y-3 ${showSubtitle ? "" : "space-y-2"}`}>
+                  {hasTitle && (
+                    <h3
+                      className={`font-semibold text-2xl text-slate-900 dark:text-white leading-tight min-h-[2rem] ${RICH_TEXT_CONTENT_CLASSES}`}
+                      dangerouslySetInnerHTML={{ __html: normalizePortfolioHtmlForRender(normalizedTitle) }}
+                    />
+                  )}
+                  {showSubtitle && hasDescription && (
+                    <p
+                      className={`text-base text-slate-500 dark:text-slate-400 line-clamp-3 text-pretty min-h-[3rem] ${RICH_TEXT_CONTENT_CLASSES}`}
+                      dangerouslySetInnerHTML={{ __html: normalizePortfolioHtmlForRender(normalizedDescription) }}
+                    />
+                  )}
+                </div>
+              )}
+            </div>
+          )}
+        </div>
       </div>
     );
   }
@@ -823,67 +905,72 @@ const BlockRenderer: React.FC<BlockRendererProps> = ({
 
     return (
       <div
-        ref={contentMeasureRef}
-        className={`rounded-2xl border border-slate-100 dark:border-white/10 bg-white dark:bg-white/5 p-4 flex flex-col gap-3 ${isEditMode ? "hover:border-brand-500/30" : ""} ${blockCellSizingClass(item.heightUserSet)}`}
+        className={`rounded-2xl border border-slate-100 dark:border-white/10 bg-white dark:bg-white/5 flex flex-col gap-3 ${isEditMode ? "hover:border-brand-500/30" : ""} ${fillsMainGridCell ? "h-full overflow-hidden p-4" : `${nestedShellClass} p-4`}`}
       >
-        {isEditMode && (
-          <div className="flex items-center gap-2 flex-wrap">
-            <button
-              type="button"
-              onClick={addRow}
-              className="px-3 py-1.5 rounded-full text-xs font-medium border border-slate-200 dark:border-white/10 hover:border-brand-500/40 inline-flex items-center gap-1"
-            >
-              <Plus size={12} /> Row
-            </button>
-            <button
-              type="button"
-              onClick={removeRow}
-              className="px-3 py-1.5 rounded-full text-xs font-medium border border-slate-200 dark:border-white/10 hover:border-brand-500/40 inline-flex items-center gap-1"
-            >
-              <Minus size={12} /> Row
-            </button>
-            <button
-              type="button"
-              onClick={addColumn}
-              className="px-3 py-1.5 rounded-full text-xs font-medium border border-slate-200 dark:border-white/10 hover:border-brand-500/40 inline-flex items-center gap-1"
-            >
-              <Plus size={12} /> Column
-            </button>
-            <button
-              type="button"
-              onClick={removeColumn}
-              className="px-3 py-1.5 rounded-full text-xs font-medium border border-slate-200 dark:border-white/10 hover:border-brand-500/40 inline-flex items-center gap-1"
-            >
-              <Minus size={12} /> Column
-            </button>
+        <div
+          ref={fillsMainGridCell ? contentMeasurerRef : undefined}
+          className={`flex flex-col gap-3 ${fillsMainGridCell ? "h-max w-full" : "contents"}`}
+        >
+          {isEditMode && (
+            <div className="flex items-center gap-2 flex-wrap">
+              <button
+                type="button"
+                onClick={addRow}
+                className="px-3 py-1.5 rounded-full text-xs font-medium border border-slate-200 dark:border-white/10 hover:border-brand-500/40 inline-flex items-center gap-1"
+              >
+                <Plus size={12} /> Row
+              </button>
+              <button
+                type="button"
+                onClick={removeRow}
+                className="px-3 py-1.5 rounded-full text-xs font-medium border border-slate-200 dark:border-white/10 hover:border-brand-500/40 inline-flex items-center gap-1"
+              >
+                <Minus size={12} /> Row
+              </button>
+              <button
+                type="button"
+                onClick={addColumn}
+                className="px-3 py-1.5 rounded-full text-xs font-medium border border-slate-200 dark:border-white/10 hover:border-brand-500/40 inline-flex items-center gap-1"
+              >
+                <Plus size={12} /> Column
+              </button>
+              <button
+                type="button"
+                onClick={removeColumn}
+                className="px-3 py-1.5 rounded-full text-xs font-medium border border-slate-200 dark:border-white/10 hover:border-brand-500/40 inline-flex items-center gap-1"
+              >
+                <Minus size={12} /> Column
+              </button>
+            </div>
+          )}
+          <div className="overflow-auto rounded-xl border border-slate-200 dark:border-white/10">
+            <table className="w-full border-collapse text-sm">
+              <tbody>
+                {normalizedRows.map((row, rowIndex) => (
+                  <tr key={`row-${rowIndex}`}>
+                    {row.map((cell, colIndex) => (
+                      <td key={`cell-${rowIndex}-${colIndex}`} className="border border-slate-200 dark:border-white/10 p-0 align-top">
+                        {isEditMode ? (
+                          <RichTextEditor
+                            value={cell}
+                            onChange={value => updateCell(rowIndex, colIndex, value)}
+                            className={`w-full min-w-[120px] bg-transparent px-3 py-2 outline-none text-slate-700 dark:text-slate-200 min-h-[38px] ${RICH_TEXT_CONTENT_CLASSES}`}
+                            placeholder={rowIndex === 0 ? `Header ${colIndex + 1}` : "Cell"}
+                            {...selectionEditorProps}
+                          />
+                        ) : (
+                          <div
+                            className={`px-3 py-2 text-slate-700 dark:text-slate-200 min-h-[38px] ${RICH_TEXT_CONTENT_CLASSES}`}
+                            dangerouslySetInnerHTML={{ __html: cell }}
+                          />
+                        )}
+                      </td>
+                    ))}
+                  </tr>
+                ))}
+              </tbody>
+            </table>
           </div>
-        )}
-        <div className="overflow-auto rounded-xl border border-slate-200 dark:border-white/10">
-          <table className="w-full border-collapse text-sm">
-            <tbody>
-              {normalizedRows.map((row, rowIndex) => (
-                <tr key={`row-${rowIndex}`}>
-                  {row.map((cell, colIndex) => (
-                    <td key={`cell-${rowIndex}-${colIndex}`} className="border border-slate-200 dark:border-white/10 p-0 align-top">
-                      {isEditMode ? (
-                        <RichTextEditor
-                          value={cell}
-                          onChange={value => updateCell(rowIndex, colIndex, value)}
-                          className={`w-full min-w-[120px] bg-transparent px-3 py-2 outline-none text-slate-700 dark:text-slate-200 min-h-[38px] ${RICH_TEXT_CONTENT_CLASSES}`}
-                          placeholder={rowIndex === 0 ? `Header ${colIndex + 1}` : "Cell"}
-                        />
-                      ) : (
-                        <div
-                          className={`px-3 py-2 text-slate-700 dark:text-slate-200 min-h-[38px] ${RICH_TEXT_CONTENT_CLASSES}`}
-                          dangerouslySetInnerHTML={{ __html: cell }}
-                        />
-                      )}
-                    </td>
-                  ))}
-                </tr>
-              ))}
-            </tbody>
-          </table>
         </div>
       </div>
     );
@@ -904,8 +991,7 @@ const BlockRenderer: React.FC<BlockRendererProps> = ({
 
     return (
       <div
-        ref={contentMeasureRef}
-        className={`rounded-2xl border border-slate-100 dark:border-white/10 bg-white dark:bg-white/5 p-4 flex flex-col gap-3 ${isEditMode ? "hover:border-brand-500/30" : ""} ${blockCellSizingClass(item.heightUserSet)}`}
+        className={`rounded-2xl border border-slate-100 dark:border-white/10 bg-white dark:bg-white/5 p-4 flex flex-col gap-3 ${isEditMode ? "hover:border-brand-500/30" : ""} ${fillsMainGridCell ? "h-full min-h-0" : nestedShellClass}`}
       >
         {isEditMode ? (
           <input
@@ -917,9 +1003,7 @@ const BlockRenderer: React.FC<BlockRendererProps> = ({
           />
         ) : null}
 
-        <div
-          className={`relative w-full min-h-[220px] rounded-xl overflow-hidden border border-slate-200 dark:border-white/10 bg-slate-50 dark:bg-black/20 ${item.heightUserSet ? "flex-1 min-h-0" : ""}`}
-        >
+        <div className="relative w-full min-h-[220px] rounded-xl overflow-hidden border border-slate-200 dark:border-white/10 bg-slate-50 dark:bg-black/20">
           {hasEmbedValue ? (
             embedVariant === "figma" ? (
               figmaUrl ? (

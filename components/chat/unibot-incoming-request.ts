@@ -1,6 +1,8 @@
 /**
  * Payload for opening Unibot from resume editors (window "open-unibot" or lifted React state).
  */
+import type { AtsFixPlanSection } from "@/src/features/resume/api/ats-fix-plan";
+
 export type UnibotResumeSection = "summary" | "education" | "experience" | "projects" | "skills" | "certifications" | "custom";
 
 /** LinkedIn ADK section keys (v2 sub-sessions); v1 uses free-text on main session. */
@@ -23,6 +25,14 @@ export type UnibotIncomingRequest =
       requestKey?: number;
     }
   | { type: "section_review"; section: UnibotResumeSection; requestKey: number }
+  | {
+      type: "ats_fix_batch";
+      resumeId: string;
+      sections: AtsFixPlanSection[];
+      /** Deterministic main-session title (ALL CHATS); set when main is still untitled. */
+      mainSessionTitle?: string;
+      requestKey: number;
+    }
   | {
       type: "content_gen_topic";
       seedTopic?: string;
@@ -49,6 +59,9 @@ export { UNIBOT_SECTION_REVIEW_PROMPTS } from "@/features/adk-chat/handoff-promp
 export function incomingRequestSignature(req: UnibotIncomingRequest): string {
   if (req.type === "section_review") {
     return `section_review:${req.section}:${req.requestKey}`;
+  }
+  if (req.type === "ats_fix_batch") {
+    return `ats_fix_batch:${req.resumeId}:${req.sections.map(s => s.section).join(",")}:${req.requestKey}`;
   }
   if (req.type === "content_gen_topic") {
     return `content_gen_topic:${req.assetId ?? ""}:${req.seedTopic ?? ""}:${req.improveDraft ? "improve" : "topic"}:${req.requestKey}`;

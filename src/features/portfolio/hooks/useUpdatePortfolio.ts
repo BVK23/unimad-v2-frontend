@@ -13,10 +13,16 @@ export function useUpdatePortfolio() {
       const response = await updatePortfolioContent(mapFrontendPortfolioToBackend(data));
       return mapBackendPortfolioToFrontend(response.portfolio);
     },
-    onSuccess: portfolio => {
-      queryClient.setQueryData(portfolioQueryKey, portfolio);
-      if (portfolio.id) {
-        usePortfolioStore.getState().setPortfolioData(portfolio.id, portfolio);
+    onSuccess: (portfolio, variables) => {
+      const savedCoverPosition = variables.profile.coverPosition;
+      const mergedPortfolio =
+        savedCoverPosition && JSON.stringify(portfolio.profile.coverPosition) !== JSON.stringify(savedCoverPosition)
+          ? { ...portfolio, profile: { ...portfolio.profile, coverPosition: savedCoverPosition } }
+          : portfolio;
+
+      queryClient.setQueryData(portfolioQueryKey, mergedPortfolio);
+      if (mergedPortfolio.id) {
+        usePortfolioStore.getState().setPortfolioData(mergedPortfolio.id, mergedPortfolio);
       }
     },
   });

@@ -2,6 +2,11 @@ import { normalizePortfolioData } from "@/features/portfolio/utils/normalizePort
 import type { PortfolioData } from "@/types";
 import { create } from "zustand";
 
+type UpdatePortfolioOptions = {
+  /** Skip per-item normalization on hot-path edits (typing, drag). */
+  skipNormalize?: boolean;
+};
+
 interface PortfolioStoreState {
   portfolioData: Record<string, PortfolioData>;
   focusedPageCardByPortfolioId: Record<string, string | null>;
@@ -9,7 +14,7 @@ interface PortfolioStoreState {
   setAllPortfolios: (portfolios: PortfolioData[]) => void;
   setPortfolioData: (portfolioId: string, data: PortfolioData) => void;
   getPortfolioData: (portfolioId: string) => PortfolioData | undefined;
-  updatePortfolio: (portfolioId: string, updater: (prev: PortfolioData) => PortfolioData) => void;
+  updatePortfolio: (portfolioId: string, updater: (prev: PortfolioData) => PortfolioData, options?: UpdatePortfolioOptions) => void;
   setFocusedPageCardId: (portfolioId: string, pageCardId: string | null) => void;
   getFocusedPageCardId: (portfolioId: string) => string | null;
   clearFocusedPageCardId: (portfolioId: string) => void;
@@ -23,7 +28,10 @@ export const usePortfolioStore = create<PortfolioStoreState>((set, get) => ({
     const dataMap: Record<string, PortfolioData> = {};
     portfolios.forEach(p => {
       if (p.id) {
-        dataMap[p.id] = normalizePortfolioData(p, { clampTitleOnlyHeights: true });
+        dataMap[p.id] = normalizePortfolioData(p, {
+          clampTitleOnlyHeights: true,
+          normalizeTemplateTitleHeadings: true,
+        });
       }
     });
     set({ portfolioData: dataMap });
@@ -33,17 +41,24 @@ export const usePortfolioStore = create<PortfolioStoreState>((set, get) => ({
     set(state => ({
       portfolioData: {
         ...state.portfolioData,
-        [portfolioId]: normalizePortfolioData({ ...data, id: portfolioId }, { clampTitleOnlyHeights: true }),
+        [portfolioId]: normalizePortfolioData(
+          { ...data, id: portfolioId },
+          {
+            clampTitleOnlyHeights: true,
+            normalizeTemplateTitleHeadings: true,
+          }
+        ),
       },
     })),
 
   getPortfolioData: portfolioId => get().portfolioData[portfolioId],
 
-  updatePortfolio: (portfolioId, updater) =>
+  updatePortfolio: (portfolioId, updater, options) =>
     set(state => {
       const current = state.portfolioData[portfolioId];
       if (!current) return state;
-      const next = normalizePortfolioData(updater(current));
+      const updated = updater(current);
+      const next = options?.skipNormalize ? updated : normalizePortfolioData(updated);
       return {
         portfolioData: {
           ...state.portfolioData,

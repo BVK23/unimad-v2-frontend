@@ -12,18 +12,35 @@ type DocumentSaveStatusBarProps = {
   onCancel?: () => void;
   visible?: boolean;
   variant?: DocumentSaveStatusBarVariant;
+  saveNowLabel?: string;
+  savingLabel?: string;
+  /** Studio: "Changes not saved" (amber). Modal keeps "Unsaved changes". */
+  pendingChangesLabel?: string;
 };
 
 const statusTextClass = "whitespace-nowrap text-xs font-medium text-slate-500 dark:text-slate-400";
+const studioPendingChangesClass = "mr-2 whitespace-nowrap text-xs font-medium text-amber-600 dark:text-amber-500";
 const saveActionClass =
   "cursor-pointer whitespace-nowrap text-xs font-semibold text-brand-600 hover:text-brand-700 hover:underline dark:text-brand-400";
 const cancelActionClass =
   "cursor-pointer whitespace-nowrap text-xs font-medium text-slate-500 hover:text-slate-700 hover:underline dark:text-slate-400 dark:hover:text-slate-200";
 
-function UnsavedChangesRow({ saveLabel, onSaveNow, onCancel }: { saveLabel: string; onSaveNow?: () => void; onCancel?: () => void }) {
+function UnsavedChangesRow({
+  label,
+  labelClassName,
+  saveLabel,
+  onSaveNow,
+  onCancel,
+}: {
+  label: string;
+  labelClassName: string;
+  saveLabel: string;
+  onSaveNow?: () => void;
+  onCancel?: () => void;
+}) {
   return (
-    <div className="flex items-center gap-2 text-xs">
-      <span className={statusTextClass}>Unsaved changes</span>
+    <div className="flex items-center text-xs">
+      <span className={labelClassName}>{label}</span>
       {onSaveNow ? (
         <button type="button" onClick={onSaveNow} className={saveActionClass}>
           {saveLabel}
@@ -46,25 +63,39 @@ export function DocumentSaveStatusBar({
   onCancel,
   visible = true,
   variant = "studio",
+  saveNowLabel,
+  savingLabel,
+  pendingChangesLabel,
 }: DocumentSaveStatusBarProps) {
   if (!visible) return null;
 
   const isModal = variant === "modal";
   const showSaved = savedConfirmationVisible && !hasPendingUnsavedChanges && !isSaving;
   const savedIconClass = isModal ? "text-slate-400" : "text-emerald-500";
-  const saveLabel = isModal ? "Save" : "save";
+  const saveLabel = saveNowLabel ?? (isModal ? "Save" : "Save Now");
+  const savingText = savingLabel ?? (isModal ? "Autosaving..." : "Autosaving...");
+  const pendingLabel = pendingChangesLabel ?? (isModal ? "Unsaved changes" : "Changes not saved");
+  const pendingLabelClass = isModal ? statusTextClass : studioPendingChangesClass;
 
   if (isModal) {
     if (isSaving) {
       return (
         <div className="flex items-center gap-1.5 text-xs">
           <RefreshCw size={14} className="animate-spin text-slate-400" />
-          <span className={statusTextClass}>Autosaving...</span>
+          <span className={statusTextClass}>{savingText}</span>
         </div>
       );
     }
     if (hasPendingUnsavedChanges) {
-      return <UnsavedChangesRow saveLabel={saveLabel} onSaveNow={onSaveNow} onCancel={onCancel} />;
+      return (
+        <UnsavedChangesRow
+          label={pendingLabel}
+          labelClassName={pendingLabelClass}
+          saveLabel={saveLabel}
+          onSaveNow={onSaveNow}
+          onCancel={onCancel}
+        />
+      );
     }
     if (showSaved) {
       return (
@@ -89,12 +120,12 @@ export function DocumentSaveStatusBar({
         className={`absolute right-0 flex items-center transition-all duration-300 ${isSaving ? "translate-y-0 opacity-100" : "pointer-events-none -translate-y-4 opacity-0"}`}
       >
         <RefreshCw size={14} className="mr-1.5 animate-spin text-slate-400" />
-        <span className={statusTextClass}>Autosaving...</span>
+        <span className={statusTextClass}>{savingText}</span>
       </div>
       <div
         className={`absolute right-0 flex items-center transition-all duration-300 ${hasPendingUnsavedChanges && !isSaving ? "translate-y-0 opacity-100" : "pointer-events-none -translate-y-4 opacity-0"}`}
       >
-        <UnsavedChangesRow saveLabel={saveLabel} onSaveNow={onSaveNow} />
+        <UnsavedChangesRow label={pendingLabel} labelClassName={pendingLabelClass} saveLabel={saveLabel} onSaveNow={onSaveNow} />
       </div>
     </div>
   );

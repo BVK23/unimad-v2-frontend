@@ -71,17 +71,27 @@ export interface AtsScorePayload {
 
 export type AtsSectionUiStatus = "good" | "warning" | "critical";
 
+export type AtsSectionKey = keyof NonNullable<AtsScorePayload["section_scores"]>;
+
+export interface AtsSectionAnalysisRow {
+  key: AtsSectionKey;
+  name: string;
+  status: AtsSectionUiStatus;
+  /** Short one-line copy for the modal. */
+  displayFeedback: string;
+  /** Full analysis for Unibot context (includes score suffix and delta). */
+  fullFeedback: string;
+  /** Shown on status-dot hover only, e.g. "4/5" or "62/100". */
+  scoreLabel?: string;
+}
+
 export interface AtsScoreViewModel {
   score: number;
   scoringMode?: AtsScoringMode;
   generalScore?: number;
   jdMatchScore?: number;
   improvements: string[];
-  sectionAnalysis: {
-    name: string;
-    status: AtsSectionUiStatus;
-    feedback: string;
-  }[];
+  sectionAnalysis: AtsSectionAnalysisRow[];
   hasComparison?: boolean;
   deltaOverall?: number;
   deltaGeneral?: number;

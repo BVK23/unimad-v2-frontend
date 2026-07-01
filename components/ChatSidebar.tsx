@@ -136,6 +136,7 @@ import {
   type ScopeMatch,
 } from "@/src/features/adk-chat/content-scope";
 import { ensureApplicationAssetTopicSubSession, ensureContentGenTopicSubSession } from "@/src/features/adk-chat/ensure-topic-sub-session";
+import { SUB_THREAD_COLLAPSE_THRESHOLD } from "@/src/features/adk-chat/hydrate-loaded-topics";
 import {
   resolveApplicationAssetReviewNavTarget,
   resolveContentGenReviewNavTarget,
@@ -181,6 +182,14 @@ import {
 import { LINKEDIN_ADK_PROFILE_KEY } from "@/src/features/linkedin/constants";
 import { linkedinAnalysisQueryKey } from "@/src/features/linkedin/hooks/useLinkedInAnalysis";
 import type { LinkedInAnalysisSnapshot } from "@/src/features/linkedin/types";
+import {
+  buildAtsGateAwaitingHint,
+  buildAtsGateSnapshot,
+  createAtsFixBatchCoordinator,
+  markAtsFixBatchFocusOverride,
+  waitForAtsGateTopicSettled,
+  type AtsFixBatchCoordinator,
+} from "@/src/features/resume/api/ats-fix-batch-ui";
 import {
   buildResumeImproveAgentMessage,
   buildResumeImproveDisplayMessage,
@@ -712,6 +721,16 @@ const ChatSidebar: React.FC<ChatSidebarProps> = ({ incomingRequest, onRequestHan
   const [documentImproveSuggestionsLoading, setDocumentImproveSuggestionsLoading] = useState(false);
   const documentImproveFetchKeyRef = useRef<string | null>(null);
   const seededTitlePromptByMainIdRef = useRef<Record<string, string>>({});
+  const atsFixBatchRef = useRef<AtsFixBatchCoordinator | null>(null);
+  const atsFixBatchAbortRef = useRef<AbortController | null>(null);
+  const [atsFixBatchUi, setAtsFixBatchUi] = useState<AtsFixBatchCoordinator | null>(null);
+  const messagesRef = useRef(messages);
+  messagesRef.current = messages;
+  const isAgentLoadingRef = useRef(isAgentLoading);
+  isAgentLoadingRef.current = isAgentLoading;
+  const syncAtsFixBatchUi = useCallback(() => {
+    setAtsFixBatchUi(atsFixBatchRef.current ? { ...atsFixBatchRef.current } : null);
+  }, []);
 
   const isResumePrepareImproveRoute = useMemo(() => {
     if (!pathname.startsWith("/uniboard/resume")) return false;
@@ -1708,7 +1727,15 @@ const ChatSidebar: React.FC<ChatSidebarProps> = ({ incomingRequest, onRequestHan
   );
 
   const openImproveSubTopic = useCallback(
-    async (subAdkSessionId: string, title: string, displayText: string, agentText: string) => {
+    async (
+      subAdkSessionId: string,
+      title: string,
+      displayText: string,
+      agentText: string,
+      options?: { isExpanded?: boolean; suppressFocus?: boolean }
+    ) => {
+      const isExpanded = options?.isExpanded ?? true;
+      const suppressFocus = options?.suppressFocus ?? false;
       const topicId = topicIdForSubSession(subAdkSessionId);
       const existing = findImproveTopic(messages, subAdkSessionId);
       const subRow = getRegistryRow(subAdkSessionId);
@@ -1768,12 +1795,14 @@ const ChatSidebar: React.FC<ChatSidebarProps> = ({ incomingRequest, onRequestHan
           isTopic: true,
           topicKind: subRow ? topicKindForSub(subRow) : undefined,
           topicTitle: title,
-          isExpanded: true,
+          isExpanded,
           subSessionAdkId: subAdkSessionId,
           messages: [...nested, userMsg, placeholderMsg],
         };
         setMessages(prev => insertTopicInMainThread(prev, newTopic));
-        setImproveReplyTopicId(topicId);
+        if (!suppressFocus) {
+          setImproveReplyTopicId(topicId);
+        }
         pendingRetryRef.current = { text: agentText, topicId, botMsgId };
         try {
           await sendTopicMessage(agentText, botMsgId, { sessionIdOverride: subAdkSessionId });
@@ -1808,13 +1837,15 @@ const ChatSidebar: React.FC<ChatSidebarProps> = ({ incomingRequest, onRequestHan
                 id: topicId,
                 subSessionAdkId: subAdkSessionId,
                 topicTitle: title,
-                isExpanded: true,
+                isExpanded,
                 messages: [...(msg.messages || []), userMsg, placeholderMsg],
               }
             : msg
         )
       );
-      setImproveReplyTopicId(topicId);
+      if (!suppressFocus) {
+        setImproveReplyTopicId(topicId);
+      }
       pendingRetryRef.current = { text: agentText, topicId, botMsgId };
       try {
         await sendTopicMessage(agentText, botMsgId, { sessionIdOverride: subAdkSessionId });
@@ -1876,6 +1907,115 @@ const ChatSidebar: React.FC<ChatSidebarProps> = ({ incomingRequest, onRequestHan
           await sendMainMessage(prompt, { excludeFromTitleGeneration: true });
         } catch (err) {
           handleStreamFailure(err, { text: prompt });
+        }
+      })();
+      return;
+    }
+
+    if (req.type === "ats_fix_batch") {
+      void (async () => {
+        try {
+          if (!userId || !sessionReady || req.sections.length === 0) return;
+
+          const mainId = currentMainSessionId ?? sessionId;
+          const mainRow = getRegistryRow(mainId);
+          const atsMainTitle = req.mainSessionTitle?.trim();
+          const promoteMainTitle = Boolean(atsMainTitle) && (!mainRow || isUntitledMainSessionTitle(mainRow.title));
+
+          if (!mainRow || promoteMainTitle) {
+            const regMain = await registerUnibotAdkSessionAction({
+              adk_session_id: mainId,
+              kind: "main",
+              title: promoteMainTitle ? atsMainTitle! : UNTITLED_THREAD_TITLE,
+              content_key: `general:${mainId}`,
+            });
+            if (regMain.session) upsertRegistryRow(regMain.session);
+          }
+
+          const resolvedSubs = await Promise.all(
+            req.sections.map(sectionPlan =>
+              resolveImproveSubSession({
+                userId,
+                mainAdkSessionId: mainId,
+                feature: "resume",
+                featureId: req.resumeId,
+                section: sectionPlan.section,
+                entryId: "",
+                contentKey: buildResumeImproveContentKey(req.resumeId, sectionPlan.section),
+                title: sectionPlan.topicTitle,
+              })
+            )
+          );
+
+          atsFixBatchAbortRef.current?.abort();
+          const batchAbort = new AbortController();
+          atsFixBatchAbortRef.current = batchAbort;
+          atsFixBatchRef.current = createAtsFixBatchCoordinator(req.sections.length);
+          syncAtsFixBatchUi();
+
+          for (let i = 0; i < req.sections.length; i++) {
+            const sectionPlan = req.sections[i];
+            const resolved = resolvedSubs[i];
+            if (!resolved?.success || !resolved.adkSessionId) {
+              throw new Error(resolved?.error ?? `Could not open ATS fix thread for ${sectionPlan.section}`);
+            }
+
+            const topicId = topicIdForSubSession(resolved.adkSessionId);
+            const coordinator = atsFixBatchRef.current;
+            if (!coordinator) break;
+
+            if (i > 0 && coordinator.gateTopicId) {
+              const gateTopicId = coordinator.gateTopicId;
+              await waitForAtsGateTopicSettled(
+                () => buildAtsGateSnapshot(messagesRef.current, gateTopicId, isAgentLoadingRef.current),
+                batchAbort.signal
+              );
+              if (!coordinator.userOverrodeFocus) {
+                setMessages(prev => prev.map(m => (m.id === gateTopicId && m.isTopic ? { ...m, isExpanded: false } : m)));
+              }
+            }
+
+            const existingImproveTopic = findImproveTopic(messagesRef.current, resolved.adkSessionId);
+            if (existingImproveTopic) {
+              const pendingReview =
+                findPendingReviewInTopic(existingImproveTopic, adkReviewStack, adkActiveReviewId) ??
+                findPendingReviewInTopic(existingImproveTopic, adkLinkedInReviewStack, adkLinkedInActiveReviewId) ??
+                findPendingReviewInTopic(existingImproveTopic, adkApplicationAssetReviewStack, adkApplicationAssetActiveReviewId) ??
+                findPendingReviewInTopic(existingImproveTopic, adkContentGenReviewStack, adkContentGenActiveReviewId) ??
+                findPendingReviewInTopic(existingImproveTopic, adkPortfolioReviewStack, adkPortfolioActiveReviewId);
+
+              if (pendingReview) {
+                handleActionItemSpamGuard({
+                  topicId: existingImproveTopic.id,
+                  actionMessageId: pendingReview.messageId,
+                  kind: "review_card",
+                  nudgeKey: `improve:${existingImproveTopic.id}:${resolved.adkSessionId}`,
+                  nudgeText: RESUME_IMPROVE_NUDGE,
+                });
+                continue;
+              }
+            }
+
+            coordinator.sectionIndex = i;
+            coordinator.gateSectionLabel = sectionPlan.topicTitle;
+            coordinator.gateTopicId = topicId;
+            syncAtsFixBatchUi();
+
+            const shouldFocus = !coordinator.userOverrodeFocus;
+
+            await refreshSessions();
+            await openImproveSubTopic(resolved.adkSessionId, sectionPlan.topicTitle, sectionPlan.displayText, sectionPlan.agentText, {
+              isExpanded: true,
+              suppressFocus: !shouldFocus,
+            });
+          }
+
+          atsFixBatchRef.current = null;
+          syncAtsFixBatchUi();
+        } catch (err) {
+          atsFixBatchRef.current = null;
+          syncAtsFixBatchUi();
+          handleStreamFailure(err, { text: "ATS fix with Unibot" });
         }
       })();
       return;
@@ -2252,7 +2392,15 @@ const ChatSidebar: React.FC<ChatSidebarProps> = ({ incomingRequest, onRequestHan
     adkContentGenActiveReviewId,
     adkPortfolioReviewStack,
     adkPortfolioActiveReviewId,
+    syncAtsFixBatchUi,
   ]);
+
+  useEffect(
+    () => () => {
+      atsFixBatchAbortRef.current?.abort();
+    },
+    []
+  );
 
   useEffect(() => {
     if (!improveReplyTopicId) return;
@@ -3851,6 +3999,8 @@ const ChatSidebar: React.FC<ChatSidebarProps> = ({ incomingRequest, onRequestHan
   };
 
   const selectImproveTopic = (topicId: string) => {
+    markAtsFixBatchFocusOverride(atsFixBatchRef.current);
+    syncAtsFixBatchUi();
     setImproveReplyTopicId(topicId);
     setMessages(prev => prev.map(msg => (msg.id === topicId && msg.isTopic ? { ...msg, isExpanded: true } : msg)));
     setHistoryPanelOpen(false);
@@ -4072,6 +4222,12 @@ const ChatSidebar: React.FC<ChatSidebarProps> = ({ incomingRequest, onRequestHan
             const nudgeTopicGoTo = () => {
               if (goTarget) nudgeGoToFeature(goTarget.href);
             };
+            const gateAwaitingHint = buildAtsGateAwaitingHint(
+              Boolean(atsFixBatchUi?.active),
+              atsFixBatchUi?.gateTopicId ?? null,
+              msg.id,
+              messages
+            );
             return (
               <div
                 key={msg.id}
@@ -4376,6 +4532,13 @@ const ChatSidebar: React.FC<ChatSidebarProps> = ({ incomingRequest, onRequestHan
                         );
                       })}
                     </div>
+
+                    {gateAwaitingHint ? (
+                      <div className="flex items-center gap-2 px-1 pt-1 text-[12px] text-slate-400 dark:text-slate-500">
+                        <Loader2 size={14} className="shrink-0 animate-spin" aria-hidden />
+                        <span>{gateAwaitingHint.text}</span>
+                      </div>
+                    ) : null}
 
                     {/* Topic Input - Seamless (nextjs layout; textarea for multi-line) */}
                     <div className="relative flex items-center gap-2 pt-2">
@@ -4889,7 +5052,11 @@ const ChatSidebar: React.FC<ChatSidebarProps> = ({ incomingRequest, onRequestHan
                 <span className="truncate">Reply to: {improveContextTopic.topicTitle}</span>
                 <button
                   type="button"
-                  onClick={() => setImproveReplyTopicId(null)}
+                  onClick={() => {
+                    markAtsFixBatchFocusOverride(atsFixBatchRef.current);
+                    syncAtsFixBatchUi();
+                    setImproveReplyTopicId(null);
+                  }}
                   className="shrink-0 rounded-full p-0.5"
                   aria-label="Clear reply target"
                 >
