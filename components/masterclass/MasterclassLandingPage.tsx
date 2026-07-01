@@ -2,6 +2,7 @@
 
 import React, { useEffect, useRef, useState } from "react";
 import { MasterclassFaqSection } from "@/components/masterclass/MasterclassFaqSection";
+import { MasterclassFullProgramPaymentModal } from "@/components/masterclass/MasterclassFullProgramPaymentModal";
 import {
   MasterclassOnboardingModal,
   type MasterclassLead,
@@ -10,56 +11,28 @@ import {
 import { MasterclassPlacementsSection } from "@/components/masterclass/MasterclassPlacementsSection";
 import { MasterclassStoriesSection } from "@/components/masterclass/MasterclassStoriesSection";
 import { UnimadLogo } from "@/components/unimad-logo";
+import {
+  MASTERCLASS_BOOKING_PATH,
+  MASTERCLASS_LEAD_SESSION_KEY,
+  MASTERCLASS_LEAD_SOURCE_DISCOVERY,
+  MASTERCLASS_LEAD_SOURCE_VSL_VIDEO,
+  MASTERCLASS_VIDEO_URL,
+  MASTERCLASS_VSL_FORM_COMPLETE_KEY,
+  MASTERCLASS_WELCOME_AUTOREDIRECT_KEY,
+  MASTERCLASS_WHATSAPP_NUMBER_DISPLAY,
+  MASTERCLASS_WHATSAPP_URL,
+  buildMasterclassSignupUrl,
+} from "@/constants/masterclass";
+import { useAuthStatus } from "@/hooks/useAuthStatus";
+import { expressDiscoveryBooking, submitMasterclassLead, unlockMasterclassWatch } from "@/lib/actions/masterclassLeads";
 import { ChevronDown } from "lucide-react";
 import Image from "next/image";
 import Link from "next/link";
-import Script from "next/script";
+import { useRouter } from "next/navigation";
 
-declare global {
-  interface Window {
-    Calendly?: {
-      initPopupWidget: (options: { url: string }) => void;
-    };
-  }
+function notifyError(message: string) {
+  console.error(message);
 }
-
-const CALENDLY_EVENT_URL = "https://calendly.com/unimad_ai/onboarding-to-unimad";
-const THANK_YOU_PATH = "/webinar/thank-you";
-
-const buildCalendlyUrl = (origin: string, prefill?: { name?: string; email?: string }) => {
-  const params = new URLSearchParams({
-    hide_event_type_details: "1",
-    hide_gdpr_banner: "1",
-    redirect_url: `${origin}${THANK_YOU_PATH}`,
-  });
-  if (prefill?.name) params.set("name", prefill.name);
-  if (prefill?.email) params.set("email", prefill.email);
-  return `${CALENDLY_EVENT_URL}?${params.toString()}`;
-};
-
-const openCalendlyPopup = (prefill?: { name?: string; email?: string }) => {
-  if (typeof window === "undefined") return;
-
-  const url = buildCalendlyUrl(window.location.origin, prefill);
-
-  const checkCalendly = (attempts = 0) => {
-    if (window.Calendly) {
-      try {
-        window.Calendly.initPopupWidget({ url });
-      } catch {
-        window.open(url, "_blank");
-      }
-      return;
-    }
-    if (attempts < 15) {
-      setTimeout(() => checkCalendly(attempts + 1), 200);
-      return;
-    }
-    window.open(url, "_blank");
-  };
-
-  checkCalendly();
-};
 
 type ButtonSize = "lg" | "sm" | "nav";
 
@@ -721,56 +694,224 @@ function MobilePricingSection({ cards, onCardAction }: { cards: PricingCardData[
   );
 }
 
+const MASTERCLASS_VIDEO_PLAYBACK_RATE = 1.25;
+
+function MasterclassVideoPlayer({ src, poster, autoPlay = false }: { src: string; poster: string; autoPlay?: boolean }) {
+  const videoRef = useRef<HTMLVideoElement>(null);
+
+  const applyPlaybackRate = (video: HTMLVideoElement | null) => {
+    if (video) video.playbackRate = MASTERCLASS_VIDEO_PLAYBACK_RATE;
+  };
+
+  useEffect(() => {
+    const video = videoRef.current;
+    if (!video) return;
+    applyPlaybackRate(video);
+    if (!autoPlay) return;
+    void video.play().catch(() => {});
+  }, [autoPlay, src]);
+
+  return (
+    <video
+      ref={videoRef}
+      src={src}
+      poster={poster}
+      className="masterclass-video-player h-full w-full object-cover"
+      controls
+      controlsList="nodownload noremoteplayback"
+      disablePictureInPicture
+      playsInline
+      preload="metadata"
+      onLoadedMetadata={event => applyPlaybackRate(event.currentTarget)}
+      onContextMenu={event => event.preventDefault()}
+    />
+  );
+}
+
+function MasterclassHeroPreview({
+  canWatch,
+  autoPlay,
+  onRequestAccess,
+}: {
+  canWatch: boolean;
+  autoPlay: boolean;
+  onRequestAccess: () => void;
+}) {
+  if (canWatch) {
+    return <MasterclassVideoPlayer src={MASTERCLASS_VIDEO_URL} poster="/images/masterclass/video-thumbnail.jpg" autoPlay={autoPlay} />;
+  }
+
+  return (
+    <>
+      <Image
+        src="/images/masterclass/video-thumbnail.jpg"
+        alt="Masterclass preview"
+        fill
+        className="object-cover"
+        sizes="(max-width: 1024px) 100vw, 809px"
+        priority
+      />
+      <button
+        type="button"
+        onClick={onRequestAccess}
+        className="absolute inset-0 z-10 flex items-center justify-center bg-black/25 transition-transform hover:scale-[1.01]"
+        aria-label="Unlock masterclass video"
+      >
+        <MasterclassPlayButton className="size-16 transition-transform hover:scale-105 sm:size-[88px] lg:size-[104px]" />
+      </button>
+    </>
+  );
+}
+
 export default function MasterclassLandingPage() {
+  const router = useRouter();
+  const { isAuthenticated } = useAuthStatus();
   const [onboardingOpen, setOnboardingOpen] = useState(false);
   const [onboardingIntent, setOnboardingIntent] = useState<MasterclassOnboardingIntent>("booking");
+  const [videoUnlocked, setVideoUnlocked] = useState(false);
+  const [shouldAutoplayVideo, setShouldAutoplayVideo] = useState(false);
+  const [leadUid, setLeadUid] = useState<string | null>(null);
+  const [paymentModalOpen, setPaymentModalOpen] = useState(false);
+  const [deepLinkProcessing, setDeepLinkProcessing] = useState(false);
+
+  const canWatchVideo = videoUnlocked || isAuthenticated;
 
   useEffect(() => {
     document.body.classList.add("masterclass-page");
     document.documentElement.classList.add("masterclass-page");
 
-    const calendlyLink = document.createElement("link");
-    calendlyLink.href = "https://assets.calendly.com/assets/external/widget.css";
-    calendlyLink.rel = "stylesheet";
-    document.head.appendChild(calendlyLink);
+    if (typeof window !== "undefined") {
+      if (localStorage.getItem(MASTERCLASS_VSL_FORM_COMPLETE_KEY) === "1") {
+        setVideoUnlocked(true);
+      }
+      const params = new URLSearchParams(window.location.search);
+      if (params.get("autoplay") === "1") {
+        setShouldAutoplayVideo(true);
+      }
+    }
 
     return () => {
       document.body.classList.remove("masterclass-page");
       document.documentElement.classList.remove("masterclass-page");
-      const existingLink = document.querySelector('link[href="https://assets.calendly.com/assets/external/widget.css"]');
-      if (existingLink) document.head.removeChild(existingLink);
     };
   }, []);
+
+  useEffect(() => {
+    if (isAuthenticated) setVideoUnlocked(true);
+  }, [isAuthenticated]);
+
+  useEffect(() => {
+    if (typeof window === "undefined") return;
+
+    const params = new URLSearchParams(window.location.search);
+    const uid = params.get("uid");
+    const book = params.get("book");
+    const watch = params.get("watch");
+
+    if (!uid || (book !== "discovery" && watch !== "1" && watch !== "true")) return;
+
+    let cancelled = false;
+
+    void (async () => {
+      setDeepLinkProcessing(true);
+      try {
+        if (book === "discovery") {
+          const result = await expressDiscoveryBooking(uid);
+          if (cancelled) return;
+
+          sessionStorage.setItem(
+            MASTERCLASS_LEAD_SESSION_KEY,
+            JSON.stringify({
+              name: result.name,
+              email: result.email,
+              leadId: result.lead_id,
+              uid: result.uid,
+              source: result.source,
+            })
+          );
+
+          if (result.has_account || isAuthenticated) {
+            sessionStorage.setItem(MASTERCLASS_WELCOME_AUTOREDIRECT_KEY, "niche");
+          }
+
+          router.replace(MASTERCLASS_BOOKING_PATH);
+          return;
+        }
+
+        await unlockMasterclassWatch(uid);
+        if (cancelled) return;
+
+        localStorage.setItem(MASTERCLASS_VSL_FORM_COMPLETE_KEY, "1");
+        setVideoUnlocked(true);
+        setShouldAutoplayVideo(true);
+        router.replace("/masterclass?autoplay=1");
+      } catch (error) {
+        if (!cancelled) {
+          notifyError(error instanceof Error ? error.message : "This link could not be processed.");
+          router.replace("/masterclass");
+        }
+      } finally {
+        if (!cancelled) setDeepLinkProcessing(false);
+      }
+    })();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [isAuthenticated, router]);
 
   const openOnboardingModal = (intent: MasterclassOnboardingIntent = "booking") => {
     setOnboardingIntent(intent);
     setOnboardingOpen(true);
   };
 
-  const handleLeadSubmit = (lead: MasterclassLead) => {
+  const handleLeadSubmit = async (lead: MasterclassLead) => {
+    const source = onboardingIntent === "video" ? MASTERCLASS_LEAD_SOURCE_VSL_VIDEO : MASTERCLASS_LEAD_SOURCE_DISCOVERY;
+
+    const result = await submitMasterclassLead({
+      name: lead.name,
+      email: lead.email,
+      dial_code: lead.dialCode,
+      phone: lead.phone,
+      source,
+      linkedin_url: "",
+    });
+
+    const savedUid = result?.uid ?? (result?.lead_id != null ? String(result.lead_id) : null);
+    setLeadUid(savedUid);
+
     if (typeof window !== "undefined") {
       sessionStorage.setItem(
-        "masterclass_lead",
+        MASTERCLASS_LEAD_SESSION_KEY,
         JSON.stringify({
           ...lead,
+          leadId: result?.lead_id,
+          uid: savedUid,
           fullPhone: `${lead.dialCode}${lead.phone}`,
+          source,
         })
       );
     }
+
     setOnboardingOpen(false);
-    openCalendlyPopup({ name: lead.name, email: lead.email });
+
+    if (onboardingIntent === "video") {
+      localStorage.setItem(MASTERCLASS_VSL_FORM_COMPLETE_KEY, "1");
+      setVideoUnlocked(true);
+      setShouldAutoplayVideo(true);
+      return;
+    }
+
+    router.push(MASTERCLASS_BOOKING_PATH);
   };
 
-  const handleSocialBook = (provider: "google" | "linkedin") => {
-    if (typeof window !== "undefined") {
-      sessionStorage.setItem("masterclass_lead", JSON.stringify({ bookingMethod: provider }));
-    }
-    setOnboardingOpen(false);
-    openCalendlyPopup();
+  const handleSocialBook = () => {
+    const intent = onboardingIntent === "video" ? "video" : "discovery";
+    window.location.href = buildMasterclassSignupUrl(intent, leadUid);
   };
 
   const handleSignUp = () => {
-    window.location.href = "/uniboard/unicoach";
+    setPaymentModalOpen(true);
   };
 
   const handleCardAction = (card: PricingCardData) => {
@@ -778,11 +919,17 @@ export default function MasterclassLandingPage() {
       handleSignUp();
       return;
     }
-    openOnboardingModal();
+    openOnboardingModal("booking");
   };
 
   return (
     <div className="masterclass-page-bg relative isolate min-h-screen overflow-x-hidden font-sans text-[#eaeaea] selection:bg-[#346de0]/30">
+      {deepLinkProcessing ? (
+        <div className="fixed inset-0 z-[200] flex flex-col items-center justify-center gap-3 bg-[#0a0a0a]/90 backdrop-blur-sm">
+          <div className="h-10 w-10 animate-spin rounded-full border-2 border-white/20 border-t-[#346de0]" />
+          <p className="text-sm text-[#eaeaea]/70">Setting things up for you…</p>
+        </div>
+      ) : null}
       <div className="masterclass-hero-glow" aria-hidden />
       <div className="masterclass-dot-grid-overlay" aria-hidden />
 
@@ -821,22 +968,11 @@ export default function MasterclassLandingPage() {
                 className="relative z-[1] aspect-[16/10] h-auto w-full shrink-0 sm:aspect-auto sm:h-[360px] lg:h-[456px] lg:w-[809px]"
                 contentClassName="relative h-full min-h-[220px] sm:min-h-0"
               >
-                <Image
-                  src="/images/masterclass/video-thumbnail.jpg"
-                  alt="Masterclass preview"
-                  fill
-                  className="object-cover"
-                  sizes="(max-width: 1024px) 100vw, 809px"
-                  priority
+                <MasterclassHeroPreview
+                  canWatch={canWatchVideo}
+                  autoPlay={shouldAutoplayVideo}
+                  onRequestAccess={() => openOnboardingModal("video")}
                 />
-                <button
-                  type="button"
-                  onClick={() => openOnboardingModal("video")}
-                  className="absolute inset-0 z-10 flex items-center justify-center transition-transform hover:scale-[1.01]"
-                  aria-label="Play masterclass preview"
-                >
-                  <MasterclassPlayButton className="size-16 transition-transform hover:scale-105 sm:size-[88px] lg:size-[104px]" />
-                </button>
               </MasterclassFrame>
 
               {/* CTA card */}
@@ -917,8 +1053,8 @@ export default function MasterclassLandingPage() {
                     <span className="hidden text-slate-300 sm:inline" aria-hidden>
                       |
                     </span>
-                    <a href="tel:+441234567890" className="hover:underline">
-                      +44 12345 67890
+                    <a href={MASTERCLASS_WHATSAPP_URL} target="_blank" rel="noopener noreferrer" className="hover:underline">
+                      {MASTERCLASS_WHATSAPP_NUMBER_DISPLAY}
                     </a>
                   </div>
                 </div>
@@ -928,15 +1064,15 @@ export default function MasterclassLandingPage() {
         </div>
       </div>
 
-      <Script src="https://assets.calendly.com/assets/external/widget.js" strategy="lazyOnload" />
-
       <MasterclassOnboardingModal
         open={onboardingOpen}
         intent={onboardingIntent}
         onClose={() => setOnboardingOpen(false)}
-        onSubmit={handleLeadSubmit}
+        onSubmit={lead => void handleLeadSubmit(lead)}
         onSocialBook={handleSocialBook}
       />
+
+      <MasterclassFullProgramPaymentModal open={paymentModalOpen} onClose={() => setPaymentModalOpen(false)} />
     </div>
   );
 }

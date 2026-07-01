@@ -16,6 +16,9 @@ function SigninForm() {
   const searchParams = useSearchParams();
   const redirect = searchParams?.get("redirect") ?? DEFAULT_UNIBOARD_REDIRECT;
   const unicoachClaim = searchParams?.get("unicoach_claim");
+  const masterclassIntent = searchParams?.get("masterclass_intent");
+  const masterclassUid = searchParams?.get("uid");
+  const redirectTab = searchParams?.get("tab");
   const from = searchParams?.get("from") ?? "";
   const errorMessage = searchParams?.get("message");
   const { isAuthenticated, isLoading } = useAuthStatus();
@@ -43,6 +46,16 @@ function SigninForm() {
     const params = new URLSearchParams({ redirect: oauthRedirect });
     if (unicoachClaim) {
       params.set("unicoach_claim", unicoachClaim);
+    }
+    if (masterclassIntent === "discovery" || masterclassIntent === "video") {
+      params.set("masterclass_intent", masterclassIntent);
+    }
+    if (masterclassUid) {
+      params.set("uid", masterclassUid);
+      params.set("lead_id", masterclassUid);
+    }
+    if (redirectTab) {
+      params.set("tab", redirectTab);
     }
     const query = params.toString();
     if (provider === "linkedin") {

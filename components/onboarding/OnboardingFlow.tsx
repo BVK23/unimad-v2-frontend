@@ -15,6 +15,7 @@ import {
 } from "@/lib/actions/onboardingActions";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { Loader2 } from "lucide-react";
+import { useSearchParams } from "next/navigation";
 import DesiredRoleForm from "./DesiredRoleForm";
 import EducationForm from "./EducationForm";
 import ExperienceForm from "./ExperienceForm";
@@ -115,6 +116,20 @@ const LoadingState = () => (
 
 export default function OnboardingFlow() {
   const queryClient = useQueryClient();
+  const searchParams = useSearchParams();
+  const masterclassIntent = searchParams.get("masterclass_intent");
+  const navigate = searchParams.get("navigate");
+  const navigateTab = searchParams.get("tab");
+
+  const getPostOnboardingPath = useCallback(() => {
+    if (navigate === "unicoach" || masterclassIntent === "discovery") {
+      return `/uniboard/unicoach?tab=${navigateTab || "niche"}`;
+    }
+    if (masterclassIntent === "video") {
+      return "/masterclass?autoplay=1";
+    }
+    return "/uniboard/resume";
+  }, [masterclassIntent, navigate, navigateTab]);
   const userOnboardingData = useOnboardingStore(s => s.userOnboardingData);
   const setUserOnboardingData = useOnboardingStore(s => s.setUserOnboardingData);
   const registerSkipCurrentStep = useOnboardingUIStore(s => s.registerSkipCurrentStep);
@@ -264,8 +279,18 @@ export default function OnboardingFlow() {
         history: nextIncompleteIdx !== -1 ? pushHistory(current.history, currentIndex) : current.history,
       };
     },
-    onSuccess: next => {
+    onSuccess: (next, variables) => {
       queryClient.setQueryData(ONBOARDING_QUERY_KEY, next);
+
+      const completedStep = Array.isArray(variables.completedSteps) ? null : variables.completedSteps;
+      const phoneDone = next.steps.find(s => s.name === "whatsapp")?.completed;
+      const linkedinDone = next.steps.find(s => s.name === "linkedin")?.completed;
+
+      if (completedStep === "linkedin" && phoneDone && linkedinDone) {
+        window.setTimeout(() => {
+          window.location.href = getPostOnboardingPath();
+        }, 100);
+      }
     },
   });
 
@@ -352,10 +377,10 @@ export default function OnboardingFlow() {
   useEffect(() => {
     if (!reachedEnd) return;
     const timeout = window.setTimeout(() => {
-      window.location.href = "/uniboard/resume";
+      window.location.href = getPostOnboardingPath();
     }, 80);
     return () => window.clearTimeout(timeout);
-  }, [reachedEnd]);
+  }, [getPostOnboardingPath, reachedEnd]);
 
   if (isLoading) return <LoadingState />;
   if (!data) return <LoadingState />;
