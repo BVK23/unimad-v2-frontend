@@ -1,7 +1,10 @@
 "use server";
 
 import type { ContentGenAssetItem, UnibotChatMessage } from "@/features/content-lab/types";
+import { messageFromFailedResponse, sanitizeUserFacingError } from "@/utils/message-from-failed-response";
 import { cookies } from "next/headers";
+
+export type ContentGenMutationResult = { success: true } | { success: false; error: string };
 
 function getBackendUrl(): string {
   const url = process.env.NEXT_PUBLIC_BACKEND_URL;
@@ -253,25 +256,46 @@ export async function updateContentGenAsset(params: {
   dateScheduled?: string | null;
   status?: string;
   images?: string[];
-}): Promise<void> {
-  const body: Record<string, unknown> = {
-    action: "edit",
-    id: params.id,
-  };
-  if (params.content !== undefined) body.content = params.content;
-  if (params.dateScheduled !== undefined) body.dateScheduled = params.dateScheduled;
-  if (params.status !== undefined) body.status = params.status;
-  if (params.images !== undefined) body.images = params.images;
+}): Promise<ContentGenMutationResult> {
+  try {
+    const body: Record<string, unknown> = {
+      action: "edit",
+      id: params.id,
+    };
+    if (params.content !== undefined) body.content = params.content;
+    if (params.dateScheduled !== undefined) body.dateScheduled = params.dateScheduled;
+    if (params.status !== undefined) body.status = params.status;
+    if (params.images !== undefined) body.images = params.images;
 
-  const res = await authedFetch(`/api/update-delete-asset/contentgen/`, {
-    method: "POST",
-    body: JSON.stringify(body),
-  });
+    const res = await authedFetch(`/api/update-delete-asset/contentgen/`, {
+      method: "POST",
+      body: JSON.stringify(body),
+    });
 
-  const data = (await res.json().catch(() => ({}))) as { error?: string; message?: string };
+    const rawText = await res.text();
+    let data: Record<string, unknown> = {};
+    try {
+      if (rawText.trim()) {
+        data = JSON.parse(rawText) as Record<string, unknown>;
+      }
+    } catch {
+      data = {};
+    }
 
-  if (!res.ok) {
-    throw new Error(data.error ?? "Failed to save");
+    if (!res.ok) {
+      const jsonError = typeof data.error === "string" ? data.error : typeof data.message === "string" ? data.message : undefined;
+      return {
+        success: false,
+        error: messageFromFailedResponse(res.status, rawText, jsonError ?? "Failed to save your post."),
+      };
+    }
+
+    return { success: true };
+  } catch (e) {
+    return {
+      success: false,
+      error: sanitizeUserFacingError(e instanceof Error ? e.message : "", "Failed to save your post."),
+    };
   }
 }
 
@@ -337,24 +361,39 @@ function messageFromUnknownJsonBody(data: Record<string, unknown>, rawText: stri
 /**
  * POST `/api/post-to-linkedin/` — publishes the contentgen asset to LinkedIn (content must already be saved on the asset).
  */
-export async function postContentGenToLinkedIn(id: string): Promise<void> {
-  const res = await authedFetch(`/api/post-to-linkedin/`, {
-    method: "POST",
-    body: JSON.stringify({ id }),
-  });
-
-  const rawText = await res.text();
-  let data: Record<string, unknown> = {};
+export async function postContentGenToLinkedIn(id: string): Promise<ContentGenMutationResult> {
   try {
-    if (rawText.trim()) {
-      data = JSON.parse(rawText) as Record<string, unknown>;
-    }
-  } catch {
-    data = {};
-  }
+    const res = await authedFetch(`/api/post-to-linkedin/`, {
+      method: "POST",
+      body: JSON.stringify({ id }),
+    });
 
-  if (!res.ok) {
-    throw new Error(messageFromUnknownJsonBody(data, rawText, res.status, res.statusText));
+    const rawText = await res.text();
+    let data: Record<string, unknown> = {};
+    try {
+      if (rawText.trim()) {
+        data = JSON.parse(rawText) as Record<string, unknown>;
+      }
+    } catch {
+      data = {};
+    }
+
+    if (!res.ok) {
+      return {
+        success: false,
+        error: sanitizeUserFacingError(
+          messageFromUnknownJsonBody(data, rawText, res.status, res.statusText),
+          "Failed to post to LinkedIn. Please try again."
+        ),
+      };
+    }
+
+    return { success: true };
+  } catch (e) {
+    return {
+      success: false,
+      error: sanitizeUserFacingError(e instanceof Error ? e.message : "", "Failed to post to LinkedIn. Please try again."),
+    };
   }
 }
 

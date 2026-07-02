@@ -1,4 +1,5 @@
 import type { ApplicationAssetApiType } from "@/features/application-assets/types";
+import { useResumeStore } from "@/features/resume/store/useResumeStore";
 import type { UnibotAdkSessionRow } from "./session-registry";
 
 const STUDIO_LABELS: Record<ApplicationAssetApiType, string> = {
@@ -62,7 +63,7 @@ export function buildStudioAssetImproveTitle(assetType: ApplicationAssetApiType,
 
 export function buildResumeImproveTitle(section: string): string {
   const label = RESUME_SECTION_LABELS[section.toLowerCase()] ?? section.replace(/_/g, " ").replace(/\b\w/g, c => c.toUpperCase());
-  return `Improve ${label}`;
+  return `Improve ${label} · Resume`;
 }
 
 export function buildLinkedInImproveTitle(section: string, displayName?: string): string {
@@ -205,6 +206,14 @@ export function deriveSubSessionSubtitle(
     return "LinkedIn profile";
   }
   if (feature === "resume") {
+    const resumeId = (row.feature_id ?? "").trim();
+    if (resumeId) {
+      const title = useResumeStore.getState().resumeData[resumeId]?.title?.trim();
+      if (title) {
+        return truncateForSubThreadTitle(title, 40);
+      }
+      return `Resume ${resumeId}`;
+    }
     return "Resume";
   }
   if (feature === "linkedin_topic") {

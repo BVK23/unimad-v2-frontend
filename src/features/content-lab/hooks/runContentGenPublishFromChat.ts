@@ -68,20 +68,29 @@ export const runContentGenPublishFromChat = async (input: RunContentGenPublishIn
     onStep?.("save_draft");
     if (mode === "schedule" && scheduleDate) {
       onStep?.("schedule");
-      await updateContentGenAsset({
+      const scheduleResult = await updateContentGenAsset({
         id: assetId,
         content: trimmed,
         dateScheduled: scheduleDate.toISOString(),
         status: "Scheduled",
       });
+      if (!scheduleResult.success) {
+        return { ok: false, message: normalizeLinkedinPostError(scheduleResult.error) };
+      }
       onStep?.("done");
       return { ok: true, mode: "schedule", scheduledAt: scheduleDate.toISOString() };
     }
 
     onStep?.("save_draft");
-    await updateContentGenAsset({ id: assetId, content: trimmed });
+    const saveResult = await updateContentGenAsset({ id: assetId, content: trimmed });
+    if (!saveResult.success) {
+      return { ok: false, message: normalizeLinkedinPostError(saveResult.error) };
+    }
     onStep?.("post");
-    await postContentGenToLinkedIn(assetId);
+    const postResult = await postContentGenToLinkedIn(assetId);
+    if (!postResult.success) {
+      return { ok: false, message: normalizeLinkedinPostError(postResult.error) };
+    }
     onStep?.("done");
     return { ok: true, mode: "post_now" };
   } catch (e) {

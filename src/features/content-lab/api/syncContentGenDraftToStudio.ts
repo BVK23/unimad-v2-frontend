@@ -32,13 +32,19 @@ export const syncContentGenDraftToStudio = async (params: SyncContentGenDraftPar
   let assetId = params.existingAssetId?.trim() || null;
 
   if (assetId) {
-    await updateContentGenAsset({ id: assetId, content: draft });
+    const saveResult = await updateContentGenAsset({ id: assetId, content: draft });
+    if (!saveResult.success) {
+      throw new Error(saveResult.error);
+    }
   } else {
     const { id } = await createContentGenShell(topic, {
       funnel: params.funnel ?? undefined,
     });
     assetId = id;
-    await updateContentGenAsset({ id: assetId, content: draft });
+    const saveResult = await updateContentGenAsset({ id: assetId, content: draft });
+    if (!saveResult.success) {
+      throw new Error(saveResult.error);
+    }
   }
 
   window.dispatchEvent(

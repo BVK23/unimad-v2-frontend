@@ -73,24 +73,18 @@ function resolveResumeIdForPull(ctx: MutatingToolPullContext): string | null {
 
 function applyResumeState(state: Record<string, unknown>, ctx: MutatingToolPullContext): void {
   const nextResumes = mapAdkResumeDataMapToFrontend(state.resume_data);
-  const currentResumeIdRaw = state.current_resume;
-  const currentFromState =
-    typeof currentResumeIdRaw === "string" || typeof currentResumeIdRaw === "number" ? String(currentResumeIdRaw).trim() : "";
   const scopedResumeId = resolveResumeIdForPull(ctx);
-  const currentResumeId = currentFromState || scopedResumeId || "";
-  const sourceResume =
-    (currentResumeId ? nextResumes[currentResumeId] : undefined) ??
-    (scopedResumeId ? nextResumes[scopedResumeId] : undefined) ??
-    Object.values(nextResumes)[0];
-  const resolvedResumeId = sourceResume?.id ?? (currentResumeId || scopedResumeId);
-  if (!resolvedResumeId || !sourceResume) return;
+  if (!scopedResumeId) return;
+
+  const sourceResume = nextResumes[scopedResumeId];
+  if (!sourceResume) return;
 
   const baseline = ctx.baselines.resume;
   if (baseline) {
     const { highlights, bannerTitle } = computeAdkReviewFromDiff(baseline, sourceResume);
     if (Object.keys(highlights).length > 0) {
       useAdkResumeReviewStore.getState().beginReview({
-        resumeId: resolvedResumeId,
+        resumeId: scopedResumeId,
         baselineResume: baseline,
         highlights,
         bannerTitle,
@@ -99,8 +93,10 @@ function applyResumeState(state: Record<string, unknown>, ctx: MutatingToolPullC
     }
   }
 
-  useResumeStore.setState({ resumeData: nextResumes });
-  ctx.queryClient.setQueryData(resumeByIdQueryKey(resolvedResumeId), sourceResume);
+  useResumeStore.setState(current => ({
+    resumeData: { ...current.resumeData, ...nextResumes },
+  }));
+  ctx.queryClient.setQueryData(resumeByIdQueryKey(scopedResumeId), sourceResume);
 }
 
 function applyPortfolioState(state: Record<string, unknown>, ctx: MutatingToolPullContext): void {

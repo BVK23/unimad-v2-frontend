@@ -83,7 +83,10 @@ export async function revertDjangoContentAfterRewind(params: {
     const content = payload.content ?? "";
     const assetId = payload.assetId?.trim();
     if (assetId) {
-      await updateContentGenAsset({ id: assetId, content });
+      const saveResult = await updateContentGenAsset({ id: assetId, content });
+      if (!saveResult.success) {
+        throw new Error(saveResult.error);
+      }
     }
     useContentGenStudioStore.getState().syncFromStudio({
       topic: payload.topic,

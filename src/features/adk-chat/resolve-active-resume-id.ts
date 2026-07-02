@@ -1,6 +1,5 @@
 import { useSyncExternalStore } from "react";
-
-const RESUME_URL_CHANGE = "resume-url-change";
+import { RESUME_URL_CHANGE } from "@/features/resume/hooks/useResumeUrlState";
 
 function readResumeIdFromWindow(): string | null {
   if (typeof window === "undefined") return null;
@@ -17,15 +16,22 @@ function subscribeResumeUrl(callback: () => void): () => void {
   };
 }
 
-/** Resume editor updates `?id=` via `history.replaceState` (not Next router), so read both sources. */
+/**
+ * Resume editor updates `?id=` via `history.replaceState` (not Next router).
+ * On the client, the live URL bar is the source of truth — including when `id` is cleared on landing.
+ */
 export function resolveActiveResumeIdForPatch(searchParams: Pick<URLSearchParams, "get"> | null | undefined): string | null {
-  const fromNext = searchParams?.get("id")?.trim();
-  if (fromNext) return fromNext;
-  return readResumeIdFromWindow();
+  if (typeof window !== "undefined") {
+    return readResumeIdFromWindow();
+  }
+  return searchParams?.get("id")?.trim() || null;
 }
 
 /** Reactive resume id for PATCH — re-renders when the editor updates `?id=` via `replaceState`. */
 export function useActiveResumeIdForPatch(searchParams: Pick<URLSearchParams, "get"> | null | undefined): string | null {
   const fromWindow = useSyncExternalStore(subscribeResumeUrl, readResumeIdFromWindow, () => null);
-  return searchParams?.get("id")?.trim() || fromWindow || null;
+  if (typeof window !== "undefined") {
+    return fromWindow;
+  }
+  return searchParams?.get("id")?.trim() || null;
 }

@@ -35,27 +35,54 @@ export function useStreamingStatusLabel({
   return "Thinking…";
 }
 
-/** Label for a streaming assistant bubble — while agent is loading, show the latest hint on any placeholder. */
+/** Label for a streaming assistant bubble — only the active streaming message shows live activity. */
 export function streamActivityLabelForMessage(
   messageId: string,
   live: UnibotStreamActivityState,
   fallback: string | null | undefined,
-  options?: { agentLoading?: boolean; isSyncingContext?: boolean; waitingLabel?: string }
+  options?: {
+    agentLoading?: boolean;
+    isSyncingContext?: boolean;
+    waitingLabel?: string;
+    /** When false, this bubble must not show stream loading (avoids duplicate spinners). */
+    isActiveStreamingTarget?: boolean;
+  }
 ): string {
   if (options?.isSyncingContext) {
     return SYNCING_CONTEXT_LABEL;
   }
-  // During an active stream, always show the latest activity (sub-thread ids may not match yet).
-  if (options?.agentLoading && live.activityLabel?.trim()) {
-    return live.activityLabel.trim();
+  if (options?.isActiveStreamingTarget === false) {
+    return "";
   }
-  if (live.activityLabel?.trim()) {
-    if (!live.assistantMessageId || live.assistantMessageId === messageId) {
-      return live.activityLabel.trim();
-    }
+  if (live.activityLabel?.trim() && live.assistantMessageId === messageId) {
+    return live.activityLabel.trim();
   }
   if (options?.agentLoading && fallback?.trim()) {
     return fallback.trim();
   }
-  return fallback?.trim() || options?.waitingLabel?.trim() || "Thinking…";
+  if (options?.agentLoading && options?.waitingLabel?.trim()) {
+    return options.waitingLabel.trim();
+  }
+  return options?.waitingLabel?.trim() || "Thinking…";
+}
+
+/** Cursor-style follow-up status while sub-agents run after the assistant bubble already has text. */
+export function getFollowUpStreamActivityLabel(
+  messageId: string,
+  live: UnibotStreamActivityState,
+  fallback: string | null | undefined,
+  options?: { agentLoading?: boolean; isSyncingContext?: boolean; hasVisibleText?: boolean; waitingLabel?: string }
+): string | null {
+  if (!options?.hasVisibleText) return null;
+  if (!options?.agentLoading && !options?.isSyncingContext) return null;
+  if (!live.assistantMessageId || live.assistantMessageId !== messageId) return null;
+
+  const label = streamActivityLabelForMessage(messageId, live, fallback, {
+    agentLoading: options.agentLoading,
+    isSyncingContext: options.isSyncingContext,
+    waitingLabel: options.waitingLabel,
+  }).trim();
+
+  if (!label || label === "Thinking…") return null;
+  return label;
 }

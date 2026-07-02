@@ -1,5 +1,7 @@
+import { sanitizeUserFacingError } from "@/utils/message-from-failed-response";
+
 export const normalizeLinkedinPostError = (rawMessage: string): string => {
-  const msg = rawMessage.trim();
+  const msg = sanitizeUserFacingError(rawMessage, "Something went wrong while publishing to LinkedIn.");
   if (!msg) return "Something went wrong while publishing to LinkedIn.";
   if (/linkedin.*not.*connect/i.test(msg) || /no linkedin/i.test(msg)) {
     return "Connect your LinkedIn account in settings before posting.";

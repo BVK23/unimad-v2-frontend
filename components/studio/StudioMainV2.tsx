@@ -95,6 +95,7 @@ import {
   parseStudioSearchParams,
 } from "@/lib/jobs/prepare-application-url";
 import { getRegistryRow } from "@/src/features/adk-chat/session-registry";
+import { clearContentGenReviewStack, dismissSyncedContentGenReviews } from "@/src/features/adk-chat/sync-content-gen-review-with-persisted";
 import { getJob } from "@/src/features/jobs/server-actions/jobs-actions";
 import {
   UNIBOT_AGENT_LOADING_EVENT,
@@ -1150,6 +1151,13 @@ const StudioMainV2: React.FC<StudioMainProps> = ({ initialContext, initialAssetI
   }, [selectedTopic, topicIdea, linkedinFunnel, mood, linkedinPostAssetId, generatedContent]);
 
   useEffect(() => {
+    if (selectedTopic !== "linkedin-post" || !generatedContent.trim()) {
+      return;
+    }
+    dismissSyncedContentGenReviews(generatedContent);
+  }, [selectedTopic, generatedContent]);
+
+  useEffect(() => {
     if (!isDocumentTopic(selectedTopic)) {
       return;
     }
@@ -1554,6 +1562,10 @@ const StudioMainV2: React.FC<StudioMainProps> = ({ initialContext, initialAssetI
   useEffect(() => {
     const onPublishComplete = () => {
       void refreshLinkedinAssets();
+      const draft = useContentGenStudioStore.getState().draftPreview;
+      if (draft.trim()) {
+        dismissSyncedContentGenReviews(draft);
+      }
     };
     window.addEventListener(CONTENT_GEN_EVENTS.publishComplete, onPublishComplete);
     return () => window.removeEventListener(CONTENT_GEN_EVENTS.publishComplete, onPublishComplete);
@@ -2056,19 +2068,31 @@ const StudioMainV2: React.FC<StudioMainProps> = ({ initialContext, initialAssetI
           updateStudioUrl({ type: "linkedin-post", id: assetId });
         }
         if (isScheduled && scheduleDate) {
-          await updateContentGenAsset({
+          const scheduleResult = await updateContentGenAsset({
             id: assetId,
             content: finalContent,
             dateScheduled: scheduleDate.toISOString(),
             status: "Scheduled",
             images: linkedinImages,
           });
+          if (!scheduleResult.success) {
+            throw new Error(normalizeLinkedinPostError(scheduleResult.error));
+          }
         } else {
-          await updateContentGenAsset({ id: assetId, content: finalContent, images: linkedinImages });
-          await postContentGenToLinkedIn(assetId);
+          const saveResult = await updateContentGenAsset({ id: assetId, content: finalContent, images: linkedinImages });
+          if (!saveResult.success) {
+            throw new Error(normalizeLinkedinPostError(saveResult.error));
+          }
+          const postResult = await postContentGenToLinkedIn(assetId);
+          if (!postResult.success) {
+            throw new Error(normalizeLinkedinPostError(postResult.error));
+          }
         }
         setGeneratedContent(finalContent);
         await refreshLinkedinAssets();
+        dismissSyncedContentGenReviews(finalContent);
+        clearContentGenReviewStack();
+        window.dispatchEvent(new CustomEvent(CONTENT_GEN_EVENTS.publishComplete));
       } catch (e) {
         const errorMessage = e instanceof Error ? e.message : "Something went wrong";
         const normalized = normalizeLinkedinPostError(errorMessage);
@@ -2811,10 +2835,13 @@ const StudioMainV2: React.FC<StudioMainProps> = ({ initialContext, initialAssetI
         const uploaded = await Promise.all(Array.from(files).map(file => uploadContentGenMediaClient(file, "linkedin-post")));
         const merged = Array.from(new Set([...linkedinImages, ...uploaded.map(item => item.url)]));
         setLinkedinImages(merged);
-        await updateContentGenAsset({
+        const saveResult = await updateContentGenAsset({
           id: linkedinPostAssetId,
           images: merged,
         });
+        if (!saveResult.success) {
+          throw new Error(saveResult.error);
+        }
         await refreshLinkedinAssets();
       } catch (e) {
         setLinkedinMediaError(e instanceof Error ? e.message : "Could not upload media");
@@ -2843,7 +2870,10 @@ const StudioMainV2: React.FC<StudioMainProps> = ({ initialContext, initialAssetI
       const nextImages = linkedinImages.filter(item => item !== url);
       setLinkedinImages(nextImages);
       try {
-        await updateContentGenAsset({ id: linkedinPostAssetId, images: nextImages });
+        const saveResult = await updateContentGenAsset({ id: linkedinPostAssetId, images: nextImages });
+        if (!saveResult.success) {
+          throw new Error(saveResult.error);
+        }
         await refreshLinkedinAssets();
       } catch (e) {
         setLinkedinMediaError(e instanceof Error ? e.message : "Could not remove media");

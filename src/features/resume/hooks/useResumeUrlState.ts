@@ -7,7 +7,7 @@ export type ResumeUrlState = {
   isNewDraft: boolean;
 };
 
-const RESUME_URL_CHANGE = "resume-url-change";
+export const RESUME_URL_CHANGE = "resume-url-change";
 
 const EMPTY_SNAPSHOT: ResumeUrlState = { resumeId: undefined, isNewDraft: false };
 

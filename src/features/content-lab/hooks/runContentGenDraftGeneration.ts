@@ -67,7 +67,10 @@ const runDjangoContentGenDraftWithMedia = async (params: RunContentGenDraftParam
     params.pendingMedia.forEach(p => URL.revokeObjectURL(p.objectUrl));
   }
 
-  await updateContentGenAsset({ id, content: draft, images: mergedImageUrls });
+  const saveResult = await updateContentGenAsset({ id, content: draft, images: mergedImageUrls });
+  if (!saveResult.success) {
+    throw new Error(saveResult.error);
+  }
 
   window.dispatchEvent(
     new CustomEvent(CONTENT_GEN_EVENTS.draftReady, {

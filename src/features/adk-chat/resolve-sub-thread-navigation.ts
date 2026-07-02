@@ -1,5 +1,6 @@
 import type { ApplicationAssetApiType } from "@/features/application-assets/types";
 import { buildStudioHref } from "@/lib/jobs/prepare-application-url";
+import { resolveActiveResumeIdForPatch } from "@/src/features/adk-chat/resolve-active-resume-id";
 import type { UnibotAdkSessionRow } from "./session-registry";
 import { resolveRegistryContentKey } from "./sub-session-content-key";
 
@@ -121,6 +122,33 @@ export function resolveSubThreadNavTarget(row: UnibotAdkSessionRow | undefined):
   return null;
 }
 
+/** Resume accept/discard require the open editor resume to match the sub-thread and review card. */
+export function isResumeReviewActionsInContext(
+  activeResumeId: string | null | undefined,
+  subRow: UnibotAdkSessionRow | undefined | null,
+  reviewResumeId: string | null | undefined
+): boolean {
+  const active = (activeResumeId ?? "").trim();
+  const subId = (subRow?.feature ?? "").toLowerCase() === "resume" ? (subRow?.feature_id ?? "").trim() : "";
+  const cardId = (reviewResumeId ?? "").trim();
+  const requiredId = subId || cardId;
+  if (!requiredId) return true;
+  if (!active || active !== requiredId) return false;
+  if (subId && cardId && subId !== cardId) return false;
+  return true;
+}
+
+/** Read live URL search params on the client (resume editor uses `replaceState`, not Next router). */
+function readLiveSearchParams(searchParams: { get(name: string): string | null } | null | undefined): {
+  get(name: string): string | null;
+} {
+  if (typeof window !== "undefined") {
+    const params = new URLSearchParams(window.location.search);
+    return { get: (name: string) => params.get(name) };
+  }
+  return searchParams ?? { get: () => null };
+}
+
 /** True when the user's current route already matches the sub-thread asset. */
 export function isSubThreadNavTargetActive(
   target: SubThreadNavTarget,
@@ -128,25 +156,26 @@ export function isSubThreadNavTargetActive(
   searchParams: { get(name: string): string | null } | null | undefined
 ): boolean {
   try {
+    const liveParams = readLiveSearchParams(searchParams);
     const targetUrl = new URL(target.href, "http://unimad.local");
     if (pathname !== targetUrl.pathname) {
       return false;
     }
-    if (!searchParams) {
-      return targetUrl.search === "";
-    }
     for (const [key, value] of targetUrl.searchParams.entries()) {
-      if ((searchParams.get(key) ?? "").trim() !== value) {
+      if ((liveParams.get(key) ?? "").trim() !== value) {
         return false;
       }
     }
     const targetId = targetUrl.searchParams.get("id");
-    const currentId = searchParams.get("id");
+    const currentId =
+      pathname.startsWith("/uniboard/resume") && targetUrl.pathname.startsWith("/uniboard/resume")
+        ? resolveActiveResumeIdForPatch(liveParams)
+        : (liveParams.get("id") ?? null);
     if (targetId && currentId && targetId !== currentId) {
       return false;
     }
     const targetType = targetUrl.searchParams.get("type");
-    const currentType = searchParams.get("type");
+    const currentType = liveParams.get("type");
     if (targetType && currentType && targetType !== currentType) {
       return false;
     }

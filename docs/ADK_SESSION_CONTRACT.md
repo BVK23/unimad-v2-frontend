@@ -67,6 +67,28 @@ Resume is the only feature that keeps a working copy in Zustand until the user s
 
 Sub-threads use `getStateDeltaForScope` with the registry `contentKey` (e.g. `resume:<id>`). Main chat uses `getStateDeltaForCurrentRoute` from the active pathname.
 
+## Three-layer state model (Zustand + ADK session + React Query)
+
+| Layer                       | Role                                 | Source of truth for                                                    |
+| --------------------------- | ------------------------------------ | ---------------------------------------------------------------------- |
+| **React Query**             | Persisted backend data (Django APIs) | Saved assets: contentgen posts, resumes, portfolio, application assets |
+| **Zustand (studio stores)** | Live UI editing state                | What the user sees and types right now in Studio/editors               |
+| **ADK session**             | Conversation + proposed drafts       | Unibot chat history, mutating-tool drafts before Accept, review cards  |
+
+### Sync rules
+
+1. **In sync** — User edits in Studio, autosave runs, React Query cache matches Zustand → no Accept/Decline review card.
+2. **Out of sync** — ADK proposes a change via mutating tool → review card (Accept/Decline) until user accepts (PATCH session + persist to Django) or declines.
+3. **During ADK work** — Session may be ahead of DB; Zustand shows preview via `draftReady` / `draftPreview` events until Accept or autosave catches up.
+4. **After publish/schedule** — When persisted draft matches the proposed review draft, dismiss Accept/Decline (`sync-content-gen-review-with-persisted.ts`).
+
+### Route changes (Unibot UI)
+
+- `AdkChatProvider` / `ChatSidebar` do **not** remount on `/uniboard/*` navigation.
+- `useSyncUnibotUiToRoute` expands the sub-thread topic whose scope matches the current route (for “Go to Post” context).
+- Session list/titles come from the initial registry pull; no ADK refetch on route change. PATCH runs **before the next user message**, not on every navigation.
+- Review stores are per-feature (content gen, resume, portfolio, …); cards stay tied to assistant message ids until accepted, declined, or auto-dismissed when synced.
+
 ## Synthetic SSE progress
 
 `unimadStreamActivity` progress events from ADK middleware (`sse_activity_middleware.py`) are **off by default** (`UNIMAD_ADK_SSE_PROGRESS=0`). Loading labels should come from real SSE (`functionCall`, `transferToAgent`, `author`). While PATCH runs, the frontend shows `Waking up Unibot…` via `isSyncingContext`.
@@ -77,3 +99,5 @@ Sub-threads use `getStateDeltaForScope` with the registry `contentKey` (e.g. `re
 - Mutating tool registry: `src/features/adk-chat/session-mutating-tools.ts`
 - GET + store apply: `src/features/adk-chat/apply-mutating-tool-session-pull.ts`
 - Loading labels: `src/features/adk-chat/streaming/stream-activity.ts`
+- Review sync / dismiss: `src/features/adk-chat/sync-content-gen-review-with-persisted.ts`
+- Route UI sync: `src/features/adk-chat/hooks/useSyncUnibotUiToRoute.ts`

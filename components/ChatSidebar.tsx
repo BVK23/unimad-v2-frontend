@@ -21,6 +21,7 @@ import {
   topicKindForSub,
 } from "@/features/adk-chat/improve-topic-helpers";
 import { markMainSessionHasUserPrompt } from "@/features/adk-chat/main-session-activity";
+import { cancelOptimisticUnibotActivity, ensureOptimisticUnibotActivity } from "@/features/adk-chat/optimistic-unibot-activity";
 import { persistAcceptSnapshotForSession } from "@/features/adk-chat/persist-accept-snapshot";
 import { persistReviewDecisionForSession } from "@/features/adk-chat/persist-review-decision";
 import { isHandoffPromptForTitle } from "@/features/adk-chat/pick-title-source-prompt";
@@ -136,7 +137,9 @@ import {
   type ScopeMatch,
 } from "@/src/features/adk-chat/content-scope";
 import { ensureApplicationAssetTopicSubSession, ensureContentGenTopicSubSession } from "@/src/features/adk-chat/ensure-topic-sub-session";
+import { useSyncUnibotUiToRoute } from "@/src/features/adk-chat/hooks/useSyncUnibotUiToRoute";
 import { SUB_THREAD_COLLAPSE_THRESHOLD } from "@/src/features/adk-chat/hydrate-loaded-topics";
+import { useActiveResumeIdForPatch } from "@/src/features/adk-chat/resolve-active-resume-id";
 import {
   resolveApplicationAssetReviewNavTarget,
   resolveContentGenReviewNavTarget,
@@ -145,6 +148,7 @@ import {
   resolveResumeReviewNavTarget,
 } from "@/src/features/adk-chat/resolve-review-nav-target";
 import {
+  isResumeReviewActionsInContext,
   isSubThreadNavTargetActive,
   resolveSubThreadNavTarget,
   type SubThreadNavTarget,
@@ -160,6 +164,7 @@ import {
   displayTitleForSubSession,
   deriveSubSessionSubtitle,
 } from "@/src/features/adk-chat/sub-session-titles";
+import { dismissSyncedContentGenReviews } from "@/src/features/adk-chat/sync-content-gen-review-with-persisted";
 import {
   APPLICATION_ASSET_IMPROVE_NUDGE,
   CONTENT_GEN_IMPROVE_NUDGE,
@@ -196,6 +201,7 @@ import {
   resumeImproveUserDisplayText,
 } from "@/src/features/resume/api/resume-improve-prompts";
 import {
+  getFollowUpStreamActivityLabel,
   streamActivityLabelForMessage,
   useStreamingStatusLabel,
   useUnibotStreamActivityLabel,
@@ -329,12 +335,12 @@ function AdkReviewCardBlock({
       <p className="text-[12px] font-semibold text-slate-800 dark:text-slate-100">{card.bannerTitle}</p>
       {isActive ? (
         hideActions ? null : (
-          <div className="mt-2.5 flex flex-wrap gap-2">
+          <div className="mt-2.5 flex flex-nowrap items-center gap-2">
             <button
               type="button"
               disabled={actionsDisabled}
               onClick={() => runAction(onAccept)}
-              className="rounded-lg bg-emerald-600 px-3 py-1.5 text-[12px] font-medium text-white hover:bg-emerald-700 disabled:cursor-not-allowed disabled:opacity-50"
+              className="inline-flex shrink-0 items-center justify-center rounded-lg bg-emerald-600 px-3 py-1.5 text-[12px] font-medium text-white hover:bg-emerald-700 disabled:cursor-not-allowed disabled:opacity-50"
             >
               <span className="inline-flex items-center gap-1.5">
                 {adkReviewBusy ? <Loader2 size={14} className="animate-spin" /> : null}
@@ -345,7 +351,7 @@ function AdkReviewCardBlock({
               type="button"
               disabled={actionsDisabled}
               onClick={() => runAction(onDiscard)}
-              className="rounded-lg border border-slate-200 bg-white px-3 py-1.5 text-[12px] font-medium text-slate-700 hover:bg-slate-50 dark:border-white/10 dark:bg-slate-900 dark:text-slate-200 dark:hover:bg-white/5 disabled:cursor-not-allowed disabled:opacity-50"
+              className="inline-flex shrink-0 items-center justify-center rounded-lg border border-slate-200 bg-white px-3 py-1.5 text-[12px] font-medium text-slate-700 hover:bg-slate-50 dark:border-white/10 dark:bg-slate-900 dark:text-slate-200 dark:hover:bg-white/5 disabled:cursor-not-allowed disabled:opacity-50"
             >
               Discard
             </button>
@@ -488,12 +494,15 @@ const ChatSidebar: React.FC<ChatSidebarProps> = ({ incomingRequest, onRequestHan
   const pathname = usePathname() ?? "";
   const router = useRouter();
   const searchParams = useSearchParams();
+  const activeResumeId = useActiveResumeIdForPatch(searchParams);
+  void activeResumeId; // subscribe to replaceState ?id= updates for review nav checks below
 
   const deriveCurrentScope = useCallback(
     (targetSessionId: string, sessionKind: "main" | "sub" = "main"): ContentScope =>
       deriveActiveScope({
         pathname,
         searchParams,
+        resumeId: activeResumeId ?? undefined,
         sessionId: targetSessionId,
         sessionKind,
         applicationAsset: {
@@ -506,13 +515,41 @@ const ChatSidebar: React.FC<ChatSidebarProps> = ({ incomingRequest, onRequestHan
           topic: useContentGenStudioStore.getState().topic,
         },
       }),
-    [pathname, searchParams]
+    [pathname, searchParams, activeResumeId]
   );
 
   const isReviewNavActive = useCallback(
     (target: SubThreadNavTarget) => isSubThreadNavTargetActive(target, pathname, searchParams),
     [pathname, searchParams]
   );
+
+  useSyncUnibotUiToRoute({
+    pathname,
+    searchParams,
+    sessionId,
+    setMessages,
+  });
+
+  useEffect(() => {
+    const onDraftSynced = (e: Event) => {
+      const draft = (e as CustomEvent<{ draft?: string }>).detail?.draft;
+      if (draft?.trim()) {
+        dismissSyncedContentGenReviews(draft);
+      }
+    };
+    const onPublishComplete = () => {
+      const draft = useContentGenStudioStore.getState().draftPreview;
+      if (draft.trim()) {
+        dismissSyncedContentGenReviews(draft);
+      }
+    };
+    window.addEventListener(CONTENT_GEN_EVENTS.draftReady, onDraftSynced);
+    window.addEventListener(CONTENT_GEN_EVENTS.publishComplete, onPublishComplete);
+    return () => {
+      window.removeEventListener(CONTENT_GEN_EVENTS.draftReady, onDraftSynced);
+      window.removeEventListener(CONTENT_GEN_EVENTS.publishComplete, onPublishComplete);
+    };
+  }, []);
 
   const buildUserMessageRewindContext = useCallback(
     (message: ChatMessage, targetSessionId: string, topicId?: string) => {
@@ -876,6 +913,7 @@ const ChatSidebar: React.FC<ChatSidebarProps> = ({ incomingRequest, onRequestHan
 
   const handleStreamFailure = useCallback(
     (err: unknown, ctx: { text: string; topicId?: string; botMsgId?: string }) => {
+      cancelOptimisticUnibotActivity();
       const formatted = formatUnibotStreamError(err, {
         scope: ctx.topicId ? "topic" : "main",
         topicId: ctx.topicId,
@@ -1083,6 +1121,7 @@ const ChatSidebar: React.FC<ChatSidebarProps> = ({ incomingRequest, onRequestHan
             contentScope: deriveCurrentScope(mainId),
           };
           botMsgId = typeof crypto !== "undefined" && crypto.randomUUID ? crypto.randomUUID() : newId("bot");
+          ensureOptimisticUnibotActivity({ assistantMessageId: botMsgId });
           const placeholderMsg: ChatMessage = {
             id: botMsgId,
             role: "model",
@@ -1734,6 +1773,7 @@ const ChatSidebar: React.FC<ChatSidebarProps> = ({ incomingRequest, onRequestHan
       agentText: string,
       options?: { isExpanded?: boolean; suppressFocus?: boolean }
     ) => {
+      ensureOptimisticUnibotActivity();
       const isExpanded = options?.isExpanded ?? true;
       const suppressFocus = options?.suppressFocus ?? false;
       const topicId = topicIdForSubSession(subAdkSessionId);
@@ -1781,6 +1821,7 @@ const ChatSidebar: React.FC<ChatSidebarProps> = ({ incomingRequest, onRequestHan
           contentScope: subRow ? deriveScopeFromRegistryRow(subRow) : deriveCurrentScope(subAdkSessionId, "sub"),
         };
         const botMsgId = typeof crypto !== "undefined" && crypto.randomUUID ? crypto.randomUUID() : newId("bot");
+        ensureOptimisticUnibotActivity({ assistantMessageId: botMsgId });
         const placeholderMsg: ChatMessage = {
           id: botMsgId,
           role: "model",
@@ -1822,6 +1863,7 @@ const ChatSidebar: React.FC<ChatSidebarProps> = ({ incomingRequest, onRequestHan
         contentScope: subRow ? deriveScopeFromRegistryRow(subRow) : deriveCurrentScope(subAdkSessionId, "sub"),
       };
       const botMsgId = typeof crypto !== "undefined" && crypto.randomUUID ? crypto.randomUUID() : newId("bot");
+      ensureOptimisticUnibotActivity({ assistantMessageId: botMsgId });
       const placeholderMsg: ChatMessage = {
         id: botMsgId,
         role: "model",
@@ -2280,6 +2322,7 @@ const ChatSidebar: React.FC<ChatSidebarProps> = ({ incomingRequest, onRequestHan
     void (async () => {
       try {
         if (!userId || !sessionReady) return;
+        ensureOptimisticUnibotActivity();
 
         if (isImproveSubSession && req.featureId && req.section) {
           const mainId = currentMainSessionId ?? sessionId;
@@ -2486,6 +2529,46 @@ const ChatSidebar: React.FC<ChatSidebarProps> = ({ incomingRequest, onRequestHan
   const canUseHistory = Boolean(userId && !isBootstrappingSession);
 
   /** When a streaming placeholder exists in the transcript, loading UI stays inline only (no duplicate footer). */
+  const activeStreamingMessageId = useMemo(() => {
+    if (liveStreamActivity.assistantMessageId) {
+      return liveStreamActivity.assistantMessageId;
+    }
+    if (!isAgentLoading && !isContentGenPublishing) {
+      return null;
+    }
+    const isStreamingPlaceholderBubble = (text: string | undefined, isError?: boolean) => {
+      if (isError) return false;
+      if (!text?.trim()) return true;
+      return isStreamingMachineReadablePayloadOnly(text);
+    };
+    if (improveReplyTopicId) {
+      const topic = messages.find(m => m.id === improveReplyTopicId && m.isTopic);
+      const subs = topic?.messages ?? [];
+      for (let i = subs.length - 1; i >= 0; i--) {
+        const sub = subs[i];
+        if (sub?.role === "model" && isStreamingPlaceholderBubble(sub.text, sub.isError)) {
+          return sub.id;
+        }
+      }
+    }
+    for (let i = messages.length - 1; i >= 0; i--) {
+      const msg = messages[i];
+      if (!msg.isTopic && msg.role === "model" && isStreamingPlaceholderBubble(msg.text, msg.isError)) {
+        return msg.id;
+      }
+      if (msg.isTopic) {
+        const subs = msg.messages ?? [];
+        for (let j = subs.length - 1; j >= 0; j--) {
+          const sub = subs[j];
+          if (sub?.role === "model" && isStreamingPlaceholderBubble(sub.text, sub.isError)) {
+            return sub.id;
+          }
+        }
+      }
+    }
+    return null;
+  }, [liveStreamActivity.assistantMessageId, isAgentLoading, isContentGenPublishing, improveReplyTopicId, messages]);
+
   const hasInlineStreamingPlaceholder = useMemo(() => {
     if (!isAgentLoading && !isContentGenPublishing) {
       return false;
@@ -2927,6 +3010,7 @@ const ChatSidebar: React.FC<ChatSidebarProps> = ({ incomingRequest, onRequestHan
     async (topicId: string, text: string, actionMeta?: AssetActionMeta) => {
       const trimmed = text.trim();
       if (!trimmed || !canSend) return;
+      ensureOptimisticUnibotActivity();
       const outboundText = withPersistedActionLabel(trimmed, actionMeta?.presetLabel);
       const topic = messages.find(m => m.id === topicId && m.isTopic);
       let subAdkId = topic?.subSessionAdkId;
@@ -2983,6 +3067,7 @@ const ChatSidebar: React.FC<ChatSidebarProps> = ({ incomingRequest, onRequestHan
             : deriveCurrentScope(reviewMainSessionId || sessionId),
       };
       const botMsgId = typeof crypto !== "undefined" && crypto.randomUUID ? crypto.randomUUID() : newId("bot");
+      ensureOptimisticUnibotActivity({ assistantMessageId: botMsgId });
       const placeholderMsg: ChatMessage = { id: botMsgId, role: "model", text: "", timestamp: new Date() };
       setMessages(prev =>
         prev.map(msg => {
@@ -4351,19 +4436,48 @@ const ChatSidebar: React.FC<ChatSidebarProps> = ({ incomingRequest, onRequestHan
                               ) : (
                                 <div className="text-[13px] py-2 px-3 leading-relaxed text-slate-600 dark:text-slate-300">
                                   {modelVisibleText ? (
-                                    <FormattedAgentMessage content={modelVisibleText} />
-                                  ) : (
-                                    <div className="flex items-center gap-2 text-slate-400">
-                                      <Loader2 size={14} className="animate-spin shrink-0" />
-                                      <span>
-                                        {contentGenPublishActivity[subMsg.id] ??
-                                          streamActivityLabelForMessage(subMsg.id, liveStreamActivity, streamActivityLabel, {
+                                    <>
+                                      <FormattedAgentMessage content={modelVisibleText} />
+                                      {(() => {
+                                        const followUp = getFollowUpStreamActivityLabel(
+                                          subMsg.id,
+                                          liveStreamActivity,
+                                          streamActivityLabel,
+                                          {
                                             agentLoading: isAgentLoading,
                                             isSyncingContext,
+                                            hasVisibleText: true,
                                             waitingLabel: streamingStatusLabel,
-                                          })}
-                                      </span>
-                                    </div>
+                                          }
+                                        );
+                                        if (!followUp) return null;
+                                        return (
+                                          <div className="mt-2 flex items-center gap-2 text-slate-400">
+                                            <Loader2 size={12} className="animate-spin shrink-0" />
+                                            <span className="text-xs">{followUp}</span>
+                                          </div>
+                                        );
+                                      })()}
+                                    </>
+                                  ) : (
+                                    (() => {
+                                      const isActiveStreamTarget = subMsg.id === activeStreamingMessageId;
+                                      const placeholderLabel =
+                                        contentGenPublishActivity[subMsg.id] ??
+                                        streamActivityLabelForMessage(subMsg.id, liveStreamActivity, streamActivityLabel, {
+                                          agentLoading: isAgentLoading,
+                                          isSyncingContext,
+                                          waitingLabel: streamingStatusLabel,
+                                          isActiveStreamingTarget: isActiveStreamTarget,
+                                        });
+                                      if (!isActiveStreamTarget && !placeholderLabel.trim()) return null;
+                                      return (
+                                        <div className="flex items-center gap-2 text-slate-400">
+                                          <Loader2 size={14} className="animate-spin shrink-0" />
+                                          <span>{placeholderLabel}</span>
+                                        </div>
+                                      );
+                                    })()
                                   )}
                                 </div>
                               )
@@ -4485,7 +4599,9 @@ const ChatSidebar: React.FC<ChatSidebarProps> = ({ incomingRequest, onRequestHan
                                       sessionReady={sessionReady}
                                       onAccept={handleAdkAccept}
                                       onDiscard={handleAdkDiscard}
-                                      actionsOutOfContext={showGoToAsset}
+                                      actionsOutOfContext={
+                                        showGoToAsset || !isResumeReviewActionsInContext(activeResumeId, improveSubRow, card.resumeId)
+                                      }
                                       onBlockedAction={nudgeTopicGoTo}
                                     />
                                   </UnibotActionItemHighlight>
@@ -4614,23 +4730,47 @@ const ChatSidebar: React.FC<ChatSidebarProps> = ({ incomingRequest, onRequestHan
               ) : (
                 <div className="max-w-full bg-transparent px-1 text-[13px] leading-relaxed text-slate-600 dark:text-slate-300">
                   {msg.role === "model" && mainModelVisible ? (
-                    <FormattedAgentMessage content={mainModelVisible} />
+                    <>
+                      <FormattedAgentMessage content={mainModelVisible} />
+                      {(() => {
+                        const followUp = getFollowUpStreamActivityLabel(msg.id, liveStreamActivity, streamActivityLabel, {
+                          agentLoading: isAgentLoading,
+                          isSyncingContext,
+                          hasVisibleText: true,
+                          waitingLabel: streamingStatusLabel,
+                        });
+                        if (!followUp) return null;
+                        return (
+                          <div className="mt-2 flex items-center gap-2 text-slate-400 px-1">
+                            <Loader2 size={12} className="animate-spin shrink-0" />
+                            <span className="text-xs">{followUp}</span>
+                          </div>
+                        );
+                      })()}
+                    </>
                   ) : msg.role === "model" &&
                     !mainPlannerPayload &&
                     !mainHasDraft &&
                     !mainHasAppAssetDraft &&
                     (!msg.text || isStreamingMachineReadablePayloadOnly(msg.text)) ? (
-                    <div className="flex items-center gap-2 text-slate-400 px-1">
-                      <Loader2 size={14} className="animate-spin shrink-0" />
-                      <span>
-                        {contentGenPublishActivity[msg.id] ??
-                          streamActivityLabelForMessage(msg.id, liveStreamActivity, streamActivityLabel, {
-                            agentLoading: isAgentLoading,
-                            isSyncingContext,
-                            waitingLabel: streamingStatusLabel,
-                          })}
-                      </span>
-                    </div>
+                    (() => {
+                      const isActiveStreamTarget = msg.id === activeStreamingMessageId;
+                      const placeholderLabel =
+                        contentGenPublishActivity[msg.id] ??
+                        streamActivityLabelForMessage(msg.id, liveStreamActivity, streamActivityLabel, {
+                          agentLoading: isAgentLoading,
+                          isSyncingContext,
+                          waitingLabel: streamingStatusLabel,
+                          isActiveStreamingTarget: isActiveStreamTarget,
+                        });
+                      if (!isActiveStreamTarget && !placeholderLabel.trim()) return null;
+                      return (
+                        <div className="flex items-center gap-2 text-slate-400 px-1">
+                          <Loader2 size={14} className="animate-spin shrink-0" />
+                          <span>{placeholderLabel}</span>
+                        </div>
+                      );
+                    })()
                   ) : null}
                 </div>
               )}
@@ -4699,7 +4839,8 @@ const ChatSidebar: React.FC<ChatSidebarProps> = ({ incomingRequest, onRequestHan
                   .filter(c => c.assistantMessageId === msg.id)
                   .map(card => {
                     const nav = resolveResumeReviewNavTarget(card);
-                    const outOfContext = !isReviewNavActive(nav);
+                    const outOfContext =
+                      !isReviewNavActive(nav) || !isResumeReviewActionsInContext(activeResumeId, undefined, card.resumeId);
                     return (
                       <AdkReviewCardBlock
                         key={card.id}
@@ -4781,7 +4922,7 @@ const ChatSidebar: React.FC<ChatSidebarProps> = ({ incomingRequest, onRequestHan
               .filter(c => !c.assistantMessageId)
               .map(card => {
                 const nav = resolveResumeReviewNavTarget(card);
-                const outOfContext = !isReviewNavActive(nav);
+                const outOfContext = !isReviewNavActive(nav) || !isResumeReviewActionsInContext(activeResumeId, undefined, card.resumeId);
                 return (
                   <div key={card.id} className="w-full max-w-[95%]">
                     {outOfContext ? (
@@ -4910,7 +5051,7 @@ const ChatSidebar: React.FC<ChatSidebarProps> = ({ incomingRequest, onRequestHan
           </div>
         )}
 
-        {isAgentLoading && !hasInlineStreamingPlaceholder && !hasVisibleStreamingAssistantText && (
+        {isAgentLoading && activeStreamingMessageId == null && !hasVisibleStreamingAssistantText && (
           <div className="flex flex-col gap-1 items-start pl-1">
             <div className="text-[13px] text-slate-400 flex items-center gap-2 px-1">
               <Loader2 size={14} className="animate-spin" />

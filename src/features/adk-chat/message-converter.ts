@@ -1,3 +1,4 @@
+import { collapseSimilarConsecutiveAiMessages } from "./collapse-similar-consecutive-ai-messages";
 import { enrichAgentMessagesFromToolEvents } from "./enrich-messages-from-tool-events";
 import { filterActiveAdkEvents, getEventInvocationId } from "./filter-active-adk-events";
 import type { AdkContent, AdkEvent, ConversionResult, TimelineActivity, AgentMessage } from "./types";
@@ -402,7 +403,8 @@ export function convertAdkEventsToMessages(events: AdkEvent[]): ConversionResult
     }
   }
 
-  const enrichedMessages = enrichAgentMessagesFromToolEvents(messages as AgentMessage[], activeEvents);
+  const collapsedMessages = collapseSimilarConsecutiveAiMessages(messages as AgentMessage[]);
+  const enrichedMessages = enrichAgentMessagesFromToolEvents(collapsedMessages, activeEvents);
 
   return {
     messages: enrichedMessages,

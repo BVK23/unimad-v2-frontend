@@ -31,10 +31,16 @@ import { resumeByIdQueryKey } from "@/src/features/resume/hooks/useResume";
 import { resumesListQueryKey } from "@/src/features/resume/hooks/useResumesList";
 import { useResumeStore } from "@/src/features/resume/store/useResumeStore";
 import { UNIBOT_AGENT_LOADING_EVENT, UNIBOT_STREAM_ACTIVITY_EVENT, type UnibotStreamActivityDetail } from "@/src/hooks/useUnibotAgentBusy";
+import { SYNCING_CONTEXT_LABEL } from "@/src/hooks/useUnibotStreamActivityLabel";
 import type { PortfolioData, ResumeData } from "@/types";
 import { useQueryClient } from "@tanstack/react-query";
 import { usePathname, useSearchParams } from "next/navigation";
 import { checkAdkRequestRateLimit, ADK_REQUEST_RATE_LIMIT_MESSAGE } from "../adk-request-rate-limit";
+import {
+  attachOptimisticAssistantMessage,
+  beginOptimisticUnibotActivity,
+  registerOptimisticUnibotActivityHandlers,
+} from "../optimistic-unibot-activity";
 import {
   isMutatingApplicationAssetTool,
   isMutatingContentGenTool,
@@ -147,6 +153,7 @@ export function useAdkStreamingManager({
   const pendingMutatingToolRef = useRef<string | null>(null);
   const streamHadSidebarContentRef = useRef(false);
   const streamInFlightRef = useRef(false);
+  const optimisticActivityStartedRef = useRef(false);
   const activityPresenterRef = useRef<StreamActivityPresenter | null>(null);
   const streamHeartbeatRef = useRef<StreamActivityHeartbeat | null>(null);
   if (activityPresenterRef.current === null) {
@@ -174,6 +181,34 @@ export function useAdkStreamingManager({
     });
   }
   const [streamActivityLabel, setStreamActivityLabel] = useState<string | null>(null);
+
+  useEffect(() => {
+    registerOptimisticUnibotActivityHandlers({
+      onBegin: ({ assistantMessageId, label }) => {
+        optimisticActivityStartedRef.current = true;
+        if (assistantMessageId) {
+          pendingReviewAssistantIdRef.current = assistantMessageId;
+          activityPresenterRef.current?.setAssistantMessageId(assistantMessageId);
+        }
+        flushSync(() => {
+          setIsSubmitInFlight(true);
+          setIsSyncingContext(true);
+          setStreamActivityLabel(label);
+        });
+      },
+      onCancel: () => {
+        optimisticActivityStartedRef.current = false;
+        flushSync(() => {
+          setIsSubmitInFlight(false);
+          setIsSyncingContext(false);
+          setStreamActivityLabel(null);
+        });
+        clearStreamActivitySnapshot();
+      },
+    });
+    return () => registerOptimisticUnibotActivityHandlers(null);
+  }, []);
+
   const resolveResumeIdForSessionPull = useCallback((): string | null => {
     const activeId = resolveActiveResumeIdForPatch(searchParams);
     if (activeId?.trim()) return activeId.trim();
@@ -739,11 +774,8 @@ export function useAdkStreamingManager({
 
       pendingReviewAssistantIdRef.current = options?.aiMessageId ?? null;
       streamHadSidebarContentRef.current = false;
-      activityPresenterRef.current?.reset();
-      activityPresenterRef.current?.setAssistantMessageId(pendingReviewAssistantIdRef.current);
-      clearStreamActivitySnapshot();
-      setStreamActivityLabel(null);
 
+      const assistantId = options?.aiMessageId?.trim() || null;
       const seedRow = getRegistryRow(targetSessionId);
       const seedScope = seedRow ? deriveScopeFromRegistryRow(seedRow) : null;
       const seedLabel =
@@ -752,7 +784,32 @@ export function useAdkStreamingManager({
           : seedScope?.domain === "content_gen"
             ? (resolveContentGenActivityLabelHint(message) ?? "Working with Unibot…")
             : "Working with Unibot…";
-      activityPresenterRef.current?.enqueue(seedLabel);
+
+      if (optimisticActivityStartedRef.current) {
+        optimisticActivityStartedRef.current = false;
+        if (assistantId) {
+          attachOptimisticAssistantMessage(assistantId);
+          pendingReviewAssistantIdRef.current = assistantId;
+          activityPresenterRef.current?.setAssistantMessageId(assistantId);
+        }
+      } else {
+        activityPresenterRef.current?.reset();
+        activityPresenterRef.current?.setAssistantMessageId(assistantId);
+        flushSync(() => {
+          setIsSubmitInFlight(true);
+          setIsSyncingContext(true);
+          setStreamActivityLabel(SYNCING_CONTEXT_LABEL);
+        });
+        setStreamActivitySnapshot({
+          activityLabel: SYNCING_CONTEXT_LABEL,
+          assistantMessageId: assistantId,
+        });
+        dispatchStreamActivity({
+          loading: true,
+          activityLabel: SYNCING_CONTEXT_LABEL,
+          assistantMessageId: assistantId,
+        });
+      }
 
       setIsSubmitInFlight(true);
       setIsSyncingContext(true);
@@ -772,8 +829,7 @@ export function useAdkStreamingManager({
           streamAdkAppName = patchResult.effectiveAppName ?? resolveAdkSessionOptionsForSessionId(targetSessionId).appName;
         } finally {
           setIsSyncingContext(false);
-          clearStreamActivitySnapshot();
-          setStreamActivityLabel(null);
+          activityPresenterRef.current?.enqueue(seedLabel);
         }
 
         pendingPullSessionIdRef.current =
@@ -825,6 +881,7 @@ export function useAdkStreamingManager({
         streamInFlightRef.current = false;
         streamHeartbeatRef.current?.stop();
         pendingPullSessionIdRef.current = null;
+        optimisticActivityStartedRef.current = false;
         const finishSubmit = (): void => {
           activityPresenterRef.current?.reset();
           setIsSubmitInFlight(false);

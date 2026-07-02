@@ -63,7 +63,7 @@ const ResumeDashboardCard: React.FC<ResumeDashboardCardProps> = ({
         onEditResume(resume);
       }}
       className={`
-        bg-white rounded-xl shadow-sm hover:shadow-md border cursor-pointer transition-all hover:-translate-y-1 group relative
+        w-full min-w-0 bg-white rounded-xl shadow-sm hover:shadow-md border cursor-pointer transition-all hover:-translate-y-1 group relative
         ${isMenuOpen ? "z-30 ring-2 ring-brand-100 pointer-events-none" : "z-0"}
         ${resume.isBase ? "border-brand-300 ring-1 ring-brand-100" : isInVersionFamily ? "border-slate-300 bg-slate-50/80" : "border-slate-200"}
         ${newlyDuplicatedResumeId === resume.id ? "ring-2 ring-brand-400 shadow-md" : ""}

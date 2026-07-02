@@ -496,13 +496,11 @@ const ResumeEditor: React.FC<ResumeEditorProps> = ({
     };
   }, [initialData]);
 
-  // Seed the store once per resume id; avoid clobbering in-progress edits when parent props refresh.
+  // Reseed only when switching resumes; `useResume` syncs after fetch without clobbering in-progress edits.
   useEffect(() => {
-    const store = useResumeStore.getState();
-    if (!store.getResumeData(resumeId)) {
-      store.setResumeData(resumeId, getInitialResume());
-    }
-  }, [resumeId, getInitialResume]);
+    useResumeStore.getState().setResumeData(resumeId, getInitialResume());
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- intentional: not on every initialData refresh
+  }, [resumeId]);
 
   const resumeFromStore = useResumeStore(s => s.resumeData[resumeId]);
   const resume = resumeFromStore ?? getInitialResume();

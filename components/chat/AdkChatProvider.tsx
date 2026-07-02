@@ -19,6 +19,7 @@ import { useAdkSession } from "@/src/features/adk-chat/hooks/useAdkSession";
 import { useAdkStreamingManager } from "@/src/features/adk-chat/hooks/useAdkStreamingManager";
 import { hydrateLoadedTopicMessages } from "@/src/features/adk-chat/hydrate-loaded-topics";
 import { mergeSubSessionsIntoMainMessages, sortMainThreadChronologically } from "@/src/features/adk-chat/improve-topic-helpers";
+import { beginOptimisticUnibotActivity } from "@/src/features/adk-chat/optimistic-unibot-activity";
 import { pruneRewindSessionMetadata } from "@/src/features/adk-chat/prune-rewind-session-metadata";
 import { reconcileStudioContentAfterRewind } from "@/src/features/adk-chat/reconcile-studio-after-rewind";
 import {
@@ -26,6 +27,8 @@ import {
   mergeLegacyAndSubTopics,
   reconstructLegacyTopicsFromMain,
 } from "@/src/features/adk-chat/reconstruct-legacy-topics";
+import { rehydrateResumeReviewFromAdkSessions } from "@/src/features/adk-chat/rehydrate-resume-review-from-adk";
+import { useActiveResumeIdForPatch } from "@/src/features/adk-chat/resolve-active-resume-id";
 import { resolveDjangoRestoreTarget } from "@/src/features/adk-chat/resolve-django-restore-target";
 import { resolveAdkSessionOptionsForSessionId } from "@/src/features/adk-chat/resolve-sub-session-adk-app";
 import { revertDjangoContentAfterRewind } from "@/src/features/adk-chat/revert-django-content-after-rewind";
@@ -131,6 +134,7 @@ export function AdkChatProvider({ userId, children }: { userId: string; children
   const [isRewinding, setIsRewinding] = useState(false);
   const pathname = usePathname() ?? "";
   const searchParams = useSearchParams();
+  const activeResumeId = useActiveResumeIdForPatch(searchParams);
   const queryClient = useQueryClient();
   const clearStreamError = useCallback(() => setStreamError(null), []);
   const pendingSendRef = useRef<{
@@ -144,10 +148,11 @@ export function AdkChatProvider({ userId, children }: { userId: string; children
       deriveActiveScope({
         pathname,
         searchParams,
+        resumeId: activeResumeId ?? undefined,
         sessionId: targetSessionId,
         sessionKind,
       }),
-    [pathname, searchParams]
+    [pathname, searchParams, activeResumeId]
   );
 
   const {
@@ -320,6 +325,14 @@ export function AdkChatProvider({ userId, children }: { userId: string; children
             if (pathname.startsWith("/uniboard/studio")) {
               void applyAdkSessionStateToStores(userId, mainSessionIdForLoad, pathname, queryClient);
             }
+            if (pathname.startsWith("/uniboard/resume")) {
+              void rehydrateResumeReviewFromAdkSessions({
+                userId,
+                mainSessionId: mainSessionIdForLoad,
+                resumeId: activeResumeId,
+                queryClient,
+              });
+            }
           }
 
           if (!cancelled) {
@@ -336,7 +349,7 @@ export function AdkChatProvider({ userId, children }: { userId: string; children
     return () => {
       cancelled = true;
     };
-  }, [deriveCurrentActiveScope, userId, sessionId, refreshSessions, pathname, queryClient]);
+  }, [activeResumeId, deriveCurrentActiveScope, userId, sessionId, refreshSessions, pathname, queryClient]);
 
   const sendMainMessageNow = useCallback(
     async (text: string, activeSessionId: string, options?: SendMainMessageOptions): Promise<{ assistantId: string }> => {
@@ -368,6 +381,8 @@ export function AdkChatProvider({ userId, children }: { userId: string; children
         };
         setMessages(prev => [...prev, userChat, assistantChat]);
       }
+
+      beginOptimisticUnibotActivity({ assistantMessageId: assistantId });
 
       try {
         const { hadAssistantText } = await submitMessage(text, {

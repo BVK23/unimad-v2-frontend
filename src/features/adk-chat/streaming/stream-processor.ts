@@ -101,7 +101,7 @@ export async function processSseEventData(
   }
 
   if (functionResponse) {
-    processFunctionResponse(functionResponse, actualMessageId, callbacks, emitActivityLabel);
+    processFunctionResponse(functionResponse, actualMessageId, callbacks, emitActivityLabel, accumulatedTextRef);
   }
 
   if (transferToAgent) {
@@ -186,7 +186,8 @@ function processFunctionResponse(
   },
   aiMessageId: string,
   callbacks: StreamProcessingCallbacks,
-  emitActivityLabel: (label: string, meta?: { author?: string; tool?: string; transferTo?: string }, dedupKey?: string) => void
+  emitActivityLabel: (label: string, meta?: { author?: string; tool?: string; transferTo?: string }, dedupKey?: string) => void,
+  accumulatedTextRef?: { current: string }
 ): void {
   const functionResponseTitle = `Function Response: ${functionResponse.name}`;
   createDebugLog("SSE HANDLER", "Adding Function Response timeline event:", functionResponseTitle);
@@ -202,6 +203,10 @@ function processFunctionResponse(
       tool: functionResponse.name,
       mutatingResume: isMutatingResumeTool(functionResponse.name),
     });
+    // Drop interim narration before the post-mutation model round (ReAct loops).
+    if (accumulatedTextRef) {
+      accumulatedTextRef.current = "";
+    }
     callbacks.onMutatingToolResponse?.(functionResponse.name, aiMessageId);
     emitActivityLabel(
       labelForMutatingToolResponse(functionResponse.name),

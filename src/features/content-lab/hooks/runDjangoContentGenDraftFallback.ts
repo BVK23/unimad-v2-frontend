@@ -51,7 +51,10 @@ export const runDjangoContentGenDraftFallback = async (
     throw new Error("Could not read the generated draft. Please try again.");
   }
 
-  await updateContentGenAsset({ id, content: draft });
+  const saveResult = await updateContentGenAsset({ id, content: draft });
+  if (!saveResult.success) {
+    throw new Error(saveResult.error);
+  }
 
   window.dispatchEvent(
     new CustomEvent(CONTENT_GEN_EVENTS.draftReady, {

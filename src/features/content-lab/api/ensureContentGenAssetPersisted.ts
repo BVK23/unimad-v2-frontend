@@ -15,21 +15,27 @@ export async function ensureContentGenAssetPersisted(params: {
   }
 
   if (params.assetId) {
-    await updateContentGenAsset({
+    const saveResult = await updateContentGenAsset({
       id: params.assetId,
       content: draft,
       status: "Draft",
       images: params.images,
     });
+    if (!saveResult.success) {
+      throw new Error(saveResult.error);
+    }
     return params.assetId;
   }
 
   const { id } = await createContentGenShell(topic, { funnel: params.funnel ?? undefined });
-  await updateContentGenAsset({
+  const saveResult = await updateContentGenAsset({
     id,
     content: draft,
     status: "Draft",
     images: params.images,
   });
+  if (!saveResult.success) {
+    throw new Error(saveResult.error);
+  }
   return id;
 }

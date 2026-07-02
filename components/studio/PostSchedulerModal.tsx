@@ -17,6 +17,7 @@ import {
 } from "@/features/linkedin/utils/linkedinPublishAccess";
 import { MODAL_OVERLAY_Z_CLASS } from "@/lib/ui/modal-overlay";
 import { useDocumentAutosave } from "@/src/hooks/useDocumentAutosave";
+import { sanitizeUserFacingError } from "@/utils/message-from-failed-response";
 import { X, Send, CheckCircle2, Wand2 } from "lucide-react";
 import { LinkedInPublishAccessNotice } from "./LinkedInPublishAccessNotice";
 import { LinkedInScheduleDateTimePicker } from "./LinkedInScheduleDateTimePicker";
@@ -172,7 +173,10 @@ const PostSchedulerModal: React.FC<PostSchedulerModalProps> = ({
         onClose();
       }, 2200);
     } catch (e) {
-      const message = e instanceof Error && e.message ? e.message : "We couldn't complete this action. Please try again.";
+      const message = sanitizeUserFacingError(
+        e instanceof Error && e.message ? e.message : "",
+        "We couldn't complete this action. Please try again."
+      );
       setErrorToast(message);
       setTimeout(() => setErrorToast(""), 3200);
     } finally {

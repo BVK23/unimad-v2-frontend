@@ -1,5 +1,6 @@
 import React, { useEffect, useMemo, useRef, useState } from "react";
 import JobUrlImportLoading from "@/components/jobs/JobUrlImportLoading";
+import { ResumeCardSkeletonStyles, ResumeCardsLoadingSkeletons } from "@/components/resume/ResumeCardSkeleton";
 import ResumeDashboardCard from "@/components/resume/ResumeDashboardCard";
 import ResumeGenerationOverlay from "@/components/resume/ResumeGenerationOverlay";
 import { ModalPortalOverlay } from "@/components/ui/ModalPortalOverlay";
@@ -422,10 +423,10 @@ const ResumeDashboard: React.FC<ResumeDashboardProps> = ({ onEditResume, onCreat
   return (
     <div
       ref={scrollContainerRef}
-      className="relative flex h-full min-h-0 flex-1 flex-col overflow-x-hidden overflow-y-auto bg-slate-50 p-8"
+      className="relative flex h-full min-h-0 w-full min-w-0 flex-1 flex-col overflow-x-hidden overflow-y-auto bg-slate-50 p-8"
       onClick={() => closeActionsMenu()}
     >
-      <div className="max-w-6xl mx-auto">
+      <div className="mx-auto w-full max-w-6xl min-w-0">
         <div className="mb-8">
           <h1 className="text-2xl font-normal text-slate-900">Resumes</h1>
           <p className="text-slate-500 mt-1">Manage and tailor your resumes for different opportunities.</p>
@@ -459,14 +460,14 @@ const ResumeDashboard: React.FC<ResumeDashboardProps> = ({ onEditResume, onCreat
           </div>
         )}
 
-        <div className="grid grid-cols-1 md:grid-cols-3 lg:grid-cols-4 gap-6">
+        <div className="grid w-full min-w-0 grid-cols-1 md:grid-cols-3 lg:grid-cols-4 gap-6">
           {/* Create New Card (Visual Shortcut) */}
           <button
             onClick={e => {
               e.stopPropagation();
               setCreateModalState("menu");
             }}
-            className="group flex flex-col items-center justify-center h-64 border-2 border-dashed border-slate-300 rounded-xl hover:border-brand-400 hover:bg-brand-50/50 transition-all cursor-pointer bg-white"
+            className="group flex w-full min-w-0 flex-col items-center justify-center h-64 border-2 border-dashed border-slate-300 rounded-xl hover:border-brand-400 hover:bg-brand-50/50 transition-all cursor-pointer bg-white"
           >
             <div className="w-12 h-12 bg-slate-100 rounded-full flex items-center justify-center text-slate-400 group-hover:bg-brand-100 group-hover:text-brand-600 mb-3 transition-colors">
               <Plus size={24} />
@@ -474,11 +475,7 @@ const ResumeDashboard: React.FC<ResumeDashboardProps> = ({ onEditResume, onCreat
             <span className="font-medium text-slate-600 group-hover:text-brand-600">New Resume</span>
           </button>
 
-          {isLoading && (
-            <div className="flex items-center justify-center h-64 col-span-2 text-slate-500">
-              <Loader2 size={28} className="animate-spin" />
-            </div>
-          )}
+          {isLoading && <ResumeCardsLoadingSkeletons />}
 
           {/* Resume Cards */}
           {!isLoading &&
@@ -507,6 +504,7 @@ const ResumeDashboard: React.FC<ResumeDashboardProps> = ({ onEditResume, onCreat
               />
             ))}
         </div>
+        {isLoading ? <ResumeCardSkeletonStyles /> : null}
       </div>
 
       {/* Create Modal */}

@@ -10,6 +10,7 @@ import { useResumeUrlActions, useResumeUrlState } from "@/features/resume/hooks/
 import { resumesListQueryKey } from "@/features/resume/hooks/useResumesList";
 import { getPrepareReturnSession } from "@/lib/jobs/prepare-application-return";
 import { parseResumePrepareSearchParams } from "@/lib/jobs/prepare-application-url";
+import { useRehydrateResumeReviewFromAdk } from "@/src/features/adk-chat/hooks/useRehydrateResumeReviewFromAdk";
 import type { ResumeData } from "@/types";
 import { useQueryClient } from "@tanstack/react-query";
 import { Loader2 } from "lucide-react";
@@ -87,6 +88,8 @@ function ResumeEditorById({
       ? { ...listItem, id: resumeId }
       : null;
 
+  useRehydrateResumeReviewFromAdk(resumeId, Boolean(editorData));
+
   const isLoading = !editorData && !resumeQuery.isError && (resumeQuery.isLoading || resumeQuery.isFetching);
 
   if (isLoading) {
@@ -134,6 +137,12 @@ function ResumePageContent({ initialResumeId, initialIsNewDraft = false }: Resum
   const [showTemplateModal, setShowTemplateModal] = useState(false);
   const [resumeLoadError, setResumeLoadError] = useState<string | null>(null);
 
+  /* eslint-disable react-hooks/set-state-in-effect -- reset template picker when switching resumes */
+  useEffect(() => {
+    setShowTemplateModal(false);
+  }, [resumeId]);
+  /* eslint-enable react-hooks/set-state-in-effect */
+
   const showLanding = !resumeId && !isNewDraft;
   const showNewDraftEditor = isNewDraft && !resumeId;
   const showExistingEditor = Boolean(resumeId);
@@ -170,18 +179,15 @@ function ResumePageContent({ initialResumeId, initialIsNewDraft = false }: Resum
 
   const handleEditResume = (resume: ResumeData) => {
     if (!resume.id) return;
-    queryClient.setQueryData(resumeByIdQueryKey(String(resume.id)), resume);
+    const id = String(resume.id);
     setResumeLoadError(null);
-    openResume(String(resume.id));
+    void queryClient.invalidateQueries({ queryKey: resumeByIdQueryKey(id) });
+    openResume(id);
   };
 
   const openResumeById = async (nextResumeId: string) => {
     setResumeLoadError(null);
-    const list = queryClient.getQueryData<ResumeData[]>(resumesListQueryKey);
-    const cached = list?.find(r => String(r.id) === String(nextResumeId));
-    if (cached) {
-      queryClient.setQueryData(resumeByIdQueryKey(String(nextResumeId)), cached);
-    }
+    void queryClient.invalidateQueries({ queryKey: resumeByIdQueryKey(String(nextResumeId)) });
     openResume(nextResumeId);
   };
 
@@ -235,7 +241,7 @@ function ResumePageContent({ initialResumeId, initialIsNewDraft = false }: Resum
 
   if (showLanding) {
     content = (
-      <div className="relative flex flex-col h-full">
+      <div className="relative flex h-full w-full min-w-0 flex-col">
         <ResumeDashboard onEditResume={handleEditResume} onCreateResume={handleCreateResume} />
         {resumeLoadErrorModal}
       </div>
@@ -260,6 +266,7 @@ function ResumePageContent({ initialResumeId, initialIsNewDraft = false }: Resum
   } else if (showExistingEditor && resumeId) {
     content = (
       <ResumeEditorById
+        key={resumeId}
         resumeId={resumeId}
         onBack={handleBackToLanding}
         onImprove={handleImproveWithAI}
