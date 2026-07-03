@@ -1,0 +1,1242 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Unimad v2 — Launch Hero</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Onest:wght@300;400;500;600;700&display=swap" rel="stylesheet">
+  <style>
+    :root {
+      --brand-600: #346DE0;
+      --brand-700: #2B519D;
+      --brand-100: #D5E3FF;
+      --brand-50: #E9ECF8;
+      --slate-900: #0F172A;
+      --slate-800: #1E293B;
+      --slate-700: #334155;
+      --slate-600: #475569;
+      --slate-500: #64748B;
+      --slate-400: #94A3B8;
+      --slate-300: #CBD5E1;
+      --slate-200: #E2E8F0;
+      --slate-100: #F1F5F9;
+      --slate-50: #F8FAFC;
+      --white: #FFFFFF;
+      --green-500: #22C55E;
+      --canvas-w: 2400px;
+      --canvas-h: 1520px;
+    }
+
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+
+    html {
+      -webkit-font-smoothing: antialiased;
+      -moz-osx-font-smoothing: grayscale;
+      text-rendering: geometricPrecision;
+    }
+
+    body {
+      font-family: 'Onest', system-ui, sans-serif;
+      background: #DDE3F0;
+      min-height: 100vh;
+      display: flex;
+      align-items: flex-start;
+      justify-content: center;
+      padding: 32px;
+      overflow: auto;
+    }
+
+    /* Screenshot at 100% browser zoom for sharpest output (2400×1520). */
+    .canvas {
+      position: relative;
+      width: var(--canvas-w);
+      height: var(--canvas-h);
+      flex-shrink: 0;
+      background:
+        radial-gradient(ellipse 70% 55% at 50% 45%, rgba(52, 109, 224, 0.1) 0%, transparent 68%),
+        linear-gradient(165deg, #EEF2FA 0%, #E4EAF5 45%, #D5DCE8 100%);
+      border-radius: 28px;
+      overflow: visible;
+      isolation: isolate;
+    }
+
+    .blob {
+      position: absolute;
+      border-radius: 50%;
+      filter: blur(90px);
+      pointer-events: none;
+      z-index: 0;
+    }
+    .blob-1 { width: 520px; height: 520px; background: rgba(52,109,224,0.14); top: -120px; left: 820px; }
+    .blob-2 { width: 420px; height: 420px; background: rgba(52,109,224,0.08); bottom: -80px; right: 140px; }
+
+    .brand-lockup {
+      position: absolute;
+      top: 36px;
+      left: 1200px;
+      transform: translateX(-50%);
+      z-index: 100;
+      text-align: center;
+      pointer-events: none;
+      white-space: nowrap;
+    }
+    .brand-lockup .eyebrow {
+      font-size: 12px;
+      font-weight: 500;
+      letter-spacing: 0.32em;
+      text-transform: uppercase;
+      color: var(--brand-600);
+      margin-bottom: 8px;
+    }
+    .brand-lockup h1 {
+      font-size: 40px;
+      font-weight: 300;
+      color: var(--slate-900);
+      letter-spacing: -0.03em;
+    }
+    .brand-lockup h1 em {
+      font-style: normal;
+      color: var(--brand-600);
+      font-weight: 500;
+    }
+
+    .collage {
+      position: absolute;
+      inset: 0;
+      /* Shift cluster right so visual midpoint aligns with canvas center (1200px). */
+      transform: translateX(130px);
+    }
+
+    .panel {
+      position: absolute;
+      background: var(--white);
+      border: 1px solid var(--slate-200);
+      will-change: auto;
+    }
+
+    /* z-index stack: jobs (back) → resume → linkedin → post → portfolio (front) */
+    .depth-1 { z-index: 10; box-shadow: 0 2px 4px rgba(15,23,42,0.06), 0 12px 32px rgba(15,23,42,0.1), 0 0 0 1px rgba(255,255,255,0.6) inset; }
+    .depth-2 { z-index: 20; box-shadow: 0 4px 8px rgba(15,23,42,0.07), 0 20px 48px rgba(15,23,42,0.12), 0 0 0 1px rgba(255,255,255,0.65) inset; }
+    .depth-3 { z-index: 30; box-shadow: 0 6px 12px rgba(15,23,42,0.08), 0 28px 64px rgba(15,23,42,0.14), 0 0 0 1px rgba(255,255,255,0.7) inset; }
+    .depth-4 { z-index: 40; box-shadow: 0 8px 16px rgba(15,23,42,0.09), 0 32px 72px rgba(52,109,224,0.14), 0 0 0 1px rgba(255,255,255,0.75) inset; }
+    .depth-5 { z-index: 50; box-shadow: 0 10px 20px rgba(15,23,42,0.1), 0 40px 88px rgba(52,109,224,0.18), 0 0 0 1px rgba(255,255,255,0.8) inset; }
+
+    .icon {
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      flex-shrink: 0;
+    }
+    .icon svg {
+      display: block;
+      shape-rendering: geometricPrecision;
+    }
+
+    /* ── RESUME ── */
+    .panel-resume {
+      top: 168px;
+      left: 400px;
+      width: 580px;
+      border-radius: 16px;
+      display: flex;
+      transform: rotate(-3deg);
+      transform-origin: 40% 30%;
+    }
+    .resume-sidebar {
+      width: 72px;
+      background: var(--white);
+      border-right: 1px solid var(--slate-200);
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      padding: 16px 0;
+      gap: 10px;
+      border-radius: 16px 0 0 16px;
+    }
+    .nav-icon {
+      width: 40px;
+      height: 40px;
+      border-radius: 12px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      color: var(--slate-400);
+    }
+    .nav-icon.active {
+      background: var(--brand-600);
+      color: var(--white);
+      box-shadow: 0 4px 12px rgba(52,109,224,0.35);
+    }
+    .nav-icon.add {
+      background: var(--slate-50);
+      color: var(--slate-400);
+      margin-top: 8px;
+    }
+    .resume-main { flex: 1; padding: 18px 22px 22px; min-width: 0; }
+    .resume-topbar {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      margin-bottom: 16px;
+      color: var(--slate-500);
+      font-size: 14px;
+    }
+    .resume-topbar .title { font-weight: 500; color: var(--slate-900); }
+    .section-row {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      margin-bottom: 12px;
+    }
+    .section-row h2 {
+      font-size: 18px;
+      font-weight: 500;
+      color: var(--slate-900);
+    }
+    .btn-add {
+      display: inline-flex;
+      align-items: center;
+      gap: 4px;
+      font-size: 12px;
+      font-weight: 500;
+      color: var(--brand-600);
+      background: var(--brand-50);
+      border: none;
+      border-radius: 999px;
+      padding: 6px 12px;
+      font-family: inherit;
+    }
+    .project-block {
+      background: var(--slate-50);
+      border: 1px solid var(--slate-200);
+      border-radius: 12px;
+      padding: 12px 14px;
+    }
+    .project-block-head {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      margin-bottom: 10px;
+      gap: 8px;
+    }
+    .project-block-head h3 {
+      font-size: 13px;
+      font-weight: 500;
+      color: var(--slate-700);
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+    }
+    .icon-actions { display: flex; gap: 2px; color: var(--slate-400); }
+    .field-row {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 8px;
+      margin-bottom: 10px;
+    }
+    .field {
+      border: 1px solid var(--slate-200);
+      border-radius: 8px;
+      padding: 7px 10px;
+      font-size: 12px;
+      color: var(--slate-900);
+      background: var(--white);
+      font-family: inherit;
+    }
+    .field.placeholder { color: var(--slate-300); }
+    .rte {
+      border: 1px solid var(--slate-200);
+      border-radius: 10px;
+      overflow: hidden;
+      background: var(--white);
+    }
+    .rte-bar {
+      display: flex;
+      align-items: center;
+      gap: 2px;
+      padding: 5px 8px;
+      background: var(--slate-50);
+      border-bottom: 1px solid var(--slate-200);
+    }
+    .rte-bar button {
+      width: 26px;
+      height: 26px;
+      border: none;
+      background: transparent;
+      border-radius: 6px;
+      color: var(--slate-500);
+      font-size: 12px;
+      font-family: inherit;
+    }
+    .rte-bar button.on { background: var(--brand-50); color: var(--brand-600); }
+    .rte-bar .grow { flex: 1; }
+    .rte-bar .wand {
+      width: 26px;
+      height: 26px;
+      background: var(--brand-600);
+      border-radius: 6px;
+      color: var(--white);
+      display: flex;
+      align-items: center;
+      justify-content: center;
+    }
+    .rte-body {
+      padding: 10px 12px;
+      font-size: 12px;
+      line-height: 1.55;
+      color: var(--slate-600);
+    }
+    .rte-body ul { padding-left: 14px; }
+    .rte-body li { margin-bottom: 5px; }
+    .tooltip-unibot {
+      position: absolute;
+      right: 18px;
+      top: 248px;
+      background: var(--slate-800);
+      color: var(--white);
+      font-size: 10px;
+      padding: 5px 10px;
+      border-radius: 6px;
+      white-space: nowrap;
+      z-index: 20;
+    }
+
+    /* ── PORTFOLIO ── */
+    .panel-portfolio {
+      top: 260px;
+      left: 940px;
+      width: 440px;
+      transform: rotate(1deg);
+      transform-origin: center center;
+      background: transparent;
+      border: none;
+    }
+    .hero-card {
+      background: var(--white);
+      border: 1px solid var(--slate-200);
+      border-radius: 20px;
+      padding: 0 24px 20px;
+      text-align: center;
+      position: relative;
+    }
+    .float-badge {
+      position: absolute;
+      top: -10px;
+      background: var(--white);
+      border: 1px solid var(--slate-200);
+      border-radius: 999px;
+      padding: 5px 12px;
+      font-size: 10px;
+      font-weight: 500;
+      color: var(--slate-600);
+      box-shadow: 0 6px 18px rgba(15,23,42,0.08);
+      display: inline-flex;
+      align-items: center;
+      gap: 5px;
+    }
+    .float-badge.left { left: 16px; }
+    .float-badge.right { right: 16px; }
+    .float-unibot {
+      position: absolute;
+      top: -12px;
+      left: 12px;
+      display: inline-flex;
+      align-items: center;
+      gap: 6px;
+      padding: 6px 14px;
+      background: var(--white);
+      border: 1px solid var(--slate-200);
+      border-radius: 999px;
+      box-shadow: 0 6px 18px rgba(15,23,42,0.08);
+      font-size: 11px;
+      font-weight: 500;
+      color: var(--brand-600);
+      white-space: nowrap;
+    }
+    .float-published {
+      position: absolute;
+      top: -12px;
+      right: 12px;
+      display: inline-flex;
+      align-items: center;
+      gap: 7px;
+      padding: 6px 14px;
+      background: #ECFDF5;
+      border: 1px solid rgba(34, 197, 94, 0.35);
+      border-radius: 999px;
+      box-shadow: 0 6px 18px rgba(15,23,42,0.06);
+      font-size: 11px;
+      font-weight: 600;
+      color: #166534;
+      white-space: nowrap;
+    }
+    .live-dot {
+      position: relative;
+      width: 8px;
+      height: 8px;
+      flex-shrink: 0;
+    }
+    .live-dot::before {
+      content: '';
+      position: absolute;
+      inset: 0;
+      border-radius: 50%;
+      background: #4ADE80;
+      opacity: 0.75;
+      transform: scale(1.6);
+    }
+    .live-dot::after {
+      content: '';
+      position: absolute;
+      inset: 0;
+      border-radius: 50%;
+      background: #22C55E;
+      box-shadow: 0 0 8px rgba(34, 197, 94, 0.85);
+    }
+    .avatar {
+      width: 80px;
+      height: 80px;
+      border-radius: 50%;
+      margin: 32px auto 12px;
+      border: 3px solid var(--white);
+      box-shadow: 0 6px 20px rgba(15,23,42,0.12);
+      background: linear-gradient(145deg, #C7D2FE, #818CF8);
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-size: 22px;
+      font-weight: 600;
+      color: var(--white);
+    }
+    .hero-name {
+      font-size: 20px;
+      font-weight: 600;
+      color: var(--slate-900);
+      margin-bottom: 4px;
+    }
+    .hero-role {
+      font-size: 13px;
+      color: var(--slate-500);
+      margin-bottom: 14px;
+    }
+    .contact-row {
+      display: flex;
+      gap: 6px;
+      justify-content: center;
+      flex-wrap: wrap;
+    }
+    .contact-btn {
+      display: inline-flex;
+      align-items: center;
+      gap: 5px;
+      border: 1px solid var(--slate-200);
+      border-radius: 8px;
+      padding: 5px 10px;
+      font-size: 10px;
+      color: var(--slate-600);
+      background: var(--white);
+    }
+    .summary-card {
+      margin-top: 14px;
+      background: var(--white);
+      border: 1px solid var(--slate-200);
+      border-radius: 16px;
+      padding: 18px 20px;
+      text-align: left;
+    }
+    .summary-card h3 {
+      font-size: 15px;
+      font-weight: 600;
+      color: var(--slate-900);
+      margin-bottom: 8px;
+    }
+    .summary-card p {
+      font-size: 12px;
+      line-height: 1.6;
+      color: var(--slate-500);
+      margin-bottom: 6px;
+    }
+
+    /* ── LINKEDIN ── */
+    .panel-linkedin {
+      top: 148px;
+      left: 1180px;
+      width: 640px;
+      border-radius: 16px;
+      padding: 16px;
+      background: var(--slate-50);
+      border-color: var(--slate-200);
+      display: flex;
+      gap: 14px;
+      transform: rotate(2deg);
+      transform-origin: 70% 20%;
+    }
+    .li-breakdown {
+      flex: 1;
+      min-width: 0;
+      background: var(--white);
+      border: 1px solid var(--slate-200);
+      border-radius: 16px;
+      overflow: hidden;
+    }
+    .li-breakdown-head {
+      padding: 16px 18px;
+      border-bottom: 1px solid var(--slate-100);
+      display: flex;
+      justify-content: space-between;
+      gap: 12px;
+    }
+    .li-breakdown-head h3 {
+      font-size: 18px;
+      font-weight: 400;
+      color: var(--slate-900);
+    }
+    .li-breakdown-head p {
+      font-size: 11px;
+      color: var(--slate-500);
+      margin-top: 3px;
+    }
+    .li-row {
+      display: flex;
+      gap: 12px;
+      padding: 14px 18px;
+      border-top: 1px solid var(--slate-100);
+    }
+    .score-ring-wrap {
+      width: 52px;
+      height: 52px;
+      flex-shrink: 0;
+      position: relative;
+    }
+    .score-ring-wrap svg { width: 52px; height: 52px; transform: rotate(-90deg); }
+    .score-ring-wrap span {
+      position: absolute;
+      inset: 0;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-size: 11px;
+      font-weight: 500;
+      color: var(--slate-700);
+    }
+    .li-row h4 {
+      font-size: 14px;
+      font-weight: 500;
+      color: var(--slate-900);
+    }
+    .li-row-head {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 8px;
+      margin-bottom: 5px;
+    }
+    .btn-improve {
+      font-size: 11px;
+      font-weight: 500;
+      color: var(--brand-600);
+      background: var(--brand-50);
+      border: none;
+      border-radius: 8px;
+      padding: 4px 10px;
+      font-family: inherit;
+      white-space: nowrap;
+    }
+    .li-row p {
+      font-size: 12px;
+      line-height: 1.45;
+      color: var(--slate-600);
+    }
+    .li-row .tip {
+      margin-top: 4px;
+      font-size: 10px;
+      font-style: italic;
+      color: var(--slate-400);
+    }
+    .li-strength {
+      width: 210px;
+      flex-shrink: 0;
+      background: var(--white);
+      border: 1px solid var(--slate-200);
+      border-radius: 16px;
+      padding: 14px;
+      text-align: center;
+    }
+    .li-cover {
+      height: 48px;
+      border-radius: 8px;
+      border: 1px solid var(--slate-200);
+      background: linear-gradient(90deg, var(--brand-50), var(--brand-100));
+      margin-bottom: 10px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-size: 8px;
+      color: var(--slate-500);
+      padding: 0 8px;
+      line-height: 1.3;
+    }
+    .li-avatar {
+      width: 68px;
+      height: 68px;
+      border-radius: 50%;
+      margin: 0 auto 10px;
+      border: 3px solid var(--white);
+      box-shadow: 0 4px 16px rgba(15,23,42,0.12);
+      background: linear-gradient(145deg, #6366F1, #346DE0);
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-size: 18px;
+      font-weight: 600;
+      color: var(--white);
+    }
+    .li-strength label {
+      font-size: 12px;
+      color: var(--slate-900);
+      font-weight: 500;
+    }
+    .li-score {
+      font-size: 28px;
+      font-weight: 500;
+      color: var(--brand-600);
+      margin: 4px 0;
+    }
+    .li-score small {
+      font-size: 16px;
+      font-weight: 400;
+      color: var(--slate-500);
+    }
+    .li-date {
+      font-size: 9px;
+      color: var(--slate-500);
+      margin-bottom: 10px;
+    }
+    .progress {
+      height: 8px;
+      background: var(--slate-100);
+      border-radius: 999px;
+      overflow: hidden;
+      margin-bottom: 12px;
+    }
+    .progress > div {
+      height: 100%;
+      width: 72%;
+      background: var(--brand-600);
+      border-radius: 999px;
+    }
+    .btn-primary-dark {
+      width: 100%;
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      gap: 6px;
+      background: var(--slate-900);
+      color: var(--white);
+      border: none;
+      border-radius: 10px;
+      padding: 9px 12px;
+      font-size: 11px;
+      font-weight: 500;
+      font-family: inherit;
+    }
+
+    /* ── JOBS ── */
+    .panel-jobs {
+      top: 680px;
+      left: 340px;
+      width: 920px;
+      border-radius: 16px;
+      padding: 20px 22px 22px;
+      transform: rotate(-1deg);
+      transform-origin: 30% 50%;
+      overflow: visible;
+      z-index: 42;
+    }
+    .jobs-head {
+      display: flex;
+      justify-content: space-between;
+      align-items: flex-start;
+      margin-bottom: 14px;
+    }
+    .jobs-head h2 {
+      font-size: 20px;
+      font-weight: 400;
+      color: var(--slate-900);
+    }
+    .jobs-head .sub {
+      font-size: 13px;
+      color: var(--slate-500);
+      margin-top: 3px;
+    }
+    .pager { display: flex; gap: 6px; }
+    .pager button {
+      width: 36px;
+      height: 36px;
+      border-radius: 50%;
+      border: 1px solid var(--slate-200);
+      background: var(--white);
+      color: var(--slate-500);
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      cursor: default;
+    }
+    .jobs-grid {
+      display: grid;
+      grid-template-columns: repeat(3, 1fr);
+      gap: 12px;
+    }
+    .job-card {
+      border: 1px solid var(--slate-200);
+      border-radius: 16px;
+      padding: 14px;
+      background: var(--white);
+      box-shadow: 0 2px 8px rgba(0,0,0,0.02);
+    }
+    .job-top {
+      display: flex;
+      gap: 12px;
+      margin-bottom: 12px;
+    }
+    .job-logo {
+      width: 40px;
+      height: 40px;
+      border-radius: 10px;
+      border: 1px solid var(--slate-100);
+      background: var(--slate-50);
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      flex-shrink: 0;
+      font-size: 16px;
+      font-weight: 700;
+    }
+    .job-logo.hyra { color: #0D9488; background: #ECFDF5; }
+    .job-logo.citation { color: #EA580C; background: #FFF7ED; }
+    .job-logo.finalto { color: #A855F7; background: #1E1B4B; font-size: 11px; }
+    .job-info h4 {
+      font-size: 15px;
+      font-weight: 500;
+      color: var(--slate-900);
+      margin-bottom: 3px;
+    }
+    .job-info h4.hover { color: var(--brand-600); }
+    .job-meta {
+      font-size: 11px;
+      color: var(--slate-500);
+      margin-bottom: 6px;
+    }
+    .job-time {
+      display: inline-flex;
+      align-items: center;
+      gap: 4px;
+      font-size: 9px;
+      color: var(--slate-500);
+      border: 1px solid var(--slate-100);
+      background: var(--slate-50);
+      border-radius: 6px;
+      padding: 2px 6px;
+    }
+    .job-btns {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 8px;
+    }
+    .job-btns button {
+      border-radius: 8px;
+      padding: 8px;
+      font-size: 12px;
+      font-weight: 500;
+      font-family: inherit;
+      cursor: default;
+    }
+    .btn-secondary {
+      background: var(--white);
+      border: 1px solid var(--brand-100);
+      color: var(--brand-600);
+    }
+    .btn-brand {
+      background: var(--brand-600);
+      border: none;
+      color: var(--white);
+    }
+
+    /* ── LINKEDIN POST ── */
+    .panel-post {
+      top: 700px;
+      left: 980px;
+      width: 680px;
+      border-radius: 16px;
+      padding: 16px;
+      background: #2F3338;
+      border: none;
+      display: flex;
+      gap: 14px;
+      transform: rotate(2deg);
+      transform-origin: 60% 40%;
+    }
+    .post-left { width: 300px; flex-shrink: 0; }
+    .post-card {
+      background: var(--white);
+      border-radius: 12px;
+      padding: 14px;
+      margin-bottom: 10px;
+    }
+    .post-author {
+      display: flex;
+      gap: 10px;
+      margin-bottom: 10px;
+    }
+    .post-avatar {
+      width: 42px;
+      height: 42px;
+      border-radius: 50%;
+      background: linear-gradient(145deg, #6366F1, #346DE0);
+      flex-shrink: 0;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-size: 13px;
+      font-weight: 600;
+      color: var(--white);
+    }
+    .post-author h4 {
+      font-size: 13px;
+      font-weight: 600;
+      color: var(--slate-900);
+    }
+    .post-headline {
+      font-size: 9px;
+      line-height: 1.35;
+      color: var(--slate-500);
+      margin-top: 2px;
+    }
+    .post-when {
+      font-size: 10px;
+      color: var(--slate-400);
+      margin-top: 3px;
+      display: flex;
+      align-items: center;
+      gap: 4px;
+    }
+    .post-body {
+      font-size: 11px;
+      line-height: 1.5;
+      color: var(--slate-600);
+    }
+    .post-body ol { padding-left: 16px; margin: 6px 0; }
+    .post-body li { margin-bottom: 3px; }
+    .btn-unibot {
+      width: 100%;
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      gap: 8px;
+      background: #23262A;
+      color: var(--white);
+      border: none;
+      border-radius: 999px;
+      padding: 10px;
+      font-size: 12px;
+      font-weight: 500;
+      font-family: inherit;
+    }
+    .schedule {
+      flex: 1;
+      min-width: 0;
+      background: var(--white);
+      border-radius: 14px;
+      padding: 16px;
+      display: flex;
+      flex-direction: column;
+    }
+    .schedule-top {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      margin-bottom: 12px;
+    }
+    .schedule-top h3 {
+      font-size: 15px;
+      font-weight: 600;
+      color: var(--slate-900);
+    }
+    .opt {
+      border: 1px solid var(--slate-200);
+      border-radius: 10px;
+      padding: 10px 12px;
+      margin-bottom: 8px;
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      gap: 8px;
+    }
+    .opt.on {
+      border-color: var(--brand-600);
+      background: rgba(52,109,224,0.03);
+    }
+    .opt h4 { font-size: 12px; font-weight: 500; color: var(--slate-900); }
+    .opt p { font-size: 10px; color: var(--slate-500); margin-top: 2px; }
+    .radio {
+      width: 16px;
+      height: 16px;
+      border: 2px solid var(--slate-300);
+      border-radius: 50%;
+      flex-shrink: 0;
+    }
+    .toggle {
+      width: 38px;
+      height: 22px;
+      background: var(--brand-600);
+      border-radius: 11px;
+      position: relative;
+      flex-shrink: 0;
+    }
+    .toggle::after {
+      content: '';
+      position: absolute;
+      right: 3px;
+      top: 3px;
+      width: 16px;
+      height: 16px;
+      background: var(--white);
+      border-radius: 50%;
+    }
+    .cal {
+      border: 1px solid var(--slate-200);
+      border-radius: 10px;
+      padding: 10px;
+      margin-bottom: 8px;
+    }
+    .cal-title {
+      text-align: center;
+      font-size: 10px;
+      font-weight: 500;
+      color: var(--slate-600);
+      margin-bottom: 8px;
+    }
+    .cal-grid {
+      display: grid;
+      grid-template-columns: repeat(7, 1fr);
+      gap: 2px;
+      text-align: center;
+    }
+    .cal-grid .lbl { font-size: 8px; color: var(--slate-400); padding: 2px 0; }
+    .cal-grid .d {
+      width: 26px;
+      height: 26px;
+      margin: 0 auto;
+      border-radius: 50%;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-size: 10px;
+      color: var(--slate-600);
+    }
+    .cal-grid .d.sel {
+      background: var(--brand-600);
+      color: var(--white);
+      font-weight: 600;
+    }
+    .time-field {
+      border: 1px solid var(--slate-200);
+      border-radius: 8px;
+      padding: 7px 10px;
+      font-size: 10px;
+      color: var(--slate-600);
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      margin-bottom: 10px;
+    }
+    .schedule-foot {
+      margin-top: auto;
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      padding-top: 4px;
+    }
+    .schedule-foot .cancel {
+      font-size: 12px;
+      color: var(--slate-500);
+      background: none;
+      border: none;
+      font-family: inherit;
+    }
+    .btn-schedule {
+      background: var(--brand-600);
+      color: var(--white);
+      border: none;
+      border-radius: 10px;
+      padding: 9px 16px;
+      font-size: 12px;
+      font-weight: 500;
+      font-family: inherit;
+    }
+  </style>
+</head>
+<body>
+  <div class="canvas">
+    <div class="blob blob-1"></div>
+    <div class="blob blob-2"></div>
+
+    <div class="brand-lockup">
+      <div class="eyebrow">Sneak peek</div>
+      <h1>Unimad <em>v2</em></h1>
+    </div>
+
+    <div class="collage">
+      <!-- RESUME -->
+      <div class="panel panel-resume depth-2">
+        <div class="resume-sidebar">
+          <div class="nav-icon"><span class="icon"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M19 21v-2a4 4 0 0 0-4-4H9a4 4 0 0 0-4 4v2"/><circle cx="12" cy="7" r="4"/></svg></span></div>
+          <div class="nav-icon"><span class="icon"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect width="20" height="14" x="2" y="7" rx="2"/><path d="M16 21V5a2 2 0 0 0-2-2h-4a2 2 0 0 0-2 2v16"/></svg></span></div>
+          <div class="nav-icon"><span class="icon"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M22 10v6M2 10l10-5 10 5-10 5z"/><path d="M6 12v5c3 3 9 3 12 0v-5"/></svg></span></div>
+          <div class="nav-icon"><span class="icon"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="16 18 22 12 16 6"/><polyline points="8 6 2 12 8 18"/></svg></span></div>
+          <div class="nav-icon active"><span class="icon"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M20 20a2 2 0 0 0 2-2V8a2 2 0 0 0-2-2h-7.9a2 2 0 0 1-1.69-.9L9.6 3.9A2 2 0 0 0 7.93 3H4a2 2 0 0 0-2 2v13a2 2 0 0 0 2 2Z"/><path d="M2 10h20"/></svg></span></div>
+          <div class="nav-icon add"><span class="icon"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M5 12h14"/><path d="M12 5v14"/></svg></span></div>
+        </div>
+        <div class="resume-main">
+          <div class="resume-topbar">
+            <span class="icon"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="m12 19-7-7 7-7"/><path d="M19 12H5"/></svg></span>
+            <span class="title">Alex Morgan — Resume</span>
+          </div>
+          <div class="section-row">
+            <h2>Projects</h2>
+            <div style="display:flex;align-items:center;gap:6px;">
+              <span class="icon" style="color:var(--slate-400);"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M2 12s3-7 10-7 10 7 10 7-3 7-10 7-10-7-10-7Z"/><circle cx="12" cy="12" r="3"/></svg></span>
+              <button class="btn-add"><span class="icon"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M5 12h14"/><path d="M12 5v14"/></svg></span> Add</button>
+            </div>
+          </div>
+          <div class="project-block">
+            <div class="project-block-head">
+              <h3>NFT Price Prediction Using Community Sentiment</h3>
+              <div class="icon-actions">
+                <span class="icon"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M2 12s3-7 10-7 10 7 10 7-3 7-10 7-10-7-10-7Z"/><circle cx="12" cy="12" r="3"/></svg></span>
+                <span class="icon"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 6h18"/><path d="M19 6v14c0 1-1 2-2 2H7c-1 0-2-1-2-2V6"/><path d="M8 6V4c0-1 1-2 2-2h4c1 0 2 1 2 2v2"/></svg></span>
+              </div>
+            </div>
+            <div class="field-row">
+              <div class="field">NFT Price Prediction</div>
+              <div class="field placeholder">Project URL</div>
+            </div>
+            <div class="rte">
+              <div class="rte-bar">
+                <button><b>B</b></button>
+                <button><i>I</i></button>
+                <button><u>U</u></button>
+                <button class="on"><span class="icon"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="8" x2="21" y1="6" y2="6"/><line x1="8" x2="21" y1="12" y2="12"/><line x1="8" x2="21" y1="18" y2="18"/><line x1="3" x2="3.01" y1="6" y2="6"/><line x1="3" x2="3.01" y1="12" y2="12"/><line x1="3" x2="3.01" y1="18" y2="18"/></svg></span></button>
+                <div class="grow"></div>
+                <div class="wand"><span class="icon"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="m15 4-1 1"/><path d="m16 3 4 4"/><path d="m9.5 11.5 6 6"/><path d="m21 3-3 3"/><path d="M9 11l-6 6v3h3l6-6"/></svg></span></div>
+              </div>
+              <div class="rte-body">
+                <ul>
+                  <li>Built a sentiment analysis model using BERT on Discord discussions to surface brand perception insights.</li>
+                  <li>Predicted NFT price movement from community signals with 15% higher accuracy vs. baseline models.</li>
+                </ul>
+              </div>
+            </div>
+          </div>
+          <div class="tooltip-unibot">Improve with Unibot</div>
+        </div>
+      </div>
+
+      <!-- PORTFOLIO -->
+      <div class="panel panel-portfolio depth-5">
+        <div class="hero-card">
+          <div class="float-unibot">
+            <span class="icon"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="m15 4-1 1"/><path d="m16 3 4 4"/><path d="m9.5 11.5 6 6"/><path d="m21 3-3 3"/><path d="M9 11l-6 6v3h3l6-6"/></svg></span>
+            Improve with Unibot
+          </div>
+          <div class="float-published">
+            <span class="live-dot" aria-hidden="true"></span>
+            Published
+          </div>
+          <div class="avatar">AM</div>
+          <div class="hero-name">Alex Morgan</div>
+          <div class="hero-role">Product Designer</div>
+          <div class="contact-row">
+            <div class="contact-btn"><span class="icon"><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect width="20" height="16" x="2" y="4" rx="2"/><path d="m22 7-8.97 5.7a1.94 1.94 0 0 1-2.06 0L2 7"/></svg></span> alex@unimad.dev</div>
+            <div class="contact-btn"><span class="icon"><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M22 16.92v3a2 2 0 0 1-2.18 2 19.79 19.79 0 0 1-8.63-3.07 19.5 19.5 0 0 1-6-6 19.79 19.79 0 0 1-3.07-8.67A2 2 0 0 1 4.11 2h3a2 2 0 0 1 2 1.72c.127.96.361 1.903.7 2.81a2 2 0 0 1-.45 2.11L8.09 9.91a16 16 0 0 0 6 6l1.27-1.27a2 2 0 0 1 2.11-.45c.907.339 1.85.573 2.81.7A2 2 0 0 1 22 16.92z"/></svg></span> Phone</div>
+            <div class="contact-btn"><span class="icon"><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M20 10c0 6-8 12-8 12s-8-6-8-12a8 8 0 0 1 16 0Z"/><circle cx="12" cy="10" r="3"/></svg></span> Birmingham, UK</div>
+          </div>
+        </div>
+        <div class="summary-card">
+          <h3>Quick Summary</h3>
+          <p>I design intuitive flows and clean interfaces for career-focused products that help students stand out.</p>
+          <p>I specialize in portfolio layouts, design systems, and turning user research into polished, accessible UI.</p>
+          <p>My goal is to help international students present their best professional story online.</p>
+        </div>
+      </div>
+
+      <!-- LINKEDIN -->
+      <div class="panel panel-linkedin depth-3">
+        <div class="li-breakdown">
+          <div class="li-breakdown-head">
+            <div>
+              <h3>Profile breakdown</h3>
+              <p>Detailed analysis of your profile sections with actionable tips.</p>
+            </div>
+            <span class="icon" style="color:var(--slate-400);margin-top:4px;"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="m6 9 6 6 6-6"/></svg></span>
+          </div>
+          <div class="li-row">
+            <div class="score-ring-wrap">
+              <svg viewBox="0 0 36 36"><path d="M18 2.0845 a 15.9155 15.9155 0 0 1 0 31.831 a 15.9155 15.9155 0 0 1 0 -31.831" fill="none" stroke="#F1F5F9" stroke-width="3"/><path d="M18 2.0845 a 15.9155 15.9155 0 0 1 0 31.831 a 15.9155 15.9155 0 0 1 0 -31.831" fill="none" stroke="#22C55E" stroke-width="3" stroke-dasharray="90, 100"/></svg>
+              <span>90%</span>
+            </div>
+            <div style="min-width:0;">
+              <div class="li-row-head">
+                <h4>Profile Picture</h4>
+                <button class="btn-improve">Improve</button>
+              </div>
+              <p>Professional and approachable, with a clear focus on your face and a confident expression.</p>
+              <p class="tip">Tip: Consider a color photo to add warmth and personality.</p>
+            </div>
+          </div>
+          <div class="li-row">
+            <div class="score-ring-wrap">
+              <svg viewBox="0 0 36 36"><path d="M18 2.0845 a 15.9155 15.9155 0 0 1 0 31.831 a 15.9155 15.9155 0 0 1 0 -31.831" fill="none" stroke="#F1F5F9" stroke-width="3"/><path d="M18 2.0845 a 15.9155 15.9155 0 0 1 0 31.831 a 15.9155 15.9155 0 0 1 0 -31.831" fill="none" stroke="#22C55E" stroke-width="3" stroke-dasharray="85, 100"/></svg>
+              <span>85%</span>
+            </div>
+            <div style="min-width:0;">
+              <div class="li-row-head">
+                <h4>Cover Picture</h4>
+                <button class="btn-improve">Improve</button>
+              </div>
+              <p>Communicates your value proposition and aligns well with your headline and About section.</p>
+              <p class="tip">Tip: Add subtle branding while keeping the banner readable.</p>
+            </div>
+          </div>
+        </div>
+        <div class="li-strength">
+          <div class="li-cover">Helping international students land jobs faster using AI</div>
+          <div class="li-avatar">AM</div>
+          <label>Profile Strength</label>
+          <div class="li-score">72<small>/100</small></div>
+          <div class="li-date">Last analyzed on 20 Jun 2026, 14:14</div>
+          <div class="progress"><div></div></div>
+          <button class="btn-primary-dark"><span class="icon"><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 12a9 9 0 0 1 9-9 9.75 9.75 0 0 1 6.74 2.74L21 8"/><path d="M21 3v5h-5"/><path d="M21 12a9 9 0 0 1-9 9 9.75 9.75 0 0 1-6.74-2.74L3 16"/><path d="M8 16H3v5"/></svg></span> Re-Analyze</button>
+        </div>
+      </div>
+
+      <!-- JOBS -->
+      <div class="panel panel-jobs depth-4">
+        <div class="jobs-head">
+          <div>
+            <h2>Recommended For You</h2>
+            <p class="sub">Based on your desired role: Data Engineer.</p>
+          </div>
+          <div class="pager">
+            <button><span class="icon"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="m15 18-6-6 6-6"/></svg></span></button>
+            <button><span class="icon"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="m9 18 6-6-6-6"/></svg></span></button>
+          </div>
+        </div>
+        <div class="jobs-grid">
+          <div class="job-card">
+            <div class="job-top">
+              <div class="job-logo hyra">H</div>
+              <div class="job-info">
+                <h4 class="hover">Data Engineer</h4>
+                <div class="job-meta">Hyra • London, England, United Kingdom</div>
+                <div class="job-time"><span class="icon"><svg width="9" height="9" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/></svg></span> 3 weeks ago</div>
+              </div>
+            </div>
+            <div class="job-btns">
+              <button class="btn-secondary">Continue</button>
+              <button class="btn-brand">Apply Now</button>
+            </div>
+          </div>
+          <div class="job-card">
+            <div class="job-top">
+              <div class="job-logo citation">C</div>
+              <div class="job-info">
+                <h4>Data Engineer</h4>
+                <div class="job-meta">Citation Canada • Wilmslow, England</div>
+                <div class="job-time"><span class="icon"><svg width="9" height="9" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/></svg></span> 3 weeks ago</div>
+              </div>
+            </div>
+            <div class="job-btns">
+              <button class="btn-secondary">Continue</button>
+              <button class="btn-brand">Apply Now</button>
+            </div>
+          </div>
+          <div class="job-card">
+            <div class="job-top">
+              <div class="job-logo finalto">F</div>
+              <div class="job-info">
+                <h4>Data Engineer</h4>
+                <div class="job-meta">Finalto • London Area, United Kingdom</div>
+                <div class="job-time"><span class="icon"><svg width="9" height="9" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/></svg></span> 3 weeks ago</div>
+              </div>
+            </div>
+            <div class="job-btns">
+              <button class="btn-secondary">Continue</button>
+              <button class="btn-brand">Apply Now</button>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- LINKEDIN POST -->
+      <div class="panel panel-post depth-3">
+        <div class="post-left">
+          <div class="post-card">
+            <div class="post-author">
+              <div class="post-avatar">AM</div>
+              <div>
+                <h4>Alex Morgan</h4>
+                <div class="post-headline">Product Designer | Building portfolios that help students get noticed</div>
+                <div class="post-when">Now <span class="icon"><svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><path d="M12 2a14.5 14.5 0 0 0 0 20 14.5 14.5 0 0 0 0-20"/><path d="M2 12h20"/></svg></span></div>
+              </div>
+            </div>
+            <div class="post-body">
+              <p>Strategic thinking isn't about having all the answers — it's about asking the right questions.</p>
+              <ol>
+                <li>Define the problem clearly</li>
+                <li>Break it into components</li>
+                <li>Identify constraints</li>
+                <li>Build iteratively</li>
+              </ol>
+              <p>How do you approach your most intricate challenges?</p>
+            </div>
+          </div>
+          <button class="btn-unibot"><span class="icon"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="m15 4-1 1"/><path d="m16 3 4 4"/><path d="m9.5 11.5 6 6"/><path d="m21 3-3 3"/><path d="M9 11l-6 6v3h3l6-6"/></svg></span> Improve with Unibot</button>
+        </div>
+        <div class="schedule">
+          <div class="schedule-top">
+            <h3>Review &amp; Schedule</h3>
+            <span class="icon" style="color:var(--slate-300);"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M18 6 6 18"/><path d="m6 6 12 12"/></svg></span>
+          </div>
+          <div class="opt">
+            <div><h4>Post to LinkedIn</h4><p>Turn off scheduling to post immediately.</p></div>
+            <div class="radio"></div>
+          </div>
+          <div class="opt on">
+            <div><h4>Schedule for later</h4><p>Pick a date and time on LinkedIn.</p></div>
+            <div class="toggle"></div>
+          </div>
+          <div class="cal">
+            <div class="cal-title">Pick a date — 5 Jul – 11, 2026</div>
+            <div class="cal-grid">
+              <div class="lbl">SU</div><div class="lbl">MO</div><div class="lbl">TU</div><div class="lbl">WE</div><div class="lbl">TH</div><div class="lbl">FR</div><div class="lbl">SA</div>
+              <div class="d"></div><div class="d"></div><div class="d"></div><div class="d"></div><div class="d"></div><div class="d">5</div><div class="d">6</div>
+              <div class="d">7</div><div class="d sel">8</div><div class="d">9</div><div class="d">10</div><div class="d">11</div><div class="d"></div><div class="d"></div>
+            </div>
+          </div>
+          <div class="time-field">
+            <span>Wed 8 Jul · 12:00 AM</span>
+            <span class="icon"><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/></svg></span>
+          </div>
+          <div class="schedule-foot">
+            <button class="cancel">Cancel</button>
+            <button class="btn-schedule">Schedule Post</button>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+</body>
+</html>

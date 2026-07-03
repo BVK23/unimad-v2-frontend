@@ -2,7 +2,13 @@ import React, { useState, useRef, type SetStateAction } from "react";
 import type { PortfolioHighlightMap } from "@/features/adk-chat/adkPortfolioHighlightDiff";
 import { getPortfolioBlockDeleteLabel } from "@/features/portfolio/utils/getPortfolioBlockDeleteLabel";
 import { normalizePortfolioHtmlForRender } from "@/features/portfolio/utils/portfolio-html";
-import { UploadError, uploadPortfolioFile } from "@/features/portfolio/utils/upload";
+import {
+  formatPortfolioUploadError,
+  logPortfolioUploadError,
+  logPortfolioUploadStart,
+  logPortfolioUploadSuccess,
+} from "@/features/portfolio/utils/portfolioUploadLog";
+import { uploadPortfolioFile } from "@/features/portfolio/utils/upload";
 import {
   ArrowLeft,
   Trash2,
@@ -46,6 +52,7 @@ interface ProjectDetailViewProps {
   enableSelectionImprove?: boolean;
   onTextSelectionChange?: (info: RichTextEditorSelectionInfo | null) => void;
   selectionImproveSlot?: React.ReactNode;
+  onUploadError?: (message: string) => void;
 }
 
 const ProjectDetailView: React.FC<ProjectDetailViewProps> = ({
@@ -63,6 +70,7 @@ const ProjectDetailView: React.FC<ProjectDetailViewProps> = ({
   enableSelectionImprove = false,
   onTextSelectionChange,
   selectionImproveSlot,
+  onUploadError,
 }) => {
   const [uncontrolledEditMode, setUncontrolledEditMode] = useState(true);
   const isEditMode = isEditModeProp ?? uncontrolledEditMode;
@@ -268,12 +276,16 @@ const ProjectDetailView: React.FC<ProjectDetailViewProps> = ({
   const handleCoverUpload = async (file: File) => {
     setCoverUploadError(null);
     setIsCoverUploading(true);
+    logPortfolioUploadStart("page-cover", file, { pageId: project.id, pageTitle: project.title });
     try {
       const uploaded = await uploadPortfolioFile(file);
       onUpdateProject({ ...project, content: uploaded.url });
+      logPortfolioUploadSuccess("page-cover", uploaded.url, { pageId: project.id });
     } catch (error) {
-      const message = error instanceof UploadError ? error.message : "Upload failed";
+      const message = formatPortfolioUploadError(error, "Could not upload cover. Try a JPG/PNG/GIF under 4MB, or check your connection.");
+      logPortfolioUploadError("page-cover", error, { pageId: project.id, pageTitle: project.title });
       setCoverUploadError(message);
+      onUploadError?.(message);
     } finally {
       setIsCoverUploading(false);
     }
@@ -421,7 +433,7 @@ const ProjectDetailView: React.FC<ProjectDetailViewProps> = ({
           </div>
         )}
         {coverUploadError && (
-          <div className="absolute top-6 left-6 z-30 text-xs font-medium text-red-500 bg-white/95 dark:bg-slate-900 border border-red-200 rounded-md px-3 py-1.5 shadow">
+          <div className="absolute top-6 left-6 z-30 max-w-sm text-xs font-semibold text-red-600 bg-white/95 dark:bg-slate-900 border border-red-200 rounded-lg px-3 py-2 shadow-lg">
             {coverUploadError}
           </div>
         )}
@@ -544,6 +556,7 @@ const ProjectDetailView: React.FC<ProjectDetailViewProps> = ({
                     enableSelectionImprove={enableSelectionImprove}
                     onTextSelectionChange={onTextSelectionChange}
                     selectionImproveSlot={selectionImproveSlot}
+                    onUploadError={onUploadError}
                   />
 
                   {isEditMode && (

@@ -27,3 +27,13 @@ package-lock.json
 *.njsproj
 *.sln
 *.sw?
+
+# ── PROD CUTOVER (unimad-v2-frontend / production deploy) ─────────────────────
+# These files exist locally for parity with v1 but stay untracked during v2 dev.
+# Before production cutover: DELETE this block from .gitignore so git tracks them,
+# then uncomment GoogleTagManager + Vercel Analytics in src/app/layout.tsx.
+src/app/robots.ts
+src/app/sitemap.ts
+src/lib/gtm.ts
+components/landing/GoogleTagManager.tsx
+src/app/blogs/

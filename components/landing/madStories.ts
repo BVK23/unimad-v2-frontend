@@ -2453,3 +2453,18 @@ export const MAD_STORIES: MadStory[] = [
     ],
   },
 ];
+
+export function madStorySlug(name: string): string {
+  return name
+    .toLowerCase()
+    .normalize("NFD")
+    .replace(/[\u0300-\u036f]/g, "")
+    .replace(/[^a-z0-9]+/g, "-")
+    .replace(/^-+|-+$/g, "");
+}
+
+export function findMadStoryBySlug(slug: string): MadStory | undefined {
+  return MAD_STORIES.find(story => madStorySlug(story.name) === slug);
+}
+
+export const MAD_STORY_SLUGS = MAD_STORIES.map(story => madStorySlug(story.name));

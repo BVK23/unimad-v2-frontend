@@ -10,7 +10,13 @@ import {
   portfolioSectionTitleClassName,
   resolvePortfolioTextTitlePresentation,
 } from "@/features/portfolio/utils/portfolio-html";
-import { UploadError, uploadPortfolioFile } from "@/features/portfolio/utils/upload";
+import {
+  formatPortfolioUploadError,
+  logPortfolioUploadError,
+  logPortfolioUploadStart,
+  logPortfolioUploadSuccess,
+} from "@/features/portfolio/utils/portfolioUploadLog";
+import { uploadPortfolioFile } from "@/features/portfolio/utils/upload";
 import {
   ExternalLink,
   Link as LinkIcon,
@@ -55,6 +61,7 @@ interface BlockRendererProps {
   enableSelectionImprove?: boolean;
   onTextSelectionChange?: (info: RichTextEditorSelectionInfo | null) => void;
   selectionImproveSlot?: React.ReactNode;
+  onUploadError?: (message: string) => void;
 }
 
 const GRID_MEASURED_BLOCK_TYPES = new Set<PortfolioItem["type"]>(["text", "table", "page-card", "media"]);
@@ -375,6 +382,7 @@ const BlockRenderer: React.FC<BlockRendererProps> = ({
   enableSelectionImprove = false,
   onTextSelectionChange,
   selectionImproveSlot,
+  onUploadError,
 }) => {
   const item: PortfolioItem = { ...rawItem, type: resolvePortfolioBlockType(rawItem) };
   const mediaInputRef = useRef<HTMLInputElement>(null);
@@ -405,9 +413,18 @@ const BlockRenderer: React.FC<BlockRendererProps> = ({
 
   const serializeTableContent = (rows: string[][]) => JSON.stringify(rows);
 
+  const reportUploadError = (context: "canvas-cover" | "block-media", error: unknown, fallback: string) => {
+    const message = formatPortfolioUploadError(error, fallback);
+    logPortfolioUploadError(context, error, { blockId: item.id, blockType: item.type });
+    setUploadError(message);
+    onUploadError?.(message);
+    return message;
+  };
+
   const handleMediaFileUpload = async (file: File) => {
     setUploadError(null);
     setIsUploading(true);
+    logPortfolioUploadStart("block-media", file, { blockId: item.id, blockType: item.type });
     try {
       const uploaded = await uploadPortfolioFile(file);
       const normalizedMediaType: PortfolioItem["mediaType"] =
@@ -420,9 +437,9 @@ const BlockRenderer: React.FC<BlockRendererProps> = ({
         mediaMimeType: uploaded.mimeType,
         ...(item.type === "page-card" || item.type === "project" ? { showCoverImage: true } : {}),
       });
+      logPortfolioUploadSuccess("block-media", uploaded.url, { blockId: item.id, blockType: item.type });
     } catch (error) {
-      const message = error instanceof UploadError ? error.message : "Upload failed";
-      setUploadError(message);
+      reportUploadError("block-media", error, "Could not upload media. Try a JPG/PNG under 4MB, or check your connection.");
     } finally {
       setIsUploading(false);
     }
@@ -444,12 +461,13 @@ const BlockRenderer: React.FC<BlockRendererProps> = ({
   const handleCanvasCoverUpload = async (file: File) => {
     setUploadError(null);
     setIsUploading(true);
+    logPortfolioUploadStart("canvas-cover", file, { blockId: item.id, blockTitle: item.title });
     try {
       const uploaded = await uploadPortfolioFile(file);
       onUpdate(item.id, { canvasCover: uploaded.url, showCoverImage: true });
+      logPortfolioUploadSuccess("canvas-cover", uploaded.url, { blockId: item.id });
     } catch (error) {
-      const message = error instanceof UploadError ? error.message : "Upload failed";
-      setUploadError(message);
+      reportUploadError("canvas-cover", error, "Could not upload cover. Try a JPG/PNG/GIF under 4MB, or check your connection.");
     } finally {
       setIsUploading(false);
     }
@@ -803,7 +821,11 @@ const BlockRenderer: React.FC<BlockRendererProps> = ({
                   <span className="text-[10px] text-slate-500 dark:text-slate-400 font-medium">
                     Cover is canvas-only · won&apos;t affect page
                   </span>
-                  {uploadError ? <span className="pointer-events-none text-[10px] font-medium text-red-500">{uploadError}</span> : null}
+                  {uploadError ? (
+                    <span className="pointer-events-none max-w-[90%] rounded-md border border-red-200 bg-white/95 px-2 py-1 text-center text-[11px] font-semibold text-red-600 shadow-sm">
+                      {uploadError}
+                    </span>
+                  ) : null}
                 </div>
               )}
               {item.canvasCover ? (

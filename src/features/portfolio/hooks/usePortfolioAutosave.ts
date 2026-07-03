@@ -17,6 +17,7 @@ export function usePortfolioAutosave(portfolioId: string, options?: { enabled?: 
   const [lastAcknowledgedSnapshot, setLastAcknowledgedSnapshot] = useState("");
   const [activeSaveSource, setActiveSaveSource] = useState<"auto" | "manual" | null>(null);
   const [savedConfirmationVisible, setSavedConfirmationVisible] = useState(false);
+  const [lastSaveError, setLastSaveError] = useState<{ message: string; nonce: number } | null>(null);
 
   const saveInFlightRef = useRef(false);
   const savedConfirmationTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -107,6 +108,7 @@ export function usePortfolioAutosave(portfolioId: string, options?: { enabled?: 
 
       try {
         await updatePortfolioMutation(dataToSave);
+        setLastSaveError(null);
         setLastAcknowledgedSnapshot(snapshotAtStart);
         if (latestSnapshotRef.current === snapshotAtStart) {
           showSavedConfirmation();
@@ -116,7 +118,14 @@ export function usePortfolioAutosave(portfolioId: string, options?: { enabled?: 
           queuedSaveRef.current = true;
         }
       } catch (error) {
-        console.error("Failed to save portfolio:", error);
+        const message = error instanceof Error ? error.message : "Failed to save portfolio";
+        console.error("[portfolio-autosave] save failed", {
+          portfolioId,
+          source,
+          message,
+          error,
+        });
+        setLastSaveError({ message, nonce: Date.now() });
       } finally {
         saveInFlightRef.current = false;
         setActiveSaveSource(null);
@@ -163,6 +172,7 @@ export function usePortfolioAutosave(portfolioId: string, options?: { enabled?: 
     isSavingRemote,
     hasPendingUnsavedChanges,
     savedConfirmationVisible,
+    lastSaveError,
     runSave,
   };
 }

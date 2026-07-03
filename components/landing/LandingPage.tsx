@@ -185,7 +185,9 @@ export function LandingPage() {
                 <Link href="/about" prefetch={false}>
                   About Us
                 </Link>
-                <a href="mailto:grow@unimad.ai">Contact Us</a>
+                <Link href="/contact-us" prefetch={false}>
+                  Contact Us
+                </Link>
                 <Link href="/privacy" prefetch={false}>
                   Privacy Policy
                 </Link>

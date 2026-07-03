@@ -1,13 +1,11 @@
 "use client";
 
 /* eslint-disable react-hooks/set-state-in-effect */
-import { type CSSProperties, type ReactNode, useCallback, useEffect, useState } from "react";
+import { type CSSProperties, type ReactNode, useEffect, useState } from "react";
 import { getSigninUrl } from "@/constants/landing-auth";
-import { X } from "lucide-react";
 import Link from "next/link";
-import { MadStoryContent } from "./MadStoryContent";
 import { UnimadMark } from "./UnimadMark";
-import { MAD_STORIES, madStoryImageUrl, type MadStory } from "./madStories";
+import { madStorySlug, MAD_STORIES, madStoryImageUrl, type MadStory } from "./madStories";
 import { useLandingBodyClass, useScrollReveal } from "./useLandingEffects";
 
 /** Sticky-note palette — deterministic per card to avoid hydration drift */
@@ -104,33 +102,14 @@ function StoryPhoto({ name, image, className }: { name: string; image: string; c
   );
 }
 
-/** Large circular portrait for the story popup. */
-function FramedPhoto({ name, image }: { name: string; image: string }) {
-  const [failed, setFailed] = useState(false);
-
-  if (failed) {
-    return (
-      <div className="ms-frame ms-frame--fallback" aria-hidden>
-        <span>{getInitials(name)}</span>
-      </div>
-    );
-  }
-
-  return (
-    <div className="ms-frame">
-      {/* eslint-disable-next-line @next/next/no-img-element */}
-      <img src={madStoryImageUrl(image)} alt={name} decoding="async" onError={() => setFailed(true)} />
-    </div>
-  );
-}
-
-function StoryNote({ story, index, order, onOpen }: { story: MadStory; index: number; order: number; onOpen: (story: MadStory) => void }) {
+function StoryNote({ story, index, order }: { story: MadStory; index: number; order: number }) {
   const color = NOTE_COLORS[index % NOTE_COLORS.length];
   const tilt = NOTE_TILTS[index % NOTE_TILTS.length];
+  const slug = madStorySlug(story.name);
 
   return (
-    <button
-      type="button"
+    <Link
+      href={`/mad-stories/${slug}`}
       className="ms-note"
       style={
         {
@@ -140,7 +119,6 @@ function StoryNote({ story, index, order, onOpen }: { story: MadStory; index: nu
           "--i": order,
         } as CSSProperties
       }
-      onClick={() => onOpen(story)}
       aria-label={`Read ${story.name}'s full story`}
     >
       <span className="ms-note__tape" aria-hidden />
@@ -151,61 +129,13 @@ function StoryNote({ story, index, order, onOpen }: { story: MadStory; index: nu
         <span className="ms-note__hint">Read story →</span>
       </span>
       <span className="ms-note__curl" aria-hidden />
-    </button>
-  );
-}
-
-function StoryModal({ story, onClose }: { story: MadStory; onClose: () => void }) {
-  useEffect(() => {
-    const onKey = (e: KeyboardEvent) => {
-      if (e.key === "Escape") onClose();
-    };
-    document.addEventListener("keydown", onKey);
-    const prevOverflow = document.body.style.overflow;
-    document.body.style.overflow = "hidden";
-    return () => {
-      document.removeEventListener("keydown", onKey);
-      document.body.style.overflow = prevOverflow;
-    };
-  }, [onClose]);
-
-  return (
-    <div className="ms-modal" role="dialog" aria-modal="true" aria-label={`${story.name}'s story`} onClick={onClose}>
-      <div className="ms-modal__backdrop" />
-      <div className="ms-modal__panel" onClick={e => e.stopPropagation()}>
-        <button type="button" className="ms-modal__close" onClick={onClose} aria-label="Close">
-          <X size={18} strokeWidth={2} />
-        </button>
-
-        <div className="ms-modal__scroll">
-          <div className="ms-modal__header">
-            <FramedPhoto name={story.name} image={story.image} />
-            <div className="ms-modal__header-text">
-              <span className="ms-modal__eyebrow">MAD story</span>
-              <h2 className="ms-modal__name">{story.name}</h2>
-              <p className="ms-modal__lead">&ldquo;{story.quote}&rdquo;</p>
-            </div>
-          </div>
-
-          <div className="ms-modal__body">
-            <div className="ms-modal__story">
-              <MadStoryContent blocks={story.story} />
-            </div>
-          </div>
-        </div>
-      </div>
-    </div>
+    </Link>
   );
 }
 
 export function MadStoriesPage() {
   useLandingBodyClass();
   useScrollReveal();
-
-  const [active, setActive] = useState<MadStory | null>(null);
-
-  const openStory = useCallback((story: MadStory) => setActive(story), []);
-  const closeStory = useCallback(() => setActive(null), []);
 
   return (
     <div className="landing-page mad-stories-page">
@@ -248,12 +178,10 @@ export function MadStoriesPage() {
       <section className="ms-board-section">
         <div className="ms-board">
           {MAD_STORIES.map((story, index) => (
-            <StoryNote key={`${story.name}-${index}`} story={story} index={index} order={NOTE_ENTER_ORDER[index]} onOpen={openStory} />
+            <StoryNote key={`${story.name}-${index}`} story={story} index={index} order={NOTE_ENTER_ORDER[index]} />
           ))}
         </div>
       </section>
-
-      {active ? <StoryModal story={active} onClose={closeStory} /> : null}
     </div>
   );
 }

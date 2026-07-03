@@ -28,7 +28,10 @@ const nextConfig: NextConfig = {
   },
   async redirects() {
     return [
-      { source: "/uniboard", destination: "/uniboard/portfolio", permanent: true },
+      { source: "/uniboard", destination: "/uniboard/resume", permanent: true },
+      { source: "/uniboard/home", destination: "/uniboard/resume", permanent: false },
+      { source: "/privacy-policy", destination: "/privacy", permanent: true },
+      { source: "/tos", destination: "/terms", permanent: true },
       {
         source: "/uniboard/portfolio/masterclass",
         destination: "/masterclass",

@@ -43,6 +43,7 @@ export type PortfolioGridBlockProps = {
   onToggleInlineInserter: (index: number, isActive: boolean) => void;
   onInsertBlockAfter: (index: number, type: ContentType, preset?: Partial<PortfolioItem>) => void;
   initResize: (event: React.MouseEvent, item: PortfolioItem, axis: ResizeAxis, xHandle: ResizeHandle, yHandle?: ResizeYHandle) => void;
+  onUploadError?: (message: string) => void;
 };
 
 const PortfolioGridBlockInner: React.FC<PortfolioGridBlockProps> = ({
@@ -75,6 +76,7 @@ const PortfolioGridBlockInner: React.FC<PortfolioGridBlockProps> = ({
   onToggleInlineInserter,
   onInsertBlockAfter,
   initResize,
+  onUploadError,
 }) => {
   const inlineInsertOptions: Array<{
     type: ContentType;
@@ -176,6 +178,7 @@ const PortfolioGridBlockInner: React.FC<PortfolioGridBlockProps> = ({
           enableSelectionImprove={enableSelectionImprove}
           onTextSelectionChange={onTextSelectionChange}
           selectionImproveSlot={selectionImproveSlot}
+          onUploadError={onUploadError}
         />
         {isEditMode && (
           <>

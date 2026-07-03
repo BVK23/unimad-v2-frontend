@@ -14,9 +14,16 @@ export function useUpdatePortfolio() {
       return mapBackendPortfolioToFrontend(response.portfolio);
     },
     onSuccess: (portfolio, variables) => {
-      const savedCoverPosition = variables.profile.coverPosition;
+      if (!portfolio?.profile) {
+        console.error("[portfolio-save] backend response missing profile", {
+          portfolioId: variables.id,
+          portfolioKeys: portfolio ? Object.keys(portfolio) : [],
+        });
+      }
+
+      const savedCoverPosition = variables.profile?.coverPosition;
       const mergedPortfolio =
-        savedCoverPosition && JSON.stringify(portfolio.profile.coverPosition) !== JSON.stringify(savedCoverPosition)
+        portfolio?.profile && savedCoverPosition && JSON.stringify(portfolio.profile.coverPosition) !== JSON.stringify(savedCoverPosition)
           ? { ...portfolio, profile: { ...portfolio.profile, coverPosition: savedCoverPosition } }
           : portfolio;
 

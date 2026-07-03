@@ -21,7 +21,13 @@ import { usePortfolioStore } from "@/features/portfolio/store/usePortfolioStore"
 import { getPortfolioBlockDeleteLabel } from "@/features/portfolio/utils/getPortfolioBlockDeleteLabel";
 import { getPortfolioHistorySignature } from "@/features/portfolio/utils/getPortfolioHistorySignature";
 import { normalizePortfolioItems } from "@/features/portfolio/utils/normalizePortfolioItems";
-import { UploadError, uploadHeroImageFromDataUrl } from "@/features/portfolio/utils/upload";
+import {
+  formatPortfolioUploadError,
+  logPortfolioUploadError,
+  logPortfolioUploadStart,
+  logPortfolioUploadSuccess,
+} from "@/features/portfolio/utils/portfolioUploadLog";
+import { uploadHeroImageFromDataUrl } from "@/features/portfolio/utils/upload";
 import { profileQk } from "@/features/user-profile/hooks/use-profile-data";
 import { loadPublishedUrl, savePublishedUrl } from "@/lib/portfolio/portfolioStorage";
 import { resolveMediaDisplayUrl } from "@/utils/resolve-media-url";
@@ -297,10 +303,13 @@ const Portfolio: React.FC<PortfolioProps> = ({ portfolioId, initialData, onBack,
     (profileOrUpdater: UserProfile | ((prev: UserProfile) => UserProfile)) => {
       updatePortfolio(
         portfolioId,
-        prev => ({
-          ...prev,
-          profile: typeof profileOrUpdater === "function" ? profileOrUpdater(prev.profile) : profileOrUpdater,
-        }),
+        prev => {
+          const baseProfile = prev?.profile ?? INITIAL_PROFILE;
+          return {
+            ...prev,
+            profile: typeof profileOrUpdater === "function" ? profileOrUpdater(baseProfile) : profileOrUpdater,
+          };
+        },
         { skipNormalize: true }
       );
     },
@@ -326,12 +335,10 @@ const Portfolio: React.FC<PortfolioProps> = ({ portfolioId, initialData, onBack,
     s.hasPendingReviewForPortfolio(portfolioId) ? s.getActiveHighlights() : EMPTY_PORTFOLIO_HIGHLIGHT_MAP
   );
 
-  const { saveStatusLabel, runSave, hasPendingUnsavedChanges, isSavingRemote, savedConfirmationVisible } = usePortfolioAutosave(
-    portfolioId,
-    {
+  const { saveStatusLabel, runSave, hasPendingUnsavedChanges, isSavingRemote, savedConfirmationVisible, lastSaveError } =
+    usePortfolioAutosave(portfolioId, {
       enabled: !isReadOnly && !hasPendingAdkReview,
-    }
-  );
+    });
 
   const [textSelection, setTextSelection] = useState<RichTextEditorSelectionInfo | null>(null);
 
@@ -491,6 +498,11 @@ const Portfolio: React.FC<PortfolioProps> = ({ portfolioId, initialData, onBack,
     if (toastTimeoutRef.current) window.clearTimeout(toastTimeoutRef.current);
     toastTimeoutRef.current = window.setTimeout(() => setToastMessage(null), 2400);
   };
+
+  useEffect(() => {
+    if (!lastSaveError) return;
+    showToast(`Could not save portfolio: ${lastSaveError.message}`);
+  }, [lastSaveError]);
 
   useEffect(() => {
     return () => {
@@ -956,13 +968,17 @@ const Portfolio: React.FC<PortfolioProps> = ({ portfolioId, initialData, onBack,
         }
         showToast(category === "profile-picture" ? "Profile photo saved" : "Cover image saved");
       } catch (error) {
-        const message = error instanceof UploadError ? error.message : "Failed to upload image";
+        const message = formatPortfolioUploadError(
+          error,
+          category === "profile-picture" ? "Could not upload profile photo." : "Could not upload cover."
+        );
+        logPortfolioUploadError(category === "profile-picture" ? "hero-avatar" : "hero-cover", error, { portfolioId });
         showToast(message);
       } finally {
         setIsHeroImageUploading(false);
       }
     },
-    [queryClient, showToast]
+    [portfolioId, queryClient, showToast]
   );
 
   const beginCoverReposition = (position: { x: number; y: number }) => {
@@ -972,10 +988,11 @@ const Portfolio: React.FC<PortfolioProps> = ({ portfolioId, initialData, onBack,
   };
 
   const handleCoverUpload = async (file: File) => {
-    const dataUrl = await fileToDataUrl(file);
+    logPortfolioUploadStart("hero-cover", file, { portfolioId });
     const initialPos = { x: 50, y: 50 };
     setIsHeroImageUploading(true);
     try {
+      const dataUrl = await fileToDataUrl(file);
       const url = await uploadHeroImageFromDataUrl(dataUrl, "cover-picture");
       setProfile(prev => ({
         ...prev,
@@ -986,8 +1003,10 @@ const Portfolio: React.FC<PortfolioProps> = ({ portfolioId, initialData, onBack,
       coverRepositionBaselineRef.current = initialPos;
       setTempCoverPos(initialPos);
       setIsRepositioningCover(true);
+      logPortfolioUploadSuccess("hero-cover", url, { portfolioId });
     } catch (error) {
-      const message = error instanceof UploadError ? error.message : "Failed to upload cover";
+      const message = formatPortfolioUploadError(error, "Could not upload cover. Try a JPG/PNG/GIF under 4MB, or check your connection.");
+      logPortfolioUploadError("hero-cover", error, { portfolioId });
       showToast(message);
     } finally {
       setIsHeroImageUploading(false);
@@ -1513,6 +1532,7 @@ const Portfolio: React.FC<PortfolioProps> = ({ portfolioId, initialData, onBack,
         onToggleInlineInserter={handleToggleInlineInserter}
         onInsertBlockAfter={handleInsertBlockAfter}
         initResize={initResize}
+        onUploadError={message => showToast(message)}
       />
     );
   };
@@ -1535,6 +1555,7 @@ const Portfolio: React.FC<PortfolioProps> = ({ portfolioId, initialData, onBack,
           enableSelectionImprove={isEditMode && !hasPendingAdkReview}
           onTextSelectionChange={handleTextSelectionChange}
           selectionImproveSlot={selectionImproveSlot}
+          onUploadError={message => showToast(message)}
         />
       ) : (
         <div className="flex-1 bg-slate-50 dark:bg-slate-950 h-full overflow-y-auto no-scrollbar relative">

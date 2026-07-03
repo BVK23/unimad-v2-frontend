@@ -27,6 +27,26 @@ export class UploadError extends Error {
   }
 }
 
+const inferMimeTypeFromFilename = (filename: string): string => {
+  const ext = filename.split(".").pop()?.toLowerCase();
+  if (!ext) return "";
+  if (ext === "jpg" || ext === "jpeg") return "image/jpeg";
+  if (ext === "png") return "image/png";
+  if (ext === "gif") return "image/gif";
+  if (ext === "webp") return "image/webp";
+  if (ext === "svg") return "image/svg+xml";
+  if (ext === "pdf") return "application/pdf";
+  if (ext === "mp4") return "video/mp4";
+  if (ext === "webm") return "video/webm";
+  return "";
+};
+
+const resolveFileMimeType = (file: File): string => {
+  const direct = file.type?.trim();
+  if (direct) return direct;
+  return inferMimeTypeFromFilename(file.name);
+};
+
 const inferMediaType = (mimeType: string): UploadedMediaType => {
   if (mimeType.startsWith("video/")) return "video";
   if (mimeType.startsWith("image/")) return "image";
@@ -87,20 +107,46 @@ export const uploadHeroImageFromDataUrl = async (dataUrl: string, category: Hero
 
 export const uploadPortfolioFile = async (file: File, category: string = "portfolio-assets"): Promise<UploadedFile> => {
   if (!file) {
-    throw new UploadError("No file provided");
+    throw new UploadError("No file selected. Choose an image or video and try again.");
   }
 
   if (file.size > MAX_DIRECT_UPLOAD_BYTES) {
-    throw new UploadError(`File is too large. Maximum size is ${MAX_DIRECT_UPLOAD_BYTES / (1024 * 1024)}MB.`);
+    throw new UploadError(
+      `File is too large (${(file.size / (1024 * 1024)).toFixed(1)}MB). Maximum size is ${MAX_DIRECT_UPLOAD_BYTES / (1024 * 1024)}MB.`
+    );
   }
 
-  const mimeType = file.type || "";
+  const mimeType = resolveFileMimeType(file);
   const mediaType = inferMediaType(mimeType);
   const isVideo = mediaType === "video";
   // Videos always use signed URL. Images/PDFs use backend when ≤4MB, GCS direct when >4MB.
   const shouldUseSignedUrl = isVideo || file.size > BACKEND_SIZE_THRESHOLD_BYTES;
+  const uploadRoute = shouldUseSignedUrl ? "gcs-signed-url" : "django-media-upload";
 
-  const url = shouldUseSignedUrl ? await uploadViaSignedUrl(file, category) : await uploadViaBackend(file, category);
+  console.info("[portfolio-upload] route", {
+    category,
+    uploadRoute,
+    ...{
+      name: file.name,
+      size: file.size,
+      type: file.type || "(empty mime)",
+      resolvedMimeType: mimeType || "(unknown)",
+    },
+  });
+
+  if (mediaType === "other" && !mimeType) {
+    throw new UploadError("Unsupported file type. Use JPG, PNG, GIF, WEBP, MP4, or PDF.");
+  }
+
+  let url: string;
+  try {
+    url = shouldUseSignedUrl ? await uploadViaSignedUrl(file, category) : await uploadViaBackend(file, category);
+  } catch (error) {
+    if (error instanceof UploadError) {
+      throw error;
+    }
+    throw new UploadError(error instanceof Error ? error.message : "Upload failed. Check your connection and try again.", "network");
+  }
 
   return {
     url,

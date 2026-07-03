@@ -2,6 +2,11 @@ import type { Metadata } from "next";
 import { ReactQueryProvider } from "./ReactQueryProvider";
 import "./globals.css";
 
+// PROD CUTOVER: after removing gitignore block for SEO/analytics, uncomment:
+// import GoogleTagManager from "@/components/landing/GoogleTagManager";
+// import { Analytics } from "@vercel/analytics/react";
+// import { SpeedInsights } from "@vercel/speed-insights/next";
+
 export const metadata: Metadata = {
   metadataBase: new URL("https://unimad.ai"),
   title: {
@@ -39,7 +44,9 @@ export default function RootLayout({
         />
       </head>
       <body className="bg-slate-50 text-slate-900 text-sm font-light overflow-x-hidden font-sans antialiased" suppressHydrationWarning>
+        {/* PROD CUTOVER: <GoogleTagManager /> */}
         <ReactQueryProvider>{children}</ReactQueryProvider>
+        {/* PROD CUTOVER: <Analytics /> <SpeedInsights /> */}
       </body>
     </html>
   );
