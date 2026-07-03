@@ -1,25 +1,33 @@
 export type ContentTab = "overview" | "resources" | "dashboard";
 
-export type OverviewSection = { title: string; body: string };
+export type OverviewSection = {
+  title: string;
+  body: string;
+  href?: string;
+  hrefLabel?: string;
+};
 
 export type ResourceItem = {
   title: string;
   body?: string;
   hasVideo?: boolean;
   videoUrl?: string;
+  href?: string;
+  hrefLabel?: string;
 };
 
 export type UnicoachCurriculumStage = {
   id: string;
   title: string;
   subtitle: string;
-  callMilestone: 1 | 2 | 3 | null;
+  callMilestone: 1 | 2 | 3 | 4 | null;
   isCallStage: boolean;
   overview: OverviewSection[];
   tasks: string[];
   resources: ResourceItem[];
   nextActionLabel: string;
   hasDashboard?: boolean;
+  showBookingCta?: boolean;
 };
 
 export const videoUrlToEmbedSrc = (url: string): string | null => {
@@ -40,221 +48,231 @@ export const videoUrlToEmbedSrc = (url: string): string | null => {
 
 export const UNICOACH_STAGES: UnicoachCurriculumStage[] = [
   {
-    id: "call-1-prep",
-    title: "Stage 1 - Call 1 Prep",
-    subtitle: "Niche fixing, base resume, and LinkedIn optimization before Call 1.",
+    id: "call-1",
+    title: "Discovery call",
+    subtitle: "Confirm the role best suited for your profile and build the resume that backs it up.",
     callMilestone: 1,
     isCallStage: true,
     overview: [
       {
-        title: "Niche and market fit",
-        body: "Define your niche clearly and validate it against market demand. Map who you serve, what problems you solve, and how hiring managers in that space describe success. Use the worksheet to pressure-test assumptions before you invest time in assets.",
+        title: "Lock your role and build your base resume",
+        body: "Your Unicoach will help you fix the role from your homework, then help you build the base resume everything else gets tailored from.",
+      },
+      {
+        title: "Discovery and direction",
+        body: "Use your first call to clarify your target role, market fit, and what success looks like in the next 90 days. Leave with a concrete plan for assets and outbound.",
       },
       {
         title: "Base resume",
-        body: "Build a strong base resume focused on outcomes, not duties. Lead with impact bullets, quantify results where you can, and align language with roles you want. Expect several iterations; the goal is a document you can tailor quickly per application.",
-      },
-      {
-        title: "LinkedIn before Call 1",
-        body: "Optimize your LinkedIn headline and About section so they match your niche story. Recruiters skim both in seconds—make the first lines specific and credible. Add proof (projects, metrics, links) where it strengthens your positioning.",
-      },
-    ],
-    tasks: ["Add your education", "Add your skills", "Add your work experiences", "Answer a few questions", "Research niche activity"],
-    resources: [
-      {
-        title: "Niche Worksheet",
-        body: "Walk through prompts to lock your niche statement and supporting evidence.",
-      },
-      {
-        title: "Base Resume Guide",
-        body: "Structure, bullet formulas, and examples for outcome-led resumes.",
-      },
-      {
-        title: "LinkedIn Optimization Checklist",
-        body: "Headline, About, featured links, and activity habits before your first call.",
-      },
-    ],
-    nextActionLabel: "Book Call 1",
-  },
-  {
-    id: "post-call-1",
-    title: "Stage 2 - Post Call 1 Tasks",
-    subtitle: "Execute post-call actions and complete portfolio tasks.",
-    callMilestone: null,
-    isCallStage: false,
-    overview: [
-      {
-        title: "Resume revisions",
-        body: "Revise your resume based on coach feedback from Call 1. Capture every change request in a single doc so you can batch edits. Prioritize clarity and proof over length—most strong resumes stay tight once feedback is applied.",
-      },
-      {
-        title: "LinkedIn follow-through",
-        body: "Complete all LinkedIn tasks from Call 1 before you request Call 2. Treat LinkedIn as a living asset: update once, then reinforce with posts or comments that match your niche story.",
-      },
-      {
-        title: "Portfolio tasks",
-        body: "Your portfolio is built offline by the coach; complete assigned portfolio tasks on your side so assets stay aligned with what you pitch in applications. If something is unclear, note blockers in coach chat early.",
-      },
-    ],
-    tasks: [
-      "Revise your resume",
-      "Publish your resume",
-      "Add other achievements",
-      "Record your video",
-      "Revise your portfolio",
-      "Fill in your phone number",
-      "Shortlist 3 to 5 applications",
-      "Create a Calendly account",
-    ],
-    resources: [
-      {
-        title: "Resume guidelines",
         body: "Lead with outcomes, quantify impact, and keep bullets tight. One page for most early-career profiles; two only when every line earns its place.",
-      },
-      {
-        title: "Portfolio guidelines",
-        body: "Your portfolio tells the full story behind your resume. Focus on clarity, proof, and a human voice—avoid generic template copy.",
-      },
-      {
-        title: "LinkedIn guidelines",
-        body: "Align headline and About with your niche. Use featured links and recent activity to reinforce the same story you pitch in applications.",
+        href: "/uniboard/resume",
+        hrefLabel: "Open Resume",
       },
     ],
-    nextActionLabel: "Unlock Call 2",
+    tasks: ["Fix your role", "Build your resume", "Personalised job search strategy"],
+    resources: [
+      {
+        title: "Build your base resume",
+        body: "Start or refine your base resume in the Resume feature — your coach will tailor from this on the call.",
+        href: "/uniboard/resume",
+        hrefLabel: "Open Resume",
+      },
+      {
+        title: "Don't overcomplicate your CV",
+        body: `It is way easier than you think. Follow the points given below.
+
+Use of words
+Standard words → Golden words
+Responsible for → Led, Orchestrated, Directed
+Assisted → Collaborated, Contributed, Supported
+Participated in → Executed, Implemented, Drove
+Helped → Facilitated, Enabled, Boosted
+Tried or Attempted → Pioneered, Initiated, Launched
+Familiar with → Proficient in, Skilled at, Adept with
+Experienced in → Expertise in, Specialised in
+Utilised → Leveraged, Optimised, Maximised
+Worked on → Developed, Created, Designed
+Seasoned → Expert, Veteran, Authority
+Dabbled in → Cultivated skills in, Developed proficiency in
+Managed → Oversaw, Guided, Mentored
+Handled → Resolved, Addressed, Streamlined
+Duties included → Accomplishments include, Key contributions`,
+      },
+      {
+        title: "Tips & pointers — purpose of a CV",
+        body: "The purpose of a CV is to just get you the interview. Once you get that it's basically useless.",
+      },
+      {
+        title: "6 pointers for a killer CV",
+        body: `1. Outcome-based sentences — Nobody cares about what you did. They care about outcomes and numbers.
+
+Normal: I worked as a Prompt engineer for Unimad and enhanced chatbot accuracy.
+Outcome-based: Enhanced chatbot accuracy by 30% through customising 50 unique prompts and utilising Vertex AI.
+
+2. Strictly 1-page resume if you have less than 5 years of experience.
+3. No summary needed — help recruiters skim achievements with minimum content.
+4. Use PDF format only — .docx leads to straight rejection.
+5. Minimal and clean — simple English, no jargon.
+6. No fancy design — super simple format highlighting achievements.`,
+      },
+    ],
+    nextActionLabel: "Book your 2nd",
+    showBookingCta: true,
   },
   {
     id: "call-2",
-    title: "Stage 3 - Call 2",
-    subtitle: "Do one quality application together with your coach.",
+    title: "LinkedIn branding",
+    subtitle: "Upgrade your LinkedIn profile and build the system that keeps you visible.",
     callMilestone: 2,
     isCallStage: true,
     overview: [
       {
-        title: "One live application with your coach",
-        body: "Use your polished assets to execute one high-quality application with your coach on the call. The goal is not speed—it is calibration. You should leave knowing what “good” looks like for your niche so you can repeat it without guesswork.",
+        title: "Your LinkedIn, redesigned",
+        body: "Your photo, cover, headline, and about section rewritten and redesigned for you. Then we'll build the system that keeps you visible.",
       },
       {
-        title: "Quality bar and repeatable framework",
-        body: "Understand quality application standards: role fit, proof, specificity in answers, and follow-up. Capture the checklist your coach uses so your next solo applications inherit the same bar.",
+        title: "The visibility system",
+        body: "A monthly content engine, a comments strategy that gets you on recruiters' radars, and a personal outbound plan so the right people hear from you consistently.",
+      },
+      {
+        title: "CCC framework",
+        body: "Making Connections · Posting Comments · Posting Content. Master these 3 pillars and you'll attract recruiters to your profile directly.",
+      },
+      {
+        title: "Optimise your LinkedIn profile",
+        body: "Your coach will walk through profile updates live on Call 2. Use our LinkedIn feature to prepare and track changes.",
+        href: "/uniboard/linkedin",
+        hrefLabel: "Open LinkedIn",
       },
     ],
-    tasks: ["One quality application", "LinkedIn Optimisation"],
+    tasks: ["Change your DP", "Change your banner", "Change your headline", "Change your about section", "Add two recommendations"],
     resources: [
-      {
-        title: "Quality Application Framework",
-        body: "Criteria for role research, tailoring, and submission quality.",
-      },
-      {
-        title: "Application Quality Checklist",
-        body: "A printable pass before you hit submit on any application.",
-      },
-    ],
-    nextActionLabel: "Join Call 2",
-  },
-  {
-    id: "post-call-2",
-    title: "Stage 4 - Post Call 2 Tasks",
-    subtitle: "Start consistent execution and complete personal branding video.",
-    callMilestone: null,
-    isCallStage: false,
-    overview: [
-      {
-        title: "Independent execution",
-        body: "Apply the same quality framework independently across multiple roles. Track where you cut corners—that is usually where response rate drops. Consistency beats bursts of activity.",
-      },
       {
         title: "Personal branding video",
-        body: "Watch the personal branding pre-recorded video and execute the action points. Treat it as implementation homework: pause, take notes, and schedule concrete posts or profile updates on your calendar.",
-      },
-    ],
-    tasks: [
-      "Change your DP",
-      "Change your cover pic",
-      "Change your headline",
-      "Change your about section",
-      "Change your profile picture",
-      "Add 2 recommendations",
-      "Complete personal branding video",
-    ],
-    resources: [
-      {
-        title: "Personal Branding Video",
         body: "Pre-recorded walkthrough plus prompts to adapt to your niche.",
         hasVideo: true,
       },
       {
-        title: "Weekly Application Planner",
-        body: "Capacity, targets, and review rhythm for steady outbound.",
+        title: "CCC framework — Making connections",
+        body: "Daily outbound rhythm: log connection requests and build your network in your niche.",
+        href: "/uniboard/linkedin",
+        hrefLabel: "Open LinkedIn",
       },
       {
-        title: "Networking Starter Template",
-        body: "Short outreach angles that do not read like mass mail.",
-      },
-    ],
-    nextActionLabel: "Prepare for Call 3",
-  },
-  {
-    id: "call-3",
-    title: "Stage 5 - Call 3 Prep",
-    subtitle: "Check in with your coach, plan your 90-day application roadmap, then use the execution dashboard.",
-    callMilestone: 3,
-    isCallStage: true,
-    hasDashboard: true,
-    overview: [
-      {
-        title: "Interview strategy",
-        body: "Prepare for interviews with role-specific strategy: company context, likely questions, and stories that map to their language. Bring real JDs and interview loops you expect so feedback stays concrete.",
+        title: "Making comments",
+        body: "Meaningful comments on posts in your niche — quality over quantity.",
       },
       {
-        title: "Personal branding refinement",
-        body: "Refine personal branding with direct feedback from your coach—messaging, proof points, and how you show up in writing versus live conversation. Align public narrative with what you say in interviews.",
-      },
-    ],
-    tasks: ["Check-in About Programme", "90 day Application Roadmap"],
-    resources: [
-      {
-        title: "Interview Preparation Framework",
-        body: "Structure for company research, story banks, and follow-up.",
-      },
-      {
-        title: "Behavioral Question Bank",
-        body: "Prompts mapped to STAR-style evidence from your experience.",
-      },
-      {
-        title: "Personal Branding Review Sheet",
-        body: "A coach-led rubric for headlines, About, and activity signals.",
-      },
-    ],
-    nextActionLabel: "Prepare for Interview",
-  },
-  {
-    id: "complete",
-    title: "Stage 6 - Post Call 3",
-    subtitle: "Interview prep, VPD session, and following the system before your final call.",
-    callMilestone: null,
-    isCallStage: false,
-    hasDashboard: true,
-    overview: [
-      {
-        title: "What you have unlocked",
-        body: "You have completed all three calls and mandatory stage tasks. The system you built—assets, outreach, interview prep—is yours to reuse. The remaining work is rhythm, not reinvention.",
-      },
-      {
-        title: "Sustaining momentum",
-        body: "Continue applying the same system with consistency: weekly targets, honest quality checks, and coach updates when you stall. Small steady improvements compound faster than occasional sprints.",
-      },
-    ],
-    tasks: ["Interview Preparation", "Watch VPD Session", "Follow the System"],
-    resources: [
-      {
-        title: "Weekly Execution System",
-        body: "Cadence template for applications, networking, and follow-ups.",
-      },
-      {
-        title: "Interview Confidence Toolkit",
-        body: "Warm-up drills and last-mile checks before high-stakes rounds.",
+        title: "Posting content — 30-day LinkedIn plan",
+        body: "Aim for at least one post every other day. Use Studio for drafts.",
+        href: "/uniboard/studio",
+        hrefLabel: "Open Studio",
       },
     ],
     nextActionLabel: "Book Call 3",
+    hasDashboard: true,
+    showBookingCta: true,
+  },
+  {
+    id: "call-3",
+    title: "Application Strategy",
+    subtitle: "One application done right, then a system to repeat it every single time.",
+    callMilestone: 3,
+    isCallStage: true,
+    overview: [
+      {
+        title: "One full application, end to end",
+        body: "We'll do one full application together — tailoring your resume, writing a cold email that gets a reply, and tracking every move.",
+      },
+      {
+        title: "The repeatable system",
+        body: "Then we'll build the system around it: a daily application checklist, a referral strategy, and a portfolio that backs everything up. By the end, you'll know exactly how to do it again.",
+      },
+      {
+        title: "Job system implementation",
+        body: "You're 2 more levels away from that job offer. Your checklist is simple. Doing it consistently is the only hard part.",
+      },
+      {
+        title: "Go get your interview",
+        body: "Every student who has followed this system consistently has landed an interview. Hit your daily targets, track your numbers, and when the interview lands, book your next session.",
+      },
+      {
+        title: "Your portfolio on this call",
+        body: "Your portfolio is built during this module. Humanise it and make it back up everything you pitch.",
+        href: "/uniboard/portfolio",
+        hrefLabel: "Open Portfolio",
+      },
+    ],
+    tasks: [
+      "Publish your resume",
+      "Add other Achievements",
+      "Film your intro video",
+      "Humanise your portfolio",
+      "Set up your booking link",
+    ],
+    resources: [
+      {
+        title: "Sites to apply",
+        body: "Use the Jobs feature to shortlist roles, prepare applications, and track every move.",
+        href: "/uniboard/jobs",
+        hrefLabel: "Open Jobs",
+      },
+      {
+        title: "Application tracker",
+        body: "Shortlist roles and use your job tracker to stay organised before and after your call.",
+        href: "/uniboard/jobs",
+        hrefLabel: "Open Jobs tracker",
+      },
+    ],
+    nextActionLabel: "",
+    hasDashboard: true,
+    showBookingCta: false,
+  },
+  {
+    id: "call-4",
+    title: "Interview Prep & VPD",
+    subtitle: "Every interview is a rep. Decode, sharpen, and go again until you get the offer.",
+    callMilestone: 4,
+    isCallStage: true,
+    overview: [
+      {
+        title: "What goes into your VPD?",
+        body: `Three questions. Most candidates can't answer them on the spot. You'll have them locked before you walk in.
+
+What value do you bring to this company?
+What does this company offer your career?
+How do you fit into how they work and what they stand for?
+
+Proactive candidates win. This is how you become one.`,
+        href: "/uniboard/vpd",
+        hrefLabel: "Build your VPD now",
+      },
+      {
+        title: "Interview preparation",
+        body: "Research the company. Prep your answers. Run a mock round. Walk in knowing more about them than they expect any candidate to know.",
+        href: "/uniboard/interview-prep",
+        hrefLabel: "Open Interview Prep",
+      },
+      {
+        title: "Keep executing",
+        body: "Keep following the execution calendar in Application Strategy. VPD and interview prep resources are here when you need them.",
+      },
+    ],
+    tasks: ["Interview Preparation", "Watch VPD session", "Follow the system"],
+    resources: [
+      {
+        title: "VPD session video",
+        body: "Watch the VPD walkthrough before your call.",
+        hasVideo: true,
+      },
+      {
+        title: "Jobs tracker",
+        body: "Track applications and interview-stage roles.",
+        href: "/uniboard/jobs",
+        hrefLabel: "Open Jobs tracker",
+      },
+    ],
+    nextActionLabel: "Book Interviews & VPD call",
+    showBookingCta: true,
   },
 ];

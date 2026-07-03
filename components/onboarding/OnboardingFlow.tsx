@@ -123,7 +123,7 @@ export default function OnboardingFlow() {
 
   const getPostOnboardingPath = useCallback(() => {
     if (navigate === "unicoach" || masterclassIntent === "discovery") {
-      return `/uniboard/unicoach?tab=${navigateTab || "niche"}`;
+      return navigateTab ? `/uniboard/unicoach?tab=${navigateTab}` : "/uniboard/unicoach";
     }
     if (masterclassIntent === "video") {
       return "/masterclass?autoplay=1";
@@ -279,18 +279,8 @@ export default function OnboardingFlow() {
         history: nextIncompleteIdx !== -1 ? pushHistory(current.history, currentIndex) : current.history,
       };
     },
-    onSuccess: (next, variables) => {
+    onSuccess: next => {
       queryClient.setQueryData(ONBOARDING_QUERY_KEY, next);
-
-      const completedStep = Array.isArray(variables.completedSteps) ? null : variables.completedSteps;
-      const phoneDone = next.steps.find(s => s.name === "whatsapp")?.completed;
-      const linkedinDone = next.steps.find(s => s.name === "linkedin")?.completed;
-
-      if (completedStep === "linkedin" && phoneDone && linkedinDone) {
-        window.setTimeout(() => {
-          window.location.href = getPostOnboardingPath();
-        }, 100);
-      }
     },
   });
 

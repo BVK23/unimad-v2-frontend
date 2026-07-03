@@ -1,3 +1,4 @@
+import type { ExecutionDailyItemDef } from "@/constants/unicoach-execution-daily";
 import type { DailyExecutionDayEntry, DailyExecutionItemKey } from "@/features/unicoach/types";
 
 const ITEM_KEYS: DailyExecutionItemKey[] = [
@@ -57,4 +58,41 @@ export function countTasksWithProgress(entry: DailyExecutionDayEntry, itemKeys: 
 
 export function getCount(entry: DailyExecutionDayEntry, key: DailyExecutionItemKey): number {
   return entry.counts?.[key] ?? 0;
+}
+
+/** Posts alternate days — not counted toward daily target on off-days. */
+export function isPostsApplicableForDate(dateKey: string): boolean {
+  const day = parseInt(dateKey.slice(-2), 10);
+  return day % 2 === 1;
+}
+
+export function applicableExecutionItems(items: ExecutionDailyItemDef[], dateKey: string): ExecutionDailyItemDef[] {
+  return items.filter(item => item.key !== "posts" || isPostsApplicableForDate(dateKey));
+}
+
+export type DayHabitScore = {
+  atTarget: number;
+  withProgress: number;
+  applicable: number;
+};
+
+export function scoreDayHabits(entry: DailyExecutionDayEntry, items: ExecutionDailyItemDef[], dateKey: string): DayHabitScore {
+  const applicable = applicableExecutionItems(items, dateKey);
+  let atTarget = 0;
+  let withProgress = 0;
+  for (const item of applicable) {
+    const count = getCount(entry, item.key);
+    if (count > 0) withProgress += 1;
+    if (count >= item.dailyTarget) atTarget += 1;
+  }
+  return { atTarget, withProgress, applicable: applicable.length };
+}
+
+/** Month calendar colour tier from habits-at-target count. */
+export function monthHabitColorClass(atTarget: number): string {
+  if (atTarget <= 0) return "";
+  if (atTarget === 1) return "bg-red-500 text-white";
+  if (atTarget === 2) return "bg-orange-500 text-white";
+  if (atTarget === 3) return "bg-yellow-400 text-slate-900";
+  return "bg-blue-500 text-white";
 }

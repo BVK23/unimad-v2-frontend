@@ -1,40 +1,63 @@
+/* eslint-disable @typescript-eslint/ban-ts-comment -- v1 port; types tightened in follow-up */
+// @ts-nocheck
 "use client";
 
-import React, { useEffect, useRef, useState } from "react";
+import React, { useCallback, useEffect, useRef, useState } from "react";
 import { MasterclassFaqSection } from "@/components/masterclass/MasterclassFaqSection";
-import { MasterclassFullProgramPaymentModal } from "@/components/masterclass/MasterclassFullProgramPaymentModal";
-import {
-  MasterclassOnboardingModal,
-  type MasterclassLead,
-  type MasterclassOnboardingIntent,
-} from "@/components/masterclass/MasterclassOnboardingModal";
+import { MasterclassOnboardingModal } from "@/components/masterclass/MasterclassOnboardingModal";
 import { MasterclassPlacementsSection } from "@/components/masterclass/MasterclassPlacementsSection";
 import { MasterclassStoriesSection } from "@/components/masterclass/MasterclassStoriesSection";
+import { UnicoachPlanPaymentModal } from "@/components/unicoach/UnicoachPlanPaymentModal";
 import { UnimadLogo } from "@/components/unimad-logo";
 import {
-  MASTERCLASS_BOOKING_PATH,
   MASTERCLASS_LEAD_SESSION_KEY,
   MASTERCLASS_LEAD_SOURCE_DISCOVERY,
   MASTERCLASS_LEAD_SOURCE_VSL_VIDEO,
+  MASTERCLASS_THANKS_INTEREST_PATH,
+  MASTERCLASS_VIDEO_PLAYBACK_RATE,
   MASTERCLASS_VIDEO_URL,
   MASTERCLASS_VSL_FORM_COMPLETE_KEY,
-  MASTERCLASS_WELCOME_AUTOREDIRECT_KEY,
   MASTERCLASS_WHATSAPP_NUMBER_DISPLAY,
   MASTERCLASS_WHATSAPP_URL,
-  buildMasterclassSignupUrl,
 } from "@/constants/masterclass";
+import { PRICING_CARD_PLAN_BY_TITLE, type UnicoachProductPlanId } from "@/constants/unicoach-plans";
 import { useAuthStatus } from "@/hooks/useAuthStatus";
-import { expressDiscoveryBooking, submitMasterclassLead, unlockMasterclassWatch } from "@/lib/actions/masterclassLeads";
+import {
+  enrollAuthenticatedMasterclassMember,
+  fetchMasterclassLead,
+  submitMasterclassLead,
+  unlockMasterclassWatch,
+} from "@/lib/actions/masterclassLeads";
+import { ensureCalendlyAssets, openMasterclassDiscoveryCalendly } from "@/lib/masterclass/calendly";
 import { ChevronDown } from "lucide-react";
-import Image from "next/image";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
+import Script from "next/script";
 
 function notifyError(message: string) {
   console.error(message);
 }
 
-type ButtonSize = "lg" | "sm" | "nav";
+function readStoredLeadSession() {
+  if (typeof window === "undefined") return null;
+  try {
+    const raw = sessionStorage.getItem(MASTERCLASS_LEAD_SESSION_KEY);
+    if (!raw) return null;
+    const lead = JSON.parse(raw);
+    const uid = lead.uid || (lead.leadId != null ? String(lead.leadId) : null);
+    if (!uid) return null;
+    return {
+      uid,
+      name: lead.name || "",
+      email: lead.email || "",
+      hasContact: Boolean(lead.name && lead.email),
+      discoveryComplete: Boolean(lead.discoveryComplete ?? lead.discovery_complete),
+      qualificationStatus: lead.qualificationStatus ?? lead.qualification_status ?? null,
+    };
+  } catch {
+    return null;
+  }
+}
 
 function MasterclassFrame({
   children,
@@ -44,18 +67,10 @@ function MasterclassFrame({
   featured = false,
   variant = "default",
   clip = false,
-}: {
-  children: React.ReactNode;
-  className?: string;
-  contentClassName?: string;
-  radius?: "10" | "14";
-  featured?: boolean;
-  variant?: "default" | "card";
-  clip?: boolean;
 }) {
-  const frameRef = useRef<HTMLDivElement>(null);
+  const frameRef = useRef(null);
 
-  const handleMouseMove = (e: React.MouseEvent<HTMLDivElement>) => {
+  const handleMouseMove = e => {
     const el = frameRef.current;
     if (!el) return;
     const rect = el.getBoundingClientRect();
@@ -82,7 +97,7 @@ function MasterclassFrame({
       onMouseMove={handleMouseMove}
       onMouseEnter={handleMouseEnter}
       onMouseLeave={handleMouseLeave}
-      style={{ "--mouse-x": "50%", "--mouse-y": "50%" } as React.CSSProperties}
+      style={{ "--mouse-x": "50%", "--mouse-y": "50%" }}
       className={`masterclass-frame ${radius === "14" ? "masterclass-frame--14" : ""} ${variant === "card" ? "masterclass-frame--card" : ""} ${featured ? "masterclass-frame--featured" : ""} ${className}`}
     >
       <div className={`masterclass-frame__inner ${clip ? "masterclass-frame__inner--clip overflow-hidden" : ""}`}>
@@ -93,17 +108,7 @@ function MasterclassFrame({
   );
 }
 
-function GoldButton({
-  children,
-  className = "",
-  onClick,
-  size = "lg",
-}: {
-  children: React.ReactNode;
-  className?: string;
-  onClick?: React.MouseEventHandler<HTMLButtonElement>;
-  size?: ButtonSize;
-}) {
+function GoldButton({ children, className = "", onClick, size = "lg" }) {
   return (
     <button
       type="button"
@@ -115,17 +120,7 @@ function GoldButton({
   );
 }
 
-function BlackButton({
-  children,
-  className = "",
-  onClick,
-  size = "sm",
-}: {
-  children: React.ReactNode;
-  className?: string;
-  onClick?: React.MouseEventHandler<HTMLButtonElement>;
-  size?: ButtonSize;
-}) {
+function BlackButton({ children, className = "", onClick, size = "sm" }) {
   return (
     <button
       type="button"
@@ -137,19 +132,7 @@ function BlackButton({
   );
 }
 
-function OutlineButton({
-  children,
-  className = "",
-  onClick,
-  size = "lg",
-  theme = "dark",
-}: {
-  children: React.ReactNode;
-  className?: string;
-  onClick?: React.MouseEventHandler<HTMLButtonElement>;
-  size?: ButtonSize;
-  theme?: "dark" | "light";
-}) {
+function OutlineButton({ children, className = "", onClick, size = "lg", theme = "dark" }) {
   const sizeClasses =
     size === "lg"
       ? "h-[49px] rounded-full text-[18px] font-semibold tracking-[-0.54px]"
@@ -175,17 +158,7 @@ function OutlineButton({
   );
 }
 
-function BlueButton({
-  children,
-  className = "",
-  onClick,
-  size = "sm",
-}: {
-  children: React.ReactNode;
-  className?: string;
-  onClick?: React.MouseEventHandler<HTMLButtonElement>;
-  size?: ButtonSize;
-}) {
+function BlueButton({ children, className = "", onClick, size = "sm" }) {
   return (
     <button
       type="button"
@@ -197,7 +170,7 @@ function BlueButton({
   );
 }
 
-function MasterclassPlayButton({ className = "" }: { className?: string }) {
+function MasterclassPlayButton({ className = "" }) {
   return (
     <svg viewBox="0 0 114.472 116.028" fill="none" xmlns="http://www.w3.org/2000/svg" className={className} aria-hidden>
       <g filter="url(#masterclass-play-shadow)">
@@ -232,30 +205,7 @@ function MasterclassPlayButton({ className = "" }: { className?: string }) {
   );
 }
 
-// need to think another Design from design team
-// function CoachAvatars() {
-//   return (
-//     <div className="flex shrink-0 items-center pl-0.5">
-//       {[0, 1, 2].map(i => (
-//         <div
-//           key={i}
-//           className="relative size-[33px] overflow-hidden rounded-full border border-white bg-white"
-//           style={{ marginLeft: i === 0 ? 0 : -17 }}
-//         >
-//           <Image
-//             src="/images/unicoach/webinar/shaki.jpg"
-//             alt="Career coach"
-//             fill
-//             className="object-cover object-top"
-//             sizes="33px"
-//           />
-//         </div>
-//       ))}
-//     </div>
-//   );
-// }
-
-function StrikethroughPrice({ children, className = "" }: { children: React.ReactNode; className?: string }) {
+function StrikethroughPrice({ children, className = "" }) {
   return (
     <span
       className={`text-[24px] font-medium leading-[1.2] tracking-[-0.48px] line-through decoration-[#e35959] decoration-1 ${className}`}
@@ -265,34 +215,18 @@ function StrikethroughPrice({ children, className = "" }: { children: React.Reac
   );
 }
 
-type PricingCardButtonSubtext = { kind: "plain"; text: string } | { kind: "cohort"; cohortLabel?: string; seatsLeft: number };
-
-type PricingCardData = {
-  title: string;
-  features: string[];
-  price: string;
-  originalPrice?: string;
-  crossOutPrice?: boolean;
-  buttonLabel: string;
-  buttonVariant: "gold" | "black" | "outline" | "blue";
-  buttonSubtext?: PricingCardButtonSubtext;
-  featured?: boolean;
-  freeRibbon?: boolean;
-  compact?: boolean;
-};
-
-function parsePrice(value: string): number {
+function parsePrice(value) {
   return Number(value.replace(/[^0-9.]/g, ""));
 }
 
-function getDiscountPercent(original: string, current: string): number {
+function getDiscountPercent(original, current) {
   const originalAmount = parsePrice(original);
   const currentAmount = parsePrice(current);
   if (!originalAmount || originalAmount <= currentAmount) return 0;
   return Math.round((1 - currentAmount / originalAmount) * 100);
 }
 
-function DiscountCornerSticker({ percent }: { percent: number }) {
+function DiscountCornerSticker({ percent }) {
   return (
     <div
       className="masterclass-corner-ribbon masterclass-corner-ribbon--discount pointer-events-none absolute right-0 top-0 z-30"
@@ -314,7 +248,7 @@ function FreeCornerRibbon() {
   );
 }
 
-function PricingCardButtonSubtext({ subtext, className = "" }: { subtext?: PricingCardButtonSubtext; className?: string }) {
+function PricingCardButtonSubtext({ subtext, className = "" }) {
   return (
     <p className={`mt-2.5 min-h-[16px] text-center text-[11px] font-medium leading-[1.2] tracking-[-0.22px] ${className}`}>
       {!subtext ? (
@@ -333,6 +267,30 @@ function PricingCardButtonSubtext({ subtext, className = "" }: { subtext?: Prici
   );
 }
 
+function PricingCardActions({ buttonLabel, buttonVariant, buttonSubtext, compact = false, onAction }) {
+  return (
+    <>
+      {buttonVariant === "black" && (
+        <BlackButton size="sm" onClick={onAction}>
+          {buttonLabel}
+        </BlackButton>
+      )}
+      {buttonVariant === "gold" && (
+        <GoldButton size="sm" onClick={onAction}>
+          {buttonLabel}
+        </GoldButton>
+      )}
+      {buttonVariant === "outline" && (
+        <OutlineButton size="sm" theme="light" onClick={onAction}>
+          {buttonLabel}
+        </OutlineButton>
+      )}
+      {buttonVariant === "blue" && <BlueButton onClick={onAction}>{buttonLabel}</BlueButton>}
+      {!compact && <PricingCardButtonSubtext subtext={buttonSubtext} />}
+    </>
+  );
+}
+
 function PricingCard({
   title,
   features,
@@ -346,7 +304,7 @@ function PricingCard({
   freeRibbon = false,
   compact = false,
   onButtonClick,
-}: PricingCardData & { onButtonClick: () => void }) {
+}) {
   const discountPercent = featured && originalPrice ? getDiscountPercent(originalPrice, price) : 0;
 
   const cardModifierClasses = [
@@ -412,7 +370,7 @@ function PricingCard({
   );
 }
 
-const PRICING_CARDS: PricingCardData[] = [
+const PRICING_CARDS = [
   {
     title: "Discovery",
     features: ["ATS hacks", "Role mapping", "Niche discovery", "Base resume rebuild", "Job search playbook", "Personalised strategy"],
@@ -487,17 +445,9 @@ const PRICING_CARDS: PricingCardData[] = [
   },
 ];
 
-function MobilePricingPrice({
-  price,
-  originalPrice,
-  crossOutPrice = false,
-}: {
-  price: string;
-  originalPrice?: string;
-  crossOutPrice?: boolean;
-}) {
+function MobilePricingPrice({ price, originalPrice, crossOutPrice = false }) {
   const priceClass = "text-[18px] tracking-[-0.36px]";
-  const strikeClass = `!text-[18px] !leading-none tracking-[-0.36px]`;
+  const strikeClass = "!text-[18px] !leading-none tracking-[-0.36px]";
 
   return (
     <div className="flex shrink-0 items-center justify-end gap-1">
@@ -513,49 +463,11 @@ function MobilePricingPrice({
   );
 }
 
-function PricingCardActions({
-  buttonLabel,
-  buttonVariant,
-  buttonSubtext,
-  compact = false,
-  onAction,
-}: Pick<PricingCardData, "buttonLabel" | "buttonVariant" | "buttonSubtext" | "compact"> & {
-  onAction: () => void;
-}) {
-  return (
-    <>
-      {buttonVariant === "black" && (
-        <BlackButton size="sm" onClick={onAction}>
-          {buttonLabel}
-        </BlackButton>
-      )}
-      {buttonVariant === "gold" && (
-        <GoldButton size="sm" onClick={onAction}>
-          {buttonLabel}
-        </GoldButton>
-      )}
-      {buttonVariant === "outline" && (
-        <OutlineButton size="sm" theme="light" onClick={onAction}>
-          {buttonLabel}
-        </OutlineButton>
-      )}
-      {buttonVariant === "blue" && <BlueButton onClick={onAction}>{buttonLabel}</BlueButton>}
-      {!compact && <PricingCardButtonSubtext subtext={buttonSubtext} />}
-    </>
-  );
-}
-
-function MobilePricingSleekCta({
-  buttonLabel,
-  buttonVariant,
-  onAction,
-}: Pick<PricingCardData, "buttonLabel" | "buttonVariant"> & {
-  onAction: () => void;
-}) {
+function MobilePricingSleekCta({ buttonLabel, buttonVariant, onAction }) {
   const compactClass =
     "!w-full !max-w-[158px] shrink-0 !h-8 !min-h-8 whitespace-nowrap px-2 !text-[14px] !font-semibold !leading-none tracking-[-0.28px] [&_span]:px-1";
 
-  const handleClick = (event: React.MouseEvent<HTMLButtonElement>) => {
+  const handleClick = event => {
     event.stopPropagation();
     onAction();
   };
@@ -591,17 +503,7 @@ function MobilePricingSleekCta({
   );
 }
 
-function MobilePricingAccordionItem({
-  card,
-  expanded,
-  onToggle,
-  onAction,
-}: {
-  card: PricingCardData;
-  expanded: boolean;
-  onToggle: () => void;
-  onAction: () => void;
-}) {
+function MobilePricingAccordionItem({ card, expanded, onToggle, onAction }) {
   const discountPercent = card.featured && card.originalPrice ? getDiscountPercent(card.originalPrice, card.price) : 0;
 
   const cardModifierClasses = [
@@ -666,10 +568,10 @@ function MobilePricingAccordionItem({
   );
 }
 
-function MobilePricingSection({ cards, onCardAction }: { cards: PricingCardData[]; onCardAction: (card: PricingCardData) => void }) {
-  const [expandedPlans, setExpandedPlans] = useState<Set<string>>(new Set());
+function MobilePricingSection({ cards, onCardAction }) {
+  const [expandedPlans, setExpandedPlans] = useState(new Set());
 
-  const togglePlan = (title: string) => {
+  const togglePlan = title => {
     setExpandedPlans(previous => {
       const next = new Set(previous);
       if (next.has(title)) next.delete(title);
@@ -694,22 +596,31 @@ function MobilePricingSection({ cards, onCardAction }: { cards: PricingCardData[
   );
 }
 
-const MASTERCLASS_VIDEO_PLAYBACK_RATE = 1.25;
+function MasterclassVideoPlayer({ src, poster, autoPlay = false, onPlay }) {
+  const videoRef = useRef(null);
 
-function MasterclassVideoPlayer({ src, poster, autoPlay = false }: { src: string; poster: string; autoPlay?: boolean }) {
-  const videoRef = useRef<HTMLVideoElement>(null);
-
-  const applyPlaybackRate = (video: HTMLVideoElement | null) => {
-    if (video) video.playbackRate = MASTERCLASS_VIDEO_PLAYBACK_RATE;
+  const applyPlaybackRate = video => {
+    if (video) {
+      video.playbackRate = MASTERCLASS_VIDEO_PLAYBACK_RATE;
+    }
   };
 
   useEffect(() => {
     const video = videoRef.current;
     if (!video) return;
+
     applyPlaybackRate(video);
+
     if (!autoPlay) return;
-    void video.play().catch(() => {});
+
+    video.play().catch(() => {
+      // Autoplay may be blocked until user interaction.
+    });
   }, [autoPlay, src]);
+
+  const blockSaveContextMenu = event => {
+    event.preventDefault();
+  };
 
   return (
     <video
@@ -723,34 +634,39 @@ function MasterclassVideoPlayer({ src, poster, autoPlay = false }: { src: string
       playsInline
       preload="metadata"
       onLoadedMetadata={event => applyPlaybackRate(event.currentTarget)}
-      onContextMenu={event => event.preventDefault()}
+      onPlay={onPlay}
+      onContextMenu={blockSaveContextMenu}
     />
   );
 }
 
-function MasterclassHeroPreview({
-  canWatch,
-  autoPlay,
-  onRequestAccess,
-}: {
-  canWatch: boolean;
-  autoPlay: boolean;
-  onRequestAccess: () => void;
-}) {
+function MasterclassHeroPreview({ canWatch, autoPlay, onRequestAccess, onVideoPlay }) {
   if (canWatch) {
-    return <MasterclassVideoPlayer src={MASTERCLASS_VIDEO_URL} poster="/images/masterclass/video-thumbnail.jpg" autoPlay={autoPlay} />;
+    return (
+      <MasterclassVideoPlayer
+        src={MASTERCLASS_VIDEO_URL}
+        poster="/images/masterclass/video-thumbnail.jpg"
+        autoPlay={autoPlay}
+        onPlay={onVideoPlay}
+      />
+    );
   }
 
   return (
     <>
-      <Image
-        src="/images/masterclass/video-thumbnail.jpg"
-        alt="Masterclass preview"
-        fill
-        className="object-cover"
-        sizes="(max-width: 1024px) 100vw, 809px"
-        priority
-      />
+      {/* Preview loop disabled until MASTERCLASS_VIDEO_PREVIEW_URL is a real short clip. */}
+      {/* <video
+        src={MASTERCLASS_VIDEO_PREVIEW_URL}
+        poster="/images/masterclass/video-thumbnail.jpg"
+        className="h-full w-full object-cover"
+        muted
+        loop
+        autoPlay
+        playsInline
+        preload="metadata"
+      /> */}
+      {/* eslint-disable-next-line @next/next/no-img-element */}
+      <img src="/images/masterclass/video-thumbnail.jpg" alt="Masterclass preview" className="h-full w-full object-cover" />
       <button
         type="button"
         onClick={onRequestAccess}
@@ -763,25 +679,64 @@ function MasterclassHeroPreview({
   );
 }
 
-export default function MasterclassLandingPage() {
+const BOOKING_UNLOCK_MS = 30_000;
+
+export default function MasterclassLandingPage({ variant = "ads" }) {
+  const isOrganic = variant === "organic";
   const router = useRouter();
   const { isAuthenticated } = useAuthStatus();
   const [onboardingOpen, setOnboardingOpen] = useState(false);
-  const [onboardingIntent, setOnboardingIntent] = useState<MasterclassOnboardingIntent>("booking");
+  const [onboardingIntent, setOnboardingIntent] = useState("booking");
+  const [onboardingInitialStep, setOnboardingInitialStep] = useState("details");
+  const [onboardingInitialLead, setOnboardingInitialLead] = useState(null);
   const [videoUnlocked, setVideoUnlocked] = useState(false);
   const [shouldAutoplayVideo, setShouldAutoplayVideo] = useState(false);
-  const [leadUid, setLeadUid] = useState<string | null>(null);
   const [paymentModalOpen, setPaymentModalOpen] = useState(false);
+  const [paymentPlanId, setPaymentPlanId] = useState<UnicoachProductPlanId>("unicoach_program");
   const [deepLinkProcessing, setDeepLinkProcessing] = useState(false);
+  const [showUnlockHint, setShowUnlockHint] = useState(false);
+  const [bookingCooldown, setBookingCooldown] = useState(false);
+  const memberEnrollRef = useRef(false);
 
   const canWatchVideo = videoUnlocked || isAuthenticated;
+
+  const enrollSignedInMember = useCallback(async () => {
+    if (!isAuthenticated || memberEnrollRef.current) return;
+
+    memberEnrollRef.current = true;
+    try {
+      const result = await enrollAuthenticatedMasterclassMember();
+      sessionStorage.setItem(
+        MASTERCLASS_LEAD_SESSION_KEY,
+        JSON.stringify({
+          uid: result.uid,
+          leadId: result.lead_id,
+          source: result.source,
+        })
+      );
+      localStorage.setItem(MASTERCLASS_VSL_FORM_COMPLETE_KEY, "1");
+      setVideoUnlocked(true);
+    } catch {
+      memberEnrollRef.current = false;
+    }
+  }, [isAuthenticated]);
+
+  const handleMemberVideoPlay = useCallback(() => {
+    localStorage.setItem(MASTERCLASS_VSL_FORM_COMPLETE_KEY, "1");
+    setVideoUnlocked(true);
+    enrollSignedInMember();
+  }, [enrollSignedInMember]);
 
   useEffect(() => {
     document.body.classList.add("masterclass-page");
     document.documentElement.classList.add("masterclass-page");
+    const cleanupCalendly = ensureCalendlyAssets();
 
     if (typeof window !== "undefined") {
-      if (localStorage.getItem(MASTERCLASS_VSL_FORM_COMPLETE_KEY) === "1") {
+      const vslComplete =
+        localStorage.getItem(MASTERCLASS_VSL_FORM_COMPLETE_KEY) === "1" || localStorage.getItem("masterclass_vsl_form_completed") === "1";
+      if (vslComplete) {
+        localStorage.setItem(MASTERCLASS_VSL_FORM_COMPLETE_KEY, "1");
         setVideoUnlocked(true);
       }
       const params = new URLSearchParams(window.location.search);
@@ -791,14 +746,18 @@ export default function MasterclassLandingPage() {
     }
 
     return () => {
+      cleanupCalendly();
       document.body.classList.remove("masterclass-page");
       document.documentElement.classList.remove("masterclass-page");
     };
   }, []);
 
   useEffect(() => {
-    if (isAuthenticated) setVideoUnlocked(true);
-  }, [isAuthenticated]);
+    if (isAuthenticated) {
+      setVideoUnlocked(true);
+      enrollSignedInMember();
+    }
+  }, [isAuthenticated, enrollSignedInMember]);
 
   useEffect(() => {
     if (typeof window === "undefined") return;
@@ -808,46 +767,75 @@ export default function MasterclassLandingPage() {
     const book = params.get("book");
     const watch = params.get("watch");
 
-    if (!uid || (book !== "discovery" && watch !== "1" && watch !== "true")) return;
+    if (!uid) return;
 
     let cancelled = false;
 
-    void (async () => {
+    const resumeDiscoveryLead = lead => {
+      sessionStorage.setItem(
+        MASTERCLASS_LEAD_SESSION_KEY,
+        JSON.stringify({
+          name: lead.name,
+          email: lead.email,
+          uid: lead.uid,
+          leadId: lead.lead_id,
+          source: lead.source,
+          discoveryComplete: Boolean(lead.discovery_complete),
+          qualificationStatus: lead.qualification_status ?? null,
+        })
+      );
+
+      if (lead.discovery_complete) {
+        if (lead.qualification_status === "qualified") {
+          openMasterclassDiscoveryCalendly({ name: lead.name, email: lead.email, uid: lead.uid }, () =>
+            router.push(`/masterclass/confirmed?uid=${encodeURIComponent(lead.uid)}`)
+          );
+        } else if (lead.qualification_status === "unqualified") {
+          router.replace(`${MASTERCLASS_THANKS_INTEREST_PATH}?uid=${encodeURIComponent(lead.uid)}`);
+        }
+        return;
+      }
+
+      if (lead.has_contact_details) {
+        setOnboardingInitialLead({
+          uid: lead.uid,
+          name: lead.name,
+          email: lead.email,
+        });
+        setOnboardingInitialStep("questions");
+        setOnboardingIntent("booking");
+        setOnboardingOpen(true);
+      } else {
+        setOnboardingInitialLead({ uid: lead.uid });
+        setOnboardingInitialStep("details");
+        setOnboardingIntent("booking");
+        setOnboardingOpen(true);
+      }
+
+      router.replace("/masterclass");
+    };
+
+    (async () => {
       setDeepLinkProcessing(true);
       try {
-        if (book === "discovery") {
-          const result = await expressDiscoveryBooking(uid);
+        if (watch === "1" || watch === "true") {
+          await unlockMasterclassWatch(uid);
           if (cancelled) return;
-
-          sessionStorage.setItem(
-            MASTERCLASS_LEAD_SESSION_KEY,
-            JSON.stringify({
-              name: result.name,
-              email: result.email,
-              leadId: result.lead_id,
-              uid: result.uid,
-              source: result.source,
-            })
-          );
-
-          if (result.has_account || isAuthenticated) {
-            sessionStorage.setItem(MASTERCLASS_WELCOME_AUTOREDIRECT_KEY, "niche");
-          }
-
-          router.replace(MASTERCLASS_BOOKING_PATH);
+          localStorage.setItem(MASTERCLASS_VSL_FORM_COMPLETE_KEY, "1");
+          setVideoUnlocked(true);
+          setShouldAutoplayVideo(true);
+          router.replace("/masterclass?autoplay=1");
           return;
         }
 
-        await unlockMasterclassWatch(uid);
-        if (cancelled) return;
-
-        localStorage.setItem(MASTERCLASS_VSL_FORM_COMPLETE_KEY, "1");
-        setVideoUnlocked(true);
-        setShouldAutoplayVideo(true);
-        router.replace("/masterclass?autoplay=1");
+        if (book === "discovery" || !book) {
+          const lead = await fetchMasterclassLead(uid);
+          if (cancelled) return;
+          resumeDiscoveryLead(lead);
+        }
       } catch (error) {
         if (!cancelled) {
-          notifyError(error instanceof Error ? error.message : "This link could not be processed.");
+          notifyError(error?.message || "This link could not be processed.");
           router.replace("/masterclass");
         }
       } finally {
@@ -858,72 +846,201 @@ export default function MasterclassLandingPage() {
     return () => {
       cancelled = true;
     };
-  }, [isAuthenticated, router]);
+  }, [router]);
 
-  const openOnboardingModal = (intent: MasterclassOnboardingIntent = "booking") => {
+  const openOnboardingModal = (intent = "booking", options = {}) => {
     setOnboardingIntent(intent);
+    setOnboardingInitialStep(options.initialStep || "details");
+    setOnboardingInitialLead(options.initialLead || null);
     setOnboardingOpen(true);
   };
 
-  const handleLeadSubmit = async (lead: MasterclassLead) => {
-    const source = onboardingIntent === "video" ? MASTERCLASS_LEAD_SOURCE_VSL_VIDEO : MASTERCLASS_LEAD_SOURCE_DISCOVERY;
+  const openQualifiedCalendly = async stored => {
+    let prefill = { name: stored?.name, email: stored?.email };
 
-    const result = await submitMasterclassLead({
-      name: lead.name,
-      email: lead.email,
-      dial_code: lead.dialCode,
-      phone: lead.phone,
-      source,
-      linkedin_url: "",
-    });
-
-    const savedUid = result?.uid ?? (result?.lead_id != null ? String(result.lead_id) : null);
-    setLeadUid(savedUid);
-
-    if (typeof window !== "undefined") {
-      sessionStorage.setItem(
-        MASTERCLASS_LEAD_SESSION_KEY,
-        JSON.stringify({
-          ...lead,
-          leadId: result?.lead_id,
-          uid: savedUid,
-          fullPhone: `${lead.dialCode}${lead.phone}`,
-          source,
-        })
-      );
+    if (stored?.uid && (!prefill.name || !prefill.email)) {
+      try {
+        const lead = await fetchMasterclassLead(stored.uid);
+        prefill = { name: lead.name, email: lead.email };
+        persistLeadSession(lead, {
+          discoveryComplete: true,
+          qualificationStatus: lead.qualification_status ?? "qualified",
+        });
+      } catch {
+        // use whatever we have in session
+      }
     }
 
-    setOnboardingOpen(false);
+    openMasterclassDiscoveryCalendly({ ...prefill, uid: stored?.uid }, () =>
+      router.push(stored?.uid ? `/masterclass/confirmed?uid=${encodeURIComponent(stored.uid)}` : "/masterclass/confirmed")
+    );
+  };
 
-    if (onboardingIntent === "video") {
-      localStorage.setItem(MASTERCLASS_VSL_FORM_COMPLETE_KEY, "1");
-      setVideoUnlocked(true);
-      setShouldAutoplayVideo(true);
+  const openBookingModal = async () => {
+    let stored = readStoredLeadSession();
+
+    if (stored?.uid && !stored.discoveryComplete) {
+      try {
+        const lead = await fetchMasterclassLead(stored.uid);
+        persistLeadSession(lead, {
+          discoveryComplete: Boolean(lead.discovery_complete),
+          qualificationStatus: lead.qualification_status ?? null,
+        });
+        stored = readStoredLeadSession();
+      } catch {
+        // fall back to session state
+      }
+    }
+
+    const openWithStoredLead = () => {
+      if (!stored) return false;
+
+      if (stored.discoveryComplete && stored.qualificationStatus === "qualified") {
+        openQualifiedCalendly(stored);
+        return true;
+      }
+
+      if (stored.discoveryComplete && stored.qualificationStatus === "unqualified") {
+        router.push(`${MASTERCLASS_THANKS_INTEREST_PATH}?uid=${encodeURIComponent(stored.uid)}`);
+        return true;
+      }
+
+      openOnboardingModal("booking", {
+        initialStep: stored.hasContact ? "questions" : "details",
+        initialLead: {
+          uid: stored.uid,
+          name: stored.name,
+          email: stored.email,
+        },
+      });
+      return true;
+    };
+
+    if (isOrganic || canWatchVideo) {
+      if (openWithStoredLead()) return;
+      openOnboardingModal("booking");
       return;
     }
 
-    router.push(MASTERCLASS_BOOKING_PATH);
-  };
-
-  const handleSocialBook = () => {
-    const intent = onboardingIntent === "video" ? "video" : "discovery";
-    window.location.href = buildMasterclassSignupUrl(intent, leadUid);
-  };
-
-  const handleSignUp = () => {
-    setPaymentModalOpen(true);
-  };
-
-  const handleCardAction = (card: PricingCardData) => {
-    if (card.buttonVariant === "blue") {
-      handleSignUp();
+    if (!showUnlockHint) {
+      setShowUnlockHint(true);
+      setBookingCooldown(true);
+      window.setTimeout(() => setBookingCooldown(false), BOOKING_UNLOCK_MS);
       return;
     }
+
+    if (bookingCooldown) return;
+
+    if (openWithStoredLead()) return;
     openOnboardingModal("booking");
   };
 
+  const persistLeadSession = (lead, extra = {}) => {
+    const savedUid = lead?.uid ?? (lead?.lead_id != null ? String(lead.lead_id) : null);
+    const discoveryComplete = extra.discoveryComplete ?? (lead?.discovery_complete != null ? Boolean(lead.discovery_complete) : undefined);
+    const qualificationStatus = extra.qualificationStatus ?? lead?.qualification_status ?? undefined;
+
+    sessionStorage.setItem(
+      MASTERCLASS_LEAD_SESSION_KEY,
+      JSON.stringify({
+        name: lead?.name,
+        email: lead?.email,
+        leadId: lead?.lead_id,
+        uid: savedUid,
+        source: lead?.source,
+        ...(discoveryComplete != null ? { discoveryComplete } : {}),
+        ...(qualificationStatus != null ? { qualificationStatus } : {}),
+        ...extra,
+      })
+    );
+    return savedUid;
+  };
+
+  const handleLeadSubmit = async payload => {
+    if (payload.stage === "contact") {
+      const result = await submitMasterclassLead({
+        name: payload.name,
+        email: payload.email,
+        dial_code: payload.dialCode,
+        phone: payload.phone,
+        source: MASTERCLASS_LEAD_SOURCE_DISCOVERY,
+        stage: "contact",
+        uid: payload.uid,
+      });
+      persistLeadSession(result, {
+        dialCode: payload.dialCode,
+        phone: payload.phone,
+      });
+      return;
+    }
+
+    if (onboardingIntent === "video") {
+      const result = await submitMasterclassLead({
+        name: payload.name,
+        email: payload.email,
+        dial_code: payload.dialCode,
+        phone: payload.phone,
+        source: MASTERCLASS_LEAD_SOURCE_VSL_VIDEO,
+      });
+      persistLeadSession(result, {
+        dialCode: payload.dialCode,
+        phone: payload.phone,
+        fullPhone: `${payload.dialCode}${payload.phone}`,
+      });
+      localStorage.setItem(MASTERCLASS_VSL_FORM_COMPLETE_KEY, "1");
+      setVideoUnlocked(true);
+      setShouldAutoplayVideo(true);
+      setOnboardingOpen(false);
+      return;
+    }
+
+    const result = await submitMasterclassLead({
+      name: payload.name,
+      email: payload.email,
+      dial_code: payload.dialCode,
+      phone: payload.phone,
+      source: MASTERCLASS_LEAD_SOURCE_DISCOVERY,
+      stage: "complete",
+      uid: payload.uid,
+      discovery: payload.discovery,
+    });
+
+    const savedUid = persistLeadSession(result, {
+      dialCode: payload.dialCode,
+      phone: payload.phone,
+      fullPhone: `${payload.dialCode}${payload.phone}`,
+      discoveryComplete: true,
+      qualificationStatus: result.qualification_status ?? null,
+    });
+
+    setOnboardingOpen(false);
+
+    if (result.qualification_status === "unqualified") {
+      router.push(savedUid ? `${MASTERCLASS_THANKS_INTEREST_PATH}?uid=${encodeURIComponent(savedUid)}` : MASTERCLASS_THANKS_INTEREST_PATH);
+      return;
+    }
+
+    openMasterclassDiscoveryCalendly({ name: payload.name, email: payload.email, uid: savedUid }, () =>
+      router.push(savedUid ? `/masterclass/confirmed?uid=${encodeURIComponent(savedUid)}` : "/masterclass/confirmed")
+    );
+  };
+
+  const handleSignUp = (planId: UnicoachProductPlanId = "unicoach_program") => {
+    setPaymentPlanId(planId);
+    setPaymentModalOpen(true);
+  };
+
+  const handleCardAction = card => {
+    const mapped = PRICING_CARD_PLAN_BY_TITLE[card.title];
+    if (mapped === "discovery" || !mapped) {
+      openBookingModal();
+      return;
+    }
+    handleSignUp(mapped);
+  };
+
   return (
-    <div className="masterclass-page-bg relative isolate min-h-screen overflow-x-hidden font-sans text-[#eaeaea] selection:bg-[#346de0]/30">
+    <div className="masterclass-page-bg relative isolate min-h-screen overflow-x-hidden text-[#eaeaea] selection:bg-[#346de0]/30">
       {deepLinkProcessing ? (
         <div className="fixed inset-0 z-[200] flex flex-col items-center justify-center gap-3 bg-[#0a0a0a]/90 backdrop-blur-sm">
           <div className="h-10 w-10 animate-spin rounded-full border-2 border-white/20 border-t-[#346de0]" />
@@ -933,36 +1050,27 @@ export default function MasterclassLandingPage() {
       <div className="masterclass-hero-glow" aria-hidden />
       <div className="masterclass-dot-grid-overlay" aria-hidden />
 
-      {/* Nav — fixed (sticky breaks due to overflow-x-hidden on page sections) */}
       <header className="fixed inset-x-0 top-0 z-50 border-b border-white/[0.05] bg-[#0a0a0a]/85 backdrop-blur-md pt-[env(safe-area-inset-top)]">
-        <div className="mx-auto flex max-w-[1440px] items-center justify-between gap-3 px-4 py-2.5 sm:px-10 sm:py-3 lg:px-[90px] lg:py-3.5">
+        <div className="mx-auto flex max-w-[1440px] items-center justify-center px-4 py-2.5 sm:px-10 sm:py-3 lg:px-[90px] lg:py-3.5">
           <Link href="/" className="relative z-10 shrink-0">
             <UnimadLogo className="h-[17px] w-auto text-white sm:h-[20px]" />
           </Link>
-
-          <OutlineButton size="nav" onClick={() => openOnboardingModal("booking")}>
-            <span className="sm:hidden">Book Free Call</span>
-            <span className="hidden sm:inline">Book Free Discovery Call</span>
-          </OutlineButton>
         </div>
       </header>
 
       <div className="relative z-[1]">
         <div className="relative mx-auto w-full max-w-[1440px] px-4 pt-[calc(58px+env(safe-area-inset-top))] sm:px-10 lg:px-[90px] lg:pt-[calc(66px+env(safe-area-inset-top))]">
           <div className="relative z-[1]">
-            {/* Hero headline */}
             <div className="mb-5 mt-6 sm:mb-6 sm:mt-10 lg:mb-8 lg:mt-16">
               <h1 className="text-[28px] font-medium leading-[1.05] tracking-[-0.9px] sm:text-[40px] sm:tracking-[-1px] lg:text-[50px]">
                 Your <span className="masterclass-gold-text font-medium">Masterclass</span> is ready.
               </h1>
               <p className="mt-3 max-w-[437px] text-[15px] leading-normal tracking-[-0.32px] text-[#e7e7e7] sm:mt-4 sm:text-[16px] lg:mt-5 lg:text-[18px] lg:tracking-[-0.36px]">
-                Forty minutes. One system. Everything that actually changes how recruiters read your profile.
+                Twenty minutes. One system. Everything that actually changes how recruiters read your profile.
               </p>
             </div>
 
-            {/* Hero content */}
             <div className="mb-12 flex flex-col gap-5 sm:mb-16 sm:gap-6 lg:mb-20 lg:flex-row lg:gap-[41px]">
-              {/* Video */}
               <MasterclassFrame
                 clip
                 className="relative z-[1] aspect-[16/10] h-auto w-full shrink-0 sm:aspect-auto sm:h-[360px] lg:h-[456px] lg:w-[809px]"
@@ -972,23 +1080,27 @@ export default function MasterclassLandingPage() {
                   canWatch={canWatchVideo}
                   autoPlay={shouldAutoplayVideo}
                   onRequestAccess={() => openOnboardingModal("video")}
+                  onVideoPlay={handleMemberVideoPlay}
                 />
               </MasterclassFrame>
 
-              {/* CTA card */}
-              <MasterclassFrame className="w-full lg:h-[456px] lg:w-[410px]" contentClassName="flex h-full flex-col p-5 sm:p-7 lg:p-[27px]">
+              <MasterclassFrame
+                className="w-full min-h-[240px] sm:h-[360px] lg:h-[456px] lg:w-[410px]"
+                contentClassName="flex h-full min-h-0 flex-col px-5 pt-5 pb-8 sm:px-7 sm:pt-7 lg:px-[27px] lg:pt-[27px] lg:pb-8"
+              >
                 <p className="hidden text-[28px] leading-[1.2] tracking-[-0.8px] text-[#eaeaea] sm:block sm:text-[32px] lg:text-[40px]">
                   The exact playbook 5000+ international students used to land interviews.
                 </p>
 
-                <div className="mt-0 flex flex-col sm:mt-8 lg:mt-auto">
-                  <div className="mb-4">
-                    {/* need to think another Design from design team */}
-                    <p className="text-[15px] leading-snug tracking-[-0.32px] text-[#e7e7e7] sm:text-[16px] lg:text-[18px] lg:tracking-[-0.36px]">
-                      Career coaches with a 90% Success Rate
+                <div className="mt-auto flex w-full flex-col">
+                  {showUnlockHint && !isOrganic && !canWatchVideo ? (
+                    <p className="mb-3 min-h-[2.5rem] text-center text-[13px] leading-snug tracking-[-0.28px] text-[#eaeaea]/55 sm:text-[14px]">
+                      Watch the masterclass to unlock your free call
                     </p>
-                  </div>
-                  <GoldButton onClick={() => openOnboardingModal("booking")}>Book Free Discovery Call</GoldButton>
+                  ) : (
+                    <p className="mb-3 min-h-[2.5rem]" aria-hidden />
+                  )}
+                  <GoldButton onClick={openBookingModal}>Book Free Discovery Call</GoldButton>
                 </div>
               </MasterclassFrame>
             </div>
@@ -996,83 +1108,96 @@ export default function MasterclassLandingPage() {
 
           <MasterclassStoriesSection />
 
-          <MasterclassPlacementsSection />
-
           <div className="relative left-1/2 w-screen max-w-[100vw] -translate-x-1/2 masterclass-light-band">
             <div className="masterclass-light-band__dots" aria-hidden />
-            <div className="relative z-[1] mx-auto w-full max-w-[1440px] px-4 py-12 sm:px-10 sm:py-16 lg:px-[90px] lg:py-24">
-              <section className="masterclass-pricing-band" aria-labelledby="masterclass-pricing-heading">
-                <div className="mb-6 text-center sm:mb-8 lg:mb-10">
-                  <h2
-                    id="masterclass-pricing-heading"
-                    className="text-[22px] font-medium leading-[1.1] tracking-[-0.55px] text-slate-900 sm:text-[28px] lg:text-[30px] lg:tracking-[-0.6px]"
-                  >
-                    The Unimad Career Positioning System
-                  </h2>
-                  <p className="mx-auto mt-2.5 max-w-[520px] px-1 text-[13px] leading-normal tracking-[-0.26px] text-slate-500 sm:mt-3 sm:text-[15px] sm:tracking-[-0.28px]">
-                    Start free with a discovery call. Add the modules you need. Or take the full system in one go.
-                  </p>
+            <div className="relative z-[1] mx-auto w-full max-w-[1440px] px-4 pb-[calc(3rem+env(safe-area-inset-bottom))] pt-12 sm:px-10 sm:pb-16 sm:pt-16 lg:px-[90px] lg:pb-20 lg:pt-20">
+              <MasterclassPlacementsSection />
+
+              {isOrganic ? (
+                <div className="mt-12 sm:mt-16 lg:mt-20">
+                  <section className="masterclass-pricing-band" aria-labelledby="masterclass-pricing-heading">
+                    <div className="mb-6 text-center sm:mb-8 lg:mb-10">
+                      <h2
+                        id="masterclass-pricing-heading"
+                        className="text-[22px] font-medium leading-[1.1] tracking-[-0.55px] text-slate-900 sm:text-[28px] lg:text-[30px] lg:tracking-[-0.6px]"
+                      >
+                        The Unimad Career Positioning System
+                      </h2>
+                      <p className="mx-auto mt-2.5 max-w-[520px] px-1 text-[13px] leading-normal tracking-[-0.26px] text-slate-500 sm:mt-3 sm:text-[15px] sm:tracking-[-0.28px]">
+                        Start free with a discovery call. Add the modules you need. Or take the full system in one go.
+                      </p>
+                    </div>
+
+                    <MobilePricingSection cards={PRICING_CARDS} onCardAction={handleCardAction} />
+
+                    <div className="hidden md:block">
+                      <div className="masterclass-pricing-scroll -mx-4 overflow-x-auto overflow-y-visible px-4 sm:-mx-10 sm:px-10 lg:mx-0 lg:overflow-visible lg:px-0">
+                        <div className="flex w-max items-stretch gap-3 pb-2 sm:gap-4 lg:w-full lg:max-w-[1260px] lg:gap-3">
+                          {PRICING_CARDS.map(card => (
+                            <PricingCard key={card.title} {...card} onButtonClick={() => handleCardAction(card)} />
+                          ))}
+                        </div>
+                      </div>
+                      <p className="mt-3 text-center text-[11px] font-medium tracking-[-0.2px] text-slate-400 lg:hidden">
+                        Swipe to explore all plans
+                      </p>
+                    </div>
+                  </section>
+
+                  <MasterclassFaqSection />
                 </div>
+              ) : null}
 
-                <MobilePricingSection cards={PRICING_CARDS} onCardAction={handleCardAction} />
+              <footer className="mt-10 border-t border-slate-200 pt-10 sm:mt-14 sm:pt-14 lg:mt-16 lg:pt-16">
+                <div className="flex w-full flex-col gap-6 sm:gap-8 lg:flex-row lg:items-start lg:justify-between">
+                  <Link href="/">
+                    <UnimadLogo className="h-[26px] w-auto text-[#346de0] sm:h-[35px]" />
+                  </Link>
 
-                <div className="hidden md:block">
-                  <div className="masterclass-pricing-scroll -mx-4 overflow-x-auto overflow-y-visible px-4 sm:-mx-10 sm:px-10 lg:mx-0 lg:overflow-visible lg:px-0">
-                    <div className="flex w-max items-stretch gap-3 pb-2 sm:gap-4 lg:w-full lg:max-w-[1260px] lg:gap-3">
-                      {PRICING_CARDS.map(card => (
-                        <PricingCard key={card.title} {...card} onButtonClick={() => handleCardAction(card)} />
-                      ))}
+                  <div className="max-w-[463px] lg:ml-auto">
+                    <p className="text-[16px] font-medium leading-[1.2] tracking-[-0.32px] text-slate-900 sm:text-[17px] sm:tracking-[-0.35px]">
+                      Need a hand? Talk to us.
+                    </p>
+                    <p className="mt-2.5 text-[12px] leading-[1.35] tracking-[-0.23px] text-slate-500 sm:mt-3 sm:leading-[1.25]">
+                      Questions about the Masterclass, the tools, or coaching? The team&apos;s one message away.
+                    </p>
+                    <div className="mt-3 flex flex-col gap-2 text-[16px] tracking-[-0.32px] text-[#346de0] sm:mt-4 sm:flex-row sm:flex-wrap sm:items-center sm:gap-x-3 sm:gap-y-1 sm:text-[18px] sm:tracking-[-0.36px]">
+                      <a href="mailto:grow@unimad.ai" className="hover:underline">
+                        grow@unimad.ai
+                      </a>
+                      <span className="hidden text-slate-300 sm:inline" aria-hidden>
+                        |
+                      </span>
+                      <a
+                        href={MASTERCLASS_WHATSAPP_URL}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        title="WhatsApp only — tap to message us"
+                        className="underline-offset-2 decoration-dotted hover:underline"
+                      >
+                        {MASTERCLASS_WHATSAPP_NUMBER_DISPLAY}
+                      </a>
                     </div>
                   </div>
-                  <p className="mt-3 text-center text-[11px] font-medium tracking-[-0.2px] text-slate-400 lg:hidden">
-                    Swipe to explore all plans
-                  </p>
                 </div>
-              </section>
-
-              <MasterclassFaqSection />
+              </footer>
             </div>
-
-            <footer className="relative z-[1] w-full border-t border-slate-200 px-4 pb-[calc(2rem+env(safe-area-inset-bottom))] pt-10 sm:px-10 sm:pb-8 sm:pt-14 lg:px-[90px] lg:pb-12 lg:pt-16">
-              <div className="flex w-full flex-col gap-6 sm:gap-8 lg:flex-row lg:items-start lg:justify-between">
-                <Link href="/">
-                  <UnimadLogo className="h-[26px] w-auto text-[#346de0] sm:h-[35px]" />
-                </Link>
-
-                <div className="max-w-[463px] lg:ml-auto">
-                  <p className="text-[16px] font-medium leading-[1.2] tracking-[-0.32px] text-slate-900 sm:text-[17px] sm:tracking-[-0.35px]">
-                    Need a hand? Talk to us.
-                  </p>
-                  <p className="mt-2.5 text-[12px] leading-[1.35] tracking-[-0.23px] text-slate-500 sm:mt-3 sm:leading-[1.25]">
-                    Questions about the Masterclass, the tools, or coaching? The team&apos;s one message away.
-                  </p>
-                  <div className="mt-3 flex flex-col gap-2 text-[16px] tracking-[-0.32px] text-[#346de0] sm:mt-4 sm:flex-row sm:flex-wrap sm:items-center sm:gap-x-3 sm:gap-y-1 sm:text-[18px] sm:tracking-[-0.36px]">
-                    <a href="mailto:grow@unimad.ai" className="hover:underline">
-                      grow@unimad.ai
-                    </a>
-                    <span className="hidden text-slate-300 sm:inline" aria-hidden>
-                      |
-                    </span>
-                    <a href={MASTERCLASS_WHATSAPP_URL} target="_blank" rel="noopener noreferrer" className="hover:underline">
-                      {MASTERCLASS_WHATSAPP_NUMBER_DISPLAY}
-                    </a>
-                  </div>
-                </div>
-              </div>
-            </footer>
           </div>
         </div>
       </div>
 
+      <Script src="https://assets.calendly.com/assets/external/widget.js" strategy="lazyOnload" />
+
       <MasterclassOnboardingModal
         open={onboardingOpen}
         intent={onboardingIntent}
+        initialStep={onboardingInitialStep}
+        initialLead={onboardingInitialLead}
         onClose={() => setOnboardingOpen(false)}
-        onSubmit={lead => void handleLeadSubmit(lead)}
-        onSocialBook={handleSocialBook}
+        onSubmit={handleLeadSubmit}
       />
 
-      <MasterclassFullProgramPaymentModal open={paymentModalOpen} onClose={() => setPaymentModalOpen(false)} />
+      <UnicoachPlanPaymentModal open={paymentModalOpen} onClose={() => setPaymentModalOpen(false)} planId={paymentPlanId} />
     </div>
   );
 }

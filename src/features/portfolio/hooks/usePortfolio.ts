@@ -1,4 +1,5 @@
 import { useEffect, useRef } from "react";
+import { coachActAsQueryScope, useCoachActAsSession } from "@/contexts/CoachActAsContext";
 import { mapBackendPortfolioToFrontend } from "@/features/portfolio/api/mappers";
 import { fetchPortfolioContent } from "@/features/portfolio/server-actions/portfolio-actions";
 import { usePortfolioStore } from "@/features/portfolio/store/usePortfolioStore";
@@ -8,13 +9,18 @@ import { useQuery } from "@tanstack/react-query";
 
 export const portfolioQueryKey = ["portfolio"] as const;
 
+export function portfolioQueryKeyFor(session: ReturnType<typeof useCoachActAsSession>) {
+  return [...portfolioQueryKey, ...coachActAsQueryScope(session)] as const;
+}
+
 export const portfolioByIdQueryKey = (id: string) => ["portfolio", id] as const;
 
 export function usePortfolio() {
+  const actAs = useCoachActAsSession();
   const lastHydratedSnapshotRef = useRef<string>("");
 
   const query = useQuery({
-    queryKey: portfolioQueryKey,
+    queryKey: portfolioQueryKeyFor(actAs),
     queryFn: async (): Promise<PortfolioData | null> => {
       const response = await fetchPortfolioContent();
 

@@ -1,8 +1,10 @@
 "use server";
 
+import { authedFetch } from "@/lib/authed-fetch";
 import { cookies } from "next/headers";
 import type {
   JourneyState,
+  JourneyTargetProfile,
   UnicoachCommentsResponse,
   UnicoachInitResponse,
   UnicoachProfileInfo,
@@ -25,6 +27,7 @@ function looksLikeJwt(value: string): boolean {
 }
 
 async function getAuth(): Promise<AuthResult> {
+  const { cookies } = await import("next/headers");
   const cookieStore = await cookies();
   const cookieToken = cookieStore.get("_ut")?.value ?? cookieStore.get("__Host-ut")?.value;
   if (!cookieToken) {
@@ -58,20 +61,6 @@ function getAuthCookieBaseOptions(): {
   };
 }
 
-async function authedFetch(path: string, options: RequestInit = {}): Promise<Response> {
-  const backendUrl = getBackendUrl();
-  const { token, scheme } = await getAuth();
-  return fetch(`${backendUrl}${path}`, {
-    ...options,
-    headers: {
-      "Content-Type": "application/json",
-      Authorization: `${scheme} ${token}`,
-      ...(options.headers as Record<string, string> | undefined),
-    },
-    cache: "no-store",
-  });
-}
-
 export async function postUnicoachInit(): Promise<UnicoachInitResponse> {
   const cookieStore = await cookies();
   const ct = cookieStore.get("_ct")?.value;
@@ -92,13 +81,17 @@ export async function updateUnicoachStudentMeta(payload: {
   program_start_date?: string | null;
   closed_by?: string | null;
   conversion_mode?: string | null;
-}): Promise<{ student_meta?: UnicoachStudentMeta }> {
+  linkedin_url?: string | null;
+  location?: string | null;
+}): Promise<{ student_meta?: UnicoachStudentMeta; journey_target_profile?: Partial<JourneyTargetProfile> }> {
   const body: Record<string, unknown> = {
     user_id: payload.userId,
   };
   if ("program_start_date" in payload) body.program_start_date = payload.program_start_date;
   if ("closed_by" in payload) body.closed_by = payload.closed_by;
   if ("conversion_mode" in payload) body.conversion_mode = payload.conversion_mode;
+  if ("linkedin_url" in payload) body.linkedin_url = payload.linkedin_url;
+  if ("location" in payload) body.location = payload.location;
   const res = await authedFetch("/api/unicoach/student-meta/", {
     method: "POST",
     body: JSON.stringify(body),
@@ -107,7 +100,7 @@ export async function updateUnicoachStudentMeta(payload: {
   if (!res.ok) {
     throw new Error((data as { error?: string })?.error ?? "Failed to update student meta");
   }
-  return data as { student_meta?: UnicoachStudentMeta };
+  return data as { student_meta?: UnicoachStudentMeta; journey_target_profile?: Partial<JourneyTargetProfile> };
 }
 
 export async function fetchUnicoachJourneyState(targetUserId?: string | null): Promise<JourneyState> {
@@ -251,6 +244,30 @@ export async function addUnicoachComment(payload: {
   return data as { message?: string };
 }
 
+export async function deleteUnicoachComment(payload: {
+  sectionName: string;
+  commentId: number;
+  userId?: string | null;
+}): Promise<{ message?: string }> {
+  const body: Record<string, unknown> = {
+    action: "delete",
+    section_name: payload.sectionName,
+    comment_id: payload.commentId,
+  };
+  if (payload.userId) {
+    body.user_id = payload.userId;
+  }
+  const res = await authedFetch("/api/unicoach/manage-comments", {
+    method: "POST",
+    body: JSON.stringify(body),
+  });
+  const data = await res.json().catch(() => ({}));
+  if (!res.ok) {
+    throw new Error((data as { error?: string })?.error ?? "Failed to delete message");
+  }
+  return data as { message?: string };
+}
+
 export async function markUnicoachMessagesRead(payload: { sectionName: string; userId?: string | null }): Promise<void> {
   const body: Record<string, unknown> = {
     section_name: payload.sectionName,
@@ -266,32 +283,6 @@ export async function markUnicoachMessagesRead(payload: { sectionName: string; u
   if (!res.ok) {
     throw new Error((data as { error?: string })?.error ?? "Failed to mark messages read");
   }
-}
-
-export async function manageUnicoachTodos(
-  payload: Record<string, unknown>,
-  options: { targetUserId?: string | null } = {}
-): Promise<unknown> {
-  const todoId = payload.action === "update" || payload.action === "delete" ? (payload.todo_id as string | undefined) : null;
-  const q = new URLSearchParams();
-  if (todoId) {
-    q.set("todo_id", todoId);
-  }
-  const suffix = q.toString() ? `?${q.toString()}` : "";
-  const body: Record<string, unknown> = { ...payload };
-  const tid = options.targetUserId;
-  if (tid) {
-    body.user_id = tid;
-  }
-  const res = await authedFetch(`/api/unicoach/manage-todos${suffix}`, {
-    method: "POST",
-    body: JSON.stringify(body),
-  });
-  const data = await res.json().catch(() => ({}));
-  if (!res.ok) {
-    throw new Error((data as { error?: string })?.error ?? "Failed to update todos");
-  }
-  return data;
 }
 
 export async function fetchUnicoachStudentsByStage(): Promise<UnicoachStudentsByStage> {
@@ -364,13 +355,18 @@ export async function switchUnicoachUser(userEmail: string): Promise<void> {
 
 export async function createUnicoachOrder(
   discountCode: string | null,
-  options: { isRemainingPartialPayment?: boolean } = {}
+  options: { isRemainingPartialPayment?: boolean; planId?: string } = {}
 ): Promise<{ id: string; amount: number; currency: string }> {
   const body: Record<string, unknown> = {};
   if (options.isRemainingPartialPayment) {
     body.is_remaining_partial_payment = true;
-  } else if (discountCode?.trim()) {
-    body.discount_code = discountCode.trim();
+  } else {
+    if (options.planId) {
+      body.plan_id = options.planId;
+    }
+    if (discountCode?.trim()) {
+      body.discount_code = discountCode.trim();
+    }
   }
   const res = await authedFetch("/api/create-unicoach-order/", {
     method: "POST",
@@ -443,64 +439,4 @@ export async function fetchUserDataForPaymentPrefill(): Promise<{
     email: d.email,
     fullName: d.fullName ?? d.name,
   };
-}
-
-export type UnicoachModuleData = {
-  niche?: {
-    education?: string[][];
-    experiences?: Array<string[] | { company?: string; enjoyment?: string }>;
-    question_answers?: Record<string, string>;
-    niche_analysis?: {
-      ideal_role?: string;
-      roles?: Array<{ role?: string; reason?: string }>;
-    };
-  };
-};
-
-export async function fetchUnicoachStudentModuleData(userId?: string | null): Promise<UnicoachModuleData> {
-  const path =
-    userId != null && String(userId).length > 0
-      ? `/api/unicoach/student-data?user_id=${encodeURIComponent(String(userId))}`
-      : "/api/unicoach/student-data";
-  const res = await authedFetch(path, { method: "GET" });
-  const data = await res.json().catch(() => ({}));
-  if (!res.ok) {
-    throw new Error((data as { error?: string })?.error ?? "Failed to fetch student module data");
-  }
-  const usersData = (data as { users_data?: UnicoachModuleData }).users_data ?? {};
-  return usersData;
-}
-
-export async function updateUnicoachModuleData(payload: {
-  mode: "education" | "experiences" | "question_answers";
-  data: unknown;
-  userId?: string | null;
-}): Promise<UnicoachModuleData> {
-  const body: Record<string, unknown> = { mode: payload.mode, data: payload.data };
-  if (payload.userId) body.user_id = payload.userId;
-  const res = await authedFetch("/api/unicoach/update-user-data", {
-    method: "POST",
-    body: JSON.stringify(body),
-  });
-  const data = await res.json().catch(() => ({}));
-  if (!res.ok) {
-    throw new Error((data as { error?: string })?.error ?? "Failed to update module data");
-  }
-  return ((data as { users_data?: UnicoachModuleData }).users_data ?? {}) as UnicoachModuleData;
-}
-
-export async function generateUnicoachNiche(
-  userId?: string | null
-): Promise<{ niche?: UnicoachModuleData["niche"] extends infer N ? N : unknown }> {
-  const body: Record<string, unknown> = {};
-  if (userId) body.user_id = userId;
-  const res = await authedFetch("/api/unicoach/generate-niche", {
-    method: "POST",
-    body: JSON.stringify(body),
-  });
-  const data = await res.json().catch(() => ({}));
-  if (!res.ok) {
-    throw new Error((data as { error?: string })?.error ?? "Failed to generate niche");
-  }
-  return data as { niche?: UnicoachModuleData["niche"] };
 }

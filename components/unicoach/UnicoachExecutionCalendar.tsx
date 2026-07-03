@@ -1,11 +1,10 @@
 "use client";
 
-import { useCallback, useMemo, useState } from "react";
-import { executionItemsForStage, type ExecutionDailyItemDef } from "@/constants/unicoach-execution-daily";
-import { postExecutionDaily } from "@/features/unicoach/server-actions/unicoach-actions";
-import type { DailyExecutionDayEntry, DailyExecutionItemKey, ExecutionTracker } from "@/features/unicoach/types";
-import { countTasksWithProgress, getCount, normalizeDayEntry } from "@/features/unicoach/utils/execution-daily-log";
-import { useMutation, useQueryClient } from "@tanstack/react-query";
+import { useMemo, useState } from "react";
+import type { ExecutionDailyItemDef } from "@/constants/unicoach-execution-daily";
+import { useExecutionDailyLog } from "@/features/unicoach/hooks/use-execution-daily-log";
+import type { DailyExecutionItemKey } from "@/features/unicoach/types";
+import { getCount, monthHabitColorClass, scoreDayHabits } from "@/features/unicoach/utils/execution-daily-log";
 import { ChevronLeft, ChevronRight, Minus, Plus } from "lucide-react";
 
 function toDateKey(d: Date): string {
@@ -15,22 +14,13 @@ function toDateKey(d: Date): string {
   return `${y}-${m}-${day}`;
 }
 
-function parseDateKey(key: string): Date {
-  return new Date(`${key}T12:00:00`);
-}
-
-function scoreColor(ratio: number): string {
-  if (ratio >= 1) return "bg-emerald-500 text-white";
-  if (ratio >= 0.6) return "bg-lime-400 text-slate-900";
-  if (ratio >= 0.35) return "bg-amber-400 text-slate-900";
-  return "bg-red-300 text-slate-900";
-}
-
-function ProgressDot({ done, total, ratio }: { done: number; total: number; ratio: number }) {
-  if (done === 0) return null;
+function MonthHabitDot({ atTarget }: { atTarget: number }) {
+  if (atTarget <= 0) return null;
   return (
-    <span className={`mt-0.5 flex h-6 w-6 items-center justify-center rounded-full text-[9px] font-semibold ${scoreColor(ratio)}`}>
-      {done}/{total}
+    <span
+      className={`mt-0.5 flex h-6 w-6 items-center justify-center rounded-full text-[9px] font-bold tabular-nums ${monthHabitColorClass(atTarget)}`}
+    >
+      {atTarget}
     </span>
   );
 }
@@ -39,116 +29,61 @@ function CounterControls({
   count,
   target,
   readOnly,
-  pending,
   onChange,
+  compact,
 }: {
   count: number;
   target: number;
   readOnly: boolean;
-  pending: boolean;
   onChange: (next: number) => void;
+  compact?: boolean;
 }) {
+  const btnClass =
+    "flex h-6 w-6 shrink-0 items-center justify-center rounded-full border border-slate-200 bg-white text-slate-600 hover:bg-slate-50 disabled:opacity-40 dark:border-slate-600 dark:bg-slate-800 dark:hover:bg-slate-700";
+
   return (
-    <div className="flex items-center gap-1">
+    <div className={`flex items-center gap-1 ${compact ? "w-full justify-between" : ""}`}>
       <button
         type="button"
-        disabled={readOnly || pending || count <= 0}
+        disabled={readOnly || count <= 0}
         onClick={() => onChange(Math.max(0, count - 1))}
-        className="rounded-md border border-slate-200 p-0.5 text-slate-600 hover:bg-slate-100 disabled:opacity-40 dark:border-slate-600 dark:hover:bg-slate-800"
+        className={btnClass}
         aria-label="Decrease"
       >
-        <Minus size={12} />
+        <Minus size={11} />
       </button>
-      <span className="min-w-[2.75rem] text-center text-[11px] font-semibold tabular-nums text-slate-800 dark:text-slate-200">
+      <span className="text-center text-[11px] font-semibold tabular-nums text-slate-800 dark:text-slate-200">
         {count}/{target}
       </span>
       <button
         type="button"
-        disabled={readOnly || pending || count >= target}
-        onClick={() => onChange(Math.min(target, count + 1))}
-        className="rounded-md border border-slate-200 p-0.5 text-slate-600 hover:bg-slate-100 disabled:opacity-40 dark:border-slate-600 dark:hover:bg-slate-800"
+        disabled={readOnly}
+        onClick={() => onChange(Math.min(999, count + 1))}
+        className={btnClass}
         aria-label="Increase"
       >
-        <Plus size={12} />
+        <Plus size={11} />
       </button>
     </div>
   );
 }
 
-type ViewMode = "month" | "week" | "day";
-
 type Props = {
-  tracker?: ExecutionTracker | null;
-  includeStage6Items?: boolean;
+  items: ExecutionDailyItemDef[];
   journeyUserId?: string | null;
   readOnly?: boolean;
+  mode: "week" | "month";
   selectedDate?: string;
-  onSelectedDateChange?: (dateKey: string) => void;
+  onDateSelect: (dateKey: string) => void;
 };
 
-export const UnicoachExecutionCalendar = ({
-  tracker,
-  includeStage6Items = false,
-  journeyUserId,
-  readOnly = false,
-  selectedDate: selectedDateProp,
-  onSelectedDateChange,
-}: Props) => {
-  const queryClient = useQueryClient();
-  const [view, setView] = useState<ViewMode>("month");
+export const UnicoachExecutionCalendar = ({ items, journeyUserId, readOnly = false, mode, selectedDate, onDateSelect }: Props) => {
   const [cursor, setCursor] = useState(() => new Date());
-  const [selectedDateInternal, setSelectedDateInternal] = useState(() => toDateKey(new Date()));
   const [dragTask, setDragTask] = useState<DailyExecutionItemKey | null>(null);
 
-  const selectedDate = selectedDateProp ?? selectedDateInternal;
-  const setSelectedDate = (key: string) => {
-    if (onSelectedDateChange) onSelectedDateChange(key);
-    else setSelectedDateInternal(key);
-  };
+  const { getEntry, setCount, addTaskToDay } = useExecutionDailyLog(journeyUserId, readOnly);
 
-  const items = useMemo(() => executionItemsForStage(includeStage6Items), [includeStage6Items]);
-  const itemKeys = useMemo(() => items.map(i => i.key), [items]);
   const itemByKey = useMemo(() => new Map(items.map(i => [i.key, i])), [items]);
-
-  const dailyLog = tracker?.daily_log ?? {};
-
-  const getEntry = useCallback((dateKey: string) => normalizeDayEntry(dailyLog[dateKey]), [dailyLog]);
-
-  const mutation = useMutation({
-    mutationFn: (payload: { date: string; entry: DailyExecutionDayEntry }) =>
-      postExecutionDaily({
-        date: payload.date,
-        entry: payload.entry,
-        user_id: journeyUserId ?? undefined,
-      }),
-    onSuccess: () => {
-      void queryClient.invalidateQueries({ queryKey: ["unicoach", "journey-state"] });
-    },
-  });
-
-  const persistEntry = (dateKey: string, entry: DailyExecutionDayEntry) => {
-    if (readOnly || mutation.isPending) return;
-    mutation.mutate({ date: dateKey, entry });
-  };
-
-  const setCount = (dateKey: string, taskKey: DailyExecutionItemKey, count: number) => {
-    const entry = getEntry(dateKey);
-    const tasks = entry.tasks ?? [];
-    const nextTasks = tasks.includes(taskKey) ? tasks : [...tasks, taskKey];
-    persistEntry(dateKey, {
-      tasks: nextTasks,
-      counts: { ...entry.counts, [taskKey]: count },
-    });
-  };
-
-  const addTaskToDay = (dateKey: string, taskKey: DailyExecutionItemKey) => {
-    const entry = getEntry(dateKey);
-    if (entry.tasks?.includes(taskKey)) return;
-    persistEntry(dateKey, {
-      tasks: [...(entry.tasks ?? []), taskKey],
-      counts: { ...entry.counts, [taskKey]: entry.counts?.[taskKey] ?? 0 },
-    });
-  };
 
   const monthDays = useMemo(() => {
     const year = cursor.getFullYear();
@@ -163,107 +98,53 @@ export const UnicoachExecutionCalendar = ({
   }, [cursor]);
 
   const weekDays = useMemo(() => {
-    const anchor = view === "day" ? parseDateKey(selectedDate) : cursor;
-    const day = anchor.getDay();
-    const start = new Date(anchor);
-    start.setDate(anchor.getDate() - day);
+    const day = cursor.getDay();
+    const start = new Date(cursor);
+    start.setDate(cursor.getDate() - day);
     return Array.from({ length: 7 }, (_, i) => {
       const x = new Date(start);
       x.setDate(start.getDate() + i);
       return x;
     });
-  }, [cursor, view, selectedDate]);
-
-  const dayScore = useCallback(
-    (dateKey: string) => {
-      const entry = getEntry(dateKey);
-      const { done, total } = countTasksWithProgress(entry, itemKeys);
-      return { done, total, ratio: total ? done / total : 0 };
-    },
-    [getEntry, itemKeys]
-  );
+  }, [cursor]);
 
   const navLabel = useMemo(() => {
-    if (view === "day") {
-      return parseDateKey(selectedDate).toLocaleDateString(undefined, {
-        weekday: "short",
-        month: "long",
-        day: "numeric",
-        year: "numeric",
-      });
-    }
-    if (view === "week") {
+    if (mode === "week") {
       const a = weekDays[0];
       const b = weekDays[6];
       const fmt = (d: Date) => d.toLocaleDateString(undefined, { month: "short", day: "numeric" });
       return `${fmt(a)} – ${fmt(b)}`;
     }
     return cursor.toLocaleDateString(undefined, { month: "long", year: "numeric" });
-  }, [view, cursor, selectedDate, weekDays]);
+  }, [mode, cursor, weekDays]);
 
   const stepNav = (delta: number) => {
-    if (view === "month") {
-      const n = new Date(cursor);
-      n.setMonth(n.getMonth() + delta);
-      setCursor(n);
-      return;
-    }
-    if (view === "week") {
-      const n = new Date(cursor);
-      n.setDate(n.getDate() + delta * 7);
-      setCursor(n);
-      return;
-    }
-    const d = parseDateKey(selectedDate);
-    d.setDate(d.getDate() + delta);
-    const key = toDateKey(d);
-    setSelectedDate(key);
-    setCursor(d);
+    const n = new Date(cursor);
+    if (mode === "month") n.setMonth(n.getMonth() + delta);
+    else n.setDate(n.getDate() + delta * 7);
+    setCursor(n);
   };
 
-  const renderTaskRow = (dateKey: string, def: ExecutionDailyItemDef, compact?: boolean) => {
+  const renderCompactTask = (dateKey: string, def: ExecutionDailyItemDef) => {
     const entry = getEntry(dateKey);
     const count = getCount(entry, def.key);
+    const atTarget = count >= def.dailyTarget;
+
     return (
       <div
         key={def.key}
-        className={`rounded-lg border border-slate-200 bg-white px-2 py-2 dark:border-slate-700 dark:bg-slate-900/40 ${compact ? "text-[11px]" : ""}`}
+        className={`rounded-lg border px-2 py-2 dark:bg-slate-900/40 ${
+          atTarget ? "border-emerald-200/80 bg-emerald-50/40 dark:border-emerald-900/40" : "border-slate-200 bg-white dark:border-slate-700"
+        }`}
       >
-        <div className="flex items-center justify-between gap-2">
-          <span className="min-w-0 flex-1 font-medium text-slate-800 dark:text-slate-200">{compact ? def.shortLabel : def.label}</span>
-          <CounterControls
-            count={count}
-            target={def.dailyTarget}
-            readOnly={readOnly}
-            pending={mutation.isPending}
-            onChange={n => setCount(dateKey, def.key, n)}
-          />
-        </div>
+        <p className="mb-1.5 text-[11px] font-semibold leading-tight text-slate-800 dark:text-slate-100">{def.shortLabel}</p>
+        <CounterControls count={count} target={def.dailyTarget} readOnly={readOnly} onChange={n => setCount(dateKey, def.key, n)} compact />
       </div>
     );
   };
 
   return (
-    <div className="space-y-4">
-      <div className="flex items-center justify-between gap-2">
-        <p className="text-sm font-medium text-slate-900 dark:text-white">Daily execution calendar</p>
-        <div className="flex overflow-hidden rounded-lg border border-slate-200 text-[10px] dark:border-slate-700">
-          {(["month", "week", "day"] as ViewMode[]).map(v => (
-            <button
-              key={v}
-              type="button"
-              onClick={() => {
-                setView(v);
-                if (v === "day") setCursor(parseDateKey(selectedDate));
-              }}
-              className={`px-2 py-1 capitalize ${view === v ? "bg-brand-600 text-white" : "text-slate-600 dark:text-slate-400"}`}
-            >
-              {v}
-            </button>
-          ))}
-        </div>
-      </div>
-
+    <div className="space-y-3">
       <div className="flex items-center justify-between">
         <button
           type="button"
@@ -284,7 +165,7 @@ export const UnicoachExecutionCalendar = ({
         </button>
       </div>
 
-      {view === "month" ? (
+      {mode === "month" ? (
         <div className="overflow-x-auto">
           <div className="mb-1 grid min-w-[280px] grid-cols-7 gap-1 text-center text-[10px] text-slate-500">
             {["Su", "Mo", "Tu", "We", "Th", "Fr", "Sa"].map(d => (
@@ -295,17 +176,13 @@ export const UnicoachExecutionCalendar = ({
             {monthDays.map((d, i) => {
               if (!d) return <div key={`pad-${i}`} className="aspect-square" />;
               const key = toDateKey(d);
-              const { done, total, ratio } = dayScore(key);
+              const { atTarget } = scoreDayHabits(getEntry(key), items, key);
               const isSelected = key === selectedDate;
               return (
                 <button
                   key={key}
                   type="button"
-                  onClick={() => {
-                    setSelectedDate(key);
-                    setCursor(d);
-                    setView("day");
-                  }}
+                  onClick={() => onDateSelect(key)}
                   className={`flex aspect-square flex-col items-center justify-center rounded-lg border text-[10px] transition-colors ${
                     isSelected
                       ? "border-brand-500 ring-1 ring-brand-500"
@@ -313,27 +190,43 @@ export const UnicoachExecutionCalendar = ({
                   }`}
                 >
                   <span className="text-slate-600 dark:text-slate-400">{d.getDate()}</span>
-                  <ProgressDot done={done} total={total} ratio={ratio} />
+                  <MonthHabitDot atTarget={atTarget} />
                 </button>
               );
             })}
           </div>
+          <div className="mt-2 flex flex-wrap gap-2 text-[10px] text-slate-500 dark:text-slate-400">
+            <span className="inline-flex items-center gap-1">
+              <span className="h-3 w-3 rounded-full bg-red-500" /> 1 habit
+            </span>
+            <span className="inline-flex items-center gap-1">
+              <span className="h-3 w-3 rounded-full bg-orange-500" /> 2
+            </span>
+            <span className="inline-flex items-center gap-1">
+              <span className="h-3 w-3 rounded-full bg-yellow-400" /> 3
+            </span>
+            <span className="inline-flex items-center gap-1">
+              <span className="h-3 w-3 rounded-full bg-blue-500" /> 4+
+            </span>
+          </div>
         </div>
       ) : null}
 
-      {view === "week" ? (
+      {mode === "week" ? (
         <div className="space-y-3">
-          <div className="flex gap-2 overflow-x-auto pb-1 min-h-[220px]">
+          <div className="flex gap-2 overflow-x-auto pb-1">
             {weekDays.map(d => {
               const dateKey = toDateKey(d);
               const entry = getEntry(dateKey);
               const activeTasks = entry.tasks ?? [];
-              const { done, total, ratio } = dayScore(dateKey);
+              const { atTarget } = scoreDayHabits(entry, items, dateKey);
+              const isSelected = dateKey === selectedDate;
+
               return (
                 <div
                   key={dateKey}
-                  className={`flex w-[148px] flex-shrink-0 flex-col rounded-xl border bg-slate-50/80 dark:bg-slate-900/30 ${
-                    dateKey === selectedDate ? "border-brand-500 ring-1 ring-brand-500" : "border-slate-200 dark:border-slate-700"
+                  className={`flex w-[156px] flex-shrink-0 flex-col rounded-xl border bg-slate-50/80 dark:bg-slate-900/30 ${
+                    isSelected ? "border-brand-500 ring-1 ring-brand-500" : "border-slate-200 dark:border-slate-700"
                   }`}
                   onDragOver={e => {
                     e.preventDefault();
@@ -348,23 +241,29 @@ export const UnicoachExecutionCalendar = ({
                 >
                   <button
                     type="button"
-                    onClick={() => setSelectedDate(dateKey)}
+                    onClick={() => onDateSelect(dateKey)}
                     className="border-b border-slate-200 px-2 py-2 text-left dark:border-slate-700"
                   >
                     <p className="text-[10px] text-slate-500">{d.toLocaleDateString(undefined, { weekday: "short" })}</p>
                     <div className="flex items-center justify-between gap-1">
                       <span className="text-sm font-semibold text-slate-900 dark:text-white">{d.getDate()}</span>
-                      <ProgressDot done={done} total={total} ratio={ratio} />
+                      {atTarget > 0 ? (
+                        <span
+                          className={`flex h-5 w-5 items-center justify-center rounded-full text-[8px] font-bold ${monthHabitColorClass(atTarget)}`}
+                        >
+                          {atTarget}
+                        </span>
+                      ) : null}
                     </div>
                   </button>
-                  <div className="flex flex-1 flex-col gap-1.5 p-2 min-h-[140px]">
+                  <div className="flex min-h-[148px] flex-1 flex-col gap-1.5 p-2">
                     {activeTasks.length === 0 ? (
-                      <p className="flex flex-1 items-center justify-center text-center text-[10px] text-slate-400 px-1">Drop tasks here</p>
+                      <p className="flex flex-1 items-center justify-center px-1 text-center text-[10px] text-slate-400">Drop tasks here</p>
                     ) : (
                       activeTasks.map(taskKey => {
                         const def = itemByKey.get(taskKey);
                         if (!def) return null;
-                        return renderTaskRow(dateKey, def, true);
+                        return renderCompactTask(dateKey, def);
                       })
                     )}
                   </div>
@@ -374,7 +273,7 @@ export const UnicoachExecutionCalendar = ({
           </div>
           {!readOnly ? (
             <div className="rounded-xl border border-dashed border-slate-300 bg-slate-50 p-3 dark:border-slate-600 dark:bg-slate-900/40">
-              <p className="mb-2 text-[11px] font-medium text-slate-600 dark:text-slate-400">Drag tasks onto a day</p>
+              <p className="mb-2 text-[11px] font-medium text-slate-600 dark:text-slate-400">Drag habits onto a day</p>
               <div className="flex flex-wrap gap-2">
                 {items.map(def => (
                   <div
@@ -393,13 +292,6 @@ export const UnicoachExecutionCalendar = ({
               </div>
             </div>
           ) : null}
-        </div>
-      ) : null}
-
-      {view === "day" ? (
-        <div className="space-y-2">
-          <p className="text-xs text-slate-500 dark:text-slate-400">Track counters for each activity today.</p>
-          {items.map(def => renderTaskRow(selectedDate, def))}
         </div>
       ) : null}
     </div>

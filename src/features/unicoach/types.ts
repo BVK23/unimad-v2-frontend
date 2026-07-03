@@ -10,12 +10,23 @@ export type UnicoachStudentMeta = {
   conversion_mode: string | null;
 };
 
+export type UnicoachSubscriptionSummary = {
+  program_label: string;
+  access_level: string;
+  plan_ids: string[];
+  modules: string[];
+  purchases: string[];
+  total_paid_gbp: number;
+  currency: string;
+};
+
 export type JourneyTargetProfile = {
   id: number;
   name: string;
   email: string;
   phone_number?: string | null;
   role?: string | null;
+  desired_roles?: string[] | null;
   linkedin_url?: string | null;
   city?: string | null;
   country?: string | null;
@@ -37,7 +48,7 @@ export type JourneyChecklistBucket = Record<
 export type JourneyChecklist = {
   schema_version?: number;
   tasks?: Record<string, JourneyChecklistBucket>;
-  gates?: { prepare_for_interview_at?: string | null };
+  gates?: { prepare_for_interview_at?: string | null; interview_ready_confirmed_at?: string | null };
   execution_tracker?: ExecutionTracker;
 } & Record<string, JourneyChecklistBucket | unknown>;
 
@@ -66,15 +77,20 @@ export type DailyExecutionDayEntry = {
 };
 
 export type JourneyFlags = {
+  call_1_completed?: boolean;
   portfolio_done?: boolean;
   show_coach_working_on_portfolio?: boolean;
   max_unlocked_stage?: string;
   booking_key?: string | null;
+  interview_ready_confirmed_at?: string | null;
+  interview_confirm_enabled?: boolean;
   prepare_for_interview_at?: string | null;
   prepare_for_interview_enabled?: boolean;
   prepare_for_interview_block_reason?: string | null;
   show_booking?: boolean;
   booking_block_reason?: string | null;
+  /** Module id where the book-next-call CTA should render (may differ from ux_stage). */
+  booking_stage_id?: string | null;
   has_interview_stage_application?: boolean;
 };
 
@@ -90,6 +106,8 @@ export type StageDefinitionPayload = {
   id: string;
   has_dashboard?: boolean;
   booking?: string | null;
+  /** Shown once below the checklist when a whole-module gate blocks edits (e.g. call-3). */
+  stage_gate_reason?: string | null;
   tasks_meta?: StageTaskMeta[];
 };
 
@@ -97,6 +115,9 @@ export type JourneyState = {
   ux_stage: string;
   max_unlocked_stage?: string;
   unicoach_access_level: UnicoachAccessLevel;
+  program_chosen?: string | null;
+  program_access_level?: string | null;
+  subscription_summary?: UnicoachSubscriptionSummary | null;
   journey_checklist: JourneyChecklist;
   stage_task_keys: Record<string, string[]>;
   stage_definitions?: Record<string, StageDefinitionPayload>;
@@ -119,6 +140,13 @@ export type AssignedStudent = {
   id: number;
   name: string;
   email: string;
+  phone_number?: string | null;
+  linkedin_url?: string | null;
+  program_start_date?: string | null;
+  ux_stage?: string | null;
+  program_label?: string | null;
+  program_chosen?: string | null;
+  program_access_level?: string | null;
   linkedin_profile_picture?: string | null;
   unimad_profile_picture?: string | null;
   google_profile_picture?: string | null;
@@ -147,18 +175,9 @@ export type UnicoachInitResponse = {
 export type UnicoachProfileInfo = {
   User: Record<string, { name?: string; profile_picture?: string | null }>;
   coaches: Record<string, { name?: string; profile_picture?: string | null; email?: string }>;
-  todos: UnicoachTodo[];
   calls: Record<string, unknown>;
   next_call_to_enable: unknown;
   pending_feedback_for_call?: unknown;
-};
-
-export type UnicoachTodo = {
-  id?: string;
-  title?: string;
-  description?: string;
-  isCompleted?: boolean;
-  section_name?: string;
 };
 
 export type UnicoachCommentRow = {

@@ -1,5 +1,7 @@
 "use server";
 
+import { COACH_ACT_AS_HEADER } from "@/constants/coach-act-as";
+import { authedFetch as libAuthedFetch, readCoachActAsSession } from "@/lib/authed-fetch";
 import { cookies } from "next/headers";
 import type { AtsScorePayload, CalculateAtsScoreResult, ResumeAtsCacheResult } from "../api/ats-types";
 
@@ -58,39 +60,24 @@ async function getAuth(): Promise<AuthResult> {
   return { token: cookieToken, scheme };
 }
 
-/**
- * Shared fetch wrapper that adds auth headers automatically.
- * Uses JSON by default – DO NOT use for FormData uploads.
- */
 async function authedFetch(path: string, options: RequestInit = {}): Promise<Response> {
-  const backendUrl = getBackendUrl();
-  const { token, scheme } = await getAuth();
-
-  return fetch(`${backendUrl}${path}`, {
-    ...options,
-    headers: {
-      "Content-Type": "application/json",
-      Authorization: `${scheme} ${token}`,
-      ...(options.headers as Record<string, string> | undefined),
-    },
-    cache: "no-store", // server actions should never cache
-  });
+  return libAuthedFetch(path, options);
 }
 
-/**
- * Fetch helper for multipart/form-data uploads.
- * Lets the runtime set the boundary – we only add Authorization.
- */
 async function authedFetchFormData(path: string, options: RequestInit & { body: FormData }): Promise<Response> {
   const backendUrl = getBackendUrl();
   const { token, scheme } = await getAuth();
-
+  const actAs = await readCoachActAsSession();
+  const headers: Record<string, string> = {
+    Authorization: `${scheme} ${token}`,
+    ...(options.headers as Record<string, string> | undefined),
+  };
+  if (actAs?.studentProfileId) {
+    headers[COACH_ACT_AS_HEADER] = actAs.studentProfileId;
+  }
   return fetch(`${backendUrl}${path}`, {
     ...options,
-    headers: {
-      Authorization: `${scheme} ${token}`,
-      ...(options.headers as Record<string, string> | undefined),
-    },
+    headers,
     cache: "no-store",
   });
 }

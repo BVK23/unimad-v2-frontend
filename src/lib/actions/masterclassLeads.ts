@@ -1,3 +1,7 @@
+"use server";
+
+import { cookies } from "next/headers";
+
 const BACKEND_URL = process.env.NEXT_PUBLIC_BACKEND_URL;
 
 async function parseResponse<T>(response: Response, fallback: string): Promise<T> {
@@ -8,13 +12,28 @@ async function parseResponse<T>(response: Response, fallback: string): Promise<T
   return data;
 }
 
+export type MasterclassDiscoveryPayload = {
+  currentStatus?: string;
+  currentStatusOther?: string;
+  country?: string;
+  countryOther?: string;
+  targetRoles?: string[];
+  targetRoleOther?: string;
+  jobSearchStatus?: string[];
+  jobSearchOther?: string;
+  openToInvesting?: string;
+};
+
 export type MasterclassLeadPayload = {
-  name: string;
-  email: string;
+  name?: string;
+  email?: string;
   dial_code: string;
   phone: string;
   source: string;
   linkedin_url?: string;
+  stage?: "contact" | "complete";
+  discovery?: MasterclassDiscoveryPayload;
+  uid?: string;
 };
 
 export type MasterclassLeadResult = {
@@ -24,7 +43,36 @@ export type MasterclassLeadResult = {
   email?: string;
   source?: string;
   has_account?: boolean;
+  discovery_complete?: boolean;
+  qualification_status?: string | null;
+  has_contact_details?: boolean;
+  stage?: string;
+  created?: boolean;
+  source_upgraded?: boolean;
+  journey_started?: boolean;
 };
+
+export async function enrollAuthenticatedMasterclassMember(): Promise<MasterclassLeadResult> {
+  if (!BACKEND_URL) {
+    throw new Error("Backend URL is not configured.");
+  }
+
+  const cookieStore = await cookies();
+  const accessTokenCookie = cookieStore.get("_ut");
+  if (!accessTokenCookie?.value) {
+    throw new Error("Please sign in to continue.");
+  }
+
+  const response = await fetch(`${BACKEND_URL}/api/crm/masterclass-member-enroll/`, {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+      Authorization: `Bearer ${accessTokenCookie.value}`,
+    },
+  });
+
+  return parseResponse(response, "Unable to enroll in masterclass.");
+}
 
 export async function submitMasterclassLead(payload: MasterclassLeadPayload): Promise<MasterclassLeadResult> {
   if (!BACKEND_URL) {
@@ -38,6 +86,19 @@ export async function submitMasterclassLead(payload: MasterclassLeadPayload): Pr
   });
 
   return parseResponse(response, "Unable to save your details.");
+}
+
+export async function fetchMasterclassLead(uid: string): Promise<MasterclassLeadResult> {
+  if (!BACKEND_URL) {
+    throw new Error("Backend URL is not configured.");
+  }
+
+  const response = await fetch(`${BACKEND_URL}/api/crm/masterclass-leads/?uid=${encodeURIComponent(uid)}`, {
+    method: "GET",
+    cache: "no-store",
+  });
+
+  return parseResponse(response, "Unable to load your details.");
 }
 
 export async function masterclassLinkAction(uid: string, action: string): Promise<MasterclassLeadResult> {

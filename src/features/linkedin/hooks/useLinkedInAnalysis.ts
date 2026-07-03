@@ -1,8 +1,13 @@
+import { useCoachActAsSession, withCoachActAsScope } from "@/contexts/CoachActAsContext";
 import { analyzeLinkedInProfile, fetchLinkedInAnalysis } from "@/features/linkedin/server-actions/linkedin-analyzer-actions";
 import type { LinkedInAnalysisSnapshot, LinkedInAnalyzeResult } from "@/features/linkedin/types";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 
 export const linkedinAnalysisQueryKey = ["linkedin-analysis"] as const;
+
+export function linkedinAnalysisQueryKeyFor(session: ReturnType<typeof useCoachActAsSession>) {
+  return withCoachActAsScope(linkedinAnalysisQueryKey, session);
+}
 
 export class LinkedInAnalyzerClientError extends Error {
   code?: string;
@@ -15,8 +20,9 @@ export class LinkedInAnalyzerClientError extends Error {
 }
 
 export const useLinkedInAnalysis = (options?: { enabled?: boolean }) => {
+  const actAs = useCoachActAsSession();
   return useQuery({
-    queryKey: linkedinAnalysisQueryKey,
+    queryKey: linkedinAnalysisQueryKeyFor(actAs),
     queryFn: async (): Promise<LinkedInAnalysisSnapshot | null> => {
       const result = await fetchLinkedInAnalysis();
       if (!result.success) {

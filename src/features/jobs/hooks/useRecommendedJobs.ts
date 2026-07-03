@@ -1,14 +1,20 @@
+import { useCoachActAsSession, withCoachActAsScope } from "@/contexts/CoachActAsContext";
 import { useInfiniteQuery } from "@tanstack/react-query";
 import { getJobs } from "../server-actions/jobs-actions";
 import type { JobListResponse } from "../types";
 
 const RECOMMENDED_PAGE_SIZE = 20;
 
+export function recommendedJobsQueryKeyFor(session: ReturnType<typeof useCoachActAsSession>) {
+  return withCoachActAsScope(["recommendedJobs"] as const, session);
+}
+
 export function useRecommendedJobs(options: { enabled?: boolean } = {}) {
   const { enabled = true } = options;
+  const actAs = useCoachActAsSession();
 
   const query = useInfiniteQuery<JobListResponse>({
-    queryKey: ["recommendedJobs"],
+    queryKey: recommendedJobsQueryKeyFor(actAs),
     queryFn: async ({ pageParam }) => {
       return getJobs({
         recommended: 1,

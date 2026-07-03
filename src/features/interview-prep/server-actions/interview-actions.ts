@@ -1,6 +1,6 @@
 "use server";
 
-import { cookies } from "next/headers";
+import { authedFetch } from "@/lib/authed-fetch";
 import type {
   InterviewDetailResponse,
   InterviewPrepListItem,
@@ -10,40 +10,6 @@ import type {
   VoiceInterviewConfig,
   VoiceTranscriptEntry,
 } from "../types";
-
-function getBackendUrl(): string {
-  const url = process.env.NEXT_PUBLIC_BACKEND_URL;
-  if (!url) {
-    throw new Error("NEXT_PUBLIC_BACKEND_URL is not defined.");
-  }
-  return url.replace(/\/+$/, "");
-}
-
-function looksLikeJwt(value: string): boolean {
-  return /^ey[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+\.[A-Za-z0-9_-]*$/.test(value.trim());
-}
-
-async function getAuth(): Promise<{ token: string; scheme: "Token" | "Bearer" }> {
-  const cookieStore = await cookies();
-  const cookieToken = cookieStore.get("_ut")?.value ?? cookieStore.get("__Host-ut")?.value;
-  if (!cookieToken) {
-    throw new Error("Unauthorized");
-  }
-  return { token: cookieToken, scheme: looksLikeJwt(cookieToken) ? "Bearer" : "Token" };
-}
-
-async function authedFetch(path: string, options: RequestInit = {}): Promise<Response> {
-  const { token, scheme } = await getAuth();
-  return fetch(`${getBackendUrl()}${path}`, {
-    ...options,
-    headers: {
-      "Content-Type": "application/json",
-      Authorization: `${scheme} ${token}`,
-      ...(options.headers as Record<string, string> | undefined),
-    },
-    cache: "no-store",
-  });
-}
 
 export async function fetchInterviewSessions(): Promise<InterviewPrepListItem[]> {
   const res = await authedFetch("/api/interviews/");

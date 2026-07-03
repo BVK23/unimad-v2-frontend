@@ -43,15 +43,22 @@ export type PublicUnicoachOrder = {
 export async function publicCreateUnicoachOrder({
   discountCode = null,
   isRemainingPartialPayment = false,
+  planId = null,
 }: {
   discountCode?: string | null;
   isRemainingPartialPayment?: boolean;
+  planId?: string | null;
 } = {}): Promise<PublicUnicoachOrder> {
   const body: Record<string, unknown> = {};
   if (isRemainingPartialPayment) {
     body.is_remaining_partial_payment = true;
-  } else if (discountCode) {
-    body.discount_code = discountCode;
+  } else {
+    if (planId) {
+      body.plan_id = planId;
+    }
+    if (discountCode) {
+      body.discount_code = discountCode;
+    }
   }
 
   const response = await fetch(`${getBackendUrl()}/api/public/create-unicoach-order/`, {

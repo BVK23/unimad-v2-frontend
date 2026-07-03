@@ -12,6 +12,8 @@ type UnicoachStageTasksCardProps = {
   checklistMutationPending: boolean;
   onToggleTask: (stageId: string, taskLabel: string) => void;
   showBookingCta: boolean;
+  showBookingBlock?: boolean;
+  bookingActionLabel?: string;
   showAdvanceCta: boolean;
   advanceLabel: string;
   bookingBlockReason?: string | null;
@@ -30,6 +32,9 @@ type UnicoachStageTasksCardProps = {
   showStudentAwaitingCoach?: boolean;
   showPostCall3StudentCta?: boolean;
   showPostCall3CoachCta?: boolean;
+  showInterviewConfirmCta?: boolean;
+  onConfirmInterview?: () => void;
+  stageGateReason?: string | null;
 };
 
 export const UnicoachStageTasksCard = ({
@@ -40,6 +45,8 @@ export const UnicoachStageTasksCard = ({
   checklistMutationPending,
   onToggleTask,
   showBookingCta,
+  showBookingBlock = false,
+  bookingActionLabel,
   showAdvanceCta,
   advanceLabel,
   bookingBlockReason,
@@ -58,26 +65,30 @@ export const UnicoachStageTasksCard = ({
   showStudentAwaitingCoach = false,
   showPostCall3StudentCta = false,
   showPostCall3CoachCta = false,
+  showInterviewConfirmCta = false,
+  onConfirmInterview,
+  stageGateReason,
 }: UnicoachStageTasksCardProps) => {
   const canEditChecklist = !isCoachView && activeStage.id === serverUx && !checklistMutationPending;
+  const showStageActions = isCoachView || activeStage.id === serverUx || showBookingCta || showBookingBlock;
   const metaByLabel = new Map((tasksMeta ?? []).map(m => [m.label, m]));
 
   const studentBookingHint =
-    activeStage.id === "call-1-prep"
-      ? "After Call 1, Stage 2 will unlock."
+    activeStage.id === "call-1"
+      ? "Complete tasks and your Discovery call to unlock LinkedIn branding."
       : activeStage.id === "call-2"
-        ? "After Call 2, Stage 4 will unlock."
-        : activeStage.id === "complete"
-          ? "After Call 3, you will continue with the programme system."
+        ? "Complete tasks to book Application Strategy."
+        : activeStage.id === "call-4"
+          ? "Confirm your interview, then book your prep call."
           : null;
 
   return (
     <div className="space-y-3">
-      <p className="text-sm font-medium text-slate-900 dark:text-white leading-none">Stage tasks</p>
+      <p className="text-sm font-medium text-slate-900 dark:text-white leading-none">Task checklist</p>
       <p className="text-[11px] text-slate-500 dark:text-slate-400 mt-1">
         {isCoachView
           ? "View-only checklist for this student. Use the action below to mark call milestones."
-          : "Complete these to unlock booking or the next milestone for this stage."}
+          : "One-time milestones for this module."}
       </p>
 
       {!isCoachView && activeStage.id !== serverUx ? (
@@ -86,41 +97,47 @@ export const UnicoachStageTasksCard = ({
         </p>
       ) : null}
 
-      <div className="mt-4 space-y-3">
-        {activeStage.tasks.map(task => {
-          const taskId = `${activeStage.id}:${task}`;
-          const checked = completedTaskIds.includes(taskId);
-          const meta = metaByLabel.get(task);
-          const editable = canEditChecklist && (meta?.editable ?? true);
-          const disabledReason = meta?.disabled_reason;
-          return (
-            <div
-              key={task}
-              className={`flex items-start gap-3 text-sm rounded-xl px-1 py-0.5 ${editable ? "cursor-pointer" : "opacity-90"}`}
-              title={!editable && disabledReason ? disabledReason : undefined}
-            >
-              <input
-                type="checkbox"
-                checked={checked}
-                disabled={!editable}
-                readOnly={isCoachView}
-                onChange={() => onToggleTask(activeStage.id, task)}
-                className="h-4 w-4 min-h-4 min-w-4 shrink-0 rounded border-slate-300 text-brand-600 focus:ring-brand-500 mt-0.5 disabled:opacity-50"
-              />
-              <span
-                className={`leading-5 ${checked ? "text-slate-500 dark:text-slate-500 line-through" : "text-slate-700 dark:text-slate-300"}`}
+      {activeStage.id === serverUx || isCoachView || showBookingCta || showBookingBlock ? (
+        <div className="mt-4 space-y-3">
+          {activeStage.tasks.map(task => {
+            const taskId = `${activeStage.id}:${task}`;
+            const checked = completedTaskIds.includes(taskId);
+            const meta = metaByLabel.get(task);
+            const editable = canEditChecklist && (meta?.editable ?? true);
+            const disabledReason = meta?.disabled_reason;
+            const rowHint = !editable && disabledReason && !stageGateReason ? disabledReason : undefined;
+            return (
+              <div
+                key={task}
+                className={`flex items-start gap-3 text-sm rounded-xl px-1 py-0.5 ${editable ? "cursor-pointer" : "opacity-90"}`}
+                title={rowHint}
               >
-                {task}
-                {!editable && disabledReason && !isCoachView ? (
-                  <span className="mt-0.5 block text-[10px] text-slate-400 dark:text-slate-500">{disabledReason}</span>
-                ) : null}
-              </span>
-            </div>
-          );
-        })}
-      </div>
+                <input
+                  type="checkbox"
+                  checked={checked}
+                  disabled={!editable}
+                  readOnly={isCoachView}
+                  onChange={() => onToggleTask(activeStage.id, task)}
+                  className="h-4 w-4 min-h-4 min-w-4 shrink-0 rounded border-slate-300 text-brand-600 focus:ring-brand-500 mt-0.5 disabled:opacity-50"
+                />
+                <span
+                  className={`leading-5 ${checked ? "text-slate-500 dark:text-slate-500 line-through" : "text-slate-700 dark:text-slate-300"}`}
+                >
+                  {task}
+                  {rowHint && !isCoachView ? (
+                    <span className="mt-0.5 block text-[10px] text-slate-400 dark:text-slate-500">{rowHint}</span>
+                  ) : null}
+                </span>
+              </div>
+            );
+          })}
+          {!isCoachView && stageGateReason ? (
+            <p className="text-center text-[11px] text-slate-500 dark:text-slate-400 pt-1">{stageGateReason}</p>
+          ) : null}
+        </div>
+      ) : null}
 
-      {activeStage.id === serverUx || isCoachView ? (
+      {showStageActions ? (
         <div className="mt-3 space-y-2">
           {isCoachView && coachMilestone ? (
             <>
@@ -140,15 +157,25 @@ export const UnicoachStageTasksCard = ({
             </>
           ) : null}
 
+          {!isCoachView && showInterviewConfirmCta ? (
+            <button
+              type="button"
+              onClick={() => onConfirmInterview?.()}
+              className="w-full rounded-xl text-sm py-2.5 border border-brand-200 bg-brand-50 text-brand-800 hover:bg-brand-100 dark:border-brand-800 dark:bg-brand-950/40 dark:text-brand-100 transition-colors"
+            >
+              I have an interview — ready to prep
+            </button>
+          ) : null}
+
           {!isCoachView && showBookingCta ? (
             <button
               type="button"
               onClick={onOpenBooking}
               className="w-full rounded-xl text-sm py-2.5 bg-slate-900 hover:bg-slate-800 dark:bg-brand-600 dark:hover:bg-brand-700 text-white transition-colors"
             >
-              {activeStage.nextActionLabel}
+              {bookingActionLabel ?? activeStage.nextActionLabel}
             </button>
-          ) : !isCoachView && bookingBlockReason ? (
+          ) : !isCoachView && showBookingBlock && bookingBlockReason ? (
             <p className="text-center text-[11px] text-slate-500 dark:text-slate-400">{bookingBlockReason}</p>
           ) : null}
 

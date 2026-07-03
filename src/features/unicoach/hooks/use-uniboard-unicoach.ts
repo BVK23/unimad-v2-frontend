@@ -3,18 +3,19 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import {
   addUnicoachComment,
+  deleteUnicoachComment,
   fetchUnicoachComments,
   fetchUnicoachJourneyState,
   fetchUnicoachProfileInfo,
   fetchUnicoachStudentsByStage,
-  manageUnicoachTodos,
   markUnicoachMessagesRead,
   postJourneyAdvance,
   postJourneyChecklist,
   postUnicoachInit,
   updateUnicoachStudentCalls,
 } from "../server-actions/unicoach-actions";
-import type { JourneyState, UnicoachProfileInfo } from "../types";
+import type { JourneyState, UnicoachInitResponse, UnicoachProfileInfo } from "../types";
+import { parseCoachData } from "../types";
 
 export const qk = {
   init: ["unicoach", "init"] as const,
@@ -33,6 +34,8 @@ export const useUnicoachInit = () =>
     queryKey: qk.init,
     queryFn: () => postUnicoachInit(),
     staleTime: 60_000,
+    refetchInterval: 30_000,
+    refetchIntervalInBackground: false,
   });
 
 export const useUnicoachJourneyState = (enabled: boolean, targetUserId?: string | null) => {
@@ -68,6 +71,8 @@ export const useUnicoachComments = (sectionName: string | null | undefined, enab
       }),
     enabled: Boolean(enabled && sectionName),
     staleTime: 10_000,
+    refetchInterval: 30_000,
+    refetchIntervalInBackground: false,
   });
 };
 
@@ -77,6 +82,8 @@ export const useUnicoachStudentsByStage = (enabled: boolean) =>
     queryFn: () => fetchUnicoachStudentsByStage(),
     enabled,
     staleTime: 15_000,
+    refetchInterval: 30_000,
+    refetchIntervalInBackground: false,
   });
 
 export const useUpdateUnicoachStudentCallsMutation = () => {
@@ -139,13 +146,80 @@ export const useSendCoachMessageMutation = (sectionName: string | null | undefin
   });
 };
 
-export const useManageTodosMutation = (targetUserId?: string | null) => {
+export const useDeleteCoachMessageMutation = (sectionName: string | null | undefined, targetUserId?: string | null) => {
   const qc = useQueryClient();
   const tid = normalizeTargetId(targetUserId);
   return useMutation({
-    mutationFn: (payload: Record<string, unknown>) => manageUnicoachTodos(payload, { targetUserId: tid ?? undefined }),
+    mutationFn: (commentId: number) =>
+      deleteUnicoachComment({
+        sectionName: sectionName as string,
+        commentId,
+        userId: tid ?? undefined,
+      }),
     onSuccess: () => {
-      void qc.invalidateQueries({ queryKey: qk.profile(tid) });
+      void qc.invalidateQueries({ queryKey: qk.comments(tid, sectionName) });
+    },
+  });
+};
+
+export const useMarkCoachMessagesReadMutation = () => {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (payload: { sectionName: string; userId?: string | null }) =>
+      markUnicoachMessagesRead({
+        sectionName: payload.sectionName,
+        userId: payload.userId ?? undefined,
+      }),
+    onMutate: async variables => {
+      await qc.cancelQueries({ queryKey: qk.init });
+      const previousInit = qc.getQueryData<UnicoachInitResponse>(qk.init);
+      const targetUserId = variables.userId ? Number(variables.userId) : null;
+
+      qc.setQueryData<UnicoachInitResponse>(qk.init, old => {
+        if (!old) return old;
+
+        if (old.coach_data && targetUserId) {
+          const coach = parseCoachData(old);
+          if (!coach) return old;
+          return {
+            ...old,
+            coach_data: {
+              ...coach,
+              assigned_users: coach.assigned_users.map(user =>
+                user.id === targetUserId
+                  ? {
+                      ...user,
+                      unread_counts: user.unread_counts ? Object.fromEntries(Object.keys(user.unread_counts).map(k => [k, 0])) : {},
+                      has_unread: false,
+                    }
+                  : user
+              ),
+            },
+          };
+        }
+
+        if (old.user_unread_counts) {
+          return {
+            ...old,
+            user_unread_counts: Object.fromEntries(Object.keys(old.user_unread_counts).map(k => [k, 0])),
+          };
+        }
+
+        return old;
+      });
+
+      return { previousInit };
+    },
+    onError: (_err, _variables, context) => {
+      if (context?.previousInit) {
+        qc.setQueryData(qk.init, context.previousInit);
+      }
+    },
+    onSuccess: (_data, variables) => {
+      const tid = normalizeTargetId(variables.userId);
+      void qc.invalidateQueries({ queryKey: qk.init });
+      void qc.invalidateQueries({ queryKey: qk.studentsByStage });
+      void qc.invalidateQueries({ queryKey: qk.comments(tid, variables.sectionName) });
     },
   });
 };

@@ -1,4 +1,5 @@
 import { useEffect } from "react";
+import { coachActAsQueryScope, useCoachActAsSession } from "@/contexts/CoachActAsContext";
 import { useQuery } from "@tanstack/react-query";
 import type { ResumeData } from "../../../../types";
 import { mapBackendResumeToFrontend } from "../api/mappers";
@@ -7,9 +8,14 @@ import { useResumeStore } from "../store/useResumeStore";
 
 export const resumesListQueryKey = ["resumes"] as const;
 
+export function resumesListQueryKeyFor(session: ReturnType<typeof useCoachActAsSession>) {
+  return [...resumesListQueryKey, ...coachActAsQueryScope(session)] as const;
+}
+
 export function useResumesList() {
+  const actAs = useCoachActAsSession();
   const query = useQuery({
-    queryKey: resumesListQueryKey,
+    queryKey: resumesListQueryKeyFor(actAs),
     queryFn: async () => {
       const response = await fetchUserResumes();
 

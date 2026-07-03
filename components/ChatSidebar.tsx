@@ -265,6 +265,8 @@ import RefineActionCard from "./studio/RefineActionCard";
 interface ChatSidebarProps {
   incomingRequest?: UnibotIncomingRequest | null;
   onRequestHandled?: () => void;
+  /** Coach viewing student profile — history only, no send/delete/edit. */
+  coachActAsReadOnly?: boolean;
 }
 
 const SIDEBAR_WIDTH_MAX_PCT = 0.3;
@@ -411,7 +413,7 @@ function ResolvedReviewDecisionStatus({
   );
 }
 
-const ChatSidebar: React.FC<ChatSidebarProps> = ({ incomingRequest, onRequestHandled }) => {
+const ChatSidebar: React.FC<ChatSidebarProps> = ({ incomingRequest, onRequestHandled, coachActAsReadOnly = false }) => {
   const {
     messages,
     setMessages,
@@ -2523,7 +2525,9 @@ const ChatSidebar: React.FC<ChatSidebarProps> = ({ incomingRequest, onRequestHan
     if (!historyPanelOpen) setHistorySearchQuery("");
   }, [historyPanelOpen]);
 
-  const canSendMessage = Boolean(userId && sessionReady && !isAgentLoading && !isLoadingHistory && !isContentGenPublishing);
+  const canSendMessage = Boolean(
+    !coachActAsReadOnly && userId && sessionReady && !isAgentLoading && !isLoadingHistory && !isContentGenPublishing
+  );
   const canSend = canSendMessage && !streamError;
 
   const canUseHistory = Boolean(userId && !isBootstrappingSession);
@@ -3785,7 +3789,7 @@ const ChatSidebar: React.FC<ChatSidebarProps> = ({ incomingRequest, onRequestHan
   };
 
   const onDeleteSession = async (sessionIdToDelete: string) => {
-    if (!canUseHistory || isAgentLoading) return;
+    if (coachActAsReadOnly || !canUseHistory || isAgentLoading) return;
     setIsDeletingSession(true);
     try {
       await handleDeleteSession(sessionIdToDelete);
@@ -3800,6 +3804,7 @@ const ChatSidebar: React.FC<ChatSidebarProps> = ({ incomingRequest, onRequestHan
   };
 
   const onDeleteSubThread = async (item: { topicId: string; subAdkSessionId?: string }) => {
+    if (coachActAsReadOnly) return;
     if (!canUseHistory || isAgentLoading) return;
     setIsDeletingSession(true);
     try {

@@ -1,3 +1,4 @@
+import { useCoachActAsSession, withCoachActAsScope } from "@/contexts/CoachActAsContext";
 import { useQuery } from "@tanstack/react-query";
 import { getJobs } from "../server-actions/jobs-actions";
 import type { JobListResponse, JobSearchParams } from "../types";
@@ -10,11 +11,12 @@ export interface UseJobsOptions {
 
 export function useJobs(params: JobSearchParams = {}, options: UseJobsOptions = {}) {
   const { enabled = true } = options;
+  const actAs = useCoachActAsSession();
   const page = params.page ?? 1;
   const pageSize = params.page_size ?? DEFAULT_PAGE_SIZE;
 
   return useQuery<JobListResponse>({
-    queryKey: ["jobs", { ...params, page, page_size: pageSize }],
+    queryKey: withCoachActAsScope(["jobs", { ...params, page, page_size: pageSize }] as const, actAs),
     queryFn: async () => {
       return getJobs({ ...params, page, page_size: pageSize });
     },

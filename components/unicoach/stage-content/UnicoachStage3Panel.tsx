@@ -21,24 +21,43 @@ export const UnicoachStage3OverviewPanel = () => (
 );
 
 export const UnicoachStage3ResourcesPanel = () => (
-  <div className="space-y-3">
+  <div className="space-y-4">
     <p className="text-sm text-slate-600 dark:text-slate-300">
-      Sites to apply — bookmark these for your shortlist and quantity applications.
+      Shortlist roles in Jobs, then use these sites for your quantity applications.
     </p>
-    <ul className="grid gap-2 sm:grid-cols-2">
-      {UNICOACH_JOB_SITES.map(site => (
-        <li key={site.url}>
-          <a
-            href={site.url}
-            target="_blank"
-            rel="noopener noreferrer"
-            className="flex items-center justify-between gap-2 rounded-lg border border-slate-200 px-3 py-2 text-sm text-slate-800 hover:bg-slate-50 dark:border-slate-700 dark:text-slate-200 dark:hover:bg-slate-900/50"
-          >
-            {site.name}
-            <ExternalLink size={14} className="shrink-0 text-slate-400" />
-          </a>
-        </li>
-      ))}
-    </ul>
+    <Link
+      href="/uniboard/jobs"
+      className="inline-flex items-center gap-2 rounded-xl bg-brand-600 px-4 py-2.5 text-sm font-medium text-white hover:bg-brand-700"
+    >
+      Open Jobs
+      <ExternalLink size={14} />
+    </Link>
+    <div className="overflow-hidden rounded-xl border border-slate-200 dark:border-slate-700">
+      <table className="w-full text-sm">
+        <thead>
+          <tr className="border-b border-slate-200 bg-slate-50 dark:border-slate-700 dark:bg-slate-900/60">
+            <th className="px-4 py-2.5 text-left font-medium text-slate-500 dark:text-slate-400">Name</th>
+            <th className="px-4 py-2.5 text-left font-medium text-slate-500 dark:text-slate-400">Website</th>
+          </tr>
+        </thead>
+        <tbody>
+          {UNICOACH_JOB_SITES.map(site => (
+            <tr key={site.url} className="border-b border-slate-100 last:border-0 dark:border-slate-800">
+              <td className="px-4 py-2.5 font-medium text-slate-800 dark:text-slate-200">{site.name}</td>
+              <td className="px-4 py-2.5">
+                <a
+                  href={site.url}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="text-brand-600 hover:text-brand-700 hover:underline dark:text-brand-400 dark:hover:text-brand-300"
+                >
+                  {site.url}
+                </a>
+              </td>
+            </tr>
+          ))}
+        </tbody>
+      </table>
+    </div>
   </div>
 );

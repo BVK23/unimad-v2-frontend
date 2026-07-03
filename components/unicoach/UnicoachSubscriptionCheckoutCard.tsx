@@ -165,8 +165,17 @@ export const UnicoachSubscriptionCheckoutCard = ({ onPaymentSuccess, variant = "
       disabled={isBusy || !razorpayConfigured || successFlash}
       className={
         isFooter
-          ? "w-full max-w-md animate-cta-glow rounded-2xl bg-brand-600 px-8 py-4 text-base font-semibold text-white shadow-lg shadow-brand-600/25 transition hover:bg-brand-700 disabled:cursor-not-allowed disabled:opacity-50 sm:text-lg"
+          ? "w-full max-w-md rounded-2xl px-8 py-4 text-base font-semibold transition hover:opacity-90 disabled:cursor-not-allowed disabled:opacity-50 sm:text-lg"
           : "mt-5 w-full rounded-xl bg-brand-600 py-3 text-sm font-medium text-white transition hover:bg-brand-700 disabled:cursor-not-allowed disabled:opacity-50"
+      }
+      style={
+        isFooter
+          ? {
+              background: "linear-gradient(135deg, #BF953F 0%, #FCF6BA 25%, #B38728 50%, #FBF5B7 75%, #AA771C 100%)",
+              color: "#0F172A",
+              boxShadow: "0 10px 25px -5px rgba(187, 137, 34, 0.35), 0 8px 10px -6px rgba(187, 137, 34, 0.25)",
+            }
+          : undefined
       }
     >
       {payPhase || (isFooter ? "Get Unicoach for free" : `Pay £${finalPrice} securely`)}
@@ -190,7 +199,7 @@ export const UnicoachSubscriptionCheckoutCard = ({ onPaymentSuccess, variant = "
         >
           {showDiscount ? "Hide discount code" : "Have a discount code?"}
         </button>
-        <p className="mt-2 text-center text-xs text-slate-500 dark:text-slate-400 sm:text-sm">Secure checkout · unlocks instantly</p>
+        <p className="mt-2 text-center text-xs text-slate-500 dark:text-slate-400 sm:text-sm">Secure checkout</p>
       </div>
     );
   }

@@ -1,9 +1,10 @@
 import React, { useEffect, useRef, useState } from "react";
 import { resolveLinkTitle } from "@/features/portfolio/server-actions/resolve-link-title";
-import { hostnameLooksLikeWebAddress, normalizeExternalUrl } from "@/features/portfolio/utils/external-url";
+import { hostnameLooksLikeWebAddress, normalizeExternalUrl, resolvePortfolioLinkHref } from "@/features/portfolio/utils/external-url";
 import { resolvePortfolioBlockType } from "@/features/portfolio/utils/normalizePortfolioBlockType";
 import {
   buildPortfolioTitleUpdate,
+  isContentOnlyTextItem,
   isPortfolioTextContentEmpty,
   normalizePortfolioHtmlForRender,
   portfolioSectionTitleClassName,
@@ -110,6 +111,13 @@ const linkBlockNeedsInlineEdit = (linkItem: PortfolioItem) => {
   const isLegacyUntitled = title === "New Link" && !(linkItem.linkUrl ?? "").trim();
   if (isLegacyUntitled) return true;
   return !title && !linkItem.linkUrl;
+};
+
+const getLinkAnchorProps = (href: string) => {
+  if (/^https?:/i.test(href)) {
+    return { target: "_blank" as const, rel: "noopener noreferrer" };
+  }
+  return {};
 };
 
 const LinkBoxBlock = React.forwardRef<HTMLDivElement, LinkBoxBlockProps>(function LinkBoxBlock(
@@ -320,11 +328,11 @@ const LinkBoxBlock = React.forwardRef<HTMLDivElement, LinkBoxBlockProps>(functio
   );
 
   if (!isEditMode) {
-    const viewHref = normalizeExternalUrl(item.linkUrl ?? "");
+    const viewHref = resolvePortfolioLinkHref(item.linkUrl ?? "");
     return (
       <div ref={ref} data-portfolio-block-root className={shellClassName}>
         {viewHref ? (
-          <a href={viewHref} target="_blank" rel="noopener noreferrer" className={linkCardClassName}>
+          <a href={viewHref} {...getLinkAnchorProps(viewHref)} className={linkCardClassName}>
             {inner}
           </a>
         ) : (
@@ -518,11 +526,13 @@ const BlockRenderer: React.FC<BlockRendererProps> = ({
     const sectionTitleClassName = `${portfolioSectionTitleClassName(titlePresentation)} ${RICH_TEXT_CONTENT_CLASSES}`;
     const showBodyInPreview = hasBodyContent;
     const showTitleBodyGap = isEditMode || hasBodyContent;
+    const isPreviewContentOnly = !isEditMode && isContentOnlyTextItem(item);
+    const useGridFillShell = fillsMainGridCell && !isPreviewContentOnly;
 
     return (
       <div
         ref={item.isCollapsible && item.isCollapsed ? collapsedTextRef : undefined}
-        className={`relative flex flex-col group/text bg-white dark:bg-white/5 rounded-2xl shadow-sm border border-slate-100 dark:border-white/10 transition-all overflow-hidden ${isEditMode ? "hover:border-brand-500/30" : ""} p-6 ${fillsMainGridCell ? "h-full" : nestedShellClass}`}
+        className={`relative flex flex-col group/text bg-white dark:bg-white/5 rounded-2xl shadow-sm border border-slate-100 dark:border-white/10 transition-all overflow-hidden ${isEditMode ? "hover:border-brand-500/30" : ""} p-6 ${useGridFillShell ? "h-full" : nestedShellClass}`}
       >
         <div ref={fillsMainGridCell ? contentMeasurerRef : undefined} className="flex h-max w-full min-w-0 flex-col">
           {(item.title || isEditMode || item.isCollapsible) && (
@@ -555,7 +565,7 @@ const BlockRenderer: React.FC<BlockRendererProps> = ({
           )}
 
           {!item.isCollapsed && (isEditMode || showBodyInPreview) && (
-            <div className={`w-full min-w-0 ${fillsMainGridCell ? "min-h-0 flex-1" : ""}`}>
+            <div className={`w-full min-w-0 ${useGridFillShell ? "min-h-0 flex-1" : ""}`}>
               {isEditMode ? (
                 <RichTextEditor
                   value={normalizePortfolioHtmlForRender(item.content || "")}

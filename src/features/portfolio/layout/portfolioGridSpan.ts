@@ -62,8 +62,7 @@ export const getBlendedHeightPx = (
 
   if (contentOnlyBody && !manualFloor) {
     if (!isEditMode) {
-      const layoutMeasured = measured > bodyOnlyEstimate * 1.2 ? bodyOnlyEstimate : measured;
-      if (layoutMeasured > 0) return Math.max(bodyOnlyEstimate, layoutMeasured);
+      if (measured > 0) return Math.max(bodyOnlyEstimate, measured);
       return bodyOnlyEstimate;
     }
     if (measured > 0) return Math.max(DEFAULT_BLEND_MIN_HEIGHT_PX, measured);
@@ -95,20 +94,12 @@ export const getRowSpanForPortfolioItem = (
     const totalHeight = getBlendedHeightPx(item, contentHeights, options);
     const span = rowSpanForHeightPx(totalHeight, rowHeight, gap);
     const titleOnlyHeading = item.type === "text" && isTitleOnlyTextItem(item);
-    const contentOnlyBody = item.type === "text" && isContentOnlyTextItem(item);
 
     if (titleOnlyHeading && !isEditMode && item.heightUserSet !== true) {
       const headingEstimate = estimateTitleOnlyTextLayoutHeightPx(item);
       const headingSpan = rowSpanForHeightPx(headingEstimate, rowHeight, gap);
       if (totalHeight > headingEstimate * 1.15) return span;
       return headingSpan;
-    }
-
-    if (contentOnlyBody && !isEditMode && item.heightUserSet !== true) {
-      const bodyEstimate = estimateContentOnlyTextLayoutHeightPx();
-      const bodySpan = rowSpanForHeightPx(bodyEstimate, rowHeight, gap);
-      if (totalHeight > bodyEstimate * 1.15) return span;
-      return bodySpan;
     }
 
     return span;

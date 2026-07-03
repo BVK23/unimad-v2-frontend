@@ -1,47 +1,8 @@
 "use server";
 
+import { authedFetch } from "@/lib/authed-fetch";
 import { messageFromFailedResponse } from "@/utils/message-from-failed-response";
-import { cookies } from "next/headers";
 import type { Application, CreateApplicationInput, UpdateApplicationInput } from "../types";
-
-function getBackendUrl(): string {
-  const url = process.env.NEXT_PUBLIC_BACKEND_URL;
-  if (!url) {
-    throw new Error("NEXT_PUBLIC_BACKEND_URL is not defined. Add it to your .env.local file.");
-  }
-  return url.replace(/\/+$/, "");
-}
-
-type AuthResult = { token: string; scheme: "Token" | "Bearer" };
-
-function looksLikeJwt(value: string): boolean {
-  return /^ey[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+\.[A-Za-z0-9_-]*$/.test(value.trim());
-}
-
-async function getAuth(): Promise<AuthResult> {
-  const cookieStore = await cookies();
-  const cookieToken = cookieStore.get("_ut")?.value ?? cookieStore.get("__Host-ut")?.value;
-  if (!cookieToken) {
-    throw new Error("Unauthorized");
-  }
-  const scheme: AuthResult["scheme"] = looksLikeJwt(cookieToken) ? "Bearer" : "Token";
-  return { token: cookieToken, scheme };
-}
-
-async function authedFetch(path: string, options: RequestInit = {}): Promise<Response> {
-  const backendUrl = getBackendUrl();
-  const { token, scheme } = await getAuth();
-
-  return fetch(`${backendUrl}${path}`, {
-    ...options,
-    headers: {
-      "Content-Type": "application/json",
-      Authorization: `${scheme} ${token}`,
-      ...(options.headers as Record<string, string> | undefined),
-    },
-    cache: "no-store",
-  });
-}
 
 /**
  * GET /api/applications/

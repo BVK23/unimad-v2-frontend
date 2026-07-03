@@ -1,5 +1,6 @@
 "use client";
 
+import { coachActAsQueryScope, useCoachActAsSession } from "@/contexts/CoachActAsContext";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import {
   clearProfileKnowledgeData,
@@ -17,12 +18,18 @@ export const profileQk = {
   subscription: ["user", "subscription"] as const,
 };
 
-export const useProfileData = () =>
-  useQuery({
-    queryKey: profileQk.profile,
+export function profileQueryKeyFor(session: ReturnType<typeof useCoachActAsSession>) {
+  return [...profileQk.profile, ...coachActAsQueryScope(session)] as const;
+}
+
+export const useProfileData = () => {
+  const actAs = useCoachActAsSession();
+  return useQuery({
+    queryKey: profileQueryKeyFor(actAs),
     queryFn: () => fetchProfileData(),
     staleTime: 30_000,
   });
+};
 
 export const useProfileMedia = (category: string, enabled: boolean) =>
   useQuery({

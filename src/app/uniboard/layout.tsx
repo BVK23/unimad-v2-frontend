@@ -1,3 +1,4 @@
+import { COACH_ACT_AS_COOKIE, COACH_ACT_AS_HEADER, COACH_ACT_AS_NAME_COOKIE } from "@/constants/coach-act-as";
 import { cookies } from "next/headers";
 import { redirect } from "next/navigation";
 import UniboardShell from "./UniboardShell";
@@ -13,6 +14,13 @@ type UserData = {
   is_team_member?: boolean;
   onboarding_required?: boolean;
   profile_setup_required?: boolean;
+  is_coach_acting_as_student?: boolean;
+  viewing_student_profile_id?: number;
+  coach_actor?: {
+    email?: string;
+    name?: string;
+    profilePictureUrl?: string | null;
+  };
 };
 
 async function fetchUserData(): Promise<UserData | null> {
@@ -24,9 +32,17 @@ async function fetchUserData(): Promise<UserData | null> {
       return null;
     }
 
+    const headers: Record<string, string> = {
+      Authorization: `Bearer ${accessTokenCookie.value}`,
+    };
+    const actAsId = cookieStore.get(COACH_ACT_AS_COOKIE)?.value?.trim();
+    if (actAsId && /^\d+$/.test(actAsId)) {
+      headers[COACH_ACT_AS_HEADER] = actAsId;
+    }
+
     const res = await fetch(`${process.env.NEXT_PUBLIC_BACKEND_URL}/api/user-data/`, {
       method: "GET",
-      headers: { Authorization: `Bearer ${accessTokenCookie.value}` },
+      headers,
       redirect: "follow",
       cache: "no-store",
     });
@@ -44,10 +60,24 @@ async function fetchUserData(): Promise<UserData | null> {
 
 export default async function UniboardLayout({ children }: { children: React.ReactNode }) {
   const userData = await fetchUserData();
+  const cookieStore = await cookies();
+  const actAsId = cookieStore.get(COACH_ACT_AS_COOKIE)?.value?.trim();
+  const actAsNameRaw = cookieStore.get(COACH_ACT_AS_NAME_COOKIE)?.value;
+  const coachActAsSession =
+    actAsId && /^\d+$/.test(actAsId)
+      ? {
+          studentProfileId: actAsId,
+          studentDisplayName: decodeURIComponent(actAsNameRaw?.trim() || userData?.firstName || userData?.name || "Student"),
+        }
+      : null;
 
-  if (userData?.onboarding_required) {
+  if (userData?.onboarding_required && !coachActAsSession) {
     redirect("/onboarding");
   }
 
-  return <UniboardShell userData={userData}>{children}</UniboardShell>;
+  return (
+    <UniboardShell userData={userData} coachActAsSession={coachActAsSession}>
+      {children}
+    </UniboardShell>
+  );
 }

@@ -1,38 +1,8 @@
 "use server";
 
+import { authedFetch } from "@/lib/authed-fetch";
 import { messageFromFailedResponse } from "@/utils/message-from-failed-response";
-import { cookies } from "next/headers";
 import type { MediaItem, ProfileData, SubscriptionData } from "../types";
-
-function getBackendUrl(): string {
-  const url = process.env.NEXT_PUBLIC_BACKEND_URL;
-  if (!url) throw new Error("NEXT_PUBLIC_BACKEND_URL is not defined");
-  return url.replace(/\/+$/, "");
-}
-
-async function getAuthToken(): Promise<string> {
-  const cookieStore = await cookies();
-  const token = cookieStore.get("_ut")?.value ?? cookieStore.get("__Host-ut")?.value;
-  if (!token) throw new Error("Unauthorized");
-  return token;
-}
-
-function authScheme(token: string): "Bearer" | "Token" {
-  return /^ey[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+\.[A-Za-z0-9_-]*$/.test(token.trim()) ? "Bearer" : "Token";
-}
-
-async function authedJsonFetch(path: string, options: RequestInit = {}): Promise<Response> {
-  const token = await getAuthToken();
-  return fetch(`${getBackendUrl()}${path}`, {
-    ...options,
-    headers: {
-      "Content-Type": "application/json",
-      Authorization: `${authScheme(token)} ${token}`,
-      ...(options.headers as Record<string, string> | undefined),
-    },
-    cache: "no-store",
-  });
-}
 
 async function errorFromResponse(res: Response, fallback: string): Promise<string> {
   const bodyText = await res.text();
@@ -66,7 +36,7 @@ function normalizeProfileUpdatePayload(payload: Partial<ProfileData>): Partial<P
 }
 
 export async function fetchProfileData(): Promise<ProfileData> {
-  const res = await authedJsonFetch("/api/profile-data/", { method: "GET" });
+  const res = await authedFetch("/api/profile-data/", { method: "GET" });
   if (!res.ok) {
     throw new Error(await errorFromResponse(res, "Failed to fetch profile"));
   }
@@ -75,7 +45,7 @@ export async function fetchProfileData(): Promise<ProfileData> {
 
 export async function updateProfileData(payload: Partial<ProfileData>): Promise<void> {
   const data = normalizeProfileUpdatePayload(payload);
-  const res = await authedJsonFetch("/api/profile-update/", {
+  const res = await authedFetch("/api/profile-update/", {
     method: "POST",
     body: JSON.stringify({ data }),
   });
@@ -85,7 +55,7 @@ export async function updateProfileData(payload: Partial<ProfileData>): Promise<
 }
 
 export async function fetchProfileMedia(category: string): Promise<MediaItem[]> {
-  const res = await authedJsonFetch(`/api/media-data/?category=${encodeURIComponent(category)}`, { method: "GET" });
+  const res = await authedFetch(`/api/media-data/?category=${encodeURIComponent(category)}`, { method: "GET" });
   if (res.status === 404) return [];
   if (!res.ok) {
     throw new Error(await errorFromResponse(res, "Failed to fetch media"));
@@ -95,12 +65,9 @@ export async function fetchProfileMedia(category: string): Promise<MediaItem[]> 
 }
 
 export async function uploadProfileMedia(formData: FormData): Promise<{ url: string; blob_name: string }> {
-  const token = await getAuthToken();
-  const res = await fetch(`${getBackendUrl()}/api/media-upload/`, {
+  const res = await authedFetch("/api/media-upload/", {
     method: "POST",
-    headers: { Authorization: `${authScheme(token)} ${token}` },
     body: formData,
-    cache: "no-store",
   });
   const bodyText = await res.text();
   if (!res.ok) {
@@ -124,7 +91,7 @@ export async function uploadProfileMedia(formData: FormData): Promise<{ url: str
 }
 
 export async function clearProfileKnowledgeData(target: string): Promise<void> {
-  const res = await authedJsonFetch("/api/profile-clear-data/", {
+  const res = await authedFetch("/api/profile-clear-data/", {
     method: "POST",
     body: JSON.stringify({ target }),
   });
@@ -134,7 +101,7 @@ export async function clearProfileKnowledgeData(target: string): Promise<void> {
 }
 
 export async function fetchSubscriptionData(): Promise<SubscriptionData> {
-  const res = await authedJsonFetch("/api/user-subscription-data/", { method: "GET" });
+  const res = await authedFetch("/api/user-subscription-data/", { method: "GET" });
   if (!res.ok) {
     throw new Error(await errorFromResponse(res, "Failed to fetch subscription"));
   }

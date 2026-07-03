@@ -69,6 +69,8 @@ export function UserSubscriptionPanel() {
   const current = data?.current_subscription;
   const history = data?.billing_history ?? [];
   const isUnicoach = current?.plan?.toLowerCase().includes("unicoach") || (current?.plan_id ?? "").startsWith("unicoach");
+  const unicoachPurchases = current?.unicoach_purchases ?? [];
+  const unicoachModules = current?.unicoach_modules ?? [];
 
   return (
     <div className="space-y-6">
@@ -103,6 +105,18 @@ export function UserSubscriptionPanel() {
               endedAt={current?.ended_at}
               lastAction={current?.last_action ?? undefined}
             />
+            {isUnicoach && (unicoachPurchases.length > 0 || unicoachModules.length > 0) ? (
+              <div className="rounded-xl border border-slate-100 bg-slate-50 px-4 py-3 dark:border-slate-800 dark:bg-slate-900/50">
+                <p className="text-[10px] font-semibold uppercase tracking-wide text-slate-500 dark:text-slate-400">
+                  Your Unicoach purchases
+                </p>
+                <ul className="mt-2 space-y-1 text-sm text-slate-700 dark:text-slate-200">
+                  {(unicoachPurchases.length > 0 ? unicoachPurchases : unicoachModules).map(item => (
+                    <li key={item}>• {item}</li>
+                  ))}
+                </ul>
+              </div>
+            ) : null}
             <p className="text-xs text-slate-500 dark:text-slate-400">
               Payment issues? Contact{" "}
               <a href="mailto:finance@unimad.ai" className="text-brand-600 dark:text-brand-400">

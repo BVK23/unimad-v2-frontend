@@ -1,6 +1,7 @@
 "use client";
 
 import { useCallback, useMemo, useState } from "react";
+import { getUnicoachPlan, UNICOACH_FULL_PROGRAM_PRICE, type UnicoachProductPlanId } from "@/constants/unicoach-plans";
 import {
   publicCreateUnicoachOrder,
   publicValidateUnicoachDiscount,
@@ -21,7 +22,7 @@ function notifySuccess(message: string) {
   console.info(message);
 }
 
-export const UNICOACH_FULL_PROGRAM_PRICE = 199;
+export { UNICOACH_FULL_PROGRAM_PRICE };
 
 declare global {
   interface Window {
@@ -29,16 +30,30 @@ declare global {
   }
 }
 
-export function useUnicoachRazorpayCheckout({ isAuthenticated = false }: { isAuthenticated?: boolean } = {}) {
+type UseUnicoachRazorpayCheckoutOptions = {
+  isAuthenticated?: boolean;
+  planId?: UnicoachProductPlanId;
+};
+
+export function useUnicoachRazorpayCheckout({
+  isAuthenticated = false,
+  planId = "unicoach_program",
+}: UseUnicoachRazorpayCheckoutOptions = {}) {
+  const plan = useMemo(() => getUnicoachPlan(planId), [planId]);
   const [appliedCode, setAppliedCode] = useState("");
   const [discountAmount, setDiscountAmount] = useState(0);
   const [isProcessing, setIsProcessing] = useState(false);
   const [isValidatingCoupon, setIsValidatingCoupon] = useState(false);
 
-  const finalPrice = useMemo(() => Math.max(0, UNICOACH_FULL_PROGRAM_PRICE - discountAmount), [discountAmount]);
+  const finalPrice = useMemo(() => Math.max(0, plan.priceGbp - discountAmount), [plan.priceGbp, discountAmount]);
 
   const applyCoupon = useCallback(
     async (code: string) => {
+      if (!plan.allowsCoupon) {
+        notifyError("Coupons apply to the Full System only.");
+        return { ok: false as const };
+      }
+
       const trimmed = (code || "").trim();
       if (!trimmed) return { ok: false as const };
 
@@ -61,7 +76,7 @@ export function useUnicoachRazorpayCheckout({ isAuthenticated = false }: { isAut
         setIsValidatingCoupon(false);
       }
     },
-    [isAuthenticated]
+    [isAuthenticated, plan.allowsCoupon]
   );
 
   const clearCoupon = useCallback(() => {
@@ -80,11 +95,15 @@ export function useUnicoachRazorpayCheckout({ isAuthenticated = false }: { isAut
 
       let orderData: { id: string; amount: number; currency: string };
       let guestClaimToken: string | null = null;
+      const orderOptions = {
+        planId,
+        discountCode: plan.allowsCoupon ? appliedCode || null : null,
+      };
 
       if (isAuthenticated) {
-        orderData = await createUnicoachOrder(appliedCode || null);
+        orderData = await createUnicoachOrder(orderOptions.discountCode, orderOptions);
       } else {
-        const publicOrder = await publicCreateUnicoachOrder({ discountCode: appliedCode || null });
+        const publicOrder = await publicCreateUnicoachOrder(orderOptions);
         orderData = publicOrder;
         guestClaimToken = publicOrder.claim_token;
       }
@@ -95,7 +114,7 @@ export function useUnicoachRazorpayCheckout({ isAuthenticated = false }: { isAut
           amount: orderData.amount,
           currency: orderData.currency,
           name: "Unimad",
-          description: "Unicoach Full Program",
+          description: plan.description,
           order_id: orderData.id,
           handler: async function (response: Record<string, string>) {
             try {
@@ -106,7 +125,7 @@ export function useUnicoachRazorpayCheckout({ isAuthenticated = false }: { isAut
                   resolve({ ok: false });
                   return;
                 }
-                notifySuccess("Welcome to Unicoach!");
+                notifySuccess(`Welcome to Unicoach ${plan.label}!`);
                 resolve({ ok: true, redirectTo: "/uniboard/unicoach" });
                 return;
               }
@@ -149,7 +168,7 @@ export function useUnicoachRazorpayCheckout({ isAuthenticated = false }: { isAut
     } finally {
       setIsProcessing(false);
     }
-  }, [appliedCode, isAuthenticated]);
+  }, [appliedCode, isAuthenticated, plan.description, plan.label, plan.allowsCoupon, planId]);
 
   const claimPendingPurchase = useCallback(async (claimToken: string) => {
     if (!claimToken) return { ok: false as const };
@@ -163,7 +182,7 @@ export function useUnicoachRazorpayCheckout({ isAuthenticated = false }: { isAut
   }, []);
 
   return {
-    basePrice: UNICOACH_FULL_PROGRAM_PRICE,
+    basePrice: plan.priceGbp,
     finalPrice,
     appliedCode,
     discountAmount,

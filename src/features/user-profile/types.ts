@@ -106,6 +106,8 @@ export type CurrentSubscription = {
   plan?: string | null;
   plan_id?: string | null;
   unicoach_remaining_payment_amount?: number | null;
+  unicoach_purchases?: string[];
+  unicoach_modules?: string[];
   amount?: number | null;
   next_billing_date?: string | null;
   ending_at?: string | null;

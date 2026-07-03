@@ -45,6 +45,22 @@ export const normalizeExternalUrl = (raw: string): string | null => {
   return url.toString();
 };
 
+/** Resolves href for portfolio link blocks (http(s), mailto, tel). */
+export const resolvePortfolioLinkHref = (raw: string): string | null => {
+  const trimmed = raw.trim();
+  if (!trimmed) return null;
+
+  if (/^(mailto|tel):/i.test(trimmed)) {
+    try {
+      return new URL(trimmed).toString();
+    } catch {
+      return trimmed;
+    }
+  }
+
+  return normalizeExternalUrl(trimmed);
+};
+
 /**
  * Host must look like a real web target: multi-label DNS (has a TLD), IPv4, or IPv6.
  * Avoids treating resolved page titles (e.g. "Google") or bare words as URLs — those normalize

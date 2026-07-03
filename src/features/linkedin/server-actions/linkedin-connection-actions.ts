@@ -1,33 +1,7 @@
 "use server";
 
 import { extractConnectionMessageFromBotResponse } from "@/features/linkedin/api/extractConnectionMessage";
-import { cookies } from "next/headers";
-
-type AuthResult = { token: string; scheme: "Token" | "Bearer" };
-
-function getBackendUrl(): string {
-  const url = process.env.NEXT_PUBLIC_BACKEND_URL;
-  if (!url) {
-    throw new Error("NEXT_PUBLIC_BACKEND_URL is not defined. Add it to your .env.local file.");
-  }
-  return url.replace(/\/+$/, "");
-}
-
-function looksLikeJwt(value: string): boolean {
-  return /^ey[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+\.[A-Za-z0-9_-]*$/.test(value.trim());
-}
-
-async function getAuth(): Promise<AuthResult> {
-  const cookieStore = await cookies();
-  const cookieToken = cookieStore.get("_ut")?.value ?? cookieStore.get("__Host-ut")?.value;
-  if (!cookieToken) {
-    throw new Error("Unauthorized");
-  }
-  return {
-    token: cookieToken,
-    scheme: looksLikeJwt(cookieToken) ? "Bearer" : "Token",
-  };
-}
+import { authedFetch } from "@/lib/authed-fetch";
 
 function buildConnectUserMessage(name: string, designation: string): string {
   return `Recipient name: ${name}
@@ -57,17 +31,9 @@ export async function generateLinkedInConnectionRequest(params: {
 
   const userMessage = params.regenerate ? "Regenerate connection message" : buildConnectUserMessage(name, designation);
 
-  const backendUrl = getBackendUrl();
-  const { token, scheme } = await getAuth();
-
-  const res = await fetch(`${backendUrl}/api/unibot-api/`, {
+  const res = await authedFetch("/api/unibot-api/", {
     method: "POST",
-    headers: {
-      "Content-Type": "application/json",
-      Authorization: `${scheme} ${token}`,
-    },
     body: JSON.stringify({ message: userMessage, sectionName: "connect" }),
-    cache: "no-store",
   });
 
   const data = (await res.json().catch(() => ({}))) as { response?: string; error?: string };

@@ -16,14 +16,13 @@ export function openUnicoachPricing() {
 }
 
 const UNICOACH_BENEFITS = [
-  { id: "journey", title: "4 calls + personal branding" },
-  { id: "calls", title: "Four 1:1 coach calls" },
-  { id: "niche", title: "Niche, resume & LinkedIn" },
-  { id: "portfolio", title: "Portfolio & applications" },
-  { id: "branding", title: "Branding & outreach" },
-  { id: "interview", title: "Interview preparation" },
-  { id: "chat", title: "Coach chat on every step" },
-  { id: "progress", title: "Tasks & progress tracking" },
+  { id: "role", title: "Role Clarity" },
+  { id: "cv", title: "ATS-proof CV" },
+  { id: "linkedin", title: "Optimised LinkedIn" },
+  { id: "portfolio", title: "A functional portfolio" },
+  { id: "branding", title: "Personal branding strategy" },
+  { id: "applications", title: "Quality Applications framework" },
+  { id: "interview", title: "Interview prep & Value Prop docs" },
 ] as const;
 
 type UnicoachPricingModalProps = {
@@ -110,35 +109,31 @@ const UnicoachPricingModal: React.FC<UnicoachPricingModalProps> = ({ onClose, on
             id="unicoach-pricing-title"
             className="mt-3 text-3xl font-medium leading-tight tracking-tight text-slate-900 dark:text-white sm:text-4xl"
           >
-            Hire a coach. <span className="text-brand-600 dark:text-brand-400">Get hired faster.</span>
+            Get hired faster with Unicoach
           </h1>
 
           <p className="mt-3 max-w-lg text-sm leading-relaxed text-slate-600 dark:text-slate-300 sm:text-base">
-            One payment · full journey · four live calls · personal branding · coach support throughout
+            90% of our students land interviews in less than 30 days.
           </p>
 
-          <div className="mt-5 flex items-baseline justify-center gap-3">
+          <div className="mt-5 flex flex-wrap items-baseline justify-center gap-3">
             <span className="text-5xl font-semibold tracking-tight text-slate-400 line-through decoration-slate-400/80 decoration-2 dark:text-slate-500 sm:text-6xl">
               £199
             </span>
             <span className="text-5xl font-semibold tracking-tight text-brand-600 dark:text-brand-400 sm:text-6xl">Free</span>
-            <span className="text-sm text-slate-500 dark:text-slate-400">limited offer</span>
+            <span className="rounded-full border border-[#D4AF37]/40 bg-[#FBF5B7]/10 px-2 py-0.5 text-xs text-[#B38728]">
+              Limited offer
+            </span>
           </div>
 
-          <div className="mt-3 flex flex-wrap items-center justify-center gap-2 text-xs text-slate-500 dark:text-slate-400 sm:text-sm">
-            {["1:1 coaching", "4 live calls", "Personal branding"].map(tag => (
-              <span key={tag} className="rounded-full border border-slate-200 bg-white px-3.5 py-1 dark:border-slate-700 dark:bg-slate-900">
-                {tag}
-              </span>
-            ))}
-          </div>
+          <div className="mt-3 text-xs text-slate-500 dark:text-slate-400 sm:text-sm">3 live calls · 1-1 Coaching · 24/7 Support</div>
 
           <div className="mt-6 w-full max-w-xl">
-            <h2 className="text-xs font-semibold text-slate-500 dark:text-slate-400">Everything included</h2>
+            <h2 className="text-xs font-semibold text-slate-500 dark:text-slate-400">All deliverables done for you.</h2>
             <ul className="mt-3 grid grid-cols-2 gap-x-6 gap-y-2.5 text-left sm:gap-x-10 sm:gap-y-3">
               {UNICOACH_BENEFITS.map(({ id, title }) => (
                 <li key={id} className="flex items-center gap-2.5 text-sm text-slate-700 dark:text-slate-200 sm:text-base">
-                  <Check size={18} strokeWidth={2.5} className="shrink-0 text-emerald-600 dark:text-emerald-400" aria-hidden />
+                  <Check size={18} strokeWidth={2.5} className="shrink-0 text-[#D4AF37]" aria-hidden />
                   <span className="leading-snug">{title}</span>
                 </li>
               ))}

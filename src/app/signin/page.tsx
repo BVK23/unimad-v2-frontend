@@ -36,10 +36,19 @@ function SigninForm() {
     }
 
     if (!isLoading && isAuthenticated && !unicoachClaim) {
-      const target = redirect === "unicoach" ? "/uniboard/unicoach" : from && from.startsWith("/uniboard") ? from : `/uniboard/${redirect}`;
-      router.replace(target);
+      if (redirectTab === "niche") {
+        router.replace("/uniboard/unicoach?tab=niche");
+      } else if (redirect === "unicoach") {
+        router.replace("/uniboard/unicoach");
+      } else if (masterclassIntent === "video") {
+        router.replace("/masterclass?autoplay=1");
+      } else if (from && from.startsWith("/uniboard")) {
+        router.replace(from);
+      } else {
+        router.replace(`/uniboard/${redirect}`);
+      }
     }
-  }, [isAuthenticated, isLoading, redirect, from, router, unicoachClaim]);
+  }, [isAuthenticated, isLoading, redirect, from, router, unicoachClaim, masterclassIntent, redirectTab]);
 
   const handleOAuthLogin = (provider: "linkedin" | "google") => {
     const oauthRedirect = from && from.startsWith("/uniboard") ? from.replace("/uniboard/", "") : redirect;

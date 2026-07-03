@@ -1,58 +1,49 @@
-import type { UnicoachCoachStageKey } from "./unicoach-coach-stages";
+import { COACH_PIPELINE_DROPDOWN_ORDER, COACH_PIPELINE_LABELS, type CoachPipelineStage } from "./unicoach-coach-pipeline";
 
-/** Coach-settable milestones (matches kanban columns coaches can drag to). */
-export const COACH_SETTABLE_MILESTONES: { value: UnicoachCoachStageKey; label: string }[] = [
-  { value: "not_started", label: "Not Started (Stage 1)" },
-  { value: "call_1", label: "Call 1 complete (Stage 2)" },
-  { value: "portfolio", label: "Portfolio complete (Stage 3)" },
-  { value: "call_2", label: "Call 2 complete (Stage 4)" },
-  { value: "call_3", label: "Call 3 complete" },
-  { value: "completed", label: "Program completed" },
-];
+export type UnicoachCoachStageKey = CoachPipelineStage;
 
-/** Milestones coaches may select only after Call 2 is marked complete. */
-export const COACH_LATE_MILESTONES = new Set<UnicoachCoachStageKey>(["call_3", "completed"]);
+/** Full pipeline dropdown for coach student journey header + landing cards. */
+export const COACH_SETTABLE_MILESTONES: { value: CoachPipelineStage; label: string }[] = COACH_PIPELINE_DROPDOWN_ORDER.map(value => ({
+  value,
+  label: COACH_PIPELINE_LABELS[value],
+}));
 
-/** Map UX journey stage id → coach kanban `target_stage` (legacy; prefer COACH_SETTABLE_MILESTONES). */
-export const UX_STAGE_TO_COACH_TARGET: Record<string, UnicoachCoachStageKey> = {
-  "call-1-prep": "not_started",
-  "post-call-1": "call_1",
-  "call-2": "portfolio",
-  "post-call-2": "call_2",
-  "call-3": "call_2",
-  complete: "call_3",
+export const UX_STAGE_TO_COACH_TARGET: Record<string, CoachPipelineStage> = {
+  "call-1": "call_1",
+  "call-2": "call_2",
+  "call-3": "call_3",
+  "call-4": "call_4",
 };
 
 export type CoachMilestoneAction = {
   label: string;
-  targetStage: UnicoachCoachStageKey;
+  targetStage: CoachPipelineStage;
   helperText: string;
-  /** When true, milestone button is enabled without waiting for stage tasks. */
   skipTaskGate?: boolean;
 };
 
-/** Coach milestone button when viewing a student's active UX stage. */
 export const COACH_MILESTONE_BY_UX_STAGE: Partial<Record<string, CoachMilestoneAction>> = {
-  "call-1-prep": {
-    label: "Complete Call 1",
+  "call-1": {
+    label: "Mark Discovery call complete",
     targetStage: "call_1",
-    helperText: "Mark Call 1 complete after your session. Stage 2 unlocks for the student.",
-  },
-  "post-call-1": {
-    label: "Complete Stage 2",
-    targetStage: "portfolio",
-    helperText: "Mark Stage 2 complete once portfolio work is done. Stage 3 unlocks for the student.",
+    helperText: "Mark after your Discovery session. Unlocks LinkedIn branding for the student.",
   },
   "call-2": {
-    label: "Complete Call 2",
+    label: "Mark LinkedIn call complete",
     targetStage: "call_2",
-    helperText: "Mark Call 2 complete after your session together.",
+    helperText: "Mark after your LinkedIn branding session.",
     skipTaskGate: true,
   },
-  complete: {
-    label: "Complete Call 3",
+  "call-3": {
+    label: "Mark Application Strategy call complete",
     targetStage: "call_3",
-    helperText: "Mark Call 3 complete after your final session.",
+    helperText: "Mark after your application strategy session.",
+    skipTaskGate: true,
+  },
+  "call-4": {
+    label: "Mark Interviews & VPD call complete",
+    targetStage: "call_4",
+    helperText: "Mark after your interview prep session.",
     skipTaskGate: true,
   },
 };
