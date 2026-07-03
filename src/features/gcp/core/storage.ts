@@ -13,7 +13,7 @@ const SUPPORTED_VIDEO_FORMATS = [
   "video/3gpp2",
 ];
 
-const MAX_VIDEO_FILE_SIZE = 100 * 1024 * 1024;
+const MAX_DIRECT_UPLOAD_FILE_SIZE = 100 * 1024 * 1024;
 
 export type FileInfo = {
   name: string;
@@ -36,11 +36,30 @@ export const validateVideoFile = (file: FileInfo | null | undefined): Validation
     };
   }
 
-  if (file.size > MAX_VIDEO_FILE_SIZE) {
+  if (file.size > MAX_DIRECT_UPLOAD_FILE_SIZE) {
     return {
       success: false,
-      error: `File size too large. Maximum size: ${MAX_VIDEO_FILE_SIZE / (1024 * 1024)}MB`,
+      error: `File size too large. Maximum size: ${MAX_DIRECT_UPLOAD_FILE_SIZE / (1024 * 1024)}MB`,
     };
+  }
+
+  return { success: true };
+};
+
+export const validateDirectUploadFile = (file: FileInfo | null | undefined): ValidationResult => {
+  if (!file) {
+    return { success: false, error: "No file provided" };
+  }
+
+  if (file.size > MAX_DIRECT_UPLOAD_FILE_SIZE) {
+    return {
+      success: false,
+      error: `File size too large. Maximum size: ${MAX_DIRECT_UPLOAD_FILE_SIZE / (1024 * 1024)}MB`,
+    };
+  }
+
+  if (file.type.startsWith("video/")) {
+    return validateVideoFile(file);
   }
 
   return { success: true };
@@ -64,11 +83,9 @@ export type SignedUrlResult = {
 };
 
 export const generateSignedUploadUrl = async (file: FileInfo, linkedinId: string, folder: string): Promise<SignedUrlResult> => {
-  if (file.type.startsWith("video/")) {
-    const validation = validateVideoFile(file);
-    if (!validation.success) {
-      throw new Error(validation.error);
-    }
+  const validation = validateDirectUploadFile(file);
+  if (!validation.success) {
+    throw new Error(validation.error);
   }
 
   const filename = generateUniqueFilename(file.name, linkedinId, folder);

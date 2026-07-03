@@ -482,6 +482,7 @@ const BlockRenderer: React.FC<BlockRendererProps> = ({
     item.isCollapsible,
     item.showCoverImage,
     item.canvasCover,
+    item.content,
     item.mediaType,
     isEditMode,
     item.fontSize,
@@ -805,18 +806,18 @@ const BlockRenderer: React.FC<BlockRendererProps> = ({
                   {uploadError ? <span className="pointer-events-none text-[10px] font-medium text-red-500">{uploadError}</span> : null}
                 </div>
               )}
-              {item.content ? (
+              {item.canvasCover ? (
                 <PortfolioImage
-                  src={item.content}
-                  alt={item.title || "Project cover"}
+                  src={item.canvasCover}
+                  alt="Canvas cover"
                   fill
                   sizes="(max-width: 768px) 50vw, 33vw"
                   className="object-cover group-hover/card:scale-105 transition-transform duration-700"
                 />
-              ) : item.canvasCover ? (
+              ) : item.content ? (
                 <PortfolioImage
-                  src={item.canvasCover}
-                  alt="Canvas cover"
+                  src={item.content}
+                  alt={item.title || "Project cover"}
                   fill
                   sizes="(max-width: 768px) 50vw, 33vw"
                   className="object-cover group-hover/card:scale-105 transition-transform duration-700"

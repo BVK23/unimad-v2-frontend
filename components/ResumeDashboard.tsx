@@ -22,6 +22,14 @@ import { FileText, Plus, FilePlus, Upload, FileType, X, ArrowLeft, Loader2, Aler
 
 type JdEntryMode = "url" | "manual";
 
+const MAX_RESUME_UPLOAD_BYTES = 5 * 1024 * 1024;
+
+const isResumePdfFile = (file: File): boolean => {
+  const mime = file.type.trim().toLowerCase();
+  if (mime === "application/pdf" || mime === "application/x-pdf") return true;
+  return file.name.trim().toLowerCase().endsWith(".pdf");
+};
+
 interface ResumeDashboardProps {
   onEditResume: (resume: ResumeData) => void;
   onCreateResume: (type: "scratch" | "jd" | "upload", resumeId?: string) => void | Promise<void>;
@@ -62,10 +70,12 @@ const ResumeDashboard: React.FC<ResumeDashboardProps> = ({ onEditResume, onCreat
   const [duplicateResumeId, setDuplicateResumeId] = useState<string | null>(null);
   const [isUploadingFromFile, setIsUploadingFromFile] = useState(false);
   const [uploadError, setUploadError] = useState<string | null>(null);
+  const [isUploadDragOver, setIsUploadDragOver] = useState(false);
   const [newlyDuplicatedResumeId, setNewlyDuplicatedResumeId] = useState<string | null>(null);
   const [duplicateToastMessage, setDuplicateToastMessage] = useState<string | null>(null);
   const isCreateFlowBusy = isGenerating || isUploadingFromFile || isImporting;
   const scrollContainerRef = useRef<HTMLDivElement>(null);
+  const uploadInputRef = useRef<HTMLInputElement>(null);
   const cardRefs = useRef<Map<string, HTMLDivElement>>(new Map());
   const duplicateToastTimeoutRef = useRef<number | null>(null);
 
@@ -227,23 +237,23 @@ const ResumeDashboard: React.FC<ResumeDashboardProps> = ({ onEditResume, onCreat
   const resetUploadState = () => {
     setUploadFile(null);
     setUploadError(null);
+    setIsUploadDragOver(false);
     setIsUploadingFromFile(false);
+    if (uploadInputRef.current) {
+      uploadInputRef.current.value = "";
+    }
   };
 
-  const handleUploadFileChange = (event: React.ChangeEvent<HTMLInputElement>) => {
-    const file = event.target.files?.[0];
-    if (!file) {
-      return;
-    }
+  const applyUploadResumeFile = (file: File | null | undefined) => {
+    if (!file) return;
 
-    const maxSizeBytes = 5 * 1024 * 1024;
-    if (file.size > maxSizeBytes) {
+    if (file.size > MAX_RESUME_UPLOAD_BYTES) {
       setUploadError("File is too large. Please upload a PDF up to 5MB.");
       setUploadFile(null);
       return;
     }
 
-    if (file.type !== "application/pdf") {
+    if (!isResumePdfFile(file)) {
       setUploadError("Only PDF files are supported right now.");
       setUploadFile(null);
       return;
@@ -253,8 +263,21 @@ const ResumeDashboard: React.FC<ResumeDashboardProps> = ({ onEditResume, onCreat
     setUploadFile(file);
   };
 
+  const handleUploadFileChange = (event: React.ChangeEvent<HTMLInputElement>) => {
+    applyUploadResumeFile(event.target.files?.[0]);
+  };
+
+  const handleUploadDrop = (event: React.DragEvent<HTMLLabelElement>) => {
+    event.preventDefault();
+    event.stopPropagation();
+    setIsUploadDragOver(false);
+    if (isUploadingFromFile) return;
+    applyUploadResumeFile(event.dataTransfer.files?.[0]);
+  };
+
   const handleUploadExtract = async () => {
     if (!uploadFile) {
+      uploadInputRef.current?.click();
       return;
     }
     setUploadError(null);
@@ -763,23 +786,48 @@ const ResumeDashboard: React.FC<ResumeDashboardProps> = ({ onEditResume, onCreat
                   )}
 
                   <div className="space-y-4">
-                    <p className="text-sm text-slate-600">
+                    <p className="text-sm text-slate-600 dark:text-slate-400">
                       Upload a PDF to extract your experience, education, skills, and projects into a new resume. Your base resume will not
                       be changed.
                     </p>
-                    <label className="block text-sm font-medium text-slate-700">Upload your existing resume (PDF)</label>
-                    <label className="border-2 border-dashed border-slate-300 hover:border-brand-400 bg-slate-50 hover:bg-brand-50/30 rounded-xl p-8 text-center transition-all cursor-pointer group block">
-                      <div className="w-16 h-16 bg-white shadow-sm rounded-full flex items-center justify-center mx-auto mb-4 group-hover:scale-110 transition-transform text-brand-500">
+                    <label className="block text-sm font-medium text-slate-700 dark:text-slate-300">
+                      Upload your existing resume (PDF)
+                    </label>
+                    <label
+                      className={`border-2 border-dashed rounded-xl p-8 text-center transition-all cursor-pointer group block ${
+                        isUploadDragOver
+                          ? "border-brand-500 bg-brand-50/40 dark:bg-brand-500/10"
+                          : "border-slate-300 hover:border-brand-400 bg-slate-50 hover:bg-brand-50/30 dark:border-slate-700 dark:bg-slate-900/40 dark:hover:border-brand-500/60 dark:hover:bg-brand-500/5"
+                      }`}
+                      onDragOver={event => {
+                        event.preventDefault();
+                        event.stopPropagation();
+                        if (!isUploadingFromFile) setIsUploadDragOver(true);
+                      }}
+                      onDragLeave={event => {
+                        event.preventDefault();
+                        event.stopPropagation();
+                        setIsUploadDragOver(false);
+                      }}
+                      onDrop={handleUploadDrop}
+                    >
+                      <div className="w-16 h-16 bg-white dark:bg-slate-800 shadow-sm rounded-full flex items-center justify-center mx-auto mb-4 group-hover:scale-110 transition-transform text-brand-500">
                         <Upload size={28} />
                       </div>
-                      <h3 className="text-lg font-medium text-slate-900 mb-1">Click to upload</h3>
-                      <p className="text-sm text-slate-500 mb-1">or drag and drop your resume file here</p>
-                      <p className="text-xs text-slate-400 uppercase tracking-widest font-medium">PDF only · Max 5MB</p>
-                      <input type="file" accept=".pdf" className="hidden" onChange={handleUploadFileChange} />
+                      <h3 className="text-lg font-medium text-slate-900 dark:text-white mb-1">Click to upload</h3>
+                      <p className="text-sm text-slate-500 dark:text-slate-400 mb-1">or drag and drop your resume file here</p>
+                      <p className="text-xs text-slate-400 dark:text-slate-500 uppercase tracking-widest font-medium">PDF only · Max 5MB</p>
+                      <input
+                        ref={uploadInputRef}
+                        type="file"
+                        accept="application/pdf,.pdf"
+                        className="hidden"
+                        onChange={handleUploadFileChange}
+                      />
                     </label>
 
                     {uploadFile && (
-                      <div className="flex items-center justify-between rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm text-slate-700">
+                      <div className="flex items-center justify-between rounded-lg border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 px-3 py-2 text-sm text-slate-700 dark:text-slate-200">
                         <div className="flex items-center gap-2">
                           <FileText size={16} className="text-brand-500" />
                           <span className="truncate max-w-[220px]">{uploadFile.name}</span>
@@ -788,6 +836,9 @@ const ResumeDashboard: React.FC<ResumeDashboardProps> = ({ onEditResume, onCreat
                           type="button"
                           onClick={() => {
                             setUploadFile(null);
+                            if (uploadInputRef.current) {
+                              uploadInputRef.current.value = "";
+                            }
                           }}
                           className="text-xs text-slate-500 hover:text-red-500"
                         >
@@ -797,11 +848,12 @@ const ResumeDashboard: React.FC<ResumeDashboardProps> = ({ onEditResume, onCreat
                     )}
 
                     <button
-                      onClick={handleUploadExtract}
-                      disabled={!uploadFile || isUploadingFromFile}
+                      type="button"
+                      onClick={() => void handleUploadExtract()}
+                      disabled={isUploadingFromFile}
                       className="w-full py-3 bg-brand-600 hover:bg-brand-700 text-white font-medium rounded-lg shadow-md hover:shadow-lg disabled:opacity-50 disabled:cursor-not-allowed transition-all"
                     >
-                      Extract & Create Resume
+                      {uploadFile ? "Extract & Create Resume" : "Select PDF & Extract"}
                     </button>
                   </div>
                 </div>

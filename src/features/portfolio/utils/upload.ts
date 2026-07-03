@@ -2,7 +2,11 @@ import { uploadFileDirect } from "@/features/gcp/core/client-upload";
 import { uploadMedia } from "@/features/portfolio/server-actions/asset";
 import { resolveMediaDisplayUrl } from "@/utils/resolve-media-url";
 
-export const BACKEND_SIZE_THRESHOLD_BYTES = 4.5 * 1024 * 1024;
+/** Images/PDFs at or below this size go through Django `/api/media-upload/` (stored in MediaStore → GCS). */
+export const BACKEND_SIZE_THRESHOLD_BYTES = 4 * 1024 * 1024;
+
+/** Max size for browser → GCS signed-URL uploads (videos always; large images/PDFs). */
+export const MAX_DIRECT_UPLOAD_BYTES = 100 * 1024 * 1024;
 
 export type UploadedMediaType = "image" | "video" | "pdf" | "other";
 
@@ -30,10 +34,17 @@ const inferMediaType = (mimeType: string): UploadedMediaType => {
   return "other";
 };
 
+const formatSignedUploadError = (error: string): string => {
+  if (/GOOGLE_CLOUD_CREDENTIALS|GOOGLE_CLOUD_STORAGE_BUCKET/i.test(error)) {
+    return "Large uploads need storage credentials in this environment. Use a file under 4MB, or add GOOGLE_CLOUD_* vars to .env.local.";
+  }
+  return error;
+};
+
 const uploadViaSignedUrl = async (file: File, category: string): Promise<string> => {
   const result = await uploadFileDirect(file, category);
   if (!result.success) {
-    throw new UploadError(result.error || "Upload failed", "network");
+    throw new UploadError(formatSignedUploadError(result.error || "Upload failed"), "network");
   }
   return result.url;
 };
@@ -79,9 +90,14 @@ export const uploadPortfolioFile = async (file: File, category: string = "portfo
     throw new UploadError("No file provided");
   }
 
+  if (file.size > MAX_DIRECT_UPLOAD_BYTES) {
+    throw new UploadError(`File is too large. Maximum size is ${MAX_DIRECT_UPLOAD_BYTES / (1024 * 1024)}MB.`);
+  }
+
   const mimeType = file.type || "";
   const mediaType = inferMediaType(mimeType);
   const isVideo = mediaType === "video";
+  // Videos always use signed URL. Images/PDFs use backend when ≤4MB, GCS direct when >4MB.
   const shouldUseSignedUrl = isVideo || file.size > BACKEND_SIZE_THRESHOLD_BYTES;
 
   const url = shouldUseSignedUrl ? await uploadViaSignedUrl(file, category) : await uploadViaBackend(file, category);
