@@ -60,7 +60,8 @@ const SlateproPreview: React.FC<SlateproPreviewProps> = ({ data, previewScale = 
 
   const CustomSectionTitlePv = ({ item }: { item: CustomSectionItem }) => {
     const datePart =
-      item.startDate && `${formatDateMonthYear(item.startDate)}${item.endDate ? ` - ${formatDateMonthYear(item.endDate)}` : ""}`;
+      item.startDate &&
+      `${formatDateMonthYear(item.startDate)}${item.current || item.endDate ? ` - ${item.current ? "Present" : formatDateMonthYear(item.endDate)}` : ""}`;
     const sub = item.subtitle?.trim();
     return (
       <div className="flex flex-col gap-[3pt]">

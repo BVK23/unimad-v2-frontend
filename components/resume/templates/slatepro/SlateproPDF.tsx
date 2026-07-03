@@ -216,7 +216,8 @@ const SlateproPDF = ({ data }: { data: ResumeData }) => {
 
   const CustomSectionTitlePdf = ({ item }: { item: CustomSectionItem }) => {
     const datePart =
-      item.startDate && `${formatDateMonthYear(item.startDate)}${item.endDate ? ` - ${formatDateMonthYear(item.endDate)}` : ""}`;
+      item.startDate &&
+      `${formatDateMonthYear(item.startDate)}${item.current || item.endDate ? ` - ${item.current ? "Present" : formatDateMonthYear(item.endDate)}` : ""}`;
     const sub = item.subtitle?.trim();
     return (
       <View style={styles.flexCol}>
