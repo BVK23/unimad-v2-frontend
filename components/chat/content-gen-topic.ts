@@ -70,6 +70,22 @@ export const buildContentGenDraftBootstrap = (topic: string, funnel?: ContentGen
   return `${funnelLine}Write the full LinkedIn post draft for my topic: "${trimmed}".`;
 };
 
+/** User or agent bootstrap for a LinkedIn post draft sub-thread turn (not topic picker). */
+export const isContentGenDraftBootstrapUserMessage = (text: string | undefined): boolean => {
+  const trimmed = text?.trim() ?? "";
+  if (!trimmed) return false;
+  return /Write the full LinkedIn post draft/i.test(trimmed);
+};
+
+export const isContentGenDraftSubThread = (threadMessages: Array<{ role: string; text?: string }> | undefined): boolean => {
+  if (!threadMessages?.length) return false;
+  return threadMessages.some(m => {
+    if (m.role !== "user" || !m.text?.trim()) return false;
+    if (isContentGenDraftBootstrapUserMessage(m.text)) return true;
+    return m.text.trim() === "I'd like to improve this LinkedIn post draft.";
+  });
+};
+
 export const buildContentGenImproveBootstrap = (): string => CONTENT_GEN_IMPROVE_AGENT_BOOTSTRAP;
 
 /** Map stored message text to friendly UI (covers older sessions with technical bootstrap). */

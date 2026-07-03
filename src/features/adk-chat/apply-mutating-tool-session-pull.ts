@@ -5,6 +5,8 @@ import { offerApplicationAssetDraftReview } from "@/features/application-assets/
 import { useApplicationAssetStudioStore } from "@/features/application-assets/store/useApplicationAssetStudioStore";
 import type { ApplicationAssetApiType } from "@/features/application-assets/types";
 import { extractApplicationAssetDraftFromSessionState } from "@/features/application-assets/utils/extractApplicationAssetDraftFromSessionState";
+import { CONTENT_GEN_EVENTS } from "@/features/content-lab/api/content-gen-events";
+import { CONTENT_GEN_MIN_DRAFT_CHARS } from "@/features/content-lab/api/contentGenDraftConfig";
 import { extractContentGenDraftFromAdkState } from "@/features/content-lab/api/extractContentGenDraftFromAdkState";
 import { offerContentGenDraftReview } from "@/features/content-lab/api/offerContentGenDraftReview";
 import { useContentGenStudioStore } from "@/features/content-lab/store/useContentGenStudioStore";
@@ -183,6 +185,37 @@ function resolveReviewSessionId(sessionId: string): string {
     return row.parent_adk_session_id.trim();
   }
   return sessionId;
+}
+
+/** Mid-pipeline preview only — no Accept/Improve card until the SSE run finishes. */
+export async function syncContentGenDraftPreviewOnly(userId: string, sessionId: string): Promise<void> {
+  const options = resolveAdkSessionOptionsForSessionId(sessionId);
+  const pullResult = await pullSessionStateAction(userId, sessionId, options);
+  if (!pullResult.success || !pullResult.state) return;
+
+  const state = pullResult.state;
+  const extracted = extractContentGenDraftFromAdkState(state);
+  if (!extracted?.draft || extracted.draft.length < CONTENT_GEN_MIN_DRAFT_CHARS) return;
+
+  const studio = useContentGenStudioStore.getState();
+  studio.syncFromStudio({
+    topic: extracted.topic ?? studio.topic,
+    funnel: extracted.funnel ?? studio.funnel,
+    mood: extracted.mood ?? studio.mood,
+    draftPreview: extracted.draft,
+    assetId: typeof state.content_gen_asset_id === "string" ? state.content_gen_asset_id : studio.assetId,
+  });
+
+  window.dispatchEvent(
+    new CustomEvent(CONTENT_GEN_EVENTS.draftPreview, {
+      detail: {
+        draft: extracted.draft,
+        topic: extracted.topic ?? studio.topic,
+        funnel: extracted.funnel ?? studio.funnel,
+        assetId: typeof state.content_gen_asset_id === "string" ? state.content_gen_asset_id : studio.assetId,
+      },
+    })
+  );
 }
 
 function applyApplicationAssetState(state: Record<string, unknown>, ctx: MutatingToolPullContext): void {

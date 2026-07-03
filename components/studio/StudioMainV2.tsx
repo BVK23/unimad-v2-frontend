@@ -2758,10 +2758,10 @@ const StudioMainV2: React.FC<StudioMainProps> = ({ initialContext, initialAssetI
         setLinkedinPostAssetId(d.assetId);
       }
       setLinkedinGenerateError(null);
-      setIsGenerating(false);
     };
     const onDraftStreamComplete = () => {
       setIsGenerating(false);
+      setLinkedinStreamActivityLabel(null);
     };
     const onDraftFailed = (e: Event) => {
       const d = (e as CustomEvent<ContentGenDraftFailedDetail>).detail;
@@ -3718,7 +3718,9 @@ const StudioMainV2: React.FC<StudioMainProps> = ({ initialContext, initialAssetI
                         </p>
                       ) : null}
                       <div className="relative mb-2 min-h-[min(42vh,360px)] flex-1">
-                        {isGenerating ? <AssetPreviewLoadingOverlay label={linkedinStreamActivityLabel ?? "Crafting your post…"} /> : null}
+                        {isGenerating && !getLinkedInPreviewContent().trim() ? (
+                          <AssetPreviewLoadingOverlay label={linkedinStreamActivityLabel ?? "Crafting your post…"} />
+                        ) : null}
                         <textarea
                           value={getLinkedInPreviewContent()}
                           onChange={e => {
@@ -3727,7 +3729,7 @@ const StudioMainV2: React.FC<StudioMainProps> = ({ initialContext, initialAssetI
                           onBlur={handleLinkedinPreviewBlur}
                           placeholder="Your content preview will appear here..."
                           aria-label="LinkedIn post content"
-                          disabled={isGenerating}
+                          disabled={isGenerating && !getLinkedInPreviewContent().trim()}
                           className="scrollbar-on-hover h-full min-h-[min(42vh,360px)] w-full resize-none overflow-y-auto border-none bg-transparent text-sm leading-relaxed text-slate-800 outline-none placeholder:text-slate-300 disabled:opacity-60 dark:text-slate-100 dark:placeholder:text-slate-600"
                         />
                       </div>

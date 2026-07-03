@@ -12,7 +12,7 @@ import { useContentGenStudioStore } from "@/features/content-lab/store/useConten
 import { buildAdkPortfolioDataMap, buildAdkPortfolioStateDelta, mapAdkPortfolioDataMapToFrontend } from "@/features/portfolio/api/mappers";
 import { portfolioQueryKey } from "@/features/portfolio/hooks/usePortfolio";
 import { usePortfolioStore } from "@/features/portfolio/store/usePortfolioStore";
-import { applyMutatingToolSessionPull } from "@/src/features/adk-chat/apply-mutating-tool-session-pull";
+import { applyMutatingToolSessionPull, syncContentGenDraftPreviewOnly } from "@/src/features/adk-chat/apply-mutating-tool-session-pull";
 import { deriveActiveScope, deriveScopeFromRegistryRow, type ContentScope } from "@/src/features/adk-chat/content-scope";
 import { resolveActiveResumeIdForPatch } from "@/src/features/adk-chat/resolve-active-resume-id";
 import { resolveAdkSessionOptionsForSessionId } from "@/src/features/adk-chat/resolve-sub-session-adk-app";
@@ -49,6 +49,7 @@ import {
   isMutatingResumeTool,
   completionMessageForMutatingTool,
   resolveContentGenActivityLabelHint,
+  toSnakeToolKey,
 } from "../streaming/stream-activity";
 import {
   createStreamActivityHeartbeat,
@@ -154,6 +155,7 @@ export function useAdkStreamingManager({
   const streamHadSidebarContentRef = useRef(false);
   const streamInFlightRef = useRef(false);
   const optimisticActivityStartedRef = useRef(false);
+  const contentGenPreviewPullTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const activityPresenterRef = useRef<StreamActivityPresenter | null>(null);
   const streamHeartbeatRef = useRef<StreamActivityHeartbeat | null>(null);
   if (activityPresenterRef.current === null) {
@@ -651,6 +653,21 @@ export function useAdkStreamingManager({
     pendingReviewAssistantIdRef.current = aiMessageId;
   }, []);
 
+  const scheduleContentGenPreviewPull = useCallback(
+    (pullSessionId: string) => {
+      if (!userId) return;
+      if (contentGenPreviewPullTimerRef.current) {
+        clearTimeout(contentGenPreviewPullTimerRef.current);
+      }
+      contentGenPreviewPullTimerRef.current = setTimeout(() => {
+        contentGenPreviewPullTimerRef.current = null;
+        if (!streamInFlightRef.current) return;
+        void syncContentGenDraftPreviewOnly(userId, pullSessionId);
+      }, 220);
+    },
+    [userId]
+  );
+
   const flushMutatingToolSessionPull = useCallback(
     async (pullSessionId: string): Promise<string | null> => {
       const tool = pendingMutatingToolRef.current;
@@ -719,6 +736,10 @@ export function useAdkStreamingManager({
         }
         if (isMutatingContentGenTool(toolName) || isMutatingApplicationAssetTool(toolName)) {
           noteMutatingToolDuringStream(toolName, aiMessageId);
+          if (toSnakeToolKey(toolName) === "update_post_draft" && streamInFlightRef.current) {
+            const pullSessionId = pendingPullSessionIdRef.current ?? sessionId;
+            scheduleContentGenPreviewPull(pullSessionId);
+          }
         }
       },
       onStreamActivityHint: ({ label }: { label: string }) => {
@@ -746,6 +767,8 @@ export function useAdkStreamingManager({
     }),
     [
       noteMutatingToolDuringStream,
+      scheduleContentGenPreviewPull,
+      sessionId,
       resolveResumeIdForSessionPull,
       getCurrentPortfolioId,
       isLinkedInRoute,
@@ -879,6 +902,10 @@ export function useAdkStreamingManager({
         return { hadAssistantText };
       } finally {
         streamInFlightRef.current = false;
+        if (contentGenPreviewPullTimerRef.current) {
+          clearTimeout(contentGenPreviewPullTimerRef.current);
+          contentGenPreviewPullTimerRef.current = null;
+        }
         streamHeartbeatRef.current?.stop();
         pendingPullSessionIdRef.current = null;
         optimisticActivityStartedRef.current = false;

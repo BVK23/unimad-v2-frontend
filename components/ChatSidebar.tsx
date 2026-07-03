@@ -87,6 +87,7 @@ import {
   CONTENT_GEN_IMPROVE_KICKOFF_USER_MESSAGE,
   stripContentGenDraftFromMessage,
   messageHasContentGenDraft,
+  shouldDeferContentGenDraftBubbleText,
 } from "@/features/content-lab/api/contentGenDraftDisplay";
 import { isValidContentGenTopicTitle } from "@/features/content-lab/api/contentGenTopicUtils";
 import { extractContentGenDraftFromAdkState } from "@/features/content-lab/api/extractContentGenDraftFromAdkState";
@@ -251,6 +252,7 @@ import {
   buildContentGenTopicBootstrap,
   buildContentGenTopicUserDisplay,
   contentGenTopicUserDisplayText,
+  isContentGenDraftSubThread,
   resolveFunnelForPlannerModelMessage,
 } from "./chat/content-gen-topic";
 import { resetAssistantTurnForRetryInTree } from "./chat/set-chat-message-stream-error";
@@ -4372,23 +4374,38 @@ const ChatSidebar: React.FC<ChatSidebarProps> = ({ incomingRequest, onRequestHan
                         const isResumeImprove = msg.topicKind === "improve" && improveSubRow?.feature === "resume";
                         const subHasDraft =
                           isContentGen && subMsg.role === "model" && Boolean(subMsg.text && messageHasContentGenDraft(subMsg.text));
+                        const subIsDraftThread = isContentGen && isContentGenDraftSubThread(msg.messages);
+                        const lastModelSubMsgId = [...(msg.messages ?? [])].reverse().find(m => m.role === "model")?.id;
+                        const subIsActiveDraftStream =
+                          subIsDraftThread &&
+                          isAgentLoading &&
+                          subMsg.role === "model" &&
+                          (contentGenAdkDraftJobRef.current?.botMsgId === subMsg.id || subMsg.id === lastModelSubMsgId);
                         const plannerTurnFunnel = resolveFunnelForPlannerModelMessage(msg, subMsg.id) ?? contentGenFunnelRef.current;
                         const subHasPlanner =
                           isContentGen &&
                           subMsg.role === "model" &&
                           Boolean(subMsg.text && messageShowsTopicPickerChips(subMsg.text, plannerTurnFunnel) && !subHasDraft);
-                        const modelVisibleText =
+                        const rawModelVisibleText =
                           subMsg.role === "model" && subMsg.text
                             ? isContentGen
-                              ? subHasDraft
-                                ? stripContentGenDraftFromMessage(subMsg.text)
-                                : subHasPlanner
-                                  ? stripPlannerJsonFromMessage(subMsg.text)
+                              ? subHasPlanner
+                                ? stripPlannerJsonFromMessage(subMsg.text)
+                                : subHasDraft || subIsDraftThread
+                                  ? stripContentGenDraftFromMessage(subMsg.text, { draftTurn: subIsDraftThread || subHasDraft })
                                   : stripMachineReadablePayloadFromMessage(subMsg.text)
                               : isApplicationAsset
                                 ? stripApplicationAssetDraftFromMessage(subMsg.text)
                                 : stripMachineReadablePayloadFromMessage(subMsg.text)
                             : "";
+                        const modelVisibleText =
+                          shouldDeferContentGenDraftBubbleText({
+                            draftThread: subIsDraftThread,
+                            agentLoading: isAgentLoading,
+                            isActiveStreamMessage: subIsActiveDraftStream,
+                          }) && !subHasPlanner
+                            ? ""
+                            : rawModelVisibleText;
                         const userVisibleText =
                           subMsg.role === "user" && subMsg.text
                             ? isContentGen
@@ -4404,6 +4421,7 @@ const ChatSidebar: React.FC<ChatSidebarProps> = ({ incomingRequest, onRequestHan
                         const showModelBubble =
                           subMsg.role === "model" &&
                           (Boolean(modelVisibleText) ||
+                            subIsActiveDraftStream ||
                             (!(subHasPlanner || subHasDraft) && (!subMsg.text || isStreamingMachineReadablePayloadOnly(subMsg.text))));
                         const showUserBubble = subMsg.role === "user" && userVisibleText;
                         const hasActionCard = subMsg.role === "user" && subMsg.assetActionMeta;
@@ -4711,7 +4729,7 @@ const ChatSidebar: React.FC<ChatSidebarProps> = ({ incomingRequest, onRequestHan
           const mainModelVisible = mainHasAppAssetDraft
             ? stripApplicationAssetDraftFromMessage(msg.text!)
             : mainHasDraft
-              ? stripContentGenDraftFromMessage(msg.text!)
+              ? stripContentGenDraftFromMessage(msg.text!, { draftTurn: true })
               : mainPlannerPayload != null
                 ? stripPlannerJsonFromMessage(mainPlannerPayload)
                 : msg.text
