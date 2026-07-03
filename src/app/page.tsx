@@ -1,17 +1,17 @@
-import { UniLandingPage } from "@/components/uni-landing/UniLandingPage";
+import { LandingPage } from "@/components/landing/LandingPage";
 import type { Metadata } from "next";
+import "@/components/landing/landing.css";
 
 export const metadata: Metadata = {
-  title: "Unimad — The platform behind 200+ job offers",
+  title: "Unimad: The platform behind 10,000+ interviews",
   description:
-    "Stop getting ghosted by recruiters. A completely free toolkit to build a personal brand that gets you noticed — resumes, LinkedIn, portfolio, tailored applications. No paywalls. No catch.",
+    "Free AI tools for international students: résumé builder, LinkedIn audit, job tracker, portfolio and more. Coach-led Career Positioning System when you're ready to go faster.",
   openGraph: {
-    title: "Unimad — The platform behind 200+ job offers",
-    description:
-      "A completely free toolkit to build a personal brand that gets you noticed — resumes, LinkedIn, portfolio, tailored applications.",
+    title: "Unimad: The platform behind 10,000+ interviews",
+    description: "Free AI tools for international students: résumé builder, LinkedIn audit, job tracker, portfolio and more.",
   },
 };
 
 export default function HomePage() {
-  return <UniLandingPage />;
+  return <LandingPage />;
 }
