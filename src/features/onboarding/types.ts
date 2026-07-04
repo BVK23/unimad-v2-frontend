@@ -1,3 +1,16 @@
+export type PersonalizationProfile = {
+  goals?: string[];
+  focus?: string[];
+  stage?: string[];
+  personalize_opt_in?: boolean | null;
+  strengths?: string[];
+  problems?: string[];
+  praise?: string[];
+  resume_uploaded?: boolean;
+  tier?: number;
+  updated_at?: string;
+};
+
 export type OnboardingEducation = {
   institution: string;
   course: string;

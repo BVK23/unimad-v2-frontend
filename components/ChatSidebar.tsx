@@ -111,6 +111,7 @@ import {
 import { runDjangoContentGenDraftFallback } from "@/features/content-lab/hooks/runDjangoContentGenDraftFallback";
 import { createContentGenShell } from "@/features/content-lab/server-actions/content-lab-actions";
 import { useContentGenStudioStore } from "@/features/content-lab/store/useContentGenStudioStore";
+import { useOnboardingGate } from "@/features/onboarding/context/OnboardingGateContext";
 import { buildAdkPortfolioDataMap, buildAdkPortfolioStateDelta } from "@/features/portfolio/api/mappers";
 import { portfolioQueryKey } from "@/features/portfolio/hooks/usePortfolio";
 import { usePortfolioStore } from "@/features/portfolio/store/usePortfolioStore";
@@ -239,6 +240,7 @@ import { UnibotActionItemHighlight } from "./chat/UnibotActionItemHighlight";
 import { UnibotErrorBubble } from "./chat/UnibotErrorBubble";
 import { UnibotJobCardStrip } from "./chat/UnibotJobCardStrip";
 import { UnibotLinkedInSuggestionCards } from "./chat/UnibotLinkedInSuggestionCards";
+import UnibotStrengthsPromptCard, { UNIBOT_STRENGTHS_NUDGE_DISMISS_KEY } from "./chat/UnibotStrengthsPromptCard";
 import { UnibotEditableUserBubble, UnibotUserMessageToolbar } from "./chat/UnibotUserMessageToolbar";
 import { UnimadNavigationChip } from "./chat/UnimadNavigationChip";
 import {
@@ -264,6 +266,7 @@ import {
   incomingRequestSignature,
   UNIBOT_SECTION_REVIEW_PROMPTS,
 } from "./chat/unibot-incoming-request";
+import { createStrengthsNudgeMessage, shouldShowUnibotStrengthsNudge } from "./chat/unibot-strengths-nudge";
 import RefineActionCard from "./studio/RefineActionCard";
 
 interface ChatSidebarProps {
@@ -547,6 +550,36 @@ const ChatSidebar: React.FC<ChatSidebarProps> = ({ incomingRequest, onRequestHan
   const pathname = usePathname() ?? "";
   const router = useRouter();
   const searchParams = useSearchParams();
+  const { featureGates } = useOnboardingGate();
+  const strengthsNudgeShownRef = useRef(false);
+
+  const maybeShowStrengthsNudge = useCallback(() => {
+    if (strengthsNudgeShownRef.current) return;
+    if (!shouldShowUnibotStrengthsNudge(featureGates)) return;
+    strengthsNudgeShownRef.current = true;
+    setMessages(prev => {
+      if (prev.some(m => m.unibotOnboardingPrompt === "strengths")) return prev;
+      return [...prev, createStrengthsNudgeMessage(newId)];
+    });
+  }, [featureGates, setMessages]);
+
+  const dismissStrengthsNudge = useCallback(
+    (messageId: string) => {
+      if (typeof window !== "undefined") {
+        sessionStorage.setItem(UNIBOT_STRENGTHS_NUDGE_DISMISS_KEY, "1");
+      }
+      setMessages(prev => prev.filter(m => m.id !== messageId));
+    },
+    [setMessages]
+  );
+
+  const completeStrengthsNudge = useCallback(
+    (messageId: string) => {
+      setMessages(prev => prev.filter(m => m.id !== messageId));
+      router.refresh();
+    },
+    [router, setMessages]
+  );
   const activeResumeId = useActiveResumeIdForPatch(searchParams);
   void activeResumeId; // subscribe to replaceState ?id= updates for review nav checks below
 
@@ -1270,6 +1303,7 @@ const ChatSidebar: React.FC<ChatSidebarProps> = ({ incomingRequest, onRequestHan
         return;
       }
       setIsCollapsed(false);
+      maybeShowStrengthsNudge();
 
       const studioPatch = {
         assetType: d.assetType,
@@ -1403,6 +1437,7 @@ const ChatSidebar: React.FC<ChatSidebarProps> = ({ incomingRequest, onRequestHan
     setMessages,
     messages,
     userId,
+    maybeShowStrengthsNudge,
   ]);
 
   useEffect(() => {
@@ -1992,6 +2027,13 @@ const ChatSidebar: React.FC<ChatSidebarProps> = ({ incomingRequest, onRequestHan
       setIsCollapsed(false);
     }, 0);
 
+    const wantsStrengthsNudge =
+      (req.type === "improve" && (req.improveType === "linkedin" || req.feature === "application_asset")) ||
+      req.type === "content_gen_topic";
+    if (wantsStrengthsNudge) {
+      maybeShowStrengthsNudge();
+    }
+
     if (req.type === "section_review") {
       const prompt = UNIBOT_SECTION_REVIEW_PROMPTS[req.section];
       if (!prompt) return;
@@ -2489,6 +2531,7 @@ const ChatSidebar: React.FC<ChatSidebarProps> = ({ incomingRequest, onRequestHan
     adkPortfolioReviewStack,
     adkPortfolioActiveReviewId,
     syncAtsFixBatchUi,
+    maybeShowStrengthsNudge,
   ]);
 
   useEffect(
@@ -3433,6 +3476,7 @@ const ChatSidebar: React.FC<ChatSidebarProps> = ({ incomingRequest, onRequestHan
         return;
       }
       setIsCollapsed(false);
+      maybeShowStrengthsNudge();
       setSelectionQuoteContext(null);
 
       useApplicationAssetStudioStore.getState().syncFromStudio({
@@ -3496,7 +3540,7 @@ const ChatSidebar: React.FC<ChatSidebarProps> = ({ incomingRequest, onRequestHan
       window.removeEventListener(APPLICATION_ASSET_EVENTS.openImprove, onOpenImprove);
       window.removeEventListener(RESUME_OPEN_FULL_IMPROVE_EVENT, onResumeOpenFullImprove);
     };
-  }, [sendApplicationAssetRefinement, showSelectionSentPill]);
+  }, [sendApplicationAssetRefinement, showSelectionSentPill, maybeShowStrengthsNudge]);
 
   const loadDocumentImproveSuggestions = useCallback(
     async (ctx: { assetType: ApplicationAssetApiType; assetId: string; role: string; company: string }, excludeLabels: string[] = []) => {
@@ -4832,6 +4876,8 @@ const ChatSidebar: React.FC<ChatSidebarProps> = ({ incomingRequest, onRequestHan
                     "rounded-2xl rounded-tr-sm bg-slate-100 px-4 py-3 text-[13px] leading-relaxed text-slate-900 dark:bg-white/5 dark:text-slate-100"
                   )}
                 </div>
+              ) : msg.unibotOnboardingPrompt === "strengths" ? (
+                <UnibotStrengthsPromptCard onDismiss={() => dismissStrengthsNudge(msg.id)} onSaved={() => completeStrengthsNudge(msg.id)} />
               ) : msg.role === "model" ? (
                 (() => {
                   const isActiveStreamTarget = msg.id === activeStreamingMessageId;

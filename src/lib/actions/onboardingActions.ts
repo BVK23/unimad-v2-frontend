@@ -73,8 +73,8 @@ export const getUserOnboardingState = async (checkpoints: OnboardingCheckpoints)
 
   const profileComplete = isProfileSetupComplete(checkpoints);
 
-  // Minimal onboarding (phone + LinkedIn) unlocks Uniboard access.
-  if (phone_number && linkedin_url) {
+  // Minimal onboarding (phone) unlocks Uniboard access.
+  if (phone_number) {
     return profileComplete ? "COMPLETED" : "MINIMAL_COMPLETE";
   }
 
@@ -162,7 +162,7 @@ export async function getMinimalOnboardingGateState(): Promise<
 
   try {
     const checkpoints = await fetchOnboardingCheckpoints();
-    if (checkpoints.phone_number && checkpoints.linkedin_url) return { kind: "complete" };
+    if (checkpoints.phone_number) return { kind: "complete" };
     const userState = await getUserOnboardingState(checkpoints);
     return { kind: "incomplete", userState };
   } catch {
@@ -249,7 +249,58 @@ export type OnboardingSaveType =
   | "desired_roles"
   | "whatsapp"
   | "linkedin_url"
-  | "goal";
+  | "goal"
+  | "personalization_profile"
+  | "complete_minimal";
+
+export type GroundedNicheSuggestion = {
+  id: string;
+  title: string;
+  rationale?: string;
+  is_ideal?: boolean;
+};
+
+export type GroundedNicheResponse = {
+  roles: GroundedNicheSuggestion[];
+  source?: "grounded" | "profile";
+};
+
+export const getGroundedNicheSuggestions = async (): Promise<GroundedNicheResponse> => {
+  const accessToken = await getAccessToken();
+  if (!accessToken) throw new Error("Unauthorized");
+
+  const response = await fetch(`${BACKEND_URL}/api/onboarding/suggest-niche/`, {
+    method: "POST",
+    headers: {
+      Authorization: `Bearer ${accessToken}`,
+      "Content-Type": "application/json",
+    },
+    body: JSON.stringify({}),
+    cache: "no-store",
+  });
+
+  if (!response.ok) {
+    const fallback = await getSuggestions("onboarding_desired_role");
+    return {
+      source: "profile",
+      roles: (fallback.data ?? []).slice(0, 5).map((title, i) => {
+        const match = title.trim().match(/^(.*?)\s*\(([^)]+)\)\s*$/);
+        const cleanTitle = match ? match[1].trim() : title.trim();
+        const rationale = match
+          ? `${match[2].trim().charAt(0).toUpperCase()}${match[2].trim().slice(1)} — suggested from your profile and career intent.`
+          : "Suggested from your profile and career intent.";
+        return {
+          id: `role-${i}`,
+          title: cleanTitle,
+          rationale,
+          is_ideal: i === 0,
+        };
+      }),
+    };
+  }
+
+  return (await response.json()) as GroundedNicheResponse;
+};
 
 export const saveOnboardingData = async (type: OnboardingSaveType, data: Record<string, unknown>) => {
   const accessToken = await getAccessToken();
@@ -268,7 +319,8 @@ export const saveOnboardingData = async (type: OnboardingSaveType, data: Record<
     let message = "Internal server error";
     try {
       const err = await response.json();
-      if (err?.error) message = err.error;
+      if (err?.message) message = err.message;
+      else if (err?.error) message = err.error;
     } catch {
       // ignore
     }

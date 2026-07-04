@@ -2,13 +2,19 @@
 
 import LinkedInDashboard from "@/components/LinkedInDashboard";
 import type { UnibotIncomingRequest } from "@/components/chat/unibot-incoming-request";
+import { useOnboardingGate } from "@/features/onboarding/context/OnboardingGateContext";
 import type { GeneratorContext } from "@/types/jobs";
 import { useRouter } from "next/navigation";
 
 export default function LinkedInPageClient() {
   const router = useRouter();
+  const { featureGates } = useOnboardingGate();
 
   const handleImproveWithAI = (detail: Extract<UnibotIncomingRequest, { type: "improve" }>) => {
+    if (!featureGates.niche_complete) {
+      router.push("/uniboard/onboarding?mode=niche");
+      return;
+    }
     window.dispatchEvent(new CustomEvent("open-unibot", { detail }));
   };
 

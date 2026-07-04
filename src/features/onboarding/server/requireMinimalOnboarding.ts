@@ -8,6 +8,6 @@ import { redirect } from "next/navigation";
 export async function requireMinimalOnboarding() {
   const state = await getMinimalOnboardingGateState();
   if (state.kind === "incomplete") {
-    redirect("/onboarding");
+    redirect("/uniboard/onboarding");
   }
 }

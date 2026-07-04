@@ -13,6 +13,6 @@ import { redirect } from "next/navigation";
 export async function requireOnboardingComplete() {
   const state = await getOnboardingGateState();
   if (state.kind === "incomplete") {
-    redirect("/onboarding");
+    redirect("/uniboard/onboarding");
   }
 }

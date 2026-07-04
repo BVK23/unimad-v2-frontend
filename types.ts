@@ -164,6 +164,8 @@ export interface ChatMessage {
   unimadJobCards?: import("@/src/features/adk-chat/parse-unimad-job-cards").UnimadJobCardsPayload;
   /** Copy-ready LinkedIn suggestion cards from `present_linkedin_suggestions`. */
   unimadLinkedInSuggestions?: import("@/src/features/adk-chat/parse-unimad-linkedin-suggestions").UnimadLinkedInSuggestionsPayload;
+  /** Inline onboarding prompt rendered inside Unibot (not a full-page redirect). */
+  unibotOnboardingPrompt?: "strengths";
   /** True when rebuilt from flat main-session history before sub-session migration. */
   legacyTopic?: boolean;
 }

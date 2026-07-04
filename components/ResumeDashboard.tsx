@@ -5,6 +5,7 @@ import ResumeDashboardCard from "@/components/resume/ResumeDashboardCard";
 import ResumeGenerationOverlay from "@/components/resume/ResumeGenerationOverlay";
 import { ModalPortalOverlay } from "@/components/ui/ModalPortalOverlay";
 import { importJobFromUrl } from "@/features/jobs/server-actions/jobs-actions";
+import { useOnboardingGate } from "@/features/onboarding/context/OnboardingGateContext";
 import { resumesListQueryKey, useResumesList } from "@/features/resume/hooks/useResumesList";
 import {
   duplicateResume,
@@ -19,6 +20,7 @@ import { buildResumeVersionMetadata } from "@/features/resume/utils/resumeVersio
 import { ResumeData } from "@/types";
 import { useQueryClient } from "@tanstack/react-query";
 import { FileText, Plus, FilePlus, Upload, FileType, X, ArrowLeft, Loader2, AlertCircle, Link as LinkIcon } from "lucide-react";
+import { useRouter } from "next/navigation";
 
 type JdEntryMode = "url" | "manual";
 
@@ -37,6 +39,8 @@ interface ResumeDashboardProps {
 
 const ResumeDashboard: React.FC<ResumeDashboardProps> = ({ onEditResume, onCreateResume }) => {
   const queryClient = useQueryClient();
+  const router = useRouter();
+  const { featureGates, promptOnboarding } = useOnboardingGate();
   const { data: resumesList = [], isLoading, isError, error } = useResumesList();
   const resumes = Array.isArray(resumesList) ? resumesList : [];
 
@@ -118,6 +122,10 @@ const ResumeDashboard: React.FC<ResumeDashboardProps> = ({ onEditResume, onCreat
   };
 
   const openTargetedResumeFlow = () => {
+    if (!featureGates.resume_jd_create) {
+      promptOnboarding(featureGates.niche_complete ? "profile_setup" : "niche");
+      return;
+    }
     resetJdState();
     setCreateModalState("jd");
   };
@@ -389,6 +397,9 @@ const ResumeDashboard: React.FC<ResumeDashboardProps> = ({ onEditResume, onCreat
     setDownloadingId(resume.id);
     try {
       await downloadResumePdf(resume);
+      if (!featureGates.niche_complete) {
+        router.push("/uniboard/onboarding?mode=niche");
+      }
     } catch (err) {
       setBaseStatusType("error");
       setBaseStatusMessage(err instanceof Error ? err.message : "Failed to download PDF");
@@ -626,7 +637,11 @@ const ResumeDashboard: React.FC<ResumeDashboardProps> = ({ onEditResume, onCreat
 
                   <button
                     onClick={openTargetedResumeFlow}
-                    className="flex flex-col items-center text-center p-6 rounded-xl border border-slate-200 hover:border-brand-500 hover:bg-brand-50/50 transition-all group"
+                    disabled={!featureGates.resume_jd_create}
+                    title={!featureGates.resume_jd_create ? "Complete niche onboarding to unlock" : undefined}
+                    className={`flex flex-col items-center text-center p-6 rounded-xl border border-slate-200 transition-all group ${
+                      featureGates.resume_jd_create ? "hover:border-brand-500 hover:bg-brand-50/50" : "cursor-not-allowed opacity-50"
+                    }`}
                   >
                     <div className="w-14 h-14 bg-teal-100 text-teal-600 rounded-full flex items-center justify-center mb-4 group-hover:scale-110 transition-transform">
                       <FileType size={24} />

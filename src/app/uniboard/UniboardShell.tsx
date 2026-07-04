@@ -12,6 +12,7 @@ import { CoachActAsNavControls } from "@/components/uniboard/CoachActAsNavContro
 import type { CoachActAsSession } from "@/constants/coach-act-as";
 import { CoachActAsProvider } from "@/contexts/CoachActAsContext";
 import { OnboardingGateProvider, useOnboardingGate } from "@/features/onboarding/context/OnboardingGateContext";
+import { parseFeatureGates, type FeatureGates } from "@/features/onboarding/featureGates";
 import type { AtsFixPlanSection } from "@/features/resume/api/ats-fix-plan";
 import { useUnicoachInit } from "@/features/unicoach/hooks/use-uniboard-unicoach";
 import { useProfileData } from "@/features/user-profile/hooks/use-profile-data";
@@ -40,6 +41,7 @@ type UserData = {
   firstName?: string;
   is_team_member?: boolean;
   profile_setup_required?: boolean;
+  feature_gates?: FeatureGates;
   coach_actor?: {
     email?: string;
     name?: string;
@@ -67,20 +69,15 @@ function UniboardOnboardingGate({ userData }: { userData: UserData | null }) {
     resetBlockingGate();
   }, [pathname, resetBlockingGate]);
 
-  const isBlockingRoute =
-    profileSetupRequired &&
-    !blockingGateDismissed &&
-    (pathname.startsWith("/uniboard/resume") || pathname.startsWith("/uniboard/portfolio"));
-
   const showPromptModal = profileSetupRequired && profileSetupPromptOpen;
 
   return (
     <OnboardingGateModal
-      open={isBlockingRoute || showPromptModal}
+      open={showPromptModal}
       pathname={pathname}
       userName={userData?.firstName || userData?.name}
-      dismissible={showPromptModal && !isBlockingRoute}
-      onDismiss={showPromptModal && !isBlockingRoute ? dismissProfileSetupPrompt : dismissBlockingGate}
+      dismissible
+      onDismiss={dismissProfileSetupPrompt}
     />
   );
 }
@@ -271,9 +268,18 @@ export default function UniboardShell({
     // },
   ];
 
+  const isOnboardingRoute = pathname.startsWith("/uniboard/onboarding");
+
+  if (isOnboardingRoute) {
+    return <>{children}</>;
+  }
+
   return (
     <CoachActAsProvider session={coachActAsSession}>
-      <OnboardingGateProvider profileSetupRequired={Boolean(userData?.profile_setup_required && !isCoachActAs)}>
+      <OnboardingGateProvider
+        profileSetupRequired={Boolean(userData?.profile_setup_required && !isCoachActAs)}
+        featureGates={parseFeatureGates(userData?.feature_gates)}
+      >
         <AdkChatProvider userId={adkUserId}>
           <div className="flex h-screen bg-slate-50 dark:bg-slate-950 font-sans text-slate-900 dark:text-slate-100 text-[13px] transition-colors duration-300">
             <Suspense fallback={null}>

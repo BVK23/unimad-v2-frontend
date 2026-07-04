@@ -68,7 +68,7 @@ export default function OnboardingGateModal({ open, userName, pathname = "", onD
 
         <div className="mt-6 flex flex-col gap-3 sm:flex-row">
           <Link
-            href="/onboarding"
+            href="/uniboard/onboarding"
             className="inline-flex flex-1 items-center justify-center rounded-xl bg-brand-600 px-4 py-3 text-sm font-medium text-white shadow-sm transition-colors hover:bg-brand-700"
           >
             Go to Onboarding

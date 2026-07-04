@@ -25,7 +25,9 @@ function splitQuoteWords(text: string): string[] {
   return text.match(/\S+|\s+/g) ?? [text];
 }
 
-function wait(ms: number, signal: { cancelled: boolean }) {
+type AnimationSignal = { cancelled: boolean; timeouts: ReturnType<typeof setTimeout>[] };
+
+function wait(ms: number, signal: AnimationSignal) {
   return new Promise<void>(resolve => {
     const id = setTimeout(() => {
       if (!signal.cancelled) resolve();
@@ -60,7 +62,7 @@ function wordStateClass(state: WordState) {
 async function animateWordWrite(
   words: string[],
   setWordStates: React.Dispatch<React.SetStateAction<WordState[]>>,
-  signal: { cancelled: boolean }
+  signal: AnimationSignal
 ) {
   for (let i = 0; i < words.length; i += 1) {
     if (signal.cancelled) return;
@@ -94,11 +96,7 @@ async function animateWordWrite(
   }
 }
 
-async function animateBitErase(
-  words: string[],
-  setWordStates: React.Dispatch<React.SetStateAction<WordState[]>>,
-  signal: { cancelled: boolean }
-) {
+async function animateBitErase(words: string[], setWordStates: React.Dispatch<React.SetStateAction<WordState[]>>, signal: AnimationSignal) {
   const indices = words
     .map((word, index) => ({ word, index }))
     .filter(({ word }) => word.trim().length > 0)

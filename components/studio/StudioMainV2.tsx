@@ -286,7 +286,7 @@ const StudioMainV2: React.FC<StudioMainProps> = ({ initialContext, initialAssetI
   const router = useRouter();
   const pathname = usePathname() ?? "";
   const searchParams = useSearchParams();
-  const { profileSetupRequired, promptProfileSetup } = useOnboardingGate();
+  const { profileSetupRequired, featureGates, promptProfileSetup } = useOnboardingGate();
   const { data: profileData } = useProfileData();
   const adkChat = useOptionalAdkChatContext();
   const reviewUserId =
@@ -2317,7 +2317,21 @@ const StudioMainV2: React.FC<StudioMainProps> = ({ initialContext, initialAssetI
   };
 
   const handleGenerate = () => {
-    if (profileSetupRequired) {
+    if (selectedTopic === "cover-letter" || selectedTopic === "cold-email" || selectedTopic === "referral") {
+      if (!featureGates.niche_complete) {
+        router.push("/uniboard/onboarding?mode=niche");
+        return;
+      }
+    }
+
+    if (selectedTopic === "linkedin-post") {
+      if (!featureGates.studio_post_draft) {
+        router.push("/uniboard/onboarding?mode=niche");
+        return;
+      }
+    }
+
+    if (selectedTopic === "vpd" && profileSetupRequired) {
       promptProfileSetup();
       return;
     }
@@ -2430,12 +2444,11 @@ const StudioMainV2: React.FC<StudioMainProps> = ({ initialContext, initialAssetI
   };
 
   const handleGenerateAnother = () => {
-    if (profileSetupRequired) {
-      promptProfileSetup();
-      return;
-    }
-
     if (selectedTopic === "linkedin-post") {
+      if (!featureGates.studio_post_draft) {
+        router.push("/uniboard/onboarding?mode=niche");
+        return;
+      }
       setLinkedinPostAssetId(null);
       setGeneratedContent("");
       setLinkedinImages([]);

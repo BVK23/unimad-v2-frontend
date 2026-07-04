@@ -1,5 +1,6 @@
 import { COACH_ACT_AS_COOKIE, COACH_ACT_AS_HEADER, COACH_ACT_AS_NAME_COOKIE } from "@/constants/coach-act-as";
-import { cookies } from "next/headers";
+import type { FeatureGates } from "@/features/onboarding/featureGates";
+import { cookies, headers } from "next/headers";
 import { redirect } from "next/navigation";
 import UniboardShell from "./UniboardShell";
 
@@ -14,6 +15,7 @@ type UserData = {
   is_team_member?: boolean;
   onboarding_required?: boolean;
   profile_setup_required?: boolean;
+  feature_gates?: FeatureGates;
   is_coach_acting_as_student?: boolean;
   viewing_student_profile_id?: number;
   coach_actor?: {
@@ -63,6 +65,8 @@ export default async function UniboardLayout({ children }: { children: React.Rea
   const cookieStore = await cookies();
   const actAsId = cookieStore.get(COACH_ACT_AS_COOKIE)?.value?.trim();
   const actAsNameRaw = cookieStore.get(COACH_ACT_AS_NAME_COOKIE)?.value;
+  const headerStore = await headers();
+  const pathname = headerStore.get("x-pathname") ?? "";
   const coachActAsSession =
     actAsId && /^\d+$/.test(actAsId)
       ? {
@@ -71,8 +75,8 @@ export default async function UniboardLayout({ children }: { children: React.Rea
         }
       : null;
 
-  if (userData?.onboarding_required && !coachActAsSession) {
-    redirect("/onboarding");
+  if (userData?.onboarding_required && !coachActAsSession && !pathname.startsWith("/uniboard/onboarding")) {
+    redirect("/uniboard/onboarding");
   }
 
   return (

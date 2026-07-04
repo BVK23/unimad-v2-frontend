@@ -1,13 +1,15 @@
 "use client";
 
-import { useEffect, useMemo, useRef } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import Portfolio from "@/components/Portfolio";
 import PortfolioCreatingOverlay from "@/components/portfolio/PortfolioCreatingOverlay";
 import { useOnboardingGate } from "@/features/onboarding/context/OnboardingGateContext";
+import { onboardingHref } from "@/features/onboarding/featureGates";
 import type { PortfolioCreationVariant } from "@/features/portfolio/constants/portfolioCreationCopy";
 import { defaultBootstrapCreateInput, useCreatePortfolio } from "@/features/portfolio/hooks/useCreatePortfolio";
 import { usePortfolio } from "@/features/portfolio/hooks/usePortfolio";
 import { usePortfolioStore } from "@/features/portfolio/store/usePortfolioStore";
+import Link from "next/link";
 
 type PortfolioCreationPhase = "idle" | "fetching" | "creating" | "ready" | "error";
 
@@ -33,7 +35,9 @@ const getFriendlyLoadError = (err: unknown) => {
  */
 export default function PortfolioPageClient() {
   const bootstrapAttemptedRef = useRef(false);
-  const { profileSetupRequired } = useOnboardingGate();
+  const { featureGates, promptOnboarding } = useOnboardingGate();
+  const [onboardingHintDismissed, setOnboardingHintDismissed] = useState(false);
+  const canAutoCreate = featureGates.portfolio_auto_create;
   const portfolioQuery = usePortfolio();
   const createPortfolioMutation = useCreatePortfolio();
 
@@ -50,7 +54,7 @@ export default function PortfolioPageClient() {
   const { mutate: mutateCreatePortfolio, isPending: isCreatePending, isError: isCreateError } = createPortfolioMutation;
 
   useEffect(() => {
-    if (profileSetupRequired) {
+    if (!canAutoCreate) {
       return;
     }
     if (portfolioQuery.isLoading || portfolioQuery.isFetching) {
@@ -75,7 +79,7 @@ export default function PortfolioPageClient() {
     portfolioQuery.isError,
     portfolioQuery.isFetching,
     portfolioQuery.isLoading,
-    profileSetupRequired,
+    canAutoCreate,
   ]);
 
   const awaitingBootstrap = useMemo(
@@ -128,10 +132,61 @@ export default function PortfolioPageClient() {
     handleRetryCreate();
   };
 
-  if (profileSetupRequired) {
+  if (!canAutoCreate && !displayPortfolio?.id) {
     return (
-      <div className="flex h-full min-h-[40vh] items-center justify-center px-6 text-center text-sm text-slate-500 dark:text-slate-400">
-        Complete onboarding to generate your portfolio.
+      <div className="relative flex h-full min-h-[40vh] flex-col items-center justify-center gap-6 px-6 py-10 text-center">
+        {!onboardingHintDismissed ? (
+          <div className="w-full max-w-md rounded-2xl border border-slate-200 bg-white p-6 shadow-lg dark:border-slate-800 dark:bg-slate-900">
+            <h2 className="text-lg font-semibold text-slate-900 dark:text-white">Finish onboarding for a personalised portfolio</h2>
+            <p className="mt-2 text-sm text-slate-600 dark:text-slate-300">
+              Complete niche discovery (and optionally strengths) so Unibot can generate a portfolio tailored to you — or start from a blank
+              template.
+            </p>
+            <div className="mt-5 flex flex-col gap-2 sm:flex-row">
+              <Link
+                href={onboardingHref("niche")}
+                className="inline-flex flex-1 items-center justify-center rounded-xl bg-brand-600 px-4 py-3 text-sm font-medium text-white hover:bg-brand-700"
+              >
+                Complete onboarding
+              </Link>
+              <button
+                type="button"
+                onClick={() => {
+                  setOnboardingHintDismissed(true);
+                  bootstrapAttemptedRef.current = true;
+                  mutateCreatePortfolio(defaultBootstrapCreateInput);
+                }}
+                className="inline-flex flex-1 items-center justify-center rounded-xl border border-slate-200 px-4 py-3 text-sm font-medium text-slate-700 hover:bg-slate-50 dark:border-slate-700 dark:text-slate-200"
+              >
+                Start from scratch
+              </button>
+            </div>
+            <button
+              type="button"
+              onClick={() => setOnboardingHintDismissed(true)}
+              className="mt-4 text-xs text-slate-400 hover:text-slate-600"
+            >
+              Dismiss
+            </button>
+          </div>
+        ) : (
+          <div className="flex flex-col items-center gap-4">
+            <p className="max-w-sm text-sm text-slate-500">Start a blank portfolio or finish onboarding for AI-generated content.</p>
+            <button
+              type="button"
+              onClick={() => {
+                bootstrapAttemptedRef.current = true;
+                mutateCreatePortfolio(defaultBootstrapCreateInput);
+              }}
+              className="rounded-full bg-brand-600 px-6 py-2.5 text-sm font-semibold text-white hover:bg-brand-700"
+            >
+              Create blank portfolio
+            </button>
+            <button type="button" onClick={() => promptOnboarding("niche")} className="text-sm text-brand-600 hover:underline">
+              Finish onboarding instead
+            </button>
+          </div>
+        )}
       </div>
     );
   }
