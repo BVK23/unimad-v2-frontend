@@ -2,7 +2,7 @@
 
 import React, { useCallback, useMemo, useState } from "react";
 import { buildMountainDemoStudents, isMountainDemoUserId } from "@/constants/unicoach-coach-mountain-demo";
-import { COACH_PIPELINE_LABELS, type CoachPipelineStage } from "@/constants/unicoach-coach-pipeline";
+import { COACH_PIPELINE_LABELS, COACH_PIPELINE_ORDER, type CoachPipelineStage } from "@/constants/unicoach-coach-pipeline";
 import { useUnicoachStudentsByStage, useUpdateUnicoachStudentCallsMutation } from "@/features/unicoach/hooks/use-uniboard-unicoach";
 import { fetchUserDataForPaymentPrefill } from "@/features/unicoach/server-actions/unicoach-actions";
 import type { AssignedStudent, UnicoachInitResponse } from "@/features/unicoach/types";
@@ -18,9 +18,13 @@ export type UnicoachCoachDashboardProps = {
   init: UnicoachInitResponse;
 };
 
+function isCoachPipelineStage(key: string): key is CoachPipelineStage {
+  return (COACH_PIPELINE_ORDER as readonly string[]).includes(key);
+}
+
 function stageKeyForUser(stages: Record<string, AssignedStudent[]>, userId: number): CoachPipelineStage {
   for (const [key, list] of Object.entries(stages)) {
-    if (list.some(u => u.id === userId)) return key as CoachPipelineStage;
+    if (list.some(u => u.id === userId) && isCoachPipelineStage(key)) return key;
   }
   return "not_started";
 }
@@ -43,9 +47,17 @@ export const UnicoachCoachDashboard: React.FC<UnicoachCoachDashboardProps> = ({ 
   });
   const sessionEmail = sessionPrefill?.email ?? null;
 
-  const { data: stagesData, isLoading } = useUnicoachStudentsByStage(Boolean(init.coach_data));
+  const {
+    data: stagesData,
+    isLoading,
+    isError: stagesLoadFailed,
+    error: stagesLoadError,
+    refetch: refetchStages,
+  } = useUnicoachStudentsByStage(Boolean(init.coach_data));
   const updateCallsMutation = useUpdateUnicoachStudentCallsMutation();
   const stages = useMemo(() => stagesData ?? {}, [stagesData]);
+  const stagesErrorMessage =
+    stagesLoadError instanceof Error ? stagesLoadError.message : stagesLoadFailed ? "Could not load student roster by stage." : null;
 
   const handleOpenJourney = (user: AssignedStudent) => {
     const params = new URLSearchParams();
@@ -80,7 +92,7 @@ export const UnicoachCoachDashboard: React.FC<UnicoachCoachDashboardProps> = ({ 
     if (q) {
       list = list.filter(u => {
         const stage = stageOverrides[u.id] ?? stageKeyForUser(stages, u.id);
-        const label = COACH_PIPELINE_LABELS[stage].toLowerCase();
+        const label = (COACH_PIPELINE_LABELS[stage] ?? stage).toLowerCase();
         const phone = (u.phone_number || "").toLowerCase();
         return (
           (u.name || "").toLowerCase().includes(q) || (u.email || "").toLowerCase().includes(q) || phone.includes(q) || label.includes(q)
@@ -196,6 +208,27 @@ export const UnicoachCoachDashboard: React.FC<UnicoachCoachDashboardProps> = ({ 
             ) : null}
           </div>
         </section>
+
+        {stagesErrorMessage ? (
+          <div
+            className="rounded-xl border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-800 dark:border-red-900/50 dark:bg-red-950/30 dark:text-red-200"
+            role="alert"
+          >
+            <p className="font-medium">Coach roster failed to load</p>
+            <p className="mt-1 text-red-700 dark:text-red-300">{stagesErrorMessage}</p>
+            <p className="mt-2 text-xs text-red-600/90 dark:text-red-400/90">
+              The mountain graph uses init data only. Stage grouping comes from{" "}
+              <code className="font-mono">/api/unicoach/students-by-stage/</code>.
+            </p>
+            <button
+              type="button"
+              onClick={() => void refetchStages()}
+              className="mt-3 rounded-lg bg-red-700 px-3 py-1.5 text-xs font-semibold text-white hover:bg-red-800"
+            >
+              Retry roster load
+            </button>
+          </div>
+        ) : null}
 
         {isLoading ? (
           <p className="text-center text-sm text-slate-500 py-8">Loading students…</p>

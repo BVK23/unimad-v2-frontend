@@ -289,7 +289,10 @@ export async function fetchUnicoachStudentsByStage(): Promise<UnicoachStudentsBy
   const res = await authedFetch("/api/unicoach/students-by-stage/", { method: "GET" });
   const data = await res.json().catch(() => ({}));
   if (!res.ok) {
-    throw new Error((data as { error?: string })?.error ?? "Failed to fetch students by stage");
+    const apiError = (data as { error?: string })?.error;
+    const detail = apiError ?? `students-by-stage HTTP ${res.status}`;
+    console.error("[unicoach/coach] students-by-stage failed", { status: res.status, error: apiError, data });
+    throw new Error(`Coach roster unavailable: ${detail}`);
   }
   return data as UnicoachStudentsByStage;
 }
