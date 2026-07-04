@@ -213,13 +213,6 @@ html.landing-active body {
   align-items: center;
   gap: 10px;
 }
-.eyebrow::before {
-  content: "";
-  width: 16px;
-  height: 1px;
-  background: currentColor;
-  flex-shrink: 0;
-}
 .eyebrow-blue {
   color: var(--blue-600);
 }
@@ -291,10 +284,19 @@ html.landing-active body {
   position: sticky;
   top: 0;
   z-index: 200;
-  background: rgba(255, 255, 255, 0.92);
-  backdrop-filter: blur(16px);
-  -webkit-backdrop-filter: blur(16px);
+  /* Effectively opaque white so page content can never read through the bar,
+     even on browsers/GPUs that don't composite backdrop-filter. The blur is
+     kept purely as frost for browsers that do support it. */
+  background: rgba(255, 255, 255, 0.98);
+  backdrop-filter: saturate(180%) blur(20px);
+  -webkit-backdrop-filter: saturate(180%) blur(20px);
   border-bottom: 1px solid var(--rule);
+}
+/* Fallback for browsers without backdrop-filter support: fully opaque. */
+@supports not ((backdrop-filter: blur(1px)) or (-webkit-backdrop-filter: blur(1px))) {
+  .nav {
+    background: #fff;
+  }
 }
 .nav-inner {
   max-width: 1280px;
@@ -340,6 +342,16 @@ html.landing-active body {
 }
 .nav-links a:hover {
   color: var(--ink-900);
+}
+/* Hamburger + collapsible mobile menu — hidden on desktop, revealed ≤768px */
+.nav-burger {
+  display: none;
+}
+.nav-mobile {
+  display: none;
+}
+.nav-scrim {
+  display: none;
 }
 /* ─────────────────────────────────────────
    HERO VIEWPORT — hero + trust in one screen
@@ -850,6 +862,10 @@ html.landing-active body {
   letter-spacing: 0.01em;
   color: var(--ink-400);
 }
+/* Homepage trust strip label nudged up slightly */
+.trust .trust-label {
+  margin-top: -10px;
+}
 .marquee-outer {
   overflow-x: hidden;
   overflow-y: visible;
@@ -1217,12 +1233,6 @@ html.landing-active body {
   align-items: center;
   gap: 8px;
 }
-.tools-free-badge::before {
-  content: "";
-  width: 14px;
-  height: 1px;
-  background: var(--blue-600);
-}
 .tools-hl {
   font-size: 38px;
   font-weight: 300;
@@ -1527,12 +1537,6 @@ html.landing-active body {
   display: flex;
   align-items: center;
   gap: 10px;
-}
-.sec-label::before {
-  content: "";
-  width: 14px;
-  height: 1px;
-  background: var(--blue-600);
 }
 .sec-hl {
   font-size: 44px;
@@ -1960,17 +1964,12 @@ html.landing-active body {
   font-weight: 500;
   color: var(--blue-600);
   text-decoration: none;
-  padding: 10px 22px;
-  border: 1.5px solid var(--blue-200);
-  border-radius: 999px;
-  transition:
-    background 0.18s,
-    border-color 0.18s;
+  padding: 6px 4px;
+  transition: color 0.18s;
   white-space: nowrap;
 }
 .stories-view-all:hover {
-  background: var(--blue-050);
-  border-color: var(--blue-600);
+  color: var(--blue-700);
 }
 /* ── VIDEO ROW ── */
 .stories-video-card__media {
@@ -2164,7 +2163,7 @@ html.landing-active body {
   align-items: center;
   justify-content: center;
   gap: 8px;
-  margin-top: 18px;
+  margin-top: 40px;
 }
 .stories-carousel__dot {
   width: 8px;
@@ -2281,7 +2280,7 @@ html.landing-active body {
   padding: 13px 26px;
   font-family: "Onest", sans-serif;
   font-size: 15px;
-  font-weight: 400;
+  font-weight: 500;
   letter-spacing: normal;
   line-height: 1.2;
   color: #181818;
@@ -2881,7 +2880,7 @@ html.landing-active body {
   align-items: center;
   justify-content: center;
   gap: 12px;
-  flex-wrap: nowrap;
+  flex-wrap: wrap;
   margin-top: 0;
 }
 .closing-ctas .btn,
@@ -2895,7 +2894,7 @@ html.landing-active body {
 }
 .closing-gold-cta {
   font-family: "Onest", sans-serif;
-  font-weight: 400;
+  font-weight: 500;
   letter-spacing: normal;
   line-height: 1.2;
   color: #181818;
@@ -2963,9 +2962,16 @@ footer {
   margin: 0 auto;
   padding: 0 56px;
   display: flex;
+  flex-direction: column;
+  align-items: stretch;
+  gap: 22px;
+}
+/* Top row of the footer: brand mark on the left, social icons on the right */
+.footer-main {
+  display: flex;
   align-items: center;
   justify-content: space-between;
-  gap: 24px 40px;
+  gap: 20px 40px;
   flex-wrap: wrap;
 }
 .footer-brand {
@@ -3002,7 +3008,7 @@ footer {
   display: flex;
   align-items: center;
   flex-wrap: wrap;
-  gap: 12px 28px;
+  gap: 12px 26px;
 }
 .footer-nav a {
   font-size: 13.5px;
@@ -3011,6 +3017,21 @@ footer {
   transition: color 0.15s;
 }
 .footer-nav a:hover {
+  color: #fff;
+}
+.footer-socials {
+  display: flex;
+  align-items: center;
+  gap: 18px;
+  flex-shrink: 0;
+}
+.footer-socials a {
+  display: inline-flex;
+  align-items: center;
+  color: rgba(255, 255, 255, 0.62);
+  transition: color 0.15s;
+}
+.footer-socials a:hover {
   color: #fff;
 }
 /* Closing-card footer spans the full card: logo hugs the left margin, menu hugs the right */
@@ -3178,12 +3199,154 @@ footer {
   .nav-inner {
     padding: 0 20px;
   }
+  /* Desktop links + standalone Login pill collapse into the hamburger menu */
   .nav-links {
     display: none;
   }
-  .nav-inner .btn {
-    font-size: 12px;
-    padding: 8px 16px;
+  .nav-login {
+    display: none;
+  }
+  .nav-burger {
+    display: inline-flex;
+    flex-direction: column;
+    justify-content: center;
+    gap: 5px;
+    width: 44px;
+    height: 44px;
+    margin-right: -10px;
+    padding: 0;
+    background: transparent;
+    border: none;
+    cursor: pointer;
+    z-index: 2;
+  }
+  .nav-burger__bar {
+    display: block;
+    width: 22px;
+    height: 2px;
+    margin: 0 auto;
+    border-radius: 2px;
+    background: var(--ink-900);
+    transition:
+      transform 0.28s cubic-bezier(0.22, 0.61, 0.36, 1),
+      opacity 0.18s ease,
+      background-color 0.3s ease;
+  }
+  .nav--menu-open .nav-burger__bar:nth-child(1) {
+    transform: translateY(7px) rotate(45deg);
+  }
+  .nav--menu-open .nav-burger__bar:nth-child(2) {
+    opacity: 0;
+  }
+  .nav--menu-open .nav-burger__bar:nth-child(3) {
+    transform: translateY(-7px) rotate(-45deg);
+  }
+
+  /* Dropdown panel drops from the bar */
+  .nav-mobile {
+    display: block;
+    position: absolute;
+    top: 100%;
+    left: 0;
+    right: 0;
+    z-index: 2;
+    background: #fff;
+    border-bottom: 1px solid var(--rule);
+    box-shadow: 0 22px 44px -22px rgba(20, 30, 60, 0.28);
+    padding: 6px 20px 20px;
+    transform: translateY(-10px);
+    opacity: 0;
+    visibility: hidden;
+    pointer-events: none;
+    transition:
+      opacity 0.24s ease,
+      transform 0.24s ease,
+      visibility 0s linear 0.24s;
+  }
+  .nav--menu-open .nav-mobile {
+    opacity: 1;
+    transform: translateY(0);
+    visibility: visible;
+    pointer-events: auto;
+    transition:
+      opacity 0.24s ease,
+      transform 0.24s ease;
+  }
+  .nav-mobile__links {
+    list-style: none;
+    margin: 0;
+    padding: 0;
+  }
+  .nav-mobile__links li {
+    border-bottom: 1px solid var(--rule);
+  }
+  .nav-mobile__links a {
+    display: block;
+    padding: 15px 2px;
+    font-size: 16px;
+    font-weight: 400;
+    color: var(--ink-800);
+    text-decoration: none;
+    transition: color 0.15s ease;
+  }
+  .nav-mobile__links a[aria-current="page"] {
+    color: var(--blue-600);
+    font-weight: 500;
+  }
+  .nav-mobile__cta {
+    display: flex;
+    justify-content: center;
+    width: 100%;
+    margin-top: 16px;
+    padding: 13px 24px;
+    font-size: 15px;
+  }
+
+  /* Tap-outside scrim below the bar */
+  .nav-scrim {
+    display: block;
+    position: fixed;
+    inset: var(--nav-h) 0 0 0;
+    z-index: 1;
+    background: rgba(10, 15, 30, 0.32);
+    opacity: 0;
+    visibility: hidden;
+    pointer-events: none;
+    transition:
+      opacity 0.24s ease,
+      visibility 0s linear 0.24s;
+  }
+  .nav--menu-open .nav-scrim {
+    opacity: 1;
+    visibility: visible;
+    pointer-events: auto;
+    transition: opacity 0.24s ease;
+  }
+
+  /* When the menu is open, the bar itself is solid white so the burger + brand
+     stay legible and the panel reads as one continuous sheet — even on the
+     Unicoach page where the bar is otherwise transparent over its dark hero. */
+  .nav--menu-open,
+  .unicoach-page .nav--menu-open {
+    background: #fff;
+    border-bottom-color: var(--rule);
+    backdrop-filter: none;
+    -webkit-backdrop-filter: none;
+  }
+  .unicoach-page .nav--menu-open .nav-brand svg,
+  .unicoach-page .nav--menu-open .nav-brand-name {
+    color: var(--blue-600);
+  }
+  .nav--menu-open .nav-burger__bar {
+    background: var(--ink-900);
+  }
+  /* Unicoach: burger is white over the dark hero, dark once the bar is solid */
+  .unicoach-page .nav .nav-burger__bar {
+    background: #fff;
+  }
+  .unicoach-page .nav--solid .nav-burger__bar,
+  .unicoach-page .nav--menu-open .nav-burger__bar {
+    background: var(--ink-900);
   }
   /* ── Hero ── */
   :root {
@@ -3496,14 +3659,31 @@ footer {
     opacity: 0.12;
     background-size: 28px 28px;
   }
+  /* Keep the centred column inside the viewport — a nowrap CTA row would
+     otherwise stretch it wider than the screen and overflow:hidden would clip
+     the heading + buttons on both edges. */
+  .closing-band-inner {
+    width: 100%;
+    max-width: 100%;
+  }
+  .closing--stars > .container {
+    padding-left: clamp(20px, 5vw, 32px);
+    padding-right: clamp(20px, 5vw, 32px);
+  }
   .closing-ctas {
-    gap: 10px;
+    flex-direction: column;
+    width: 100%;
+    gap: 12px;
   }
   .closing-ctas .btn,
   .closing-ctas .masterclass-gold-btn,
   .closing-gold-cta {
     padding: 14px 26px;
     font-size: 15px;
+    width: 100%;
+    max-width: 360px;
+    justify-content: center;
+    white-space: normal;
   }
   /* ── Footer ── */
   footer {
@@ -3511,11 +3691,20 @@ footer {
   }
   .footer-inner {
     padding: 0 20px;
-    flex-direction: column;
-    gap: 20px;
+    align-items: center;
+    gap: 22px;
     text-align: center;
   }
+  .footer-main {
+    flex-direction: column;
+    justify-content: center;
+    gap: 18px;
+    width: 100%;
+  }
   .footer-nav {
+    justify-content: center;
+  }
+  .footer-socials {
     justify-content: center;
   }
   .footer-tag {
@@ -3613,8 +3802,10 @@ footer {
   background: var(--blue-600);
 }
 @media (max-width: 1024px) {
+  /* Testimonial card is intentionally hidden on mobile — the scribble stage
+     (desktop-only) stays hidden too, leaving a clean headline + CTA hero. */
   .hero-cycling-quote {
-    display: block;
+    display: none;
   }
   .hero-scribble-stage {
     display: none;
@@ -3697,26 +3888,30 @@ footer {
 .showcase-chat-pinned {
   position: absolute;
   left: 50%;
-  top: 50%;
+  /* Docked to the bottom of the pinned viewport so it stays fully visible on
+     short screens instead of being clipped by a center-relative offset. */
+  bottom: clamp(18px, 3.4vh, 34px);
   z-index: 5;
-  width: min(var(--showcase-screen-w), 94vw);
+  /* Kept narrower than the fixed screen so the bar reads as a compact,
+     secondary element docked beneath it. */
+  width: min(520px, 90vw);
   transform-origin: center center;
   pointer-events: auto;
 }
 .showcase-chat-pinned .unibot-bar--inscreen {
   width: 100%;
   max-width: none;
-  height: 64px;
-  padding: 10px 10px 10px 24px;
+  height: 54px;
+  padding: 8px 8px 8px 20px;
   box-shadow: 0 12px 40px -14px rgba(20, 30, 60, 0.18);
 }
 .showcase-chat-pinned .unibot-bar--inscreen .ub-text,
 .showcase-chat-pinned .unibot-bar--inscreen .ub-input {
-  font-size: 15px;
+  font-size: 14px;
 }
 .showcase-chat-pinned .ub-send {
-  width: 42px;
-  height: 42px;
+  width: 38px;
+  height: 38px;
 }
 .showcase-features-layer {
   position: absolute;
@@ -3724,7 +3919,10 @@ footer {
   z-index: 4;
   display: flex;
   align-items: center;
-  padding: calc(var(--nav-h) + 108px) 0 84px;
+  /* Tighter top padding uses the empty space above the feature, letting the
+     content sit higher; the bottom padding reserves room for the docked chat
+     bar (~54px tall + its offset) so content never overlaps it. */
+  padding: calc(var(--nav-h) + 52px) 0 116px;
   box-sizing: border-box;
   pointer-events: none;
 }
@@ -3760,6 +3958,14 @@ footer {
 }
 .showcase-features-screen {
   width: 100%;
+  /* Cap the screen to the vertical space left between the nav and the docked
+     chat bar. The frame keeps a fixed 1024:590 (~1.735) ratio, so bounding the
+     width by the available height (× 1.735) shrinks it on short viewports
+     instead of letting it grow into the chat bar. First line is the fallback
+     for browsers without svh support. */
+  max-width: var(--showcase-screen-w);
+  max-width: min(var(--showcase-screen-w), calc((100svh - 272px) * 1.735));
+  margin: 0 auto;
 }
 .showcase-features-screen .showcase-screen-frame {
   border-radius: 14px;
@@ -4384,46 +4590,10 @@ footer {
   overflow: hidden;
   line-height: 0;
   background: #fff;
+  transition: background-color 0.5s cubic-bezier(0.22, 0.61, 0.36, 1);
 }
 .showcase-screen-mock {
   z-index: 0;
-}
-/* Progressive bottom blur — stacked backdrop-filter layers */
-.showcase-screen-blur {
-  position: absolute;
-  inset: 0;
-  z-index: 1;
-  pointer-events: none;
-}
-.showcase-screen-blur__layer {
-  position: absolute;
-  left: 0;
-  right: 0;
-  bottom: 0;
-  height: 100%;
-  transform: translateZ(0);
-  background: rgba(255, 255, 255, 0.06);
-  backdrop-filter: blur(calc(4px + var(--blur-step) * 6px));
-  -webkit-backdrop-filter: blur(calc(4px + var(--blur-step) * 6px));
-  mask-image: linear-gradient(to top, #000 0%, #000 calc(8% + var(--blur-step) * 6%), transparent calc(28% + var(--blur-step) * 10%));
-  -webkit-mask-image: linear-gradient(
-    to top,
-    #000 0%,
-    #000 calc(8% + var(--blur-step) * 6%),
-    transparent calc(28% + var(--blur-step) * 10%)
-  );
-}
-.showcase-screen-blur__layer:nth-child(1) {
-  --blur-step: 0;
-}
-.showcase-screen-blur__layer:nth-child(2) {
-  --blur-step: 1;
-}
-.showcase-screen-blur__layer:nth-child(3) {
-  --blur-step: 2;
-}
-.showcase-screen-blur__layer:nth-child(4) {
-  --blur-step: 3;
 }
 .showcase-screen-img {
   display: block;
@@ -4432,6 +4602,36 @@ footer {
   object-fit: cover;
   object-position: top center;
   transform: translateZ(0);
+  /* Stacked per-point screenshots crossfade as the active bullet changes */
+  opacity: 0;
+  transition: opacity 0.5s cubic-bezier(0.22, 0.61, 0.36, 1);
+  z-index: 0;
+}
+.showcase-screen-img.is-active {
+  opacity: 1;
+}
+/* Tall/portrait shots (e.g. modals) fit whole inside the frame on a soft
+   backdrop — never cropped, never upscaled past their native size. */
+.showcase-screen-img--contain {
+  object-fit: contain;
+  object-position: center;
+  box-sizing: border-box;
+  padding: 22px 24px 26px;
+}
+/* Edge-to-edge contain — spans the full frame width (wide, short strips) */
+.showcase-screen-img--bleed {
+  padding: 0;
+}
+.showcase-screen-viewport--pad {
+  background: #fff;
+}
+@media (prefers-reduced-motion: reduce) {
+  .showcase-screen-img {
+    transition: none;
+  }
+  .showcase-screen-viewport {
+    transition: none;
+  }
 }
 .showcase-screen-foot {
   position: absolute;
@@ -4863,6 +5063,89 @@ footer {
   }
   .showcase-screen-frame {
     border-radius: 16px;
+  }
+}
+
+/* ── Scroll-driven showcase on tablet + phone ──
+   The desktop 3-column stage (title | screen | points) collapses to a single
+   centred column that fits inside the pinned viewport, so mobile gets the same
+   scroll-through feature animation as desktop. */
+@media (max-width: 1120px) {
+  .showcase-features-layer {
+    padding: calc(var(--nav-h) + 14px) 0 14px;
+    align-items: center;
+  }
+  /* minmax(0, 1fr) + min-width:0 stop the single track from growing to its
+     content's min size (which would push the frame off-centre to the right).
+     Widths are bound to 100% of the padded stage — never to raw vw. */
+  .showcase-features-grid {
+    grid-template-columns: minmax(0, 1fr);
+    grid-auto-rows: min-content;
+    align-content: center;
+    justify-items: center;
+    gap: clamp(14px, 2.6vh, 28px);
+    width: 100%;
+    max-width: 100%;
+    height: 100%;
+  }
+  .showcase-features-col,
+  .showcase-features-center {
+    width: 100%;
+    min-width: 0;
+    justify-content: center;
+  }
+  .showcase-features-col--left {
+    padding-right: 0;
+  }
+  .showcase-features-col--right {
+    padding-left: 0;
+  }
+  .showcase-feature-heading {
+    align-items: center;
+    text-align: center;
+    width: 100%;
+    max-width: 460px;
+  }
+  .showcase-feature-title {
+    font-size: clamp(20px, 5vw, 28px);
+    margin-bottom: clamp(12px, 1.8vh, 20px);
+  }
+  .showcase-feature-cta {
+    padding: 10px 20px;
+    font-size: 13.5px;
+  }
+  .showcase-features-screen {
+    width: 100%;
+    max-width: 440px;
+    margin: 0 auto;
+  }
+  .showcase-feature-pointers-wrap {
+    width: 100%;
+    max-width: 420px;
+    margin: 0 auto;
+  }
+  .showcase-feature-pointers {
+    gap: clamp(9px, 1.7vh, 18px);
+  }
+  .showcase-feature-pointer {
+    font-size: 14px;
+    line-height: 1.4;
+  }
+  /* Shorten the pinned-scroll distance on phone/tablet — the desktop track
+     (~630vh) is far too long to swipe through on a small screen. The animation
+     is normalised 0→1 over the track, so compressing the height simply tightens
+     the whole sequence without touching any timing or phase logic. */
+  .showcase-scroll-track {
+    height: 380vh !important;
+  }
+  /* Chat bar rides along below the headline in the intro, then fades out with
+     it as the features slide in (see chatOpacityValue in ProductShowcase). */
+  .showcase-chat-pinned {
+    display: block;
+    width: min(440px, 90vw);
+  }
+  .showcase-hl--pinned {
+    width: min(560px, 100%);
   }
 }
 
@@ -5434,10 +5717,18 @@ footer {
     backdrop-filter 0.35s ease;
 }
 .unicoach-page .nav--solid {
-  background: rgba(255, 255, 255, 0.85);
+  /* Fully opaque white so page content can NEVER read through the bar, even
+     when the browser doesn't composite backdrop-filter. Blur stays as frost
+     for browsers that support it. */
+  background: #fff;
   backdrop-filter: saturate(180%) blur(20px);
   -webkit-backdrop-filter: saturate(180%) blur(20px);
   border-bottom-color: var(--rule);
+}
+@supports not ((backdrop-filter: blur(1px)) or (-webkit-backdrop-filter: blur(1px))) {
+  .unicoach-page .nav--solid {
+    background: #fff;
+  }
 }
 /* Brand mark + wordmark */
 .unicoach-page .nav .nav-brand svg {
@@ -5677,12 +5968,15 @@ footer {
 /* ── How it works — sticky stack: cards rise from below and land centred ── */
 .uc-steps {
   padding: clamp(84px, 11vh, 120px) 0 clamp(96px, 14vh, 160px);
+  background: var(--ink-100);
 }
 .uc-stack {
   --uc-card-h: clamp(280px, 40vh, 360px);
   max-width: 880px;
   margin: 0 auto;
-  padding: 0 24px;
+  /* Trailing space lets the final card travel to the same centred position
+     the others reach, so all four land exactly on top of each other. */
+  padding: 0 24px calc(var(--uc-card-h) + 40px);
 }
 .uc-stack__card {
   position: sticky;
@@ -5692,11 +5986,14 @@ footer {
   display: flex;
   flex-direction: column;
   justify-content: center;
+  align-items: center;
+  text-align: center;
   margin-bottom: clamp(28px, 5vh, 60px);
   padding: clamp(34px, 4vw, 56px) clamp(26px, 4vw, 56px);
   background: var(--white);
   border: 1px solid var(--rule);
   border-radius: 24px;
+  box-shadow: 0 18px 50px -30px rgba(20, 30, 60, 0.28);
 }
 /* First card — dark title card */
 .uc-stack__card--head {
@@ -5825,6 +6122,14 @@ footer {
   line-height: 1.5;
   color: var(--ink-500);
 }
+/* Discovery banner subtitle — extra breathing room, balanced width and no
+   single-word orphan on the last line. */
+.uc-plan--free .uc-plan__tagline {
+  max-width: 60ch;
+  margin: 12px 0 22px;
+  line-height: 1.6;
+  text-wrap: pretty;
+}
 .uc-plan__price {
   display: flex;
   align-items: baseline;
@@ -5866,6 +6171,31 @@ footer {
   font-size: 14px;
   line-height: 1.45;
   color: var(--ink-600);
+}
+/* Each point sits in its own grey pill, with tighter, smaller text */
+.uc-plan--module .uc-plan__features,
+.uc-plan--free .uc-plan__features,
+.uc-plan--full .uc-plan__features {
+  gap: 8px;
+}
+.uc-plan--module .uc-plan__features li,
+.uc-plan--free .uc-plan__features li {
+  background: var(--ink-100);
+  border: 1px solid var(--rule);
+  border-radius: 10px;
+  padding: 9px 13px;
+  font-size: 12.5px;
+  line-height: 1.4;
+  color: var(--ink-700);
+}
+/* Full System sits on a dark card — subtle translucent pills */
+.uc-plan--full .uc-plan__features li {
+  background: rgba(255, 255, 255, 0.05);
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  border-radius: 10px;
+  padding: 9px 13px;
+  font-size: 12.5px;
+  line-height: 1.4;
 }
 .uc-plan__cta {
   width: 100%;
@@ -5989,6 +6319,22 @@ footer {
 /* ── Proof ribbon ── */
 .uc-proof {
   padding: 56px 0;
+}
+/* Real alumni photo as the review avatar (falls back to initials) */
+.ravatar--photo {
+  object-fit: cover;
+  background: var(--ink-100);
+  padding: 0;
+}
+.uc-proof .rcard {
+  align-items: center;
+}
+.uc-proof .rquote {
+  margin-bottom: 6px;
+  display: -webkit-box;
+  -webkit-line-clamp: 3;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
 }
 /* ── FAQ ── */
 .uc-faq {
@@ -6116,234 +6462,209 @@ footer {
   }
 }
 
-/* ─────────────────────────────────────────
-   LEGAL / MARKETING PAGES
-───────────────────────────────────────── */
-.legal-page-main {
-  padding: calc(var(--nav-h) + clamp(32px, 6vh, 56px)) 24px clamp(64px, 10vh, 96px);
-  min-height: calc(100vh - var(--nav-h));
-}
-.legal-page-footer {
-  margin-top: auto;
-}
-.legal-doc {
-  max-width: 760px;
-  margin: 0 auto;
-}
-.legal-doc--center {
+/* ═══════════════════════════════════════════
+   ABOUT PAGE — text-first, homepage design language
+═══════════════════════════════════════════ */
+.about-hero {
+  position: relative;
+  overflow: hidden;
+  padding: clamp(64px, 11vh, 128px) 0 clamp(18px, 4vh, 40px);
   text-align: center;
+  background-color: var(--doc-bg);
 }
-.legal-doc__header {
-  margin-bottom: clamp(28px, 4vw, 40px);
-  padding-bottom: 24px;
-  border-bottom: 1px solid var(--rule);
+/* Blue dot grid — same pattern as the homepage hero, faded out at the bottom
+   so it blends into the first story band. */
+.about-hero::before {
+  content: "";
+  position: absolute;
+  inset: 0;
+  z-index: 0;
+  background-image: radial-gradient(circle, rgba(52, 109, 224, 0.13) 1px, transparent 1px);
+  background-size: 28px 28px;
+  -webkit-mask-image: linear-gradient(to bottom, #000 0%, #000 52%, transparent 92%);
+  mask-image: linear-gradient(to bottom, #000 0%, #000 52%, transparent 92%);
+  pointer-events: none;
 }
-.legal-doc__title {
-  font-size: clamp(28px, 4.5vw, 40px);
-  font-weight: 400;
-  letter-spacing: -0.02em;
-  color: var(--ink-900);
-  line-height: 1.15;
+.about-hero__glow {
+  position: absolute;
+  top: 44%;
+  left: 50%;
+  transform: translate(-50%, -50%);
+  width: min(860px, 94vw);
+  height: 440px;
+  background: radial-gradient(
+    ellipse at center,
+    rgba(250, 249, 246, 1) 28%,
+    rgba(250, 249, 246, 0.9) 50%,
+    rgba(250, 249, 246, 0.45) 70%,
+    transparent 84%
+  );
+  pointer-events: none;
+  z-index: 1;
 }
-.legal-accent {
-  color: var(--blue-600);
-}
-.legal-doc__updated {
-  margin-top: 12px;
-  font-size: 14px;
-  color: var(--ink-500);
-}
-.legal-section {
-  margin-bottom: clamp(24px, 3vw, 32px);
-}
-.legal-section__title {
-  font-size: 18px;
-  font-weight: 600;
-  color: var(--ink-900);
-  margin-bottom: 12px;
-}
-.legal-section__title:empty {
-  display: none;
-}
-.legal-p {
-  font-size: 15.5px;
-  line-height: 1.72;
-  color: var(--ink-600);
-  margin-bottom: 12px;
-}
-.legal-p:last-child {
-  margin-bottom: 0;
-}
-.legal-p a {
-  color: var(--blue-600);
-  text-decoration: underline;
-  text-underline-offset: 2px;
-}
-.legal-list {
+.about-hero__inner {
+  position: relative;
+  z-index: 2;
+  max-width: 900px;
+  margin: 0 auto;
+  padding: 0 24px;
   display: flex;
   flex-direction: column;
-  gap: 8px;
-  margin: 8px 0 12px;
-  padding-left: 20px;
-  list-style: disc;
+  align-items: center;
 }
-.legal-list li {
-  font-size: 15.5px;
-  line-height: 1.65;
-  color: var(--ink-600);
+.about-eyebrow {
+  justify-content: center;
+  margin-bottom: 22px;
 }
-.legal-contact__lead {
-  font-size: clamp(18px, 2.5vw, 22px);
-  color: var(--ink-700);
-  margin-bottom: 12px;
-}
-.legal-contact__email {
-  font-size: clamp(20px, 3vw, 26px);
-  margin-bottom: 32px;
-}
-.legal-contact__email a {
-  color: var(--blue-600);
-  font-weight: 500;
-  text-decoration: none;
-}
-.legal-contact__email a:hover {
-  text-decoration: underline;
-}
-.legal-contact__card {
-  display: inline-flex;
-  flex-direction: column;
-  gap: 10px;
-  padding: 24px 28px;
-  border-radius: 16px;
-  background: var(--white);
-  border: 1px solid var(--rule);
-  box-shadow: 0 12px 32px -20px rgba(20, 30, 60, 0.18);
-  text-align: left;
-  max-width: 420px;
-  margin: 0 auto;
-}
-.legal-contact__card a {
+.about-hero__hl {
+  font-size: clamp(34px, 5vw, 62px);
+  font-weight: 300;
+  letter-spacing: -0.035em;
+  line-height: 1.08;
   color: var(--ink-900);
-  font-weight: 500;
-  text-decoration: none;
-}
-.legal-contact__card p {
-  font-size: 14px;
-  line-height: 1.6;
-  color: var(--ink-500);
   margin: 0;
 }
+/* Scale the brush underline to the About headline (paint as stretched bg). */
+.about-hero__hl .mark-red-stroke {
+  left: -4%;
+  right: -4%;
+  bottom: -0.04em;
+  height: 0.32em;
+}
+.about-hero__hl .mark-red-stroke-inner {
+  background: url("/images/landing/hero-brush-stroke.svg") center / 100% 100% no-repeat;
+}
+.about-hero__hl .mark-red-stroke img {
+  display: none;
+}
 
-/* ── MAD story detail page (shareable /mad-stories/[slug]) ── */
-.ms-detail {
-  max-width: 860px;
+/* Story — alternating bands so it never reads as one tiring wall of text */
+.about-band {
+  position: relative;
+  padding: clamp(40px, 7vh, 84px) 0;
+  background: var(--doc-bg);
+}
+.about-band--grey {
+  background: var(--ink-100);
+}
+/* Everything in the story is centered */
+.about-prose {
+  max-width: 680px;
   margin: 0 auto;
+  padding: 0 24px;
+  text-align: center;
 }
-.ms-detail__top {
-  margin-bottom: 24px;
-}
-.ms-detail__back {
-  display: inline-flex;
-  align-items: center;
-  gap: 8px;
-  font-size: 14px;
-  font-weight: 500;
+.about-p {
+  font-size: 18px;
+  line-height: 1.78;
   color: var(--ink-600);
-  text-decoration: none;
-  transition: color 0.2s;
+  margin: 0 0 24px;
 }
-.ms-detail__back:hover {
-  color: var(--blue-600);
+.about-prose > *:last-child {
+  margin-bottom: 0;
 }
-.ms-detail__header {
+/* Punchy standalone lines — larger, near-black */
+.about-accent {
+  font-size: clamp(23px, 2.6vw, 30px);
+  font-weight: 300;
+  letter-spacing: -0.02em;
+  line-height: 1.3;
+  color: var(--ink-900);
+  margin: 8px auto 24px;
+  max-width: 24ch;
+}
+.about-accent:first-child {
+  margin-top: 0;
+}
+.about-accent__line {
+  display: block;
+}
+.about-cta-btn {
+  padding: 14px 34px;
+  font-size: 15px;
+}
+
+/* Founders — tiny circle frames at the foot of the page */
+.about-founders-band {
+  padding-bottom: clamp(48px, 8vh, 92px);
+}
+.about-founders__intro {
+  font-size: 17px;
+  line-height: 1.7;
+  color: var(--ink-500);
+  margin: 14px auto 40px;
+  max-width: 42ch;
+}
+.about-founders {
+  list-style: none;
+  margin: 0;
+  padding: 0;
   display: flex;
-  align-items: center;
-  gap: clamp(20px, 3vw, 32px);
-  padding: clamp(28px, 4vw, 44px);
-  background:
-    radial-gradient(circle, rgba(52, 109, 224, 0.09) 1px, transparent 1px) 0 0 / 22px 22px,
-    linear-gradient(135deg, #f5f8ff 0%, #eef1f9 100%);
-  border: 1px solid var(--rule);
-  border-radius: 24px 24px 0 0;
+  flex-wrap: wrap;
+  justify-content: center;
+  gap: 36px 48px;
 }
-.ms-detail__photo {
-  flex-shrink: 0;
-  width: clamp(132px, 15vw, 184px);
-  height: clamp(132px, 15vw, 184px);
+.about-founder {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 14px;
+  text-decoration: none;
+}
+.about-founder__frame {
+  width: 96px;
+  height: 96px;
   border-radius: 50%;
   overflow: hidden;
-  background: linear-gradient(160deg, #e8edf8, #d5e3ff);
-  border: 5px solid #fff;
-  box-shadow: 0 16px 36px -12px rgba(20, 30, 60, 0.42);
+  background: var(--ink-150);
+  border: 1px solid var(--rule);
+  display: grid;
+  place-items: center;
+  transition:
+    transform 0.18s ease,
+    box-shadow 0.2s ease;
 }
-.ms-detail__photo img {
+.about-founder:hover .about-founder__frame {
+  transform: translateY(-3px);
+  box-shadow: 0 10px 24px rgba(0, 0, 0, 0.14);
+}
+.about-founder__frame img {
   width: 100%;
   height: 100%;
   object-fit: cover;
-  object-position: center top;
   display: block;
 }
-.ms-detail__photo--fallback {
-  display: flex;
-  align-items: center;
-  justify-content: center;
-}
-.ms-detail__photo--fallback span {
-  font-size: clamp(38px, 4.5vw, 52px);
-  font-weight: 600;
-  color: rgba(52, 109, 224, 0.55);
-}
-.ms-detail__intro {
-  min-width: 0;
-}
-.ms-detail__eyebrow {
-  display: inline-block;
-  font-size: 11px;
-  letter-spacing: 0.2em;
-  text-transform: uppercase;
+.about-founder__initials {
+  font-size: 28px;
   font-weight: 500;
-  color: var(--blue-600);
-  margin-bottom: 8px;
+  color: var(--ink-500);
 }
-.ms-detail__name {
-  font-size: clamp(26px, 4vw, 36px);
-  font-weight: 400;
-  letter-spacing: -0.02em;
+.about-founder__name {
+  font-size: 14.5px;
+  color: var(--ink-600);
+  white-space: nowrap;
+  transition: color 0.15s ease;
+}
+.about-founder:hover .about-founder__name {
   color: var(--ink-900);
-  line-height: 1.08;
-  margin-bottom: 14px;
 }
-.ms-detail__quote {
-  font-size: clamp(16px, 2vw, 19px);
-  line-height: 1.5;
-  font-style: italic;
-  color: var(--ink-700);
-  margin: 0;
-  padding-left: 14px;
-  border-left: 3px solid var(--red);
-}
-.ms-detail__body {
-  padding: clamp(26px, 4vw, 42px);
-  background: var(--white);
-  border: 1px solid var(--rule);
-  border-top: none;
-  border-radius: 0 0 24px 24px;
-  display: flex;
-  flex-direction: column;
-  gap: 15px;
-}
-a.ms-note {
-  text-decoration: none;
-  color: inherit;
-}
+
 @media (max-width: 768px) {
-  .ms-detail__header {
-    flex-direction: column;
-    align-items: center;
-    text-align: center;
+  .about-p {
+    font-size: 16.5px;
+    line-height: 1.72;
   }
-  .ms-detail__quote {
-    border-left: none;
-    padding-left: 0;
+  .about-accent {
+    font-size: 22px;
+  }
+  .about-band {
+    padding: clamp(34px, 6vh, 60px) 0;
+  }
+  .about-founders {
+    gap: 28px 36px;
+  }
+  .about-founder__frame {
+    width: 84px;
+    height: 84px;
   }
 }

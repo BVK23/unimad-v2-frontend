@@ -1,14 +1,16 @@
 "use client";
 
 import { useRef, useState, type CSSProperties } from "react";
-import { getSigninUrl, MASTERCLASS_ORGANIC_PATH } from "@/constants/landing-auth";
+import { UnimadLogo } from "@/components/unimad-logo";
+import { getSigninUrl } from "@/constants/landing-auth";
+import { Instagram, Linkedin, Youtube } from "lucide-react";
 import Link from "next/link";
+import { LandingNav } from "./LandingNav";
 import { StarfieldBackground } from "./StarfieldBackground";
 import { TrustMarquee } from "./TrustMarquee";
-import { UnimadMark } from "./UnimadMark";
-import { TESTIMONIALS } from "./testimonials";
+import { MAD_STORIES, madStoryImageUrl } from "./madStories";
 import { useDiscoveryBooking } from "./useDiscoveryBooking";
-import { useLandingBodyClass, useNavSolid, useScrollReveal, useReadReveal } from "./useLandingEffects";
+import { useLandingBodyClass, useScrollReveal, useReadReveal } from "./useLandingEffects";
 
 type PlanVariant = "free" | "module" | "full";
 
@@ -38,7 +40,7 @@ const MODULES: Plan[] = [
       "The comments strategy",
       "Outbound that reaches recruiters",
     ],
-    cta: "Add this module",
+    cta: "Book a call",
     variant: "module",
   },
   {
@@ -53,9 +55,8 @@ const MODULES: Plan[] = [
       "Cold emails that convert",
       "Portfolio building & tracking",
     ],
-    cta: "Add this module",
+    cta: "Book a call",
     variant: "module",
-    badge: "Most popular",
   },
   {
     name: "Interview Mastery",
@@ -69,14 +70,14 @@ const MODULES: Plan[] = [
       "30-60-90 day plans",
       "Sponsorship negotiation scripts",
     ],
-    cta: "Add this module",
+    cta: "Book a call",
     variant: "module",
   },
 ];
 
 const DISCOVERY: Plan = {
   name: "Discovery Call",
-  tagline: "A free 1-on-1 with a coach who has placed 200+ international students. Your positioning, mapped live.",
+  tagline: "A free 1-on-1 with a coach who has placed 200+ international students. Your positioning, mapped\u00A0live.",
   price: "£0",
   original: "£85",
   period: "one call",
@@ -87,7 +88,7 @@ const DISCOVERY: Plan = {
     "A job-search playbook",
     "A personalised strategy you keep",
   ],
-  cta: "Book a free discovery call",
+  cta: "Book free Discovery call",
   variant: "free",
   note: "No credit card required",
 };
@@ -136,18 +137,18 @@ const STEPS: Step[] = [
   },
   {
     n: "03",
-    title: "We run real applications with you",
-    body: "We build your portfolio, then apply the quality checklist together: tailored resume, cold emails, referrals and follow-up that beats spray-and-pray.",
+    title: "We don't just prepare you. We apply with you.",
+    body: "From choosing the right roles to tailoring your resume, writing cold emails, reaching out for referrals, and following up, we help you build a job search system you can repeat with confidence.",
   },
   {
     n: "04",
     title: "We prep you to convert",
-    body: "Every likely question, STAR-method stories and your Value Proposition Document. You walk in as the candidate who's already done the work.",
+    body: "From likely interview questions and STAR stories to your VPD, we help you walk into interviews with clarity and confidence.",
   },
 ];
 
 const WHY_TEXT =
-  "It was never your skill. A quarter of a million students move abroad each year running the same broken playbook: applying blind, tailoring CVs, hearing nothing back. Unicoach rebuilds the system with you, one call at a time, until recruiters finally see your value.";
+  "Getting rejected doesn't mean you're the wrong candidate. Every year, thousands of international students move abroad believing more applications are the answer, so they keep applying, tailoring, and waiting while nothing changes. Unicoach rebuilds your job search from the ground up, defining your niche, sharpening your positioning, and building a system that gives recruiters a reason to notice you.";
 
 const FAQS: { q: string; a: string }[] = [
   {
@@ -183,6 +184,27 @@ function getInitials(name: string) {
     .join("")
     .toUpperCase()
     .slice(0, 2);
+}
+
+/** Circular review avatar — shows the alumnus photo, falls back to initials. */
+function ReviewAvatar({ name, image }: { name: string; image: string }) {
+  const [failed, setFailed] = useState(false);
+
+  if (failed || !image) {
+    return <div className="ravatar">{getInitials(name)}</div>;
+  }
+
+  return (
+    // eslint-disable-next-line @next/next/no-img-element
+    <img
+      className="ravatar ravatar--photo"
+      src={madStoryImageUrl(image)}
+      alt={name}
+      loading="lazy"
+      decoding="async"
+      onError={() => setFailed(true)}
+    />
+  );
 }
 
 function PlanCard({ plan, onBook }: { plan: Plan; onBook: () => void }) {
@@ -222,72 +244,45 @@ export function UnicoachPage() {
   useLandingBodyClass();
   useScrollReveal();
   const { openDiscoveryBooking, bookingModal } = useDiscoveryBooking();
-  const navSolid = useNavSolid(".uc-hero");
   const whyRef = useRef<HTMLParagraphElement>(null);
   useReadReveal(whyRef);
   const [openFaq, setOpenFaq] = useState(0);
 
-  const ribbonItems = [...TESTIMONIALS.slice(0, 16), ...TESTIMONIALS.slice(0, 16)];
+  const ribbonItems = [...MAD_STORIES.slice(0, 16), ...MAD_STORIES.slice(0, 16)];
 
   return (
     <div className="landing-page unicoach-page">
       {bookingModal}
 
-      <nav className={`nav${navSolid ? " nav--solid" : ""}`}>
-        <div className="nav-inner">
-          <Link href="/" className="nav-brand">
-            <UnimadMark />
-            <span className="nav-brand-name">unimad</span>
-          </Link>
-          <ul className="nav-links">
-            <li>
-              <Link href="/#product">Product</Link>
-            </li>
-            <li>
-              <Link href="/mad-stories">Success Stories</Link>
-            </li>
-            <li>
-              <Link href="/unicoach" aria-current="page">
-                Unicoach
-              </Link>
-            </li>
-          </ul>
-          <Link href={getSigninUrl()} className="btn nav-login">
-            Login
-          </Link>
-        </div>
-      </nav>
+      <LandingNav active="/unicoach" solidTrigger=".uc-hero" />
 
       {/* Hero */}
       <section className="ms-hero uc-hero uc-hero--gold">
         <div className="ms-hero__glow" aria-hidden />
         <div className="uc-hero__grid" aria-hidden />
         <div className="ms-hero__inner">
-          <p className="eyebrow ms-hero__eyebrow uc-hero__eyebrow">The Unimad Career Positioning System</p>
-          <h1 className="ms-hero__hl uc-hero__hl">
-            Recruiters can&apos;t ignore a job search <span className="masterclass-gold-text">built with you.</span>
-          </h1>
+          <h1 className="ms-hero__hl uc-hero__hl">Unimad Career Positioning System</h1>
           <p className="ms-hero__sub">
-            Unicoach is done-with-you coaching — 1-on-1 calls where a coach fixes your niche, resume, LinkedIn, portfolio, applications and
-            interviews with you, not for you.
+            Done-with-you coaching. In personalised 1-on-1 sessions, our experts help you refine your niche, resume, LinkedIn, portfolio,
+            applications and interview strategy with you.
           </p>
 
           <div className="ms-hero__stats">
             <div className="ms-hero__stat">
-              <span className="ms-hero__stat-num ms-hero__stat-num--blue">5,000+</span>
-              <span className="ms-hero__stat-lbl">students helped</span>
+              <span className="ms-hero__stat-num ms-hero__stat-num--blue">$4M+</span>
+              <span className="ms-hero__stat-lbl">in job offers</span>
             </div>
             <div className="ms-hero__stat">
-              <span className="ms-hero__stat-num">92%</span>
-              <span className="ms-hero__stat-lbl">success rate</span>
+              <span className="ms-hero__stat-num">5k+</span>
+              <span className="ms-hero__stat-lbl">happy students</span>
             </div>
             <div className="ms-hero__stat">
-              <span className="ms-hero__stat-num">4.9★</span>
-              <span className="ms-hero__stat-lbl">from 1,000+ students</span>
+              <span className="ms-hero__stat-num">250+</span>
+              <span className="ms-hero__stat-lbl">mad stories</span>
             </div>
             <div className="ms-hero__stat">
-              <span className="ms-hero__stat-num">45 days</span>
-              <span className="ms-hero__stat-lbl">to first interviews</span>
+              <span className="ms-hero__stat-num">10k+</span>
+              <span className="ms-hero__stat-lbl">community</span>
             </div>
           </div>
 
@@ -297,11 +292,11 @@ export function UnicoachPage() {
               className="masterclass-gold-btn unicoach-gold-cta uc-hero__cta"
               onClick={() => void openDiscoveryBooking()}
             >
-              Book your free discovery call
+              Book free Discovery call
             </button>
-            <Link href={MASTERCLASS_ORGANIC_PATH} className="btn btn-outline-light" style={{ padding: "13px 28px", fontSize: "15px" }}>
+            <a href="#how" className="btn btn-outline-light" style={{ padding: "13px 28px", fontSize: "15px" }}>
               See how it works
-            </Link>
+            </a>
           </div>
         </div>
       </section>
@@ -437,13 +432,10 @@ export function UnicoachPage() {
           <div className="ribbon-track">
             {ribbonItems.map((t, i) => (
               <div className="rcard" key={`${t.name}-${i}`}>
-                <div className="ravatar">{getInitials(t.name)}</div>
+                <ReviewAvatar name={t.name} image={t.image} />
                 <div>
                   <p className="rquote">&quot;{t.quote}&quot;</p>
-                  <p className="rmeta">
-                    {t.name}
-                    {t.uni ? ` · ${t.uni}` : ""}
-                  </p>
+                  <p className="rmeta">{t.name}</p>
                 </div>
               </div>
             ))}
@@ -483,18 +475,18 @@ export function UnicoachPage() {
           <StarfieldBackground />
           <div className="container">
             <div className="closing-band-inner reveal-stagger">
-              <h2 className="closing-hl closing-hl--light">You don&apos;t need to get picked a thousand times.</h2>
+              <h2 className="closing-hl closing-hl--light">
+                You don&apos;t need to get picked a thousand times. You need to get picked once.
+              </h2>
               <p className="closing-sub closing-sub--light">
-                You need to get picked once, and that one offer changes everything. Do it yourself, free, at unimad.ai, or fast-track it
-                with us. Your first call is free: we&apos;ll fix your role, build your resume, and tell you honestly whether Unicoach is
-                right for you.
+                That one offer changes everything. Do it yourself, free using Unimad, or fast-track it with an expert.
               </p>
               <div className="closing-ctas">
                 <Link href={getSigninUrl()} className="btn btn-outline-light">
                   Start free at Unimad
                 </Link>
-                <button type="button" className="masterclass-gold-btn closing-gold-cta" onClick={() => void openDiscoveryBooking()}>
-                  Book your free discovery call
+                <button type="button" className="btn btn-solid" onClick={() => void openDiscoveryBooking()}>
+                  Book free Discovery call
                 </button>
               </div>
             </div>
@@ -502,12 +494,36 @@ export function UnicoachPage() {
 
           <footer className="landing-footer">
             <div className="footer-inner">
-              <div className="footer-brand">
-                <UnimadMark />
-                <span>unimad</span>
+              <div className="footer-main">
+                <Link href="/" className="footer-brand" aria-label="Unimad home">
+                  <UnimadLogo className="footer-logo" />
+                </Link>
+                <div className="footer-socials" aria-label="Unimad on social media">
+                  <a href="https://www.linkedin.com/company/unimad" target="_blank" rel="noreferrer" aria-label="Unimad on LinkedIn">
+                    <Linkedin size={18} strokeWidth={1.75} />
+                  </a>
+                  <a href="https://www.instagram.com/unimad_ai" target="_blank" rel="noreferrer" aria-label="Unimad on Instagram">
+                    <Instagram size={18} strokeWidth={1.75} />
+                  </a>
+                  <a href="https://www.youtube.com/@unimad_ai" target="_blank" rel="noreferrer" aria-label="Unimad on YouTube">
+                    <Youtube size={18} strokeWidth={1.75} />
+                  </a>
+                </div>
               </div>
-              <span className="footer-url">www.unimad.ai</span>
-              <span className="footer-tag">Stage 5 · v16 · Jul 2026</span>
+              <nav className="footer-nav" aria-label="Footer">
+                <Link href="/mad-stories">Mad Stories</Link>
+                <Link href="/unicoach">Unicoach</Link>
+                <Link href="/about" prefetch={false}>
+                  About Us
+                </Link>
+                <a href="mailto:grow@unimad.ai">Contact Us</a>
+                <Link href="/privacy" prefetch={false}>
+                  Privacy Policy
+                </Link>
+                <Link href="/terms" prefetch={false}>
+                  Terms &amp; Conditions
+                </Link>
+              </nav>
             </div>
           </footer>
         </div>

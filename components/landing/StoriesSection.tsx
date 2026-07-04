@@ -3,6 +3,7 @@
 /* eslint-disable react-hooks/set-state-in-effect */
 import { useEffect, useRef, useState } from "react";
 import { ChevronLeft, ChevronRight } from "lucide-react";
+import Link from "next/link";
 import { MAD_STORIES, madStoryImageUrl, type MadStory } from "./madStories";
 import { VIDEO_TESTIMONIALS } from "./testimonials";
 
@@ -242,9 +243,9 @@ export function StoriesSection() {
         </div>
 
         <div className="stories-bottom reveal">
-          <a href="/mad-stories" className="stories-view-all">
-            View all mad stories →
-          </a>
+          <Link href="/mad-stories" className="stories-view-all">
+            View all mad stories
+          </Link>
         </div>
       </div>
     </section>

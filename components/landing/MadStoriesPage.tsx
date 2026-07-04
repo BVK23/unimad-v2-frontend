@@ -2,9 +2,8 @@
 
 /* eslint-disable react-hooks/set-state-in-effect */
 import { type CSSProperties, type ReactNode, useEffect, useState } from "react";
-import { getSigninUrl } from "@/constants/landing-auth";
 import Link from "next/link";
-import { UnimadMark } from "./UnimadMark";
+import { LandingNav } from "./LandingNav";
 import { madStorySlug, MAD_STORIES, madStoryImageUrl, type MadStory } from "./madStories";
 import { useLandingBodyClass, useScrollReveal } from "./useLandingEffects";
 
@@ -139,28 +138,7 @@ export function MadStoriesPage() {
 
   return (
     <div className="landing-page mad-stories-page">
-      <nav className="nav">
-        <div className="nav-inner">
-          <Link href="/" className="nav-brand">
-            <UnimadMark />
-            <span className="nav-brand-name">unimad</span>
-          </Link>
-          <ul className="nav-links">
-            <li>
-              <Link href="/#product">Product</Link>
-            </li>
-            <li>
-              <Link href="/mad-stories">Success Stories</Link>
-            </li>
-            <li>
-              <Link href="/unicoach">Unicoach</Link>
-            </li>
-          </ul>
-          <Link href={getSigninUrl()} className="btn nav-login">
-            Login
-          </Link>
-        </div>
-      </nav>
+      <LandingNav active="/mad-stories" />
 
       {/* Headline only */}
       <section className="ms-hero">

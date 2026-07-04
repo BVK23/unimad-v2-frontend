@@ -2,45 +2,23 @@
 
 import type { ReactNode } from "react";
 import { UnimadLogo } from "@/components/unimad-logo";
-import { getSigninUrl } from "@/constants/landing-auth";
 import Link from "next/link";
-import { UnimadMark } from "./UnimadMark";
+import { LandingNav } from "./LandingNav";
 import { useLandingBodyClass } from "./useLandingEffects";
 import "@/components/landing/landing.css";
 
 type MarketingShellProps = {
   children: ReactNode;
-  /** Use compact nav (mad-stories style) vs full wordmark nav */
-  navVariant?: "mark" | "logo";
+  /** href of the current page for nav active state */
+  active?: string;
 };
 
-export function MarketingShell({ children, navVariant = "mark" }: MarketingShellProps) {
+export function MarketingShell({ children, active }: MarketingShellProps) {
   useLandingBodyClass();
 
   return (
     <div className="landing-page">
-      <nav className="nav">
-        <div className="nav-inner">
-          <Link href="/" className="nav-brand" aria-label="Unimad home">
-            {navVariant === "logo" ? <UnimadLogo className="nav-logo" /> : <UnimadMark />}
-            {navVariant === "mark" ? <span className="nav-brand-name">unimad</span> : null}
-          </Link>
-          <ul className="nav-links">
-            <li>
-              <Link href="/#product">Product</Link>
-            </li>
-            <li>
-              <Link href="/mad-stories">Success Stories</Link>
-            </li>
-            <li>
-              <Link href="/unicoach">Unicoach</Link>
-            </li>
-          </ul>
-          <Link href={getSigninUrl()} className="btn nav-login">
-            Login
-          </Link>
-        </div>
-      </nav>
+      <LandingNav active={active} />
 
       <main className="legal-page-main">{children}</main>
 

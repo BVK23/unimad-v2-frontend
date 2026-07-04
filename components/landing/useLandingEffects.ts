@@ -15,10 +15,11 @@ export function useLandingBodyClass() {
  * flip a transparent, white-on-dark nav into a solid, blurred light-mode header
  * as the reader leaves the hero section.
  */
-export function useNavSolid(heroSelector: string) {
+export function useNavSolid(heroSelector?: string) {
   const [solid, setSolid] = useState(false);
 
   useEffect(() => {
+    if (!heroSelector) return;
     const hero = document.querySelector(heroSelector);
     if (!hero) return;
 

@@ -40,7 +40,7 @@ export function MadStoryDetailPage({ story }: { story: MadStory }) {
   useLandingBodyClass();
 
   return (
-    <MarketingShell>
+    <MarketingShell active="/mad-stories">
       <div className="ms-detail">
         <div className="ms-detail__top">
           <Link href="/mad-stories" className="ms-detail__back">

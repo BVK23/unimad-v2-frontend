@@ -6,6 +6,7 @@ import { claimUnicoachPurchase } from "@/features/unicoach/server-actions/unicoa
 import { useAuthStatus } from "@/hooks/useAuthStatus";
 import Link from "next/link";
 import { useRouter, useSearchParams } from "next/navigation";
+import "@/components/landing/landing.css";
 
 const backendUrl = process.env.NEXT_PUBLIC_BACKEND_URL ?? "";
 
@@ -96,10 +97,10 @@ function SigninForm() {
     <div className="flex min-h-[calc(100vh-80px)] flex-col items-center justify-center px-5 py-14 md:px-8">
       <div className="w-full max-w-[420px]">
         <div className="mb-9 text-center">
-          <h1 className="mb-2 text-[26px] font-semibold leading-tight tracking-tight text-slate-900 md:text-[28px]">
+          <h1 className="mb-2 text-[26px] font-semibold leading-tight tracking-tight text-[#1a1a1a] md:text-[28px]">
             Get started with Unimad
           </h1>
-          <p className="text-[15px] font-light leading-relaxed text-slate-600">
+          <p className="text-[15px] font-light leading-relaxed text-[#666666]">
             {unicoachClaim
               ? "Sign in or create an account to access your Unicoach programme."
               : "Create your free account or sign in — your toolkit is ready when you are."}
@@ -121,11 +122,11 @@ function SigninForm() {
 
           <p className="mt-7 text-center text-[11px] leading-relaxed text-slate-400">
             By continuing, you agree to Unimad&apos;s{" "}
-            <Link href="/tos" className="font-semibold text-[#346DE0] hover:underline">
+            <Link href="/tos" className="font-semibold text-[#346de0] hover:underline">
               Terms of Service
             </Link>{" "}
             and{" "}
-            <Link href="/privacy-policy" className="font-semibold text-[#346DE0] hover:underline">
+            <Link href="/privacy-policy" className="font-semibold text-[#346de0] hover:underline">
               Privacy Policy
             </Link>
             .
@@ -135,7 +136,7 @@ function SigninForm() {
         <div className="mt-8 text-center">
           <Link
             href="/"
-            className="inline-flex items-center justify-center rounded-xl border border-slate-200 px-[18px] py-2 text-[13px] text-slate-600 transition-colors hover:border-[#346DE0] hover:text-slate-900"
+            className="inline-flex items-center justify-center rounded-xl border border-slate-200 px-[18px] py-2 text-[13px] text-[#666666] transition-colors hover:border-[#346de0] hover:text-[#1a1a1a]"
           >
             ← Back to home
           </Link>

@@ -103,6 +103,20 @@ function ScrollShowcase() {
   const headlineOpacity = useMotionValue(0);
   const chatOpacity = useMotionValue(0);
 
+  // Phone/tablet use a compressed layout where the chat bar lives only in the
+  // intro. A ref keeps this out of any transform dependency array so resizing
+  // never rebuilds the scroll pipeline.
+  const isMobileRef = useRef(false);
+  useEffect(() => {
+    const mq = window.matchMedia("(max-width: 1120px)");
+    const update = () => {
+      isMobileRef.current = mq.matches;
+    };
+    update();
+    mq.addEventListener("change", update);
+    return () => mq.removeEventListener("change", update);
+  }, []);
+
   const sectionInView = useInView(trackRef, { amount: 0.12, once: true });
 
   const { scrollYProgress } = useScroll({
@@ -114,7 +128,22 @@ function ScrollShowcase() {
   const featuresOpacity = useTransform(splitProgress, [0.58, 1], [0, 1]);
 
   const headlineY = useTransform(splitProgress, [0, 0.4, 1], [-52, -200, -300]);
-  const chatY = useTransform(splitProgress, [0, 1], [132, 268]);
+  // Fade the pinned headline out as it travels up so it never lingers behind
+  // the nav on shorter/smaller viewports (where -300px lands it at the nav).
+  const headlineScrollFade = useTransform(splitProgress, [0.42, 0.72], [1, 0]);
+  const headlineOpacityValue = useTransform([headlineOpacity, headlineScrollFade] as const, ([intro, fade]: number[]) => intro * fade);
+  // The chat bar is docked to the bottom of the pinned viewport via CSS
+  // (`bottom`), so it stays fully visible on any viewport height instead of
+  // being pushed off-screen by a center-relative transform.
+  //
+  // On phone/tablet the chat belongs to the intro only; fade it out with the
+  // pinned headline as the feature column slides in, so it never crowds the
+  // stacked layout. Desktop keeps the persistent bar (multiplier stays 1).
+  const chatScrollFade = useTransform(splitProgress, [0.42, 0.72], [1, 0]);
+  const chatOpacityValue = useTransform(
+    [chatOpacity, chatScrollFade] as const,
+    ([intro, fade]: number[]) => intro * (isMobileRef.current ? fade : 1)
+  );
 
   useEffect(() => {
     if (!sectionInView || hasRevealedIntro.current) return;
@@ -186,7 +215,7 @@ function ScrollShowcase() {
     <div className="showcase-scroll-track" ref={trackRef} style={{ height: `${SCROLL_TRACK_VH}vh` }}>
       <div className="showcase-sticky">
         <div className="showcase-stage">
-          <motion.h2 className="showcase-hl showcase-hl--pinned" style={{ opacity: headlineOpacity, x: "-50%", y: headlineY }}>
+          <motion.h2 className="showcase-hl showcase-hl--pinned" style={{ opacity: headlineOpacityValue, x: "-50%", y: headlineY }}>
             Every tool you need, for free.
             <br />
             Powered by unibot.
@@ -206,6 +235,8 @@ function ScrollShowcase() {
                     productId={activeProduct.id}
                     productTitle={activeProduct.title}
                     prompts={activeProduct.prompts}
+                    screenshots={activeProduct.screenshots}
+                    activeShot={Math.max(activeBullet, 0)}
                     hideUnibot
                   />
                 </div>
@@ -228,7 +259,7 @@ function ScrollShowcase() {
             </div>
           </motion.div>
 
-          <motion.div className="showcase-chat-pinned" style={{ opacity: chatOpacity, x: "-50%", y: chatY }}>
+          <motion.div className="showcase-chat-pinned" style={{ opacity: chatOpacityValue, x: "-50%" }}>
             <ShowcaseUnibot prompts={activeProduct.prompts} />
           </motion.div>
         </div>
@@ -269,7 +300,14 @@ function StaticShowcase() {
           <FeatureHeading key={active.id} product={active} />
         </AnimatePresence>
         <div className="showcase-static-screen">
-          <ShowcaseScreen productId={active.id} productTitle={active.title} prompts={active.prompts} hideUnibot />
+          <ShowcaseScreen
+            productId={active.id}
+            productTitle={active.title}
+            prompts={active.prompts}
+            screenshots={active.screenshots}
+            activeShot={0}
+            hideUnibot
+          />
         </div>
         <AnimatePresence mode="wait">
           <motion.div
@@ -294,16 +332,10 @@ function StaticShowcase() {
 
 export function ProductShowcase() {
   const reducedMotion = useReducedMotion();
-  const [isMobile, setIsMobile] = useState(() => typeof window !== "undefined" && window.matchMedia("(max-width: 1024px)").matches);
 
-  useEffect(() => {
-    const mq = window.matchMedia("(max-width: 1024px)");
-    const update = () => setIsMobile(mq.matches);
-    mq.addEventListener("change", update);
-    return () => mq.removeEventListener("change", update);
-  }, []);
-
-  if (reducedMotion || isMobile) {
+  // Reduced-motion users get the tab-based static layout; everyone else —
+  // desktop and mobile alike — gets the scroll-driven feature animation.
+  if (reducedMotion) {
     return <StaticShowcase />;
   }
 

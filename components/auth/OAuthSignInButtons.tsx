@@ -1,7 +1,6 @@
 "use client";
 
-import { UnimadLogo } from "@/components/unimad-logo";
-import Link from "next/link";
+import { LandingNav } from "@/components/landing/LandingNav";
 
 function GoogleIcon() {
   return (
@@ -76,12 +75,5 @@ export function OAuthSignInButtons({ onLinkedIn, onGoogle, disabled }: OAuthSign
 }
 
 export function SigninNav() {
-  return (
-    <nav className="sticky top-0 z-[200] flex items-center justify-between border-b border-slate-200/80 bg-white/95 px-5 py-4 backdrop-blur-md md:px-[60px]">
-      <Link href="/" className="inline-flex items-center" aria-label="Unimad home">
-        <UnimadLogo className="h-[22px] w-auto text-[#0C0F1A] sm:h-[26px]" />
-      </Link>
-      <span className="text-[13px] text-slate-500">Sign in</span>
-    </nav>
-  );
+  return <LandingNav showLogin={false} />;
 }

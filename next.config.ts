@@ -11,6 +11,9 @@ const nextConfig: NextConfig = {
     },
   },
   images: {
+    // Next 16 requires every `quality` used by <Image> to be declared here,
+    // otherwise it logs a dev warning (Next 15 did not enforce this).
+    qualities: [70, 75, 100],
     remotePatterns: [
       { protocol: "https", hostname: "**" },
       { protocol: "http", hostname: "localhost" },

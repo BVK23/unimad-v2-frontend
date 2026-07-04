@@ -2,8 +2,10 @@
 
 import { UnimadLogo } from "@/components/unimad-logo";
 import { getSigninUrl, MASTERCLASS_ORGANIC_PATH } from "@/constants/landing-auth";
+import { Instagram, Linkedin, Youtube } from "lucide-react";
 import Link from "next/link";
 import { HeroScribbleQuotes } from "./HeroScribbleQuotes";
+import { LandingNav } from "./LandingNav";
 import { MarkRed } from "./MarkRed";
 import { ProductShowcase } from "./ProductShowcase";
 import { StarfieldBackground } from "./StarfieldBackground";
@@ -23,29 +25,7 @@ export function LandingPage() {
     <div className="landing-page">
       {bookingModal}
 
-      <nav className="nav">
-        <div className="nav-inner">
-          <Link href="/" className="nav-brand" aria-label="Unimad home">
-            <UnimadLogo className="nav-logo" />
-          </Link>
-          <ul className="nav-links">
-            <li>
-              <Link href="/mad-stories">Mad Stories</Link>
-            </li>
-            <li>
-              <Link href="/unicoach">Unicoach</Link>
-            </li>
-            <li>
-              <Link href="/about" prefetch={false}>
-                About Us
-              </Link>
-            </li>
-          </ul>
-          <Link href={getSigninUrl()} className="btn nav-login">
-            Login
-          </Link>
-        </div>
-      </nav>
+      <LandingNav />
 
       {/* Hero + trust — single viewport */}
       <div className="hero-viewport">
@@ -66,10 +46,10 @@ export function LandingPage() {
               <button
                 type="button"
                 className="btn btn-outline-dark"
-                style={{ padding: "13px 28px", fontSize: "15px" }}
+                style={{ padding: "13px 28px", fontSize: "15px", fontWeight: 500 }}
                 onClick={() => void openDiscoveryBooking()}
               >
-                Book a free call
+                Book free Discovery call
               </button>
             </div>
             <div className="hero-cycling-quote" id="hero-cq">
@@ -92,7 +72,7 @@ export function LandingPage() {
         </section>
 
         <section className="trust">
-          <p className="trust-label">our users work at</p>
+          <p className="trust-label">Our users got placed at</p>
           <TrustMarquee />
         </section>
       </div>
@@ -139,7 +119,7 @@ export function LandingPage() {
                 </div>
                 <div className="coach-ctas">
                   <button type="button" className="masterclass-gold-btn closing-gold-cta" onClick={() => void openDiscoveryBooking()}>
-                    Book a free discovery call
+                    Book free Discovery call
                   </button>
                   <Link href={MASTERCLASS_ORGANIC_PATH} className="btn btn-outline-light">
                     View full system
@@ -167,8 +147,8 @@ export function LandingPage() {
                 <Link href={getSigninUrl()} className="btn btn-outline-light">
                   Start free today
                 </Link>
-                <button type="button" className="masterclass-gold-btn closing-gold-cta" onClick={() => void openDiscoveryBooking()}>
-                  Book your free call
+                <button type="button" className="btn btn-solid" onClick={() => void openDiscoveryBooking()}>
+                  Book free Discovery call
                 </button>
               </div>
             </div>
@@ -176,18 +156,29 @@ export function LandingPage() {
 
           <footer className="landing-footer">
             <div className="footer-inner">
-              <Link href="/" className="footer-brand" aria-label="Unimad home">
-                <UnimadLogo className="footer-logo" />
-              </Link>
+              <div className="footer-main">
+                <Link href="/" className="footer-brand" aria-label="Unimad home">
+                  <UnimadLogo className="footer-logo" />
+                </Link>
+                <div className="footer-socials" aria-label="Unimad on social media">
+                  <a href="https://www.linkedin.com/company/unimad" target="_blank" rel="noreferrer" aria-label="Unimad on LinkedIn">
+                    <Linkedin size={18} strokeWidth={1.75} />
+                  </a>
+                  <a href="https://www.instagram.com/unimad_ai" target="_blank" rel="noreferrer" aria-label="Unimad on Instagram">
+                    <Instagram size={18} strokeWidth={1.75} />
+                  </a>
+                  <a href="https://www.youtube.com/@unimad_ai" target="_blank" rel="noreferrer" aria-label="Unimad on YouTube">
+                    <Youtube size={18} strokeWidth={1.75} />
+                  </a>
+                </div>
+              </div>
               <nav className="footer-nav" aria-label="Footer">
                 <Link href="/mad-stories">Mad Stories</Link>
                 <Link href="/unicoach">Unicoach</Link>
                 <Link href="/about" prefetch={false}>
                   About Us
                 </Link>
-                <Link href="/contact-us" prefetch={false}>
-                  Contact Us
-                </Link>
+                <a href="mailto:grow@unimad.ai">Contact Us</a>
                 <Link href="/privacy" prefetch={false}>
                   Privacy Policy
                 </Link>
