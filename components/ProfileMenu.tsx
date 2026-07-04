@@ -2,7 +2,7 @@
 
 import React, { useState, useRef, useEffect } from "react";
 import { resolveProfilePictureFromProfile } from "@/features/user-profile/utils/resolve-profile-picture";
-import { Settings, CreditCard, LogOut, Sun, Moon, ChevronDown, LayoutDashboard } from "lucide-react";
+import { Settings, CreditCard, LogOut, ChevronDown, LayoutDashboard } from "lucide-react";
 import Link from "next/link";
 
 type UserData = {
@@ -19,12 +19,11 @@ type UserData = {
 };
 
 interface ProfileMenuProps {
-  isDarkMode: boolean;
-  toggleTheme: () => void;
   userData?: UserData | null;
+  /** Re-enable when dark mode ships: isDarkMode + toggleTheme */
 }
 
-const ProfileMenu: React.FC<ProfileMenuProps> = ({ isDarkMode, toggleTheme, userData }) => {
+const ProfileMenu: React.FC<ProfileMenuProps> = ({ userData }) => {
   const [isOpen, setIsOpen] = useState(false);
   const menuRef = useRef<HTMLDivElement>(null);
 
@@ -136,21 +135,14 @@ const ProfileMenu: React.FC<ProfileMenuProps> = ({ isDarkMode, toggleTheme, user
               Subscription
             </Link>
 
+            {/* Dark mode disabled for now — re-enable toggle + Sun/Moon icons when ready
             <button
               onClick={toggleTheme}
               className="w-full flex items-center justify-between p-3 rounded-xl hover:bg-slate-50 dark:hover:bg-white/5 text-sm font-medium text-slate-700 dark:text-slate-200 transition-colors"
             >
-              <div className="flex items-center gap-3">
-                {isDarkMode ? <Sun size={18} className="text-slate-400" /> : <Moon size={18} className="text-slate-400" />}
-                <span>{isDarkMode ? "Light Mode" : "Dark Mode"}</span>
-              </div>
-              {/* Toggle Switch Visual */}
-              <div className={`w-10 h-5 rounded-full relative transition-colors ${isDarkMode ? "bg-brand-500" : "bg-slate-200"}`}>
-                <div
-                  className={`absolute top-1 w-3 h-3 rounded-full bg-white transition-all shadow-sm ${isDarkMode ? "left-6" : "left-1"}`}
-                ></div>
-              </div>
+              ...
             </button>
+            */}
           </div>
 
           {/* Footer */}

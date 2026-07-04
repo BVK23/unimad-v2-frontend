@@ -116,7 +116,9 @@ export default function UniboardShell({
   const [pendingAIRequest, setPendingAIRequest] = useState<UnibotIncomingRequest | null>(null);
   const [showOnboardingModal, setShowOnboardingModal] = useState(false);
   const [showUnicoachPricing, setShowUnicoachPricing] = useState(false);
-  const [isDarkMode, setIsDarkMode] = useState(false);
+
+  // Dark mode disabled for now — re-enable state + toggle when ready
+  // const [isDarkMode, setIsDarkMode] = useState(false);
 
   useEffect(() => {
     if (isCoachActAs) {
@@ -125,12 +127,16 @@ export default function UniboardShell({
   }, [isCoachActAs, coachActAsSession]);
 
   useEffect(() => {
-    if (isDarkMode) {
-      document.documentElement.classList.add("dark");
-    } else {
-      document.documentElement.classList.remove("dark");
-    }
-  }, [isDarkMode]);
+    document.documentElement.classList.remove("dark");
+  }, []);
+
+  // useEffect(() => {
+  //   if (isDarkMode) {
+  //     document.documentElement.classList.add("dark");
+  //   } else {
+  //     document.documentElement.classList.remove("dark");
+  //   }
+  // }, [isDarkMode]);
 
   useEffect(() => {
     if (isCoachActAs) return;
@@ -242,7 +248,7 @@ export default function UniboardShell({
     router.push("/uniboard/unicoach");
   };
 
-  const toggleDarkMode = () => setIsDarkMode(prev => !prev);
+  // const toggleDarkMode = () => setIsDarkMode(prev => !prev);
 
   const profileMenuUser = useMemo(
     () => ({
@@ -257,11 +263,12 @@ export default function UniboardShell({
   );
 
   const getAvailablePopups = () => [
-    {
-      id: "theme",
-      label: `Toggle ${isDarkMode ? "Light" : "Dark"} Mode`,
-      onClick: toggleDarkMode,
-    },
+    // Dark mode disabled for now — re-enable when ready
+    // {
+    //   id: "theme",
+    //   label: `Toggle ${isDarkMode ? "Light" : "Dark"} Mode`,
+    //   onClick: toggleDarkMode,
+    // },
   ];
 
   return (
@@ -277,7 +284,7 @@ export default function UniboardShell({
               />
             </Suspense>
 
-            <div className="flex-1 flex flex-col h-full overflow-hidden">
+            <div className="flex h-full min-w-0 flex-1 flex-col overflow-hidden">
               <header
                 className={`sticky top-0 z-[100] flex h-16 min-h-[4rem] flex-none border-b bg-white/80 font-sans backdrop-blur-md transition-colors dark:bg-slate-950/80 ${
                   isCoachActAs
@@ -338,14 +345,14 @@ export default function UniboardShell({
                         >
                           <Bell size={18} />
                         </button>
-                        <ProfileMenu isDarkMode={isDarkMode} toggleTheme={toggleDarkMode} userData={profileMenuUser} />
+                        <ProfileMenu userData={profileMenuUser} />
                       </>
                     )}
                   </div>
                 </div>
               </header>
 
-              <main className="flex min-h-0 flex-1 flex-col overflow-hidden">{children}</main>
+              <main className="flex min-h-0 w-full min-w-0 flex-1 flex-col overflow-hidden">{children}</main>
             </div>
 
             {!pathname.includes("/uniboard/unicoach") ? (

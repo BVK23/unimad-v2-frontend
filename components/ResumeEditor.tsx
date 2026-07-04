@@ -1681,7 +1681,7 @@ const ResumeEditor: React.FC<ResumeEditorProps> = ({
   };
 
   const resumeToolbarSaveStatus = (
-    <div className="relative mx-1 flex h-8 w-56 items-center justify-end overflow-hidden text-sm transition-all duration-300">
+    <div className="relative mx-1 flex h-8 w-40 items-center justify-end overflow-hidden text-sm transition-all duration-300 sm:w-48">
       <div
         className={`absolute right-0 flex items-center transition-all duration-300 ${savedConfirmationVisible && !hasPendingUnsavedChanges && !isSaving ? "translate-y-0 opacity-100" : "pointer-events-none translate-y-4 opacity-0"}`}
       >
@@ -1709,6 +1709,18 @@ const ResumeEditor: React.FC<ResumeEditorProps> = ({
         </button>
       </div>
     </div>
+  );
+
+  const resumeToolbarKnowledgeBaseButton = (
+    <button
+      type="button"
+      onClick={() => setShowKnowledgeBaseModal(true)}
+      className="flex items-center justify-center p-2 rounded-lg border border-slate-200 dark:border-slate-700 hover:border-brand-300 text-slate-600 dark:text-slate-300 bg-white dark:bg-slate-800 transition-all hover:shadow-sm"
+      title="Resume knowledge base"
+      aria-label="Resume knowledge base"
+    >
+      <Info size={18} className="text-brand-600" />
+    </button>
   );
 
   const resumeToolbarTemplateButton = (
@@ -1765,16 +1777,17 @@ const ResumeEditor: React.FC<ResumeEditorProps> = ({
                 {resumeToolbarSaveStatus}
                 {resumeToolbarTemplateButton}
                 {resumeToolbarAtsButton}
+                {resumeToolbarKnowledgeBaseButton}
               </>
             }
           />
         </div>
       ) : (
-        <div className="absolute top-0 right-0 left-0 h-16 bg-white/80 dark:bg-slate-900/80 backdrop-blur-md border-b border-slate-200 dark:border-slate-700 z-20 flex items-center justify-between gap-4 px-6">
+        <div className="absolute top-0 right-0 left-0 z-20 flex h-16 items-center gap-4 border-b border-slate-200 bg-white/80 px-6 backdrop-blur-md dark:border-slate-700 dark:bg-slate-900/80">
           <div className="flex min-w-0 flex-1 items-center gap-4">
             <button
               onClick={onBack}
-              className="shrink-0 p-2 hover:bg-slate-100 dark:hover:bg-slate-800 rounded-full transition-colors text-slate-500 dark:text-slate-400"
+              className="shrink-0 rounded-full p-2 text-slate-500 transition-colors hover:bg-slate-100 dark:text-slate-400 dark:hover:bg-slate-800"
             >
               <ArrowLeft size={20} />
             </button>
@@ -1782,25 +1795,17 @@ const ResumeEditor: React.FC<ResumeEditorProps> = ({
               <input
                 value={resume.title}
                 onChange={e => updateResume(prev => ({ ...prev, title: e.target.value }))}
-                className="w-full truncate font-medium text-slate-900 dark:text-white bg-transparent border-b border-transparent hover:border-slate-300 dark:hover:border-slate-600 focus:border-brand-500 outline-none transition-all px-1 py-0.5"
+                className="w-full truncate border-b border-transparent bg-transparent px-1 py-0.5 font-medium text-slate-900 outline-none transition-all hover:border-slate-300 focus:border-brand-500 dark:text-white dark:hover:border-slate-600"
                 placeholder="Untitled Resume"
               />
             </div>
           </div>
 
-          <div className="flex shrink-0 items-center gap-3">
+          <div className="ml-auto flex shrink-0 flex-nowrap items-center gap-2 sm:gap-3">
             {resumeToolbarSaveStatus}
-            <button
-              type="button"
-              onClick={() => setShowKnowledgeBaseModal(true)}
-              className="flex items-center justify-center p-2 rounded-lg border border-slate-200 dark:border-slate-700 hover:border-brand-300 text-slate-600 dark:text-slate-300 bg-white dark:bg-slate-800 transition-all hover:shadow-sm"
-              title="Resume knowledge base"
-              aria-label="Resume knowledge base"
-            >
-              <Info size={18} className="text-brand-600" />
-            </button>
             {resumeToolbarTemplateButton}
             {resumeToolbarAtsButton}
+            {resumeToolbarKnowledgeBaseButton}
 
             <div className="relative" ref={exportDropdownRef}>
               <button

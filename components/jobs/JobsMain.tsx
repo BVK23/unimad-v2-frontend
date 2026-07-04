@@ -114,9 +114,9 @@ const JobsMain: React.FC<JobsMainProps> = ({
   };
 
   return (
-    <div className="flex h-full flex-1 flex-col overflow-hidden bg-slate-50 font-sans dark:bg-slate-950">
-      <div className="sticky top-0 z-20 border-b border-slate-200 bg-white dark:border-slate-800 dark:bg-slate-950">
-        <div className="mx-auto flex max-w-7xl items-center justify-between px-6 py-4">
+    <div className="flex h-full w-full min-w-0 flex-1 flex-col overflow-hidden bg-slate-50 font-sans dark:bg-slate-950">
+      <div className="sticky top-0 z-20 w-full border-b border-slate-200 bg-white dark:border-slate-800 dark:bg-slate-950">
+        <div className="flex w-full items-center justify-between px-6 py-4">
           <div>
             <h1 className="text-2xl font-medium leading-none tracking-tight text-slate-900 dark:text-white">Jobs & Career</h1>
             <p className="mt-1 text-xs text-slate-500 dark:text-slate-400">Find, apply, and prepare for your dream role</p>
@@ -164,7 +164,7 @@ const JobsMain: React.FC<JobsMainProps> = ({
         </div>
       </div>
 
-      <div className="flex min-h-0 flex-1 overflow-x-hidden overflow-y-auto">
+      <div className="min-h-0 w-full min-w-0 flex-1 overflow-x-hidden overflow-y-auto">
         {activeTab === "discovery" && (
           <JobDiscovery
             onNavigateToStudio={onNavigateToStudio}

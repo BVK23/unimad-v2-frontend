@@ -387,7 +387,11 @@ const InterviewPrep: React.FC<InterviewPrepProps> = ({
   }
 
   if (view === "analyzing") {
-    return <InterviewAnalyzingView />;
+    return (
+      <ModalPortalOverlay className="flex flex-col overflow-hidden bg-[#0B1121] text-white">
+        <InterviewAnalyzingView />
+      </ModalPortalOverlay>
+    );
   }
 
   if (view === "report" && reportInterviewId) {
@@ -395,6 +399,7 @@ const InterviewPrep: React.FC<InterviewPrepProps> = ({
       <InterviewReportView
         interviewId={reportInterviewId}
         roundType={reportRoundType}
+        onRoundChange={round => navigate({ round })}
         onBack={goDashboard}
         onRetake={handleRetake}
         onResume={handleResume}
@@ -524,8 +529,8 @@ const InterviewPrep: React.FC<InterviewPrepProps> = ({
       )}
 
       {isAnalyzing && (
-        <ModalPortalOverlay className="flex items-center justify-center bg-black/40">
-          <Loader2 className="h-10 w-10 animate-spin text-white" />
+        <ModalPortalOverlay className="flex flex-col overflow-hidden bg-[#0B1121] text-white">
+          <InterviewAnalyzingView />
         </ModalPortalOverlay>
       )}
     </div>

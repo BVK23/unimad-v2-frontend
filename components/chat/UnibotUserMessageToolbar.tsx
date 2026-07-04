@@ -22,7 +22,7 @@ export function UnibotUserMessageToolbar({
     "inline-flex items-center justify-center rounded-md p-1 text-slate-400 transition-colors hover:bg-slate-100 hover:text-brand-600 disabled:opacity-30 dark:hover:bg-white/10";
 
   return (
-    <div className="mt-1 flex items-center justify-end gap-0.5 opacity-0 transition-opacity group-hover:opacity-100">
+    <div className="hidden items-center justify-end gap-0.5 group-hover:flex">
       {showEdit && onEdit ? (
         <button type="button" onClick={onEdit} disabled={disabled} title="Edit message" aria-label="Edit message" className={btnClass}>
           <Pencil size={12} aria-hidden />

@@ -313,10 +313,10 @@ const JobDiscovery: React.FC<JobDiscoveryProps> = ({
   };
 
   return (
-    <div className="pb-32">
+    <div className="w-full min-w-0 pb-32">
       {/* Hero Carousel Section - White Background */}
       <div className="bg-white dark:bg-slate-900 border-b border-slate-200 dark:border-slate-800 py-10">
-        <div className="max-w-[1400px] mx-auto px-6">
+        <div className="w-full px-6">
           <div className="flex items-center justify-between mb-6">
             <div>
               <h2 className="text-xl font-normal text-slate-900 dark:text-white">Recommended For You</h2>
@@ -378,7 +378,7 @@ const JobDiscovery: React.FC<JobDiscoveryProps> = ({
 
       <LinkedInRibbonBanner onNavigateToStudio={onNavigateToStudio} />
 
-      <div className="max-w-[1400px] mx-auto px-6 mt-6">
+      <div className="w-full px-6 mt-6">
         <div className="grid grid-cols-1 gap-4 lg:grid-cols-12">
           <div className="relative flex min-h-[220px] flex-col justify-between rounded-2xl border border-slate-200 bg-white p-5 shadow-sm lg:col-span-5 dark:border-slate-700 dark:bg-slate-900">
             <div className="text-center">
@@ -450,7 +450,7 @@ const JobDiscovery: React.FC<JobDiscoveryProps> = ({
       </div>
 
       {/* Search and Browse Section */}
-      <div className="max-w-[1400px] mx-auto px-6 py-10">
+      <div className="w-full px-6 py-10">
         <div className="mb-6 w-full">
           <SearchSection
             searchTerm={searchTerm}

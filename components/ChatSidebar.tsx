@@ -124,6 +124,7 @@ import {
 import { resumeByIdQueryKey } from "@/features/resume/hooks/useResume";
 import { useResumeStore } from "@/features/resume/store/useResumeStore";
 import { MODAL_OVERLAY_Z_CLASS } from "@/lib/ui/modal-overlay";
+import { compactTopicSubMessages, groupSubMessagesIntoTurns } from "@/src/features/adk-chat/compact-topic-sub-messages";
 import { isUntitledMainSessionTitle, UNTITLED_THREAD_TITLE } from "@/src/features/adk-chat/constants";
 import {
   deriveActiveScope,
@@ -156,6 +157,7 @@ import {
 } from "@/src/features/adk-chat/resolve-sub-thread-navigation";
 import { assessRewindStateRevert } from "@/src/features/adk-chat/rewind-state-divergence";
 import { getRegistryRow, upsertRegistryRow } from "@/src/features/adk-chat/session-registry";
+import type { StreamActivitySnapshot } from "@/src/features/adk-chat/streaming/stream-activity-store";
 import { buildLinkedInImproveContentKey, buildResumeImproveContentKey } from "@/src/features/adk-chat/sub-session-content-key";
 import {
   buildLinkedInImproveTitle,
@@ -411,6 +413,53 @@ function ResolvedReviewDecisionStatus({
   return (
     <div className="mt-0.5 flex w-full max-w-[95%] justify-end pe-0.5">
       <AdkDraftReviewDecisionStatus decision={decision} />
+    </div>
+  );
+}
+
+/** Only reserve a model bubble shell while streaming — not for stale empty placeholders after the turn completes. */
+function shouldShowStreamingModelShell(input: {
+  text: string | undefined;
+  modelVisibleText: string;
+  isActiveDraftStream: boolean;
+  isActiveStreamTarget: boolean;
+  isAgentLoading: boolean;
+  isSyncingContext: boolean;
+  hasPlannerOrDraft: boolean;
+}): boolean {
+  if (input.modelVisibleText) return true;
+  if (input.isActiveDraftStream) return true;
+  if (input.hasPlannerOrDraft) return false;
+  if (input.isActiveStreamTarget && (input.isAgentLoading || input.isSyncingContext)) return true;
+  if (!input.isAgentLoading && !input.isSyncingContext) return false;
+  return !input.text?.trim() || isStreamingMachineReadablePayloadOnly(input.text);
+}
+
+function renderModelStreamingPlaceholder(input: {
+  messageId: string;
+  activeStreamingMessageId: string | null;
+  liveStreamActivity: StreamActivitySnapshot;
+  streamActivityLabel: string | null;
+  contentGenPublishActivity: Record<string, string | undefined>;
+  isAgentLoading: boolean;
+  isSyncingContext: boolean;
+  streamingStatusLabel: string;
+  className?: string;
+}): React.ReactNode {
+  const isActiveStreamTarget = input.messageId === input.activeStreamingMessageId;
+  const placeholderLabel =
+    input.contentGenPublishActivity[input.messageId] ??
+    streamActivityLabelForMessage(input.messageId, input.liveStreamActivity, input.streamActivityLabel, {
+      agentLoading: input.isAgentLoading,
+      isSyncingContext: input.isSyncingContext,
+      waitingLabel: input.streamingStatusLabel,
+      isActiveStreamingTarget: isActiveStreamTarget,
+    });
+  if (!isActiveStreamTarget && !placeholderLabel.trim()) return null;
+  return (
+    <div className={input.className ?? "flex items-center gap-2 text-slate-400"}>
+      <Loader2 size={14} className="animate-spin shrink-0" />
+      <span>{placeholderLabel}</span>
     </div>
   );
 }
@@ -2536,10 +2585,11 @@ const ChatSidebar: React.FC<ChatSidebarProps> = ({ incomingRequest, onRequestHan
 
   /** When a streaming placeholder exists in the transcript, loading UI stays inline only (no duplicate footer). */
   const activeStreamingMessageId = useMemo(() => {
-    if (liveStreamActivity.assistantMessageId) {
+    const streamInFlight = isAgentLoading || isContentGenPublishing || isSyncingContext;
+    if (liveStreamActivity.assistantMessageId && streamInFlight) {
       return liveStreamActivity.assistantMessageId;
     }
-    if (!isAgentLoading && !isContentGenPublishing) {
+    if (!streamInFlight) {
       return null;
     }
     const isStreamingPlaceholderBubble = (text: string | undefined, isError?: boolean) => {
@@ -2573,7 +2623,7 @@ const ChatSidebar: React.FC<ChatSidebarProps> = ({ incomingRequest, onRequestHan
       }
     }
     return null;
-  }, [liveStreamActivity.assistantMessageId, isAgentLoading, isContentGenPublishing, improveReplyTopicId, messages]);
+  }, [liveStreamActivity.assistantMessageId, isAgentLoading, isContentGenPublishing, isSyncingContext, improveReplyTopicId, messages]);
 
   const hasInlineStreamingPlaceholder = useMemo(() => {
     if (!isAgentLoading && !isContentGenPublishing) {
@@ -4366,310 +4416,342 @@ const ChatSidebar: React.FC<ChatSidebarProps> = ({ incomingRequest, onRequestHan
                         onNavigate={href => router.push(href)}
                       />
                     ) : null}
-                    <div className="space-y-4 mb-3">
-                      {msg.messages?.map(subMsg => {
-                        const isContentGen = msg.topicKind === "content_gen";
-                        const isApplicationAsset = msg.topicKind === "application_asset";
-                        const improveSubRow = msg.subSessionAdkId ? getRegistryRow(msg.subSessionAdkId) : undefined;
-                        const isResumeImprove = msg.topicKind === "improve" && improveSubRow?.feature === "resume";
-                        const subHasDraft =
-                          isContentGen && subMsg.role === "model" && Boolean(subMsg.text && messageHasContentGenDraft(subMsg.text));
-                        const subIsDraftThread = isContentGen && isContentGenDraftSubThread(msg.messages);
-                        const lastModelSubMsgId = [...(msg.messages ?? [])].reverse().find(m => m.role === "model")?.id;
-                        const subIsActiveDraftStream =
-                          subIsDraftThread &&
-                          isAgentLoading &&
-                          subMsg.role === "model" &&
-                          (contentGenAdkDraftJobRef.current?.botMsgId === subMsg.id || subMsg.id === lastModelSubMsgId);
-                        const plannerTurnFunnel = resolveFunnelForPlannerModelMessage(msg, subMsg.id) ?? contentGenFunnelRef.current;
-                        const subHasPlanner =
-                          isContentGen &&
-                          subMsg.role === "model" &&
-                          Boolean(subMsg.text && messageShowsTopicPickerChips(subMsg.text, plannerTurnFunnel) && !subHasDraft);
-                        const rawModelVisibleText =
-                          subMsg.role === "model" && subMsg.text
-                            ? isContentGen
-                              ? subHasPlanner
-                                ? stripPlannerJsonFromMessage(subMsg.text)
-                                : subHasDraft || subIsDraftThread
-                                  ? stripContentGenDraftFromMessage(subMsg.text, { draftTurn: subIsDraftThread || subHasDraft })
-                                  : stripMachineReadablePayloadFromMessage(subMsg.text)
-                              : isApplicationAsset
-                                ? stripApplicationAssetDraftFromMessage(subMsg.text)
-                                : stripMachineReadablePayloadFromMessage(subMsg.text)
-                            : "";
-                        const modelVisibleText =
-                          shouldDeferContentGenDraftBubbleText({
-                            draftThread: subIsDraftThread,
-                            agentLoading: isAgentLoading,
-                            isActiveStreamMessage: subIsActiveDraftStream,
-                          }) && !subHasPlanner
-                            ? ""
-                            : rawModelVisibleText;
-                        const userVisibleText =
-                          subMsg.role === "user" && subMsg.text
-                            ? isContentGen
-                              ? contentGenTopicUserDisplayText(subMsg.text)
-                              : isResumeImprove
-                                ? resumeImproveUserDisplayText(
-                                    subMsg.text,
-                                    improveSubRow?.section ?? undefined,
-                                    improveSubRow?.entry_id || undefined
-                                  )
-                                : subMsg.text
-                            : "";
-                        const showModelBubble =
-                          subMsg.role === "model" &&
-                          (Boolean(modelVisibleText) ||
-                            subIsActiveDraftStream ||
-                            (!(subHasPlanner || subHasDraft) && (!subMsg.text || isStreamingMachineReadablePayloadOnly(subMsg.text))));
-                        const showUserBubble = subMsg.role === "user" && userVisibleText;
-                        const hasActionCard = subMsg.role === "user" && subMsg.assetActionMeta;
+                    <div className="flex flex-col gap-4 mb-3">
+                      {groupSubMessagesIntoTurns(compactTopicSubMessages(msg.messages ?? [], activeStreamingMessageId)).map(turn => (
+                        <div key={turn.map(m => m.id).join(":")} className="flex flex-col gap-1.5">
+                          {turn.map(subMsg => {
+                            const isContentGen = msg.topicKind === "content_gen";
+                            const isApplicationAsset = msg.topicKind === "application_asset";
+                            const improveSubRow = msg.subSessionAdkId ? getRegistryRow(msg.subSessionAdkId) : undefined;
+                            const isResumeImprove = msg.topicKind === "improve" && improveSubRow?.feature === "resume";
+                            const subHasDraft =
+                              isContentGen && subMsg.role === "model" && Boolean(subMsg.text && messageHasContentGenDraft(subMsg.text));
+                            const subIsDraftThread = isContentGen && isContentGenDraftSubThread(msg.messages);
+                            const lastModelSubMsgId = [...(msg.messages ?? [])].reverse().find(m => m.role === "model")?.id;
+                            const subIsActiveDraftStream =
+                              subIsDraftThread &&
+                              isAgentLoading &&
+                              subMsg.role === "model" &&
+                              (contentGenAdkDraftJobRef.current?.botMsgId === subMsg.id || subMsg.id === lastModelSubMsgId);
+                            const plannerTurnFunnel = resolveFunnelForPlannerModelMessage(msg, subMsg.id) ?? contentGenFunnelRef.current;
+                            const subHasPlanner =
+                              isContentGen &&
+                              subMsg.role === "model" &&
+                              Boolean(subMsg.text && messageShowsTopicPickerChips(subMsg.text, plannerTurnFunnel) && !subHasDraft);
+                            const rawModelVisibleText =
+                              subMsg.role === "model" && subMsg.text
+                                ? isContentGen
+                                  ? subHasPlanner
+                                    ? stripPlannerJsonFromMessage(subMsg.text)
+                                    : subHasDraft || subIsDraftThread
+                                      ? stripContentGenDraftFromMessage(subMsg.text, { draftTurn: subIsDraftThread || subHasDraft })
+                                      : stripMachineReadablePayloadFromMessage(subMsg.text)
+                                  : isApplicationAsset
+                                    ? stripApplicationAssetDraftFromMessage(subMsg.text)
+                                    : stripMachineReadablePayloadFromMessage(subMsg.text)
+                                : "";
+                            const modelVisibleText =
+                              shouldDeferContentGenDraftBubbleText({
+                                draftThread: subIsDraftThread,
+                                agentLoading: isAgentLoading,
+                                isActiveStreamMessage: subIsActiveDraftStream,
+                              }) && !subHasPlanner
+                                ? ""
+                                : rawModelVisibleText;
+                            const userVisibleText =
+                              subMsg.role === "user" && subMsg.text
+                                ? isContentGen
+                                  ? contentGenTopicUserDisplayText(subMsg.text)
+                                  : isResumeImprove
+                                    ? resumeImproveUserDisplayText(
+                                        subMsg.text,
+                                        improveSubRow?.section ?? undefined,
+                                        improveSubRow?.entry_id || undefined
+                                      )
+                                    : subMsg.text
+                                : "";
+                            const isActiveStreamTarget = subMsg.id === activeStreamingMessageId;
+                            const showModelBubble =
+                              subMsg.role === "model" &&
+                              shouldShowStreamingModelShell({
+                                text: subMsg.text,
+                                modelVisibleText,
+                                isActiveDraftStream: subIsActiveDraftStream,
+                                isActiveStreamTarget,
+                                isAgentLoading,
+                                isSyncingContext,
+                                hasPlannerOrDraft: subHasPlanner || subHasDraft,
+                              });
+                            const showUserBubble = subMsg.role === "user" && userVisibleText;
+                            const hasActionCard = subMsg.role === "user" && subMsg.assetActionMeta;
+                            const hasAttachedReview =
+                              subMsg.role === "model" &&
+                              (adkContentGenReviewStack.some(
+                                c => c.assistantMessageId === subMsg.id && c.id === adkContentGenActiveReviewId
+                              ) ||
+                                adkApplicationAssetReviewStack.some(c => c.assistantMessageId === subMsg.id) ||
+                                adkReviewStack.some(c => c.assistantMessageId === subMsg.id) ||
+                                adkPortfolioReviewStack.some(c => c.assistantMessageId === subMsg.id) ||
+                                adkLinkedInReviewStack.some(c => c.assistantMessageId === subMsg.id));
+                            const hasSubMessageContent =
+                              subMsg.isError ||
+                              hasActionCard ||
+                              showUserBubble ||
+                              showModelBubble ||
+                              subHasPlanner ||
+                              hasAttachedReview ||
+                              (subMsg.role === "model" &&
+                                Boolean(subMsg.unimadNavigation || subMsg.unimadJobCards || subMsg.unimadLinkedInSuggestions));
 
-                        return (
-                          <div
-                            key={subMsg.id}
-                            data-unibot-message-id={subMsg.id}
-                            className={`flex flex-col gap-1 ${subMsg.role === "user" ? "items-end" : "items-start"}`}
-                          >
-                            {subMsg.isError ? (
-                              <UnibotErrorBubble message={subMsg} onRetry={retryFailedStream} />
-                            ) : hasActionCard ? (
-                              <div className="group flex max-w-full flex-col items-end">
-                                <RefineActionCard meta={subMsg.assetActionMeta!} />
-                                {subMsg.invocationId ? (
-                                  <UnibotUserMessageToolbar
-                                    showEdit={false}
-                                    disabled={!canRewind}
-                                    onDelete={() => void handleDeleteUserMessage(subMsg, msg.subSessionAdkId ?? sessionId, msg.id)}
-                                  />
-                                ) : null}
-                              </div>
-                            ) : showModelBubble || showUserBubble ? (
-                              subMsg.role === "user" && showUserBubble ? (
-                                <div className="group flex max-w-full flex-col items-end">
-                                  {renderEditableUserMessage(
-                                    subMsg,
-                                    msg.subSessionAdkId ?? sessionId,
-                                    msg.id,
-                                    userVisibleText,
-                                    "rounded-2xl rounded-tr-sm bg-slate-50 px-3 py-2 text-[13px] leading-relaxed text-slate-800 dark:bg-white/5 dark:text-slate-100"
-                                  )}
-                                </div>
-                              ) : (
-                                <div className="text-[13px] py-2 px-3 leading-relaxed text-slate-600 dark:text-slate-300">
-                                  {modelVisibleText ? (
-                                    <>
-                                      <FormattedAgentMessage content={modelVisibleText} />
-                                      {(() => {
-                                        const followUp = getFollowUpStreamActivityLabel(
-                                          subMsg.id,
-                                          liveStreamActivity,
-                                          streamActivityLabel,
-                                          {
-                                            agentLoading: isAgentLoading,
-                                            isSyncingContext,
-                                            hasVisibleText: true,
-                                            waitingLabel: streamingStatusLabel,
-                                          }
-                                        );
-                                        if (!followUp) return null;
-                                        return (
-                                          <div className="mt-2 flex items-center gap-2 text-slate-400">
-                                            <Loader2 size={12} className="animate-spin shrink-0" />
-                                            <span className="text-xs">{followUp}</span>
-                                          </div>
-                                        );
-                                      })()}
-                                    </>
+                            if (!hasSubMessageContent) return null;
+
+                            return (
+                              <div
+                                key={subMsg.id}
+                                data-unibot-message-id={subMsg.id}
+                                className={`flex flex-col gap-1 ${subMsg.role === "user" ? "items-end" : "items-start"}`}
+                              >
+                                {subMsg.isError ? (
+                                  <UnibotErrorBubble message={subMsg} onRetry={retryFailedStream} />
+                                ) : hasActionCard ? (
+                                  <div className="group flex max-w-full flex-col items-end">
+                                    <RefineActionCard meta={subMsg.assetActionMeta!} />
+                                    {subMsg.invocationId ? (
+                                      <UnibotUserMessageToolbar
+                                        showEdit={false}
+                                        disabled={!canRewind}
+                                        onDelete={() => void handleDeleteUserMessage(subMsg, msg.subSessionAdkId ?? sessionId, msg.id)}
+                                      />
+                                    ) : null}
+                                  </div>
+                                ) : showModelBubble || showUserBubble ? (
+                                  subMsg.role === "user" && showUserBubble ? (
+                                    <div className="group flex max-w-full flex-col items-end">
+                                      {renderEditableUserMessage(
+                                        subMsg,
+                                        msg.subSessionAdkId ?? sessionId,
+                                        msg.id,
+                                        userVisibleText,
+                                        "rounded-2xl rounded-tr-sm bg-slate-50 px-3 py-2 text-[13px] leading-relaxed text-slate-800 dark:bg-white/5 dark:text-slate-100"
+                                      )}
+                                    </div>
                                   ) : (
                                     (() => {
-                                      const isActiveStreamTarget = subMsg.id === activeStreamingMessageId;
-                                      const placeholderLabel =
-                                        contentGenPublishActivity[subMsg.id] ??
-                                        streamActivityLabelForMessage(subMsg.id, liveStreamActivity, streamActivityLabel, {
-                                          agentLoading: isAgentLoading,
-                                          isSyncingContext,
-                                          waitingLabel: streamingStatusLabel,
-                                          isActiveStreamingTarget: isActiveStreamTarget,
-                                        });
-                                      if (!isActiveStreamTarget && !placeholderLabel.trim()) return null;
+                                      const streamingPlaceholder = modelVisibleText
+                                        ? null
+                                        : renderModelStreamingPlaceholder({
+                                            messageId: subMsg.id,
+                                            activeStreamingMessageId,
+                                            liveStreamActivity,
+                                            streamActivityLabel,
+                                            contentGenPublishActivity,
+                                            isAgentLoading,
+                                            isSyncingContext,
+                                            streamingStatusLabel,
+                                          });
+                                      if (!modelVisibleText && !streamingPlaceholder) return null;
                                       return (
-                                        <div className="flex items-center gap-2 text-slate-400">
-                                          <Loader2 size={14} className="animate-spin shrink-0" />
-                                          <span>{placeholderLabel}</span>
+                                        <div className="text-[13px] py-2 px-3 leading-relaxed text-slate-600 dark:text-slate-300">
+                                          {modelVisibleText ? (
+                                            <>
+                                              <FormattedAgentMessage content={modelVisibleText} />
+                                              {(() => {
+                                                const followUp = getFollowUpStreamActivityLabel(
+                                                  subMsg.id,
+                                                  liveStreamActivity,
+                                                  streamActivityLabel,
+                                                  {
+                                                    agentLoading: isAgentLoading,
+                                                    isSyncingContext,
+                                                    hasVisibleText: true,
+                                                    waitingLabel: streamingStatusLabel,
+                                                  }
+                                                );
+                                                if (!followUp) return null;
+                                                return (
+                                                  <div className="mt-2 flex items-center gap-2 text-slate-400">
+                                                    <Loader2 size={12} className="animate-spin shrink-0" />
+                                                    <span className="text-xs">{followUp}</span>
+                                                  </div>
+                                                );
+                                              })()}
+                                            </>
+                                          ) : (
+                                            streamingPlaceholder
+                                          )}
                                         </div>
                                       );
                                     })()
-                                  )}
-                                </div>
-                              )
-                            ) : null}
-                            {subHasPlanner ? (
-                              <UnibotActionItemHighlight
-                                active={isActionItemHighlighted(msg.id, subMsg.id, "planner_chips")}
-                                messageId={subMsg.id}
-                              >
-                                <ContentGenTopicChips
-                                  botMessage={subMsg.text!}
-                                  topicId={msg.id}
-                                  activeFunnel={plannerTurnFunnel}
-                                  chipsDismissed={contentGenDismissedChipsRef.current.has(subMsg.id)}
-                                  onAffirmationClick={(label, _f) =>
-                                    handleContentGenAffirmation(msg.id, label, subMsg.id, plannerTurnFunnel)
-                                  }
-                                  onUseTopic={(title, funnel) =>
-                                    handleApplyContentGenTopic(msg.id, title, funnel ?? plannerTurnFunnel, subMsg.id)
-                                  }
-                                  onActionClick={action => {
-                                    contentGenDismissedChipsRef.current.add(subMsg.id);
-                                    setMessages(prev => [...prev]);
-                                    handleContentGenAction(action, msg.id);
-                                  }}
-                                />
-                              </UnibotActionItemHighlight>
-                            ) : null}
-                            {subMsg.role === "model" && subMsg.unimadNavigation ? (
-                              <UnimadNavigationChip navigation={subMsg.unimadNavigation} onNavigate={path => router.push(path)} />
-                            ) : null}
-                            {subMsg.role === "model" && subMsg.unimadJobCards ? (
-                              <UnibotJobCardStrip payload={subMsg.unimadJobCards} onSeeMore={path => router.push(path)} />
-                            ) : null}
-                            {subMsg.role === "model" && subMsg.unimadLinkedInSuggestions ? (
-                              <UnibotLinkedInSuggestionCards
-                                payload={subMsg.unimadLinkedInSuggestions}
-                                wideLayout={subMsg.unimadLinkedInSuggestions.section === "about"}
-                              />
-                            ) : null}
-                            {subMsg.role === "model" &&
-                            adkContentGenReviewStack.some(
-                              c => c.assistantMessageId === subMsg.id && c.id === adkContentGenActiveReviewId
-                            ) ? (
-                              <UnibotActionItemHighlight
-                                active={isActionItemHighlighted(msg.id, subMsg.id, "review_card")}
-                                messageId={subMsg.id}
-                              >
-                                <ContentGenDraftReviewChips
-                                  disabled={adkReviewBusy || !sessionReady}
-                                  actionsOutOfContext={showGoToAsset}
-                                  onAccept={() => void handleContentGenAccept()}
-                                  onImprove={() => void handleContentGenImprove(msg.id)}
-                                  onBlockedAction={nudgeTopicGoTo}
-                                />
-                              </UnibotActionItemHighlight>
-                            ) : null}
-                            {subMsg.role === "model" &&
-                              adkApplicationAssetReviewStack
-                                .filter(c => c.assistantMessageId === subMsg.id)
-                                .map(card => (
+                                  )
+                                ) : null}
+                                {subHasPlanner ? (
                                   <UnibotActionItemHighlight
-                                    key={card.id}
-                                    active={
-                                      card.id === adkApplicationAssetActiveReviewId &&
-                                      isActionItemHighlighted(msg.id, subMsg.id, "review_card")
-                                    }
+                                    active={isActionItemHighlighted(msg.id, subMsg.id, "planner_chips")}
                                     messageId={subMsg.id}
                                   >
-                                    <AdkReviewCardBlock
-                                      card={card}
-                                      isActive={card.id === adkApplicationAssetActiveReviewId}
-                                      adkReviewBusy={applicationAssetReviewBusy}
-                                      sessionReady={sessionReady}
-                                      onAccept={() => void acceptApplicationAssetReview()}
-                                      onDiscard={discardApplicationAssetReview}
-                                      hideActions={diffReviewUiActive}
-                                      actionsOutOfContext={showGoToAsset}
-                                      onBlockedAction={nudgeTopicGoTo}
-                                    />
-                                  </UnibotActionItemHighlight>
-                                ))}
-                            {subMsg.role === "model" &&
-                              adkLinkedInReviewStack
-                                .filter(c => c.assistantMessageId === subMsg.id)
-                                .map((card: AdkLinkedInReviewCard) => (
-                                  <UnibotActionItemHighlight
-                                    key={card.id}
-                                    active={
-                                      card.id === adkLinkedInActiveReviewId && isActionItemHighlighted(msg.id, subMsg.id, "review_card")
-                                    }
-                                    messageId={subMsg.id}
-                                  >
-                                    <AdkReviewCardBlock
-                                      card={card}
-                                      isActive={card.id === adkLinkedInActiveReviewId}
-                                      adkReviewBusy={adkReviewBusy}
-                                      sessionReady={sessionReady}
-                                      onAccept={handleAdkLinkedInAccept}
-                                      onDiscard={handleAdkLinkedInDiscard}
-                                      actionsOutOfContext={showGoToAsset}
-                                      onBlockedAction={nudgeTopicGoTo}
-                                    />
-                                  </UnibotActionItemHighlight>
-                                ))}
-                            {subMsg.role === "model" &&
-                              adkReviewStack
-                                .filter(c => c.assistantMessageId === subMsg.id)
-                                .map(card => (
-                                  <UnibotActionItemHighlight
-                                    key={card.id}
-                                    active={card.id === adkActiveReviewId && isActionItemHighlighted(msg.id, subMsg.id, "review_card")}
-                                    messageId={subMsg.id}
-                                  >
-                                    <AdkReviewCardBlock
-                                      card={card}
-                                      isActive={card.id === adkActiveReviewId}
-                                      adkReviewBusy={adkReviewBusy}
-                                      sessionReady={sessionReady}
-                                      onAccept={handleAdkAccept}
-                                      onDiscard={handleAdkDiscard}
-                                      actionsOutOfContext={
-                                        showGoToAsset || !isResumeReviewActionsInContext(activeResumeId, improveSubRow, card.resumeId)
+                                    <ContentGenTopicChips
+                                      botMessage={subMsg.text!}
+                                      topicId={msg.id}
+                                      activeFunnel={plannerTurnFunnel}
+                                      chipsDismissed={contentGenDismissedChipsRef.current.has(subMsg.id)}
+                                      onAffirmationClick={(label, _f) =>
+                                        handleContentGenAffirmation(msg.id, label, subMsg.id, plannerTurnFunnel)
                                       }
-                                      onBlockedAction={nudgeTopicGoTo}
+                                      onUseTopic={(title, funnel) =>
+                                        handleApplyContentGenTopic(msg.id, title, funnel ?? plannerTurnFunnel, subMsg.id)
+                                      }
+                                      onActionClick={action => {
+                                        contentGenDismissedChipsRef.current.add(subMsg.id);
+                                        setMessages(prev => [...prev]);
+                                        handleContentGenAction(action, msg.id);
+                                      }}
                                     />
                                   </UnibotActionItemHighlight>
-                                ))}
-                            {subMsg.role === "model" &&
-                              adkPortfolioReviewStack
-                                .filter(c => c.assistantMessageId === subMsg.id)
-                                .map((card: AdkPortfolioReviewCard) => (
+                                ) : null}
+                                {subMsg.role === "model" && subMsg.unimadNavigation ? (
+                                  <UnimadNavigationChip navigation={subMsg.unimadNavigation} onNavigate={path => router.push(path)} />
+                                ) : null}
+                                {subMsg.role === "model" && subMsg.unimadJobCards ? (
+                                  <UnibotJobCardStrip payload={subMsg.unimadJobCards} onSeeMore={path => router.push(path)} />
+                                ) : null}
+                                {subMsg.role === "model" && subMsg.unimadLinkedInSuggestions ? (
+                                  <UnibotLinkedInSuggestionCards
+                                    payload={subMsg.unimadLinkedInSuggestions}
+                                    wideLayout={subMsg.unimadLinkedInSuggestions.section === "about"}
+                                  />
+                                ) : null}
+                                {subMsg.role === "model" &&
+                                adkContentGenReviewStack.some(
+                                  c => c.assistantMessageId === subMsg.id && c.id === adkContentGenActiveReviewId
+                                ) ? (
                                   <UnibotActionItemHighlight
-                                    key={card.id}
-                                    active={
-                                      card.id === adkPortfolioActiveReviewId && isActionItemHighlighted(msg.id, subMsg.id, "review_card")
-                                    }
+                                    active={isActionItemHighlighted(msg.id, subMsg.id, "review_card")}
                                     messageId={subMsg.id}
                                   >
-                                    <AdkReviewCardBlock
-                                      card={card}
-                                      isActive={card.id === adkPortfolioActiveReviewId}
-                                      adkReviewBusy={adkReviewBusy}
-                                      sessionReady={sessionReady}
-                                      onAccept={handleAdkPortfolioAccept}
-                                      onDiscard={handleAdkPortfolioDiscard}
+                                    <ContentGenDraftReviewChips
+                                      disabled={adkReviewBusy || !sessionReady}
                                       actionsOutOfContext={showGoToAsset}
+                                      onAccept={() => void handleContentGenAccept()}
+                                      onImprove={() => void handleContentGenImprove(msg.id)}
                                       onBlockedAction={nudgeTopicGoTo}
                                     />
                                   </UnibotActionItemHighlight>
-                                ))}
-                            {subMsg.role === "model" && msg.topicKind !== "content_gen" ? (
-                              <ResolvedReviewDecisionStatus
-                                messageId={subMsg.id}
-                                reviewDecisions={reviewDecisions}
-                                hasPendingReview={
-                                  adkContentGenReviewStack.some(
-                                    c => c.assistantMessageId === subMsg.id && c.id === adkContentGenActiveReviewId
-                                  ) ||
-                                  adkApplicationAssetReviewStack.some(c => c.assistantMessageId === subMsg.id) ||
-                                  adkReviewStack.some(c => c.assistantMessageId === subMsg.id) ||
-                                  adkPortfolioReviewStack.some(c => c.assistantMessageId === subMsg.id) ||
-                                  adkLinkedInReviewStack.some(c => c.assistantMessageId === subMsg.id)
-                                }
-                              />
-                            ) : null}
-                          </div>
-                        );
-                      })}
+                                ) : null}
+                                {subMsg.role === "model" &&
+                                  adkApplicationAssetReviewStack
+                                    .filter(c => c.assistantMessageId === subMsg.id)
+                                    .map(card => (
+                                      <UnibotActionItemHighlight
+                                        key={card.id}
+                                        active={
+                                          card.id === adkApplicationAssetActiveReviewId &&
+                                          isActionItemHighlighted(msg.id, subMsg.id, "review_card")
+                                        }
+                                        messageId={subMsg.id}
+                                      >
+                                        <AdkReviewCardBlock
+                                          card={card}
+                                          isActive={card.id === adkApplicationAssetActiveReviewId}
+                                          adkReviewBusy={applicationAssetReviewBusy}
+                                          sessionReady={sessionReady}
+                                          onAccept={() => void acceptApplicationAssetReview()}
+                                          onDiscard={discardApplicationAssetReview}
+                                          hideActions={diffReviewUiActive}
+                                          actionsOutOfContext={showGoToAsset}
+                                          onBlockedAction={nudgeTopicGoTo}
+                                        />
+                                      </UnibotActionItemHighlight>
+                                    ))}
+                                {subMsg.role === "model" &&
+                                  adkLinkedInReviewStack
+                                    .filter(c => c.assistantMessageId === subMsg.id)
+                                    .map((card: AdkLinkedInReviewCard) => (
+                                      <UnibotActionItemHighlight
+                                        key={card.id}
+                                        active={
+                                          card.id === adkLinkedInActiveReviewId && isActionItemHighlighted(msg.id, subMsg.id, "review_card")
+                                        }
+                                        messageId={subMsg.id}
+                                      >
+                                        <AdkReviewCardBlock
+                                          card={card}
+                                          isActive={card.id === adkLinkedInActiveReviewId}
+                                          adkReviewBusy={adkReviewBusy}
+                                          sessionReady={sessionReady}
+                                          onAccept={handleAdkLinkedInAccept}
+                                          onDiscard={handleAdkLinkedInDiscard}
+                                          actionsOutOfContext={showGoToAsset}
+                                          onBlockedAction={nudgeTopicGoTo}
+                                        />
+                                      </UnibotActionItemHighlight>
+                                    ))}
+                                {subMsg.role === "model" &&
+                                  adkReviewStack
+                                    .filter(c => c.assistantMessageId === subMsg.id)
+                                    .map(card => (
+                                      <UnibotActionItemHighlight
+                                        key={card.id}
+                                        active={card.id === adkActiveReviewId && isActionItemHighlighted(msg.id, subMsg.id, "review_card")}
+                                        messageId={subMsg.id}
+                                      >
+                                        <AdkReviewCardBlock
+                                          card={card}
+                                          isActive={card.id === adkActiveReviewId}
+                                          adkReviewBusy={adkReviewBusy}
+                                          sessionReady={sessionReady}
+                                          onAccept={handleAdkAccept}
+                                          onDiscard={handleAdkDiscard}
+                                          actionsOutOfContext={
+                                            showGoToAsset || !isResumeReviewActionsInContext(activeResumeId, improveSubRow, card.resumeId)
+                                          }
+                                          onBlockedAction={nudgeTopicGoTo}
+                                        />
+                                      </UnibotActionItemHighlight>
+                                    ))}
+                                {subMsg.role === "model" &&
+                                  adkPortfolioReviewStack
+                                    .filter(c => c.assistantMessageId === subMsg.id)
+                                    .map((card: AdkPortfolioReviewCard) => (
+                                      <UnibotActionItemHighlight
+                                        key={card.id}
+                                        active={
+                                          card.id === adkPortfolioActiveReviewId &&
+                                          isActionItemHighlighted(msg.id, subMsg.id, "review_card")
+                                        }
+                                        messageId={subMsg.id}
+                                      >
+                                        <AdkReviewCardBlock
+                                          card={card}
+                                          isActive={card.id === adkPortfolioActiveReviewId}
+                                          adkReviewBusy={adkReviewBusy}
+                                          sessionReady={sessionReady}
+                                          onAccept={handleAdkPortfolioAccept}
+                                          onDiscard={handleAdkPortfolioDiscard}
+                                          actionsOutOfContext={showGoToAsset}
+                                          onBlockedAction={nudgeTopicGoTo}
+                                        />
+                                      </UnibotActionItemHighlight>
+                                    ))}
+                                {subMsg.role === "model" && msg.topicKind !== "content_gen" ? (
+                                  <ResolvedReviewDecisionStatus
+                                    messageId={subMsg.id}
+                                    reviewDecisions={reviewDecisions}
+                                    hasPendingReview={
+                                      adkContentGenReviewStack.some(
+                                        c => c.assistantMessageId === subMsg.id && c.id === adkContentGenActiveReviewId
+                                      ) ||
+                                      adkApplicationAssetReviewStack.some(c => c.assistantMessageId === subMsg.id) ||
+                                      adkReviewStack.some(c => c.assistantMessageId === subMsg.id) ||
+                                      adkPortfolioReviewStack.some(c => c.assistantMessageId === subMsg.id) ||
+                                      adkLinkedInReviewStack.some(c => c.assistantMessageId === subMsg.id)
+                                    }
+                                  />
+                                ) : null}
+                              </div>
+                            );
+                          })}
+                        </div>
+                      ))}
                     </div>
 
                     {gateAwaitingHint ? (
@@ -4750,53 +4832,61 @@ const ChatSidebar: React.FC<ChatSidebarProps> = ({ incomingRequest, onRequestHan
                     "rounded-2xl rounded-tr-sm bg-slate-100 px-4 py-3 text-[13px] leading-relaxed text-slate-900 dark:bg-white/5 dark:text-slate-100"
                   )}
                 </div>
-              ) : (
-                <div className="max-w-full bg-transparent px-1 text-[13px] leading-relaxed text-slate-600 dark:text-slate-300">
-                  {msg.role === "model" && mainModelVisible ? (
-                    <>
-                      <FormattedAgentMessage content={mainModelVisible} />
-                      {(() => {
-                        const followUp = getFollowUpStreamActivityLabel(msg.id, liveStreamActivity, streamActivityLabel, {
-                          agentLoading: isAgentLoading,
-                          isSyncingContext,
-                          hasVisibleText: true,
-                          waitingLabel: streamingStatusLabel,
-                        });
-                        if (!followUp) return null;
-                        return (
-                          <div className="mt-2 flex items-center gap-2 text-slate-400 px-1">
-                            <Loader2 size={12} className="animate-spin shrink-0" />
-                            <span className="text-xs">{followUp}</span>
-                          </div>
-                        );
-                      })()}
-                    </>
-                  ) : msg.role === "model" &&
-                    !mainPlannerPayload &&
-                    !mainHasDraft &&
-                    !mainHasAppAssetDraft &&
-                    (!msg.text || isStreamingMachineReadablePayloadOnly(msg.text)) ? (
-                    (() => {
-                      const isActiveStreamTarget = msg.id === activeStreamingMessageId;
-                      const placeholderLabel =
-                        contentGenPublishActivity[msg.id] ??
-                        streamActivityLabelForMessage(msg.id, liveStreamActivity, streamActivityLabel, {
-                          agentLoading: isAgentLoading,
-                          isSyncingContext,
-                          waitingLabel: streamingStatusLabel,
-                          isActiveStreamingTarget: isActiveStreamTarget,
-                        });
-                      if (!isActiveStreamTarget && !placeholderLabel.trim()) return null;
-                      return (
-                        <div className="flex items-center gap-2 text-slate-400 px-1">
-                          <Loader2 size={14} className="animate-spin shrink-0" />
-                          <span>{placeholderLabel}</span>
-                        </div>
-                      );
-                    })()
-                  ) : null}
-                </div>
-              )}
+              ) : msg.role === "model" ? (
+                (() => {
+                  const isActiveStreamTarget = msg.id === activeStreamingMessageId;
+                  const showShell = shouldShowStreamingModelShell({
+                    text: msg.text,
+                    modelVisibleText: mainModelVisible ?? "",
+                    isActiveDraftStream: false,
+                    isActiveStreamTarget,
+                    isAgentLoading,
+                    isSyncingContext,
+                    hasPlannerOrDraft: Boolean(mainPlannerPayload) || mainHasDraft || mainHasAppAssetDraft,
+                  });
+                  if (!showShell) return null;
+                  const streamingPlaceholder = mainModelVisible
+                    ? null
+                    : renderModelStreamingPlaceholder({
+                        messageId: msg.id,
+                        activeStreamingMessageId,
+                        liveStreamActivity,
+                        streamActivityLabel,
+                        contentGenPublishActivity,
+                        isAgentLoading,
+                        isSyncingContext,
+                        streamingStatusLabel,
+                        className: "flex items-center gap-2 text-slate-400 px-1",
+                      });
+                  if (!mainModelVisible && !streamingPlaceholder) return null;
+                  return (
+                    <div className="max-w-full bg-transparent px-1 text-[13px] leading-relaxed text-slate-600 dark:text-slate-300">
+                      {mainModelVisible ? (
+                        <>
+                          <FormattedAgentMessage content={mainModelVisible} />
+                          {(() => {
+                            const followUp = getFollowUpStreamActivityLabel(msg.id, liveStreamActivity, streamActivityLabel, {
+                              agentLoading: isAgentLoading,
+                              isSyncingContext,
+                              hasVisibleText: true,
+                              waitingLabel: streamingStatusLabel,
+                            });
+                            if (!followUp) return null;
+                            return (
+                              <div className="mt-2 flex items-center gap-2 text-slate-400 px-1">
+                                <Loader2 size={12} className="animate-spin shrink-0" />
+                                <span className="text-xs">{followUp}</span>
+                              </div>
+                            );
+                          })()}
+                        </>
+                      ) : (
+                        streamingPlaceholder
+                      )}
+                    </div>
+                  );
+                })()
+              ) : null}
               {mainPlannerPayload ? (
                 <ContentGenTopicChips
                   botMessage={mainPlannerPayload}

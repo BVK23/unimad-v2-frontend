@@ -89,26 +89,28 @@ const App: React.FC = () => {
   const [showTemplateModal, setShowTemplateModal] = useState(false);
   const [showOnboardingModal, setShowOnboardingModal] = useState(false);
 
-  // Dark Mode State
-  const [isDarkMode, setIsDarkMode] = useState(false);
+  // Dark mode disabled for now — re-enable when ready
+  // const [isDarkMode, setIsDarkMode] = useState(false);
+  // React.useEffect(() => {
+  //   if (isDarkMode) {
+  //     document.documentElement.classList.add("dark");
+  //   } else {
+  //     document.documentElement.classList.remove("dark");
+  //   }
+  // }, [isDarkMode]);
+  // const toggleDarkMode = () => {
+  //   setIsDarkMode(prev => !prev);
+  // };
 
-  // Sync Dark Mode with DOM
   React.useEffect(() => {
-    if (isDarkMode) {
-      document.documentElement.classList.add("dark");
-    } else {
-      document.documentElement.classList.remove("dark");
-    }
-  }, [isDarkMode]);
-
-  // Toggle Dark Mode
-  const toggleDarkMode = () => {
-    setIsDarkMode(prev => !prev);
-  };
+    document.documentElement.classList.remove("dark");
+  }, []);
 
   // Determine available popups based on context
   const getAvailablePopups = () => {
-    const commonActions = [{ id: "theme", label: `Toggle ${isDarkMode ? "Light" : "Dark"} Mode`, onClick: toggleDarkMode }];
+    const commonActions: { id: string; label: string; onClick: () => void }[] = [
+      // { id: "theme", label: `Toggle ${isDarkMode ? "Light" : "Dark"} Mode`, onClick: toggleDarkMode },
+    ];
 
     if (activeTab === "resume" && resumeView === "editor") {
       return [
@@ -220,7 +222,7 @@ const App: React.FC = () => {
               <button className="text-slate-400 hover:text-slate-600 dark:hover:text-slate-200 p-1">
                 <Bell size={18} />
               </button>
-              <ProfileMenu isDarkMode={isDarkMode} toggleTheme={toggleDarkMode} />
+              <ProfileMenu />
             </div>
           </div>
         </header>

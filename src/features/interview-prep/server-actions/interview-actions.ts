@@ -115,6 +115,24 @@ export async function analyzeVoiceInterview(input: {
   return res.json();
 }
 
+export async function rescoreInterviewRound(input: {
+  interviewId: string;
+  roundType: InterviewRoundType;
+}): Promise<{ message: string; round_type: string }> {
+  const res = await authedFetch("/api/interviews/rescore/", {
+    method: "POST",
+    body: JSON.stringify({
+      interview_id: input.interviewId,
+      round_type: input.roundType,
+    }),
+  });
+  const data = await res.json().catch(() => ({}));
+  if (!res.ok) {
+    throw new Error((data as { error?: string })?.error ?? "Failed to recalculate interview score");
+  }
+  return data as { message: string; round_type: string };
+}
+
 export async function deleteInterviewSession(interviewId: string): Promise<void> {
   const res = await authedFetch(`/api/interviews/${encodeURIComponent(interviewId)}/delete/`, {
     method: "DELETE",

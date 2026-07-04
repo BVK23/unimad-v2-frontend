@@ -4,7 +4,8 @@ import React, { useCallback, useEffect, useRef, useState } from "react";
 import { ModalPortalOverlay } from "@/components/ui/ModalPortalOverlay";
 import { saveInterviewAnswer } from "@/src/features/interview-prep/server-actions/interview-actions";
 import type { InterviewQuestion, InterviewRoundType } from "@/src/features/interview-prep/types";
-import { Mic, MicOff, SkipForward, Loader2 } from "lucide-react";
+import { Mic, MicOff, SkipForward } from "lucide-react";
+import InterviewAnalyzingView from "./InterviewAnalyzingView";
 
 interface InterviewActiveSessionProps {
   interviewId: string;
@@ -32,6 +33,7 @@ const InterviewActiveSession: React.FC<InterviewActiveSessionProps> = ({
   const [interimTranscript, setInterimTranscript] = useState("");
   const [isListening, setIsListening] = useState(false);
   const [isSaving, setIsSaving] = useState(false);
+  const [isAnalyzing, setIsAnalyzing] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -163,6 +165,9 @@ const InterviewActiveSession: React.FC<InterviewActiveSessionProps> = ({
     stopSessionAudio();
 
     const isLast = currentIndex >= questions.length - 1;
+    if (isLast) {
+      setIsAnalyzing(true);
+    }
 
     try {
       await saveInterviewAnswer({
@@ -187,6 +192,7 @@ const InterviewActiveSession: React.FC<InterviewActiveSessionProps> = ({
         speakQuestion(questions[nextIndex].question);
       }, 400);
     } catch (e) {
+      if (isLast) setIsAnalyzing(false);
       setError(e instanceof Error ? e.message : "Failed to save answer");
     } finally {
       setIsSaving(false);
@@ -204,6 +210,14 @@ const InterviewActiveSession: React.FC<InterviewActiveSessionProps> = ({
     setTranscript(e.target.value);
     setInterimTranscript("");
   };
+
+  if (isAnalyzing) {
+    return (
+      <ModalPortalOverlay className="flex flex-col overflow-hidden bg-[#0B1121] text-white">
+        <InterviewAnalyzingView />
+      </ModalPortalOverlay>
+    );
+  }
 
   return (
     <ModalPortalOverlay className="flex flex-col overflow-hidden bg-[#0B1121] text-white">
@@ -288,9 +302,9 @@ const InterviewActiveSession: React.FC<InterviewActiveSessionProps> = ({
               onClick={goToNext}
               disabled={isSaving}
               className="flex h-12 w-12 items-center justify-center rounded-full bg-white/10 transition-all hover:scale-105 hover:bg-white/20 disabled:opacity-50 sm:h-14 sm:w-14"
-              title="Next question"
+              title={currentIndex >= questions.length - 1 ? "Submit and analyse" : "Next question"}
             >
-              {isSaving ? <Loader2 size={24} className="animate-spin" /> : <SkipForward size={24} />}
+              <SkipForward size={24} className={isSaving ? "opacity-40" : ""} />
             </button>
           </div>
           <p className="mt-4 text-center text-sm font-medium text-slate-500">

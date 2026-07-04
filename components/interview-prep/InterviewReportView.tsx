@@ -1,7 +1,8 @@
 "use client";
 
-import React, { useEffect, useState } from "react";
-import { fetchInterviewDetail } from "@/src/features/interview-prep/server-actions/interview-actions";
+import React, { useCallback, useEffect, useState } from "react";
+import { ModalPortalOverlay } from "@/components/ui/ModalPortalOverlay";
+import { fetchInterviewDetail, rescoreInterviewRound } from "@/src/features/interview-prep/server-actions/interview-actions";
 import type {
   InterviewDetailResponse,
   InterviewQuestion,
@@ -9,12 +10,14 @@ import type {
   InterviewRoundType,
   InterviewSessionMode,
 } from "@/src/features/interview-prep/types";
-import { ChevronRight, Loader2, Play, RotateCcw } from "lucide-react";
+import { ChevronRight, Loader2, Play, RotateCcw, Sparkles } from "lucide-react";
+import InterviewAnalyzingView from "./InterviewAnalyzingView";
 import InterviewRetakeModal, { type RetakeAction } from "./InterviewRetakeModal";
 
 interface InterviewReportViewProps {
   interviewId: string;
   roundType?: string;
+  onRoundChange?: (round: InterviewRoundType) => void;
   onBack: () => void;
   onRetake?: (opts: {
     interviewId: string;
@@ -36,9 +39,16 @@ interface InterviewReportViewProps {
   isRetakeStarting?: boolean;
 }
 
+const ROUND_LABELS: Record<InterviewRoundType, string> = {
+  screening: "Screening",
+  technical: "Technical",
+  behavioral: "Behavioral",
+};
+
 const InterviewReportView: React.FC<InterviewReportViewProps> = ({
   interviewId,
   roundType,
+  onRoundChange,
   onBack,
   onRetake,
   onResume,
@@ -48,23 +58,31 @@ const InterviewReportView: React.FC<InterviewReportViewProps> = ({
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [showRetakeModal, setShowRetakeModal] = useState(false);
+  const [isRescoring, setIsRescoring] = useState(false);
 
-  useEffect(() => {
-    let cancelled = false;
-    (async () => {
+  const loadDetail = useCallback(
+    async (opts?: { silent?: boolean }) => {
+      if (!opts?.silent) {
+        setLoading(true);
+      }
+      setError(null);
       try {
         const data = await fetchInterviewDetail(interviewId);
-        if (!cancelled) setDetail(data);
+        setDetail(data);
       } catch (e) {
-        if (!cancelled) setError(e instanceof Error ? e.message : "Failed to load report");
+        setError(e instanceof Error ? e.message : "Failed to load report");
       } finally {
-        if (!cancelled) setLoading(false);
+        if (!opts?.silent) {
+          setLoading(false);
+        }
       }
-    })();
-    return () => {
-      cancelled = true;
-    };
-  }, [interviewId]);
+    },
+    [interviewId]
+  );
+
+  useEffect(() => {
+    void loadDetail();
+  }, [loadDetail]);
 
   if (loading) {
     return (
@@ -86,7 +104,7 @@ const InterviewReportView: React.FC<InterviewReportViewProps> = ({
   }
 
   const activeRoundKey =
-    roundType ??
+    (roundType && detail.rounds_data[roundType] ? roundType : null) ??
     detail.active_round ??
     detail.round_types.find(rt => detail.rounds_data[rt]?.status === "completed") ??
     detail.round_types[detail.round_types.length - 1];
@@ -96,10 +114,20 @@ const InterviewReportView: React.FC<InterviewReportViewProps> = ({
   const isCompleted = roundData?.status === "completed";
   const isBusy = isRetakeStarting;
 
-  const overallScore = roundData?.overall_score ?? 0;
+  const overallScore = roundData?.overall_score;
   const questions = roundData?.questions ?? [];
+  const transcript = roundData?.transcript ?? [];
   const roundMode = roundData?.mode ?? "guided";
   const roundLabel = activeRoundKey ? `${activeRoundKey} round` : "this round";
+  const scoreDisplay = overallScore != null ? String(overallScore) : isInProgress ? "—" : roundData ? "—" : "0";
+  const scoreSubtext =
+    overallScore != null
+      ? "Out of 100"
+      : isInProgress
+        ? "Finish this round to get a score"
+        : isCompleted
+          ? "Score not available — try Recalculate score"
+          : "Out of 100";
 
   const handleRetakeConfirm = (action: RetakeAction, mode: InterviewSessionMode) => {
     if (!onRetake || !activeRoundKey) return;
@@ -133,6 +161,31 @@ const InterviewReportView: React.FC<InterviewReportViewProps> = ({
       initialQuestionIndex,
     });
   };
+
+  const handleRescore = async () => {
+    if (!activeRoundKey || !isCompleted || isRescoring) return;
+    setIsRescoring(true);
+    setError(null);
+    try {
+      await rescoreInterviewRound({
+        interviewId,
+        roundType: activeRoundKey as InterviewRoundType,
+      });
+      await loadDetail({ silent: true });
+    } catch (e) {
+      setError(e instanceof Error ? e.message : "Failed to recalculate score");
+    } finally {
+      setIsRescoring(false);
+    }
+  };
+
+  if (isRescoring) {
+    return (
+      <ModalPortalOverlay className="flex flex-col overflow-hidden bg-[#0B1121] text-white">
+        <InterviewAnalyzingView />
+      </ModalPortalOverlay>
+    );
+  }
 
   return (
     <div className="mx-auto max-w-5xl animate-in p-8 font-sans fade-in">
@@ -190,13 +243,64 @@ const InterviewReportView: React.FC<InterviewReportViewProps> = ({
             Practice again
           </button>
         )}
+        {activeRoundKey && isCompleted && (
+          <button
+            type="button"
+            onClick={() => void handleRescore()}
+            disabled={isBusy || isRescoring}
+            className="flex items-center gap-2 rounded-xl border border-blue-200 bg-blue-50 px-4 py-2 text-sm font-medium text-blue-700 shadow-sm transition-colors hover:bg-blue-100 disabled:opacity-50 dark:border-blue-900/50 dark:bg-blue-950/30 dark:text-blue-300 dark:hover:bg-blue-950/50"
+          >
+            <Sparkles size={16} />
+            Recalculate score
+          </button>
+        )}
       </div>
+
+      {error && (
+        <div className="mb-6 rounded-xl border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700 dark:border-red-900/50 dark:bg-red-950/30 dark:text-red-300">
+          {error}
+        </div>
+      )}
+
+      {detail.round_types.length > 1 && onRoundChange && (
+        <div className="mb-6 flex flex-wrap gap-2">
+          {detail.round_types.map(rt => {
+            const roundKey = rt as InterviewRoundType;
+            const rd = detail.rounds_data[rt];
+            const isActive = rt === activeRoundKey;
+            const tabScore =
+              rd?.overall_score != null
+                ? `${rd.overall_score}`
+                : rd?.status === "in_progress"
+                  ? "In progress"
+                  : rd?.status === "completed"
+                    ? "No score"
+                    : "Not started";
+            return (
+              <button
+                key={rt}
+                type="button"
+                onClick={() => onRoundChange(roundKey)}
+                className={`rounded-xl px-4 py-2 text-sm font-medium transition-colors ${
+                  isActive
+                    ? "bg-blue-600 text-white shadow-sm"
+                    : "border border-slate-200 bg-white text-slate-600 hover:bg-slate-50 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-300 dark:hover:bg-slate-800"
+                }`}
+              >
+                {ROUND_LABELS[roundKey]} · {tabScore}
+              </button>
+            );
+          })}
+        </div>
+      )}
 
       <div className="mb-8 grid grid-cols-1 gap-6 md:grid-cols-3">
         <div className="rounded-2xl border border-slate-200 bg-white p-8 text-center shadow-sm dark:border-slate-800 dark:bg-[#1a1a1a]">
-          <span className="mb-2 block text-5xl font-medium text-blue-600">{overallScore}</span>
+          <span className={`mb-2 block font-medium text-blue-600 ${overallScore != null ? "text-5xl" : "text-4xl text-slate-400"}`}>
+            {scoreDisplay}
+          </span>
           <span className="text-sm font-medium uppercase tracking-wider text-slate-500">Overall Score</span>
-          <p className="mt-2 text-xs font-light text-slate-400">Out of 100</p>
+          <p className="mt-2 text-xs font-light text-slate-400">{scoreSubtext}</p>
         </div>
         <div className="rounded-2xl border border-slate-200 bg-white p-8 shadow-sm dark:border-slate-800 dark:bg-[#1a1a1a] md:col-span-2">
           <p className="text-left leading-relaxed text-slate-600 dark:text-slate-300">
@@ -225,7 +329,27 @@ const InterviewReportView: React.FC<InterviewReportViewProps> = ({
               {q.improvement_tip && <p className="mt-2 text-xs text-amber-600 dark:text-amber-400">Tip: {q.improvement_tip}</p>}
             </div>
           ))}
-          {questions.length === 0 && (
+          {questions.length === 0 && roundMode === "voice" && transcript.length > 0 && (
+            <div className="space-y-3">
+              <p className="text-sm text-slate-500">This was a voice session. Conversation transcript:</p>
+              {transcript.map((entry, idx) => (
+                <div
+                  key={`${entry.timestamp ?? idx}-${entry.role}`}
+                  className={`rounded-xl border p-4 text-sm ${
+                    entry.role === "user"
+                      ? "border-blue-100 bg-blue-50/50 dark:border-blue-900/30 dark:bg-blue-950/20"
+                      : "border-slate-100 bg-slate-50 dark:border-slate-800 dark:bg-slate-900/50"
+                  }`}
+                >
+                  <span className="mb-1 block text-xs font-medium uppercase tracking-wide text-slate-400">
+                    {entry.role === "user" ? "You" : "Interviewer"}
+                  </span>
+                  <p className="text-slate-700 dark:text-slate-300">{entry.text}</p>
+                </div>
+              ))}
+            </div>
+          )}
+          {questions.length === 0 && !(roundMode === "voice" && transcript.length > 0) && (
             <p className="text-slate-500">
               {roundData?.status === "in_progress"
                 ? "This round is still in progress. Complete the session to see feedback."

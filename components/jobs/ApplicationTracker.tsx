@@ -293,7 +293,7 @@ const ApplicationTracker: React.FC<ApplicationTrackerProps> = ({ onNavigateToStu
   }
 
   return (
-    <div className="relative h-full flex-1 overflow-hidden p-4">
+    <div className="relative h-full w-full min-w-0 flex-1 overflow-hidden p-4">
       <div className="absolute right-4 top-0 z-10 flex items-center gap-3 p-2">
         <div
           className={`z-50 flex items-center justify-center rounded-xl px-4 py-2 shadow-sm transition-all duration-300 ${
