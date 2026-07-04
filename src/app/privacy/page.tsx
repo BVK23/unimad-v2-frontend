@@ -10,7 +10,7 @@ export const metadata: Metadata = {
 
 export default function PrivacyPage() {
   return (
-    <MarketingShell>
+    <MarketingShell active="/privacy">
       <LegalDocument title="Privacy Policy" lastUpdated="20/01/2026">
         <LegalSection title="1. Information Collection and Use">
           <LegalParagraph>

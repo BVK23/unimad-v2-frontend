@@ -10,7 +10,7 @@ export const metadata: Metadata = {
 
 export default function RefundPage() {
   return (
-    <MarketingShell>
+    <MarketingShell active="/refund">
       <LegalDocument title="Refund and Cancellation Policy" lastUpdated="20/01/2026">
         <LegalSection title="1. Scope">
           <LegalParagraph>

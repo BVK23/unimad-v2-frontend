@@ -10,7 +10,7 @@ export const metadata: Metadata = {
 
 export default function TermsPage() {
   return (
-    <MarketingShell>
+    <MarketingShell active="/terms">
       <LegalDocument title="Terms of Service" lastUpdated="20/01/2026">
         <LegalSection title="1. Introduction">
           <LegalParagraph>

@@ -5230,10 +5230,13 @@ footer {
 .ms-board {
   column-count: 4;
   column-gap: 44px;
+  column-fill: balance;
   max-width: 1360px;
   margin: 0 auto;
   padding: 0 72px;
 }
+/* Outer link is the column item — must stay transform-free so Chrome distributes
+   notes across columns (transform on column children breaks multi-column layout). */
 .ms-note {
   position: relative;
   display: block;
@@ -5241,13 +5244,22 @@ footer {
   margin: 0 0 44px;
   break-inside: avoid;
   -webkit-column-break-inside: avoid;
+  page-break-inside: avoid;
   text-align: left;
+  text-decoration: none;
+  color: inherit;
+  border: none;
+  background: transparent;
+  padding: 0;
   cursor: pointer;
   font-family: inherit;
+}
+.ms-note__card {
+  position: relative;
+  display: block;
   padding: 22px 20px 18px;
   background: var(--note-bg, #fff1b8);
   color: var(--note-ink, #4a4014);
-  border: none;
   border-radius: 2px 2px 3px 3px;
   transform: rotate(var(--tilt, 0deg));
   transform-origin: 50% 8px;
@@ -5267,14 +5279,17 @@ footer {
 /* Peel-up on hover — pivot from the tape at the top */
 .ms-note:hover,
 .ms-note:focus-visible {
+  z-index: 20;
+  outline: none;
+}
+.ms-note:hover .ms-note__card,
+.ms-note:focus-visible .ms-note__card {
   transform: perspective(760px) rotateX(9deg) rotateZ(calc(var(--tilt, 0deg) * 0.32)) translateY(-12px) scale(1.05);
   box-shadow:
     0 3px 4px rgba(0, 0, 0, 0.14),
     0 34px 54px -20px rgba(0, 0, 0, 0.42);
-  z-index: 20;
-  outline: none;
 }
-.ms-note:focus-visible {
+.ms-note:focus-visible .ms-note__card {
   box-shadow:
     0 0 0 3px var(--blue-300),
     0 34px 54px -20px rgba(0, 0, 0, 0.42);
@@ -5409,7 +5424,7 @@ footer {
   }
 }
 @media (prefers-reduced-motion: reduce) {
-  .ms-note {
+  .ms-note__card {
     animation: none;
   }
 }
@@ -6459,6 +6474,238 @@ footer {
   .uc-faq__q {
     font-size: 15px;
     padding: 18px 2px;
+  }
+}
+
+/* ─────────────────────────────────────────
+   LEGAL / MARKETING PAGES
+───────────────────────────────────────── */
+.legal-page-main {
+  padding: calc(var(--nav-h) + clamp(32px, 6vh, 56px)) 24px clamp(64px, 10vh, 96px);
+  min-height: calc(100vh - var(--nav-h));
+}
+.legal-page-footer {
+  margin-top: auto;
+}
+.legal-doc {
+  max-width: 760px;
+  margin: 0 auto;
+}
+.legal-doc--center {
+  text-align: center;
+}
+.legal-doc__header {
+  margin-bottom: clamp(28px, 4vw, 40px);
+  padding-bottom: 24px;
+  border-bottom: 1px solid var(--rule);
+}
+.legal-doc__title {
+  font-size: clamp(28px, 4.5vw, 40px);
+  font-weight: 400;
+  letter-spacing: -0.02em;
+  color: var(--ink-900);
+  line-height: 1.15;
+}
+.legal-accent {
+  color: var(--blue-600);
+}
+.legal-doc__updated {
+  margin-top: 12px;
+  font-size: 14px;
+  color: var(--ink-500);
+}
+.legal-section {
+  margin-bottom: clamp(24px, 3vw, 32px);
+}
+.legal-section__title {
+  font-size: 18px;
+  font-weight: 600;
+  color: var(--ink-900);
+  margin-bottom: 12px;
+}
+.legal-section__title:empty {
+  display: none;
+}
+.legal-p {
+  font-size: 15.5px;
+  line-height: 1.72;
+  color: var(--ink-600);
+  margin-bottom: 12px;
+}
+.legal-p:last-child {
+  margin-bottom: 0;
+}
+.legal-p a {
+  color: var(--blue-600);
+  text-decoration: underline;
+  text-underline-offset: 2px;
+}
+.legal-list {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  margin: 8px 0 12px;
+  padding-left: 20px;
+  list-style: disc;
+}
+.legal-list li {
+  font-size: 15.5px;
+  line-height: 1.65;
+  color: var(--ink-600);
+}
+.legal-contact__lead {
+  font-size: clamp(18px, 2.5vw, 22px);
+  color: var(--ink-700);
+  margin-bottom: 12px;
+}
+.legal-contact__email {
+  font-size: clamp(20px, 3vw, 26px);
+  margin-bottom: 32px;
+}
+.legal-contact__email a {
+  color: var(--blue-600);
+  font-weight: 500;
+  text-decoration: none;
+}
+.legal-contact__email a:hover {
+  text-decoration: underline;
+}
+.legal-contact__card {
+  display: inline-flex;
+  flex-direction: column;
+  gap: 10px;
+  padding: 24px 28px;
+  border-radius: 16px;
+  background: var(--white);
+  border: 1px solid var(--rule);
+  box-shadow: 0 12px 32px -20px rgba(20, 30, 60, 0.18);
+  text-align: left;
+  max-width: 420px;
+  margin: 0 auto;
+}
+.legal-contact__card a {
+  color: var(--ink-900);
+  font-weight: 500;
+  text-decoration: none;
+}
+.legal-contact__card p {
+  font-size: 14px;
+  line-height: 1.6;
+  color: var(--ink-500);
+  margin: 0;
+}
+
+/* ── MAD story detail page (shareable /mad-stories/[slug]) ── */
+.ms-detail {
+  max-width: 860px;
+  margin: 0 auto;
+}
+.ms-detail__top {
+  margin-bottom: 24px;
+}
+.ms-detail__back {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 14px;
+  font-weight: 500;
+  color: var(--ink-600);
+  text-decoration: none;
+  transition: color 0.2s;
+}
+.ms-detail__back:hover {
+  color: var(--blue-600);
+}
+.ms-detail__header {
+  display: flex;
+  align-items: center;
+  gap: clamp(20px, 3vw, 32px);
+  padding: clamp(28px, 4vw, 44px);
+  background:
+    radial-gradient(circle, rgba(52, 109, 224, 0.09) 1px, transparent 1px) 0 0 / 22px 22px,
+    linear-gradient(135deg, #f5f8ff 0%, #eef1f9 100%);
+  border: 1px solid var(--rule);
+  border-radius: 24px 24px 0 0;
+}
+.ms-detail__photo {
+  flex-shrink: 0;
+  width: clamp(132px, 15vw, 184px);
+  height: clamp(132px, 15vw, 184px);
+  border-radius: 50%;
+  overflow: hidden;
+  background: linear-gradient(160deg, #e8edf8, #d5e3ff);
+  border: 5px solid #fff;
+  box-shadow: 0 16px 36px -12px rgba(20, 30, 60, 0.42);
+}
+.ms-detail__photo img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  object-position: center top;
+  display: block;
+}
+.ms-detail__photo--fallback {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+.ms-detail__photo--fallback span {
+  font-size: clamp(38px, 4.5vw, 52px);
+  font-weight: 600;
+  color: rgba(52, 109, 224, 0.55);
+}
+.ms-detail__intro {
+  min-width: 0;
+}
+.ms-detail__eyebrow {
+  display: inline-block;
+  font-size: 11px;
+  letter-spacing: 0.2em;
+  text-transform: uppercase;
+  font-weight: 500;
+  color: var(--blue-600);
+  margin-bottom: 8px;
+}
+.ms-detail__name {
+  font-size: clamp(26px, 4vw, 36px);
+  font-weight: 400;
+  letter-spacing: -0.02em;
+  color: var(--ink-900);
+  line-height: 1.08;
+  margin-bottom: 14px;
+}
+.ms-detail__quote {
+  font-size: clamp(16px, 2vw, 19px);
+  line-height: 1.5;
+  font-style: italic;
+  color: var(--ink-700);
+  margin: 0;
+  padding-left: 14px;
+  border-left: 3px solid var(--red);
+}
+.ms-detail__body {
+  padding: clamp(26px, 4vw, 42px);
+  background: var(--white);
+  border: 1px solid var(--rule);
+  border-top: none;
+  border-radius: 0 0 24px 24px;
+  display: flex;
+  flex-direction: column;
+  gap: 15px;
+}
+a.ms-note {
+  text-decoration: none;
+  color: inherit;
+}
+@media (max-width: 768px) {
+  .ms-detail__header {
+    flex-direction: column;
+    align-items: center;
+    text-align: center;
+  }
+  .ms-detail__quote {
+    border-left: none;
+    padding-left: 0;
   }
 }
 

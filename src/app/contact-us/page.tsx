@@ -9,7 +9,7 @@ export const metadata: Metadata = {
 
 export default function ContactUsPage() {
   return (
-    <MarketingShell>
+    <MarketingShell active="/contact-us">
       <div className="legal-doc legal-doc--center">
         <header className="legal-doc__header">
           <h1 className="legal-doc__title">

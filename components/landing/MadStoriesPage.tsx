@@ -110,24 +110,28 @@ function StoryNote({ story, index, order }: { story: MadStory; index: number; or
     <Link
       href={`/mad-stories/${slug}`}
       className="ms-note"
-      style={
-        {
-          "--tilt": `${tilt}deg`,
-          "--note-bg": color.bg,
-          "--note-ink": color.ink,
-          "--i": order,
-        } as CSSProperties
-      }
+      style={{ "--i": order } as CSSProperties}
       aria-label={`Read ${story.name}'s full story`}
     >
-      <span className="ms-note__tape" aria-hidden />
-      <StoryPhoto name={story.name} image={story.image} className="ms-note__badge" />
-      <p className="ms-note__quote">&ldquo;{story.quote}&rdquo;</p>
-      <span className="ms-note__foot">
-        <span className="ms-note__name">{story.name}</span>
-        <span className="ms-note__hint">Read story →</span>
+      <span
+        className="ms-note__card"
+        style={
+          {
+            "--tilt": `${tilt}deg`,
+            "--note-bg": color.bg,
+            "--note-ink": color.ink,
+          } as CSSProperties
+        }
+      >
+        <span className="ms-note__tape" aria-hidden />
+        <StoryPhoto name={story.name} image={story.image} className="ms-note__badge" />
+        <p className="ms-note__quote">&ldquo;{story.quote}&rdquo;</p>
+        <span className="ms-note__foot">
+          <span className="ms-note__name">{story.name}</span>
+          <span className="ms-note__hint">Read story →</span>
+        </span>
+        <span className="ms-note__curl" aria-hidden />
       </span>
-      <span className="ms-note__curl" aria-hidden />
     </Link>
   );
 }
