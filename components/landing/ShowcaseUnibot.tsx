@@ -2,6 +2,10 @@
 
 /* eslint-disable react-hooks/set-state-in-effect */
 import { useEffect, useRef, useState } from "react";
+import { getSigninUrl } from "@/constants/landing-auth";
+import { storeLandingUnibotDraft } from "@/constants/landing-unibot";
+import { useAuthStatus } from "@/hooks/useAuthStatus";
+import { useRouter } from "next/navigation";
 
 const TYPE_MS = 42;
 const DELETE_MS = 24;
@@ -12,6 +16,8 @@ type ShowcaseUnibotProps = {
 };
 
 export function ShowcaseUnibot({ prompts }: ShowcaseUnibotProps) {
+  const router = useRouter();
+  const { isAuthenticated } = useAuthStatus();
   const [promptIndex, setPromptIndex] = useState(0);
   const [display, setDisplay] = useState("");
   const [phase, setPhase] = useState<"typing" | "deleting">("typing");
@@ -64,12 +70,23 @@ export function ShowcaseUnibot({ prompts }: ShowcaseUnibotProps) {
     setUserInput("");
   };
 
+  const submitMessage = (message: string) => {
+    const trimmed = message.trim();
+    if (!trimmed) {
+      stopEditing();
+      return;
+    }
+
+    storeLandingUnibotDraft(trimmed);
+    router.push(isAuthenticated ? "/uniboard/resume" : getSigninUrl("resume"));
+  };
+
   const handleSend = () => {
     if (!isEditing) {
       activateEditing();
       return;
     }
-    stopEditing();
+    submitMessage(userInput);
   };
 
   return (
@@ -101,7 +118,7 @@ export function ShowcaseUnibot({ prompts }: ShowcaseUnibotProps) {
           onKeyDown={e => {
             if (e.key === "Enter") {
               e.preventDefault();
-              stopEditing();
+              submitMessage(userInput);
             }
             if (e.key === "Escape") {
               e.preventDefault();

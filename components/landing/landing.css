@@ -227,6 +227,26 @@ html.landing-active body {
   position: relative;
   display: inline;
 }
+/* Stack placeholder + live value in one grid cell so the headline never
+   jumps as the count-up adds digits. */
+.mark-red-line {
+  display: inline-grid;
+  grid-template-areas: "line";
+  text-align: inherit;
+}
+.mark-red-placeholder,
+.mark-red-value {
+  grid-area: line;
+}
+.mark-red-placeholder {
+  visibility: hidden;
+  pointer-events: none;
+  user-select: none;
+}
+.mark-red-value {
+  position: relative;
+  font-variant-numeric: tabular-nums;
+}
 .mark-red-stroke {
   position: absolute;
   left: -2%;
@@ -3364,13 +3384,29 @@ footer {
     display: none;
   } /* vignette not needed on mobile */
   .hero-hl {
-    font-size: clamp(28px, 6svh + 0.5vw, 38px);
-    letter-spacing: -0.025em;
+    font-size: clamp(38px, 11.5svh, 56px);
+    letter-spacing: -0.034em;
+    line-height: 1.04;
+    margin-bottom: clamp(20px, 3.5svh, 32px);
   }
   .hero-hl-l1,
   .hero-hl-l2,
   .hero-hl-l3 {
     display: block;
+  }
+  .hero-content {
+    max-width: 100%;
+    padding: 0 clamp(18px, 5vw, 24px);
+    flex: 1;
+    justify-content: center;
+  }
+  .mark-red-stroke {
+    height: clamp(10px, 1.8svh, 14px);
+    bottom: -6px;
+  }
+  .hero-hl-l2 .mark-red-line {
+    white-space: nowrap;
+    justify-items: center;
   }
   .hero-sl {
     font-size: 15px;
@@ -5149,6 +5185,50 @@ footer {
   }
 }
 
+/* ── Phone-only scroll showcase (≤768px) ──
+   Title + pointers only — no product screen. Tablet (769–1120px) keeps the
+   stacked 3-part layout from the block above. Scroll-by-point stepping is
+   unchanged; each feature's title and three bullets still animate in on scroll. */
+@media (max-width: 768px) {
+  .showcase-scroll-track {
+    height: 300vh !important;
+  }
+  .showcase-features-layer {
+    padding: calc(var(--nav-h) + 28px) 20px 28px;
+    align-items: center;
+  }
+  .showcase-features-grid {
+    gap: clamp(22px, 5vh, 36px);
+    align-content: center;
+  }
+  .showcase-features-center {
+    display: none !important;
+  }
+  .showcase-feature-cta {
+    display: none;
+  }
+  .showcase-feature-heading {
+    width: 100%;
+    max-width: 100%;
+  }
+  .showcase-feature-title {
+    font-size: clamp(30px, 8.5vw, 40px);
+    line-height: 1.12;
+    margin-bottom: clamp(18px, 3vh, 26px);
+  }
+  .showcase-feature-pointers-wrap {
+    width: 100%;
+    max-width: 100%;
+  }
+  .showcase-feature-pointers {
+    gap: clamp(18px, 3.8vh, 30px);
+  }
+  .showcase-feature-pointer {
+    font-size: clamp(16px, 4.2vw, 18px);
+    line-height: 1.45;
+  }
+}
+
 /* ── CONTENT STUDIO — removed (Content Lab lives in product showcase) ── */
 
 /* ═══════════════════════════════════════════
@@ -5228,23 +5308,26 @@ footer {
   padding: clamp(24px, 4vh, 52px) 0 clamp(80px, 12vh, 132px);
 }
 .ms-board {
-  column-count: 4;
-  column-gap: 44px;
-  column-fill: balance;
+  display: flex;
+  align-items: flex-start;
+  gap: 44px;
   max-width: 1360px;
   margin: 0 auto;
   padding: 0 72px;
 }
-/* Outer link is the column item — must stay transform-free so Chrome distributes
-   notes across columns (transform on column children breaks multi-column layout). */
+.ms-board__col {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 44px;
+}
+/* Outer link sits in a flex column — no transforms here so layout stays stable. */
 .ms-note {
   position: relative;
   display: block;
   width: 100%;
-  margin: 0 0 44px;
-  break-inside: avoid;
-  -webkit-column-break-inside: avoid;
-  page-break-inside: avoid;
+  margin: 0;
   text-align: left;
   text-decoration: none;
   color: inherit;
@@ -5639,16 +5722,20 @@ footer {
 /* ── Responsive ── */
 @media (max-width: 1200px) {
   .ms-board {
-    column-count: 3;
-    column-gap: 40px;
+    gap: 40px;
     padding: 0 56px;
+  }
+  .ms-board__col {
+    gap: 40px;
   }
 }
 @media (max-width: 860px) {
   .ms-board {
-    column-count: 2;
-    column-gap: 32px;
+    gap: 32px;
     padding: 0 40px;
+  }
+  .ms-board__col {
+    gap: 32px;
   }
 }
 @media (max-width: 768px) {
@@ -5686,12 +5773,11 @@ footer {
 }
 @media (max-width: 560px) {
   .ms-board {
-    column-count: 1;
     max-width: 420px;
     padding: 0 28px;
   }
-  .ms-note {
-    margin-bottom: 34px;
+  .ms-board__col {
+    gap: 34px;
   }
   .ms-note__quote {
     font-size: 22px;
@@ -6599,6 +6685,10 @@ footer {
 .ms-detail {
   max-width: 860px;
   margin: 0 auto;
+  transition: max-width 0.45s cubic-bezier(0.22, 1, 0.36, 1);
+}
+.ms-detail--expanded {
+  max-width: min(1120px, 100%);
 }
 .ms-detail__top {
   margin-bottom: 24px;
@@ -6616,19 +6706,67 @@ footer {
 .ms-detail__back:hover {
   color: var(--blue-600);
 }
-.ms-detail__header {
-  display: flex;
-  align-items: center;
-  gap: clamp(20px, 3vw, 32px);
-  padding: clamp(28px, 4vw, 44px);
+.ms-detail__article {
+  background: var(--white);
+  border: 1px solid var(--rule);
+  border-radius: 24px;
+  overflow: hidden;
+  transition:
+    border-radius 0.45s cubic-bezier(0.22, 1, 0.36, 1),
+    box-shadow 0.35s ease;
+}
+/* ── Collapsed — compact hero row + full-width story ── */
+.ms-detail__article:not(.is-photo-expanded) {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr);
+  grid-template-rows: auto auto;
   background:
     radial-gradient(circle, rgba(52, 109, 224, 0.09) 1px, transparent 1px) 0 0 / 22px 22px,
     linear-gradient(135deg, #f5f8ff 0%, #eef1f9 100%);
-  border: 1px solid var(--rule);
-  border-radius: 24px 24px 0 0;
+}
+.ms-detail__article:not(.is-photo-expanded) .ms-detail__photo-wrap {
+  grid-column: 1;
+  grid-row: 1;
+  align-self: start;
+  justify-self: start;
+  padding: clamp(28px, 4vw, 44px) clamp(20px, 3vw, 28px) clamp(22px, 3vw, 32px) clamp(28px, 4vw, 44px);
+}
+.ms-detail__article:not(.is-photo-expanded) .ms-detail__intro {
+  grid-column: 2;
+  grid-row: 1;
+  align-self: center;
+  padding: clamp(28px, 4vw, 44px) clamp(28px, 4vw, 44px) clamp(22px, 3vw, 32px) 0;
+}
+.ms-detail__article:not(.is-photo-expanded) .ms-detail__body {
+  grid-column: 1 / -1;
+  grid-row: 2;
+  padding: clamp(26px, 4vw, 42px);
+  background: var(--white);
+  border-top: 1px solid var(--rule);
+}
+.ms-detail__photo-wrap {
+  flex-shrink: 0;
+  margin: 0;
+  padding: 0;
+  border: none;
+  background: transparent;
+  cursor: pointer;
+  font-family: inherit;
+  color: inherit;
+  text-align: left;
+  justify-self: start;
+  align-self: start;
+}
+.ms-detail__photo-wrap:focus-visible {
+  outline: none;
+}
+.ms-detail__photo-wrap:focus-visible .ms-detail__photo {
+  box-shadow:
+    0 0 0 3px var(--blue-300),
+    0 16px 36px -12px rgba(20, 30, 60, 0.42);
 }
 .ms-detail__photo {
-  flex-shrink: 0;
+  position: relative;
   width: clamp(132px, 15vw, 184px);
   height: clamp(132px, 15vw, 184px);
   border-radius: 50%;
@@ -6636,6 +6774,18 @@ footer {
   background: linear-gradient(160deg, #e8edf8, #d5e3ff);
   border: 5px solid #fff;
   box-shadow: 0 16px 36px -12px rgba(20, 30, 60, 0.42);
+  transform-origin: top left;
+  transition:
+    width 0.5s cubic-bezier(0.22, 1, 0.36, 1),
+    height 0.5s cubic-bezier(0.22, 1, 0.36, 1),
+    max-height 0.5s cubic-bezier(0.22, 1, 0.36, 1),
+    max-width 0.5s cubic-bezier(0.22, 1, 0.36, 1),
+    border-radius 0.5s cubic-bezier(0.22, 1, 0.36, 1),
+    box-shadow 0.32s ease;
+}
+.ms-detail__photo-wrap:active .ms-detail__photo {
+  transform: scale(0.985);
+  transform-origin: top left;
 }
 .ms-detail__photo img {
   width: 100%;
@@ -6643,6 +6793,7 @@ footer {
   object-fit: cover;
   object-position: center top;
   display: block;
+  transition: object-fit 0.35s ease;
 }
 .ms-detail__photo--fallback {
   display: flex;
@@ -6672,7 +6823,8 @@ footer {
   letter-spacing: -0.02em;
   color: var(--ink-900);
   line-height: 1.08;
-  margin-bottom: 14px;
+  margin: 0 0 14px;
+  transition: font-size 0.4s ease;
 }
 .ms-detail__quote {
   font-size: clamp(16px, 2vw, 19px);
@@ -6684,28 +6836,173 @@ footer {
   border-left: 3px solid var(--red);
 }
 .ms-detail__body {
-  padding: clamp(26px, 4vw, 42px);
-  background: var(--white);
-  border: 1px solid var(--rule);
-  border-top: none;
-  border-radius: 0 0 24px 24px;
   display: flex;
   flex-direction: column;
   gap: 15px;
+}
+/* ── Expanded — editorial layout, large photo beside full story ── */
+.ms-detail__article.is-photo-expanded {
+  display: grid;
+  align-items: start;
+  gap: clamp(28px, 4vw, 52px);
+  padding: clamp(28px, 4vw, 44px);
+  background: var(--white);
+  box-shadow: 0 24px 64px -36px rgba(20, 30, 60, 0.18);
+}
+.ms-detail__article.is-photo-expanded .ms-detail__photo {
+  width: 100%;
+  height: auto;
+  aspect-ratio: var(--photo-ar, 3 / 4);
+  border-radius: 22px;
+  border-width: 4px;
+}
+.ms-detail__article.is-photo-expanded .ms-detail__photo img {
+  object-fit: cover;
+  object-position: center center;
+}
+.ms-detail__article.is-photo-expanded .ms-detail__name {
+  font-size: clamp(30px, 4.5vw, 44px);
+  margin-bottom: clamp(18px, 2.5vw, 28px);
+}
+.ms-detail__article.is-photo-expanded .ms-detail__body {
+  padding: 0;
+}
+/* Portrait / square — photo stays left, grows from top-left; copy moves right */
+.ms-detail__article.is-photo-expanded.is-photo-portrait,
+.ms-detail__article.is-photo-expanded.is-photo-square {
+  grid-template-columns: minmax(300px, 44%) minmax(0, 1fr);
+  grid-template-rows: auto 1fr;
+}
+.ms-detail__article.is-photo-expanded.is-photo-portrait .ms-detail__photo-wrap,
+.ms-detail__article.is-photo-expanded.is-photo-square .ms-detail__photo-wrap {
+  grid-column: 1;
+  grid-row: 1 / -1;
+  position: sticky;
+  top: calc(var(--nav-h, 64px) + 28px);
+  justify-self: start;
+  align-self: start;
+}
+.ms-detail__article.is-photo-expanded.is-photo-portrait .ms-detail__photo,
+.ms-detail__article.is-photo-expanded.is-photo-square .ms-detail__photo {
+  width: 100%;
+  max-width: 100%;
+  max-height: min(78vh, 720px);
+  min-height: min(52vh, 520px);
+}
+.ms-detail__article.is-photo-expanded.is-photo-portrait .ms-detail__intro,
+.ms-detail__article.is-photo-expanded.is-photo-square .ms-detail__intro {
+  grid-column: 2;
+  grid-row: 1;
+  align-self: start;
+  padding: 0;
+}
+.ms-detail__article.is-photo-expanded.is-photo-portrait .ms-detail__body,
+.ms-detail__article.is-photo-expanded.is-photo-square .ms-detail__body {
+  grid-column: 2;
+  grid-row: 2;
+  align-self: start;
+  padding: 0;
+}
+/* Landscape — grows from top-left across the page width */
+.ms-detail__article.is-photo-expanded.is-photo-landscape {
+  grid-template-columns: 1fr;
+  grid-template-rows: auto auto auto;
+}
+.ms-detail__article.is-photo-expanded.is-photo-landscape .ms-detail__photo-wrap {
+  grid-column: 1;
+  grid-row: 1;
+  width: 100%;
+  justify-self: start;
+  align-self: start;
+}
+.ms-detail__article.is-photo-expanded.is-photo-landscape .ms-detail__photo {
+  width: 100%;
+  max-height: min(56vh, 520px);
+  min-height: unset;
+  aspect-ratio: var(--photo-ar, 16 / 9);
+}
+.ms-detail__article.is-photo-expanded.is-photo-landscape .ms-detail__intro {
+  grid-column: 1;
+  grid-row: 2;
+  padding: 0;
+}
+.ms-detail__article.is-photo-expanded.is-photo-landscape .ms-detail__body {
+  grid-column: 1;
+  grid-row: 3;
 }
 a.ms-note {
   text-decoration: none;
   color: inherit;
 }
 @media (max-width: 768px) {
-  .ms-detail__header {
-    flex-direction: column;
-    align-items: center;
+  .ms-detail__article:not(.is-photo-expanded) {
+    grid-template-columns: 1fr;
+    grid-template-rows: auto auto auto;
+  }
+  .ms-detail__article:not(.is-photo-expanded) .ms-detail__photo-wrap {
+    grid-column: 1;
+    grid-row: 1;
+    justify-self: center;
+    padding: clamp(28px, 4vw, 44px) clamp(28px, 4vw, 44px) 0;
+  }
+  .ms-detail__article:not(.is-photo-expanded) .ms-detail__intro {
+    grid-column: 1;
+    grid-row: 2;
     text-align: center;
+    padding: clamp(16px, 3vw, 24px) clamp(28px, 4vw, 44px) clamp(22px, 3vw, 32px);
+  }
+  .ms-detail__article:not(.is-photo-expanded) .ms-detail__body {
+    grid-row: 3;
   }
   .ms-detail__quote {
     border-left: none;
     padding-left: 0;
+  }
+  .ms-detail__article.is-photo-expanded {
+    padding: clamp(22px, 5vw, 32px);
+    gap: clamp(22px, 4vw, 32px);
+  }
+  .ms-detail__article.is-photo-expanded.is-photo-portrait,
+  .ms-detail__article.is-photo-expanded.is-photo-square {
+    grid-template-columns: 1fr;
+    grid-template-rows: auto auto auto;
+  }
+  .ms-detail__article.is-photo-expanded.is-photo-portrait .ms-detail__photo-wrap,
+  .ms-detail__article.is-photo-expanded.is-photo-square .ms-detail__photo-wrap {
+    position: static;
+    grid-column: 1;
+    grid-row: 1;
+  }
+  .ms-detail__article.is-photo-expanded.is-photo-portrait .ms-detail__intro,
+  .ms-detail__article.is-photo-expanded.is-photo-square .ms-detail__intro {
+    grid-column: 1;
+    grid-row: 2;
+  }
+  .ms-detail__article.is-photo-expanded.is-photo-portrait .ms-detail__body,
+  .ms-detail__article.is-photo-expanded.is-photo-square .ms-detail__body {
+    grid-column: 1;
+    grid-row: 3;
+  }
+  .ms-detail__article.is-photo-expanded.is-photo-portrait .ms-detail__photo,
+  .ms-detail__article.is-photo-expanded.is-photo-square .ms-detail__photo {
+    min-height: unset;
+    max-height: min(58vh, 480px);
+  }
+  .ms-detail__article.is-photo-expanded.is-photo-landscape .ms-detail__photo {
+    max-height: min(44vh, 360px);
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .ms-detail,
+  .ms-detail__article,
+  .ms-detail__photo,
+  .ms-detail__photo img,
+  .ms-detail__name,
+  .ms-detail__photo-wrap {
+    transition: none;
+  }
+  .ms-detail__photo-wrap:active .ms-detail__photo {
+    transform: none;
   }
 }
 

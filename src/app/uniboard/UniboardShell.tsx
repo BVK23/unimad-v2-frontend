@@ -9,10 +9,12 @@ import { AdkChatProvider } from "@/components/chat/AdkChatProvider";
 import type { UnibotIncomingRequest, UnibotResumeSection } from "@/components/chat/unibot-incoming-request";
 import OnboardingGateModal from "@/components/onboarding/OnboardingGateModal";
 import { CoachActAsNavControls } from "@/components/uniboard/CoachActAsNavControls";
+import StrengthsFocusMainOverlay from "@/components/uniboard/StrengthsFocusMainOverlay";
 import type { CoachActAsSession } from "@/constants/coach-act-as";
 import { CoachActAsProvider } from "@/contexts/CoachActAsContext";
 import { OnboardingGateProvider, useOnboardingGate } from "@/features/onboarding/context/OnboardingGateContext";
 import { parseFeatureGates, type FeatureGates } from "@/features/onboarding/featureGates";
+import { STRENGTHS_FOCUS_REPLAY_EVENT } from "@/features/onboarding/strengths-focus/useStrengthsFocusStore";
 import type { AtsFixPlanSection } from "@/features/resume/api/ats-fix-plan";
 import { useUnicoachInit } from "@/features/unicoach/hooks/use-uniboard-unicoach";
 import { useProfileData } from "@/features/user-profile/hooks/use-profile-data";
@@ -125,6 +127,15 @@ export default function UniboardShell({
 
   useEffect(() => {
     document.documentElement.classList.remove("dark");
+  }, []);
+
+  useEffect(() => {
+    const onReplay = (e: Event) => {
+      const detail = (e as CustomEvent<UnibotIncomingRequest>).detail;
+      if (detail) setPendingAIRequest(detail);
+    };
+    window.addEventListener(STRENGTHS_FOCUS_REPLAY_EVENT, onReplay);
+    return () => window.removeEventListener(STRENGTHS_FOCUS_REPLAY_EVENT, onReplay);
   }, []);
 
   // useEffect(() => {
@@ -290,7 +301,8 @@ export default function UniboardShell({
               />
             </Suspense>
 
-            <div className="flex h-full min-w-0 flex-1 flex-col overflow-hidden">
+            <div className="relative flex h-full min-w-0 flex-1 flex-col overflow-hidden">
+              <StrengthsFocusMainOverlay />
               <header
                 className={`sticky top-0 z-[100] flex h-16 min-h-[4rem] flex-none border-b bg-white/80 font-sans backdrop-blur-md transition-colors dark:bg-slate-950/80 ${
                   isCoachActAs

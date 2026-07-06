@@ -13,6 +13,12 @@ const backendUrl = process.env.NEXT_PUBLIC_BACKEND_URL ?? "";
 /** Default uniboard segment after OAuth / cookie redirect (must match a real route). */
 const DEFAULT_UNIBOARD_REDIRECT = "resume";
 
+function resolveUniboardPath(redirect: string): string {
+  if (redirect === "unicoach") return "/uniboard/unicoach";
+  if (redirect === "home" || redirect === "resume") return "/uniboard";
+  return `/uniboard/${redirect}`;
+}
+
 function SigninForm() {
   const router = useRouter();
   const searchParams = useSearchParams();
@@ -32,7 +38,7 @@ function SigninForm() {
       claimUnicoachPurchase(unicoachClaim)
         .catch(() => {})
         .finally(() => {
-          router.replace(redirect === "unicoach" ? "/uniboard/unicoach" : `/uniboard/${redirect}`);
+          router.replace(resolveUniboardPath(redirect));
         });
       return;
     }
@@ -47,7 +53,7 @@ function SigninForm() {
       } else if (from && from.startsWith("/uniboard")) {
         router.replace(from);
       } else {
-        router.replace(`/uniboard/${redirect}`);
+        router.replace(resolveUniboardPath(redirect));
       }
     }
   }, [isAuthenticated, isLoading, redirect, from, router, unicoachClaim, masterclassIntent, redirectTab]);

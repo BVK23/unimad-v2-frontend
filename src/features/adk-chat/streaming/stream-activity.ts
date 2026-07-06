@@ -105,13 +105,26 @@ export function isMutatingLinkedInTool(name: string): boolean {
   return MUTATING_LINKEDIN_TOOL_NAMES.has(toSnakeToolKey(name));
 }
 
+export const MUTATING_ONBOARDING_TOOL_NAMES = new Set<string>([
+  "add_onboarding_education",
+  "add_onboarding_experience",
+  "mark_onboarding_experience_skipped",
+  "add_onboarding_project",
+  "set_onboarding_skills",
+]);
+
+export function isMutatingOnboardingTool(name: string): boolean {
+  return MUTATING_ONBOARDING_TOOL_NAMES.has(toSnakeToolKey(name));
+}
+
 export function isMutatingAdkTool(name: string): boolean {
   return (
     isMutatingResumeTool(name) ||
     isMutatingPortfolioTool(name) ||
     isMutatingContentGenTool(name) ||
     isMutatingLinkedInTool(name) ||
-    isMutatingApplicationAssetTool(name)
+    isMutatingApplicationAssetTool(name) ||
+    isMutatingOnboardingTool(name)
   );
 }
 
@@ -291,6 +304,8 @@ export function labelForAgent(author: string): string {
   switch (a) {
     case "unibot":
       return "Working on your request…";
+    case "onboarding_agent":
+      return "Building your profile…";
     case "resume_agent":
       return "Coordinating your resume…";
     case "linkedin_agent":
@@ -473,6 +488,18 @@ export function labelForToolCall(name: string, args?: Record<string, unknown>): 
       return "Reviewing your education…";
     case "get_education_by_id":
       return "Reviewing an education entry…";
+    case "get_onboarding_profile":
+      return "Checking your profile draft…";
+    case "add_onboarding_education":
+      return "Saving your education…";
+    case "add_onboarding_experience":
+      return "Saving your experience…";
+    case "mark_onboarding_experience_skipped":
+      return "Noting you're a fresher…";
+    case "add_onboarding_project":
+      return "Saving your project…";
+    case "set_onboarding_skills":
+      return "Updating your skills…";
     case "find_education":
       return "Reviewing your education…";
     case "update_summary":
@@ -615,6 +642,16 @@ export function labelForMutatingToolResponse(name: string): string {
       return "Blocks reordered — refreshing your view…";
     case "duplicate_block":
       return "Block duplicated — refreshing your view…";
+    case "add_onboarding_education":
+      return "Education saved — refreshing your profile…";
+    case "add_onboarding_experience":
+      return "Experience saved — refreshing your profile…";
+    case "mark_onboarding_experience_skipped":
+      return "Noted — moving on…";
+    case "add_onboarding_project":
+      return "Project saved — refreshing your profile…";
+    case "set_onboarding_skills":
+      return "Skills saved — refreshing your profile…";
     default:
       return "Changes saved — refreshing your view…";
   }

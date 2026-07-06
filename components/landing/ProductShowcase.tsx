@@ -2,7 +2,8 @@
 
 /* eslint-disable react-hooks/immutability */
 import { useCallback, useEffect, useRef, useState } from "react";
-import { getFeatureSigninUrl } from "@/constants/landing-auth";
+import { resolveFeatureHref } from "@/constants/landing-auth";
+import { useAuthStatus } from "@/hooks/useAuthStatus";
 import {
   AnimatePresence,
   animate,
@@ -45,6 +46,8 @@ const FEATURE_TRANSITION = { duration: 0.42, ease: [0.22, 1, 0.36, 1] as const }
 const POINTER_TRANSITION = { duration: 0.34, ease: [0.22, 1, 0.36, 1] as const };
 
 function FeatureHeading({ product }: { product: ShowcaseProduct }) {
+  const { isAuthenticated } = useAuthStatus();
+
   return (
     <motion.div
       key={product.id}
@@ -55,7 +58,7 @@ function FeatureHeading({ product }: { product: ShowcaseProduct }) {
       transition={FEATURE_TRANSITION}
     >
       <h3 className="showcase-feature-title">{product.label}</h3>
-      <Link href={getFeatureSigninUrl(product.id)} className="btn btn-solid showcase-feature-cta">
+      <Link href={resolveFeatureHref(product.id, isAuthenticated)} className="btn btn-solid showcase-feature-cta">
         {product.ctaLabel}
       </Link>
     </motion.div>

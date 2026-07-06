@@ -205,10 +205,44 @@ export async function extractResume(formData: FormData) {
 
 export type SuggestionType =
   | "onboarding_skill"
+  | "onboarding_strength"
   | "onboarding_desired_role"
   | "onboarding_education"
   | "onboarding_experience"
   | "onboarding_project";
+
+export type PersonalizedStrengthOption = {
+  id: string;
+  label: string;
+  description?: string;
+};
+
+export async function getPersonalizedStrengthOptions(trigger: string): Promise<PersonalizedStrengthOption[]> {
+  const accessToken = await getAccessToken();
+  if (!accessToken) throw new Error("Unauthorized");
+
+  const response = await fetch(`${BACKEND_URL}/api/onboarding/suggestions`, {
+    method: "POST",
+    headers: {
+      Authorization: `Bearer ${accessToken}`,
+      "Content-Type": "application/json",
+    },
+    body: JSON.stringify({
+      section_name: "onboarding_strength",
+      trigger,
+    }),
+  });
+
+  if (!response.ok) {
+    return [];
+  }
+
+  const json = (await response.json()) as { data?: PersonalizedStrengthOption[] };
+  if (!Array.isArray(json.data)) return [];
+  return json.data.filter(
+    (item): item is PersonalizedStrengthOption => Boolean(item) && typeof item.id === "string" && typeof item.label === "string"
+  );
+}
 
 export const getSuggestions = async (sectionName: SuggestionType, input: Record<string, unknown> = {}): Promise<{ data: string[] }> => {
   const accessToken = await getAccessToken();

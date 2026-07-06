@@ -66,7 +66,7 @@ export const ONBOARDING_PROMPT_COPY: Record<OnboardingPromptKind, { title: strin
   },
   strengths: {
     title: "Add your strengths",
-    body: "Pick a few strengths so Unibot can match your voice in LinkedIn, cover letters, and cold emails.",
+    body: "What comes naturally to you? This shapes your voice across LinkedIn, comments, applications, and content.",
     cta: "Save strengths",
   },
   profile_setup: {

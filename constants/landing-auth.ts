@@ -23,4 +23,16 @@ export function getFeatureSigninUrl(productId: string): string {
   return getSigninUrl(redirect);
 }
 
+export function getFeatureDestinationPath(productId: string): string {
+  const redirect = SHOWCASE_FEATURE_REDIRECTS[productId] ?? "resume";
+  if (redirect === "home" || redirect === "resume") return "/uniboard";
+  return `/uniboard/${redirect}`;
+}
+
+export function resolveFeatureHref(productId: string, isAuthenticated: boolean): string {
+  if (isAuthenticated) return getFeatureDestinationPath(productId);
+  return getFeatureSigninUrl(productId);
+}
+
+export const MASTERCLASS_PATH = "/masterclass";
 export const MASTERCLASS_ORGANIC_PATH = "/masterclass/organic";

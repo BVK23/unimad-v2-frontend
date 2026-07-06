@@ -43,11 +43,22 @@ export function MarkRed() {
 
   return (
     <span className="mark-red">
-      {formatCount(count)}+ interviews
-      <span className={`mark-red-stroke${strokeReady ? " is-ready" : ""}`} aria-hidden="true">
-        <span className="mark-red-stroke-inner">
-          {/* eslint-disable-next-line @next/next/no-img-element */}
-          <img src="/images/landing/hero-brush-stroke.svg" alt="" width={526} height={11} decoding="async" />
+      <span className="mark-red-line">
+        {/* Invisible sizer — reserves the full final width/height so the
+            count-up never shifts the headline as digits grow. */}
+        <span className="mark-red-placeholder" aria-hidden="true">
+          {formatCount(COUNT_TARGET)}+ interviews
+          {/* for international students */}
+        </span>
+        <span className="mark-red-value">
+          {formatCount(count)}+ interviews
+          {/* for international students */}
+          <span className={`mark-red-stroke${strokeReady ? " is-ready" : ""}`} aria-hidden="true">
+            <span className="mark-red-stroke-inner">
+              {/* eslint-disable-next-line @next/next/no-img-element */}
+              <img src="/images/landing/hero-brush-stroke.svg" alt="" width={526} height={11} decoding="async" />
+            </span>
+          </span>
         </span>
       </span>
     </span>

@@ -3,6 +3,7 @@ import LinkedInScheduledPostsModal from "@/components/LinkedInScheduledPostsModa
 import type { UnibotIncomingRequest } from "@/components/chat/unibot-incoming-request";
 import LinkedInAnalyzeErrorMessage from "@/components/linkedin/LinkedInAnalyzeErrorMessage";
 import LinkedInCalculateScorePreview from "@/components/linkedin/LinkedInCalculateScorePreview";
+import { LinkedInReanalysisBanner } from "@/components/linkedin/LinkedInReanalysisBanner";
 import { LinkedInStaleProfileImage } from "@/components/linkedin/LinkedInStaleProfileImage";
 import type { LinkedInListItem } from "@/components/studio/LinkedInPostListCard";
 import { StudioAssetDeleteConfirmDialog } from "@/components/studio/StudioAssetDeleteConfirmDialog";
@@ -322,14 +323,11 @@ const LinkedInDashboard: React.FC<LinkedInDashboardProps> = ({ onImprove, onNavi
       </div>
 
       {reanalysisMeta?.isReanalysis ? (
-        <div className="border-b border-brand-100 bg-brand-50/80 px-6 py-3 text-sm text-brand-900 dark:border-brand-900/40 dark:bg-brand-950/30 dark:text-brand-100">
-          <p className="mx-auto max-w-6xl leading-relaxed">{reanalysisMeta.summary}</p>
-          {reanalysisMeta.changedSections.length > 0 ? (
-            <p className="mx-auto mt-1 max-w-6xl text-xs text-brand-800/80 dark:text-brand-200/80">
-              Re-scored: {reanalysisMeta.changedSections.map(id => profileSections.find(s => s.id === id)?.name ?? id).join(", ")}
-            </p>
-          ) : null}
-        </div>
+        <LinkedInReanalysisBanner
+          key={data?.analyzedAt ?? reanalysisMeta.summary}
+          reanalysisMeta={reanalysisMeta}
+          sectionNames={reanalysisMeta.changedSections.map(id => profileSections.find(s => s.id === id)?.name ?? id)}
+        />
       ) : null}
 
       <div className="max-w-6xl mx-auto p-8 space-y-8">

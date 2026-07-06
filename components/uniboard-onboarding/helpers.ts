@@ -38,8 +38,17 @@ export function normalizePhone(raw: string): string {
   return `+${digits}`;
 }
 
+const EXPLORER_GOAL_IDS = new Set(["just_exploring", "just_stalking"]);
+
+/** True when every selected goal is "just exploring" or "just having a look". */
+export function isExplorerOnlyGoals(goals: string[]): boolean {
+  if (goals.length === 0) return false;
+  return goals.every(g => EXPLORER_GOAL_IDS.has(g));
+}
+
+/** @deprecated Use isExplorerOnlyGoals — kept for callers that only need any explorer goal. */
 export function isExplorerGoals(goals: string[]): boolean {
-  return goals.some(g => g === "just_exploring" || g === "just_stalking");
+  return isExplorerOnlyGoals(goals);
 }
 
 /** Move parenthetical qualifiers from role title into the description. */
@@ -60,7 +69,7 @@ export function formatRoleSuggestion(title: string, rationale?: string): { title
     title: cleanTitle,
     rationale: baseRationale.includes(qualifier)
       ? baseRationale
-      : `${qualifierNote} — ${baseRationale.charAt(0).toLowerCase()}${baseRationale.slice(1)}`,
+      : `${qualifierNote}. ${baseRationale.charAt(0).toLowerCase()}${baseRationale.slice(1)}`,
   };
 }
 
@@ -111,10 +120,10 @@ export function validateLinkedInUrl(raw: string): string | null {
 
     const path = url.pathname.toLowerCase();
     if (path.startsWith("/company/") || path.startsWith("/jobs/") || path.startsWith("/school/")) {
-      return "Use your personal profile link — linkedin.com/in/your-name";
+      return "Use your personal profile link: linkedin.com/in/your-name";
     }
     if (!path.startsWith("/in/")) {
-      return "Use your personal profile link — linkedin.com/in/your-name";
+      return "Use your personal profile link: linkedin.com/in/your-name";
     }
 
     const canonical = `https://www.linkedin.com${url.pathname.replace(/\/+$/, "")}`;

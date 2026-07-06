@@ -1,7 +1,7 @@
 "use client";
 
 /* eslint-disable react-hooks/set-state-in-effect */
-import { type CSSProperties, type ReactNode, useEffect, useState } from "react";
+import { type CSSProperties, type ReactNode, useEffect, useMemo, useState } from "react";
 import Link from "next/link";
 import { LandingNav } from "./LandingNav";
 import { madStorySlug, MAD_STORIES, madStoryImageUrl, type MadStory } from "./madStories";
@@ -21,23 +21,11 @@ const NOTE_COLORS = [
 
 const NOTE_TILTS = [-3, 2.2, -1.4, 3, -2.6, 1.6, -2, 2.8, -1, 3.4, -3.2, 1.2];
 
-/**
- * Deterministic shuffled reveal order so the notes pop in one-by-one in a
- * random-looking sequence. Seeded + computed the same way on server & client,
- * so it never causes a hydration mismatch. `order[i]` = the position at which
- * note `i` appears.
- */
-function buildEnterOrder(n: number, seed: number) {
+/** Fisher–Yates shuffle — new reveal order on every page load. */
+function buildEnterOrder(n: number) {
   const idx = Array.from({ length: n }, (_, i) => i);
-  let a = seed >>> 0;
-  const rand = () => {
-    a = (a + 0x6d2b79f5) | 0;
-    let t = Math.imul(a ^ (a >>> 15), 1 | a);
-    t = (t + Math.imul(t ^ (t >>> 7), 61 | t)) ^ t;
-    return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
-  };
   for (let i = n - 1; i > 0; i--) {
-    const j = Math.floor(rand() * (i + 1));
+    const j = Math.floor(Math.random() * (i + 1));
     [idx[i], idx[j]] = [idx[j], idx[i]];
   }
   const order = new Array<number>(n);
@@ -47,7 +35,21 @@ function buildEnterOrder(n: number, seed: number) {
   return order;
 }
 
-const NOTE_ENTER_ORDER = buildEnterOrder(MAD_STORIES.length, 0x5eed);
+function getColumnCount(width: number) {
+  if (width <= 560) return 1;
+  if (width <= 860) return 2;
+  if (width <= 1200) return 3;
+  return 4;
+}
+
+/** Round-robin into columns — same visual order CSS columns aim for, without Chrome bugs. */
+function distributeToColumns<T>(items: T[], columnCount: number): T[][] {
+  const columns = Array.from({ length: columnCount }, () => [] as T[]);
+  items.forEach((item, index) => {
+    columns[index % columnCount].push(item);
+  });
+  return columns;
+}
 
 /** "mad" with the same hand-drawn horizontal brush underline as the homepage. */
 function BrushWord({ children }: { children: ReactNode }) {
@@ -139,6 +141,24 @@ function StoryNote({ story, index, order }: { story: MadStory; index: number; or
 export function MadStoriesPage() {
   useLandingBodyClass();
   useScrollReveal();
+  const [columnCount, setColumnCount] = useState(4);
+  const [enterOrder, setEnterOrder] = useState<number[] | null>(null);
+  const [boardReady, setBoardReady] = useState(false);
+
+  useEffect(() => {
+    setColumnCount(getColumnCount(window.innerWidth));
+    setEnterOrder(buildEnterOrder(MAD_STORIES.length));
+    setBoardReady(true);
+
+    const updateColumns = () => setColumnCount(getColumnCount(window.innerWidth));
+    window.addEventListener("resize", updateColumns);
+    return () => window.removeEventListener("resize", updateColumns);
+  }, []);
+
+  const storyColumns = useMemo(() => {
+    const indexed = MAD_STORIES.map((story, index) => ({ story, index }));
+    return distributeToColumns(indexed, columnCount);
+  }, [columnCount]);
 
   return (
     <div className="landing-page mad-stories-page">
@@ -156,13 +176,19 @@ export function MadStoriesPage() {
         </div>
       </section>
 
-      {/* Stories board — sticky notes */}
+      {/* Stories board — sticky notes in explicit flex columns (cross-browser masonry) */}
       <section className="ms-board-section">
-        <div className="ms-board">
-          {MAD_STORIES.map((story, index) => (
-            <StoryNote key={`${story.name}-${index}`} story={story} index={index} order={NOTE_ENTER_ORDER[index]} />
-          ))}
-        </div>
+        {boardReady && enterOrder ? (
+          <div className="ms-board">
+            {storyColumns.map((columnStories, columnIndex) => (
+              <div className="ms-board__col" key={columnIndex}>
+                {columnStories.map(({ story, index }) => (
+                  <StoryNote key={`${story.name}-${index}`} story={story} index={index} order={enterOrder[index]} />
+                ))}
+              </div>
+            ))}
+          </div>
+        ) : null}
       </section>
     </div>
   );

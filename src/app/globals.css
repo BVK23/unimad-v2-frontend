@@ -113,6 +113,13 @@
     background-color: var(--scrollbar-thumb-hover);
   }
 
+  .scrollbar-none {
+    scrollbar-width: none;
+  }
+  .scrollbar-none::-webkit-scrollbar {
+    display: none;
+  }
+
   @keyframes linkedin-unicoach-cta-shimmer {
     0%,
     84%,

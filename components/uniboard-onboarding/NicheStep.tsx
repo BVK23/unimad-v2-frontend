@@ -10,6 +10,8 @@ import { NICHE_LOADING_MESSAGES, OnboardingLoadingScreen, OptionCard, PrimaryBut
 type NicheStepProps = {
   name: string;
   onNext: (selectedRole: string, allRoles: string[]) => void;
+  /** Dev test mode — skip API and use fixed suggestions. */
+  mockRoles?: GroundedNicheSuggestion[];
 };
 
 type FormattedSuggestion = GroundedNicheSuggestion & {
@@ -28,14 +30,19 @@ function formatSuggestions(roles: GroundedNicheSuggestion[]): FormattedSuggestio
   });
 }
 
-export default function NicheStep({ name, onNext }: NicheStepProps) {
-  const [loading, setLoading] = useState(true);
-  const [suggestions, setSuggestions] = useState<FormattedSuggestion[]>([]);
-  const [selectedId, setSelectedId] = useState<string | null>(null);
+export default function NicheStep({ name, onNext, mockRoles }: NicheStepProps) {
+  const [loading, setLoading] = useState(!mockRoles?.length);
+  const [suggestions, setSuggestions] = useState<FormattedSuggestion[]>(() => (mockRoles?.length ? formatSuggestions(mockRoles) : []));
+  const [selectedId, setSelectedId] = useState<string | null>(() => {
+    const ideal = mockRoles?.find(r => r.is_ideal) ?? mockRoles?.[0];
+    return ideal?.id ?? null;
+  });
   const [manualRole, setManualRole] = useState("");
   const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
+    if (mockRoles?.length) return;
+
     let cancelled = false;
     (async () => {
       try {
@@ -48,7 +55,7 @@ export default function NicheStep({ name, onNext }: NicheStepProps) {
           if (ideal) setSelectedId(ideal.id);
         }
       } catch {
-        if (!cancelled) setError("Could not load suggestions — type your role below.");
+        if (!cancelled) setError("Could not load suggestions. Type your role below.");
       } finally {
         if (!cancelled) setLoading(false);
       }
@@ -56,7 +63,7 @@ export default function NicheStep({ name, onNext }: NicheStepProps) {
     return () => {
       cancelled = true;
     };
-  }, []);
+  }, [mockRoles]);
 
   const ideal = suggestions.find(s => s.is_ideal) ?? suggestions[0];
   const alts = suggestions.filter(s => s.id !== ideal?.id);

@@ -1,7 +1,7 @@
 "use client";
 
 import { UnimadLogo } from "@/components/unimad-logo";
-import { getSigninUrl, MASTERCLASS_ORGANIC_PATH } from "@/constants/landing-auth";
+import { getSigninUrl, MASTERCLASS_ORGANIC_PATH, MASTERCLASS_PATH } from "@/constants/landing-auth";
 import { Instagram, Linkedin, Youtube } from "lucide-react";
 import Link from "next/link";
 import { HeroScribbleQuotes } from "./HeroScribbleQuotes";
@@ -12,19 +12,15 @@ import { StarfieldBackground } from "./StarfieldBackground";
 import { StoriesSection } from "./StoriesSection";
 import { TrustMarquee } from "./TrustMarquee";
 import { HERO_POP_TESTIMONIALS } from "./testimonials";
-import { useDiscoveryBooking } from "./useDiscoveryBooking";
 import { useCyclingQuote, useLandingBodyClass, useScrollReveal } from "./useLandingEffects";
 
 export function LandingPage() {
   useLandingBodyClass();
   useCyclingQuote();
   useScrollReveal();
-  const { openDiscoveryBooking, bookingModal } = useDiscoveryBooking();
 
   return (
     <div className="landing-page">
-      {bookingModal}
-
       <LandingNav />
 
       {/* Hero + trust — single viewport */}
@@ -43,14 +39,13 @@ export function LandingPage() {
               <Link href={getSigninUrl()} className="btn btn-solid" style={{ padding: "13px 28px", fontSize: "15px" }}>
                 Get started for free
               </Link>
-              <button
-                type="button"
+              <Link
+                href={MASTERCLASS_PATH}
                 className="btn btn-outline-dark"
                 style={{ padding: "13px 28px", fontSize: "15px", fontWeight: 500 }}
-                onClick={() => void openDiscoveryBooking()}
               >
                 Book free Discovery call
-              </button>
+              </Link>
             </div>
             <div className="hero-cycling-quote" id="hero-cq">
               <p className="hcq-quote" id="hcq-quote">
@@ -118,9 +113,9 @@ export function LandingPage() {
                   </div>
                 </div>
                 <div className="coach-ctas">
-                  <button type="button" className="masterclass-gold-btn closing-gold-cta" onClick={() => void openDiscoveryBooking()}>
+                  <Link href={MASTERCLASS_PATH} className="masterclass-gold-btn closing-gold-cta">
                     Book free Discovery call
-                  </button>
+                  </Link>
                   <Link href={MASTERCLASS_ORGANIC_PATH} className="btn btn-outline-light">
                     View full system
                   </Link>
@@ -147,9 +142,9 @@ export function LandingPage() {
                 <Link href={getSigninUrl()} className="btn btn-outline-light">
                   Start free today
                 </Link>
-                <button type="button" className="btn btn-solid" onClick={() => void openDiscoveryBooking()}>
+                <Link href={MASTERCLASS_PATH} className="btn btn-solid">
                   Book free Discovery call
-                </button>
+                </Link>
               </div>
             </div>
           </div>

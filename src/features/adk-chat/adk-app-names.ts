@@ -22,6 +22,13 @@ const LEGACY_STUDIO_APP_ALIASES: Record<string, string> = {
 /** Default ADK app for chat (Unibot). */
 export const getAdkAppName = (): string => process.env.ADK_APP_NAME || "unibot";
 
+export const ONBOARDING_ADK_APP = "onboarding";
+
+/** Resolve ADK app for onboarding profile builder (dedicated app, not main Unibot). */
+export function getOnboardingAdkAppName(): string {
+  return ONBOARDING_ADK_APP;
+}
+
 /**
  * ADK flow app for a Studio asset sub-thread.
  * Prefer `resolveSubSessionAdkApp` / `resolveAdkSessionOptionsForFeatureSection` for sub-sessions.
