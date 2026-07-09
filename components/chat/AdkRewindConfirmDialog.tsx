@@ -3,9 +3,12 @@
 import { createPortal } from "react-dom";
 import { MODAL_OVERLAY_Z_CLASS } from "@/lib/ui/modal-overlay";
 import { type ScopeMatch } from "@/src/features/adk-chat/content-scope";
-import { Loader2, Undo2, X } from "lucide-react";
+import type { ThreadDeleteKind } from "@/src/features/adk-chat/is-first-thread-user-message";
+import { Loader2, Trash2, Undo2, X } from "lucide-react";
 
 export type RewindConfirmMode = "edit" | "delete";
+
+export type FeatureGateKind = "none" | "navigate_required" | "feature_missing";
 
 export interface AdkRewindConfirmDialogProps {
   open: boolean;
@@ -17,8 +20,13 @@ export interface AdkRewindConfirmDialogProps {
   canOfferStateRevert?: boolean;
   showHeavyWorkWarning?: boolean;
   redirectTargetLabel?: string;
+  isFirstMessage?: boolean;
+  isLastMessage?: boolean;
+  threadDeleteKind?: ThreadDeleteKind;
+  /** Off-feature edit: must navigate first. Missing feature: cannot edit. */
+  featureGate?: FeatureGateKind;
   onClose: () => void;
-  onConfirm: (options: { revertEditorState: boolean; redirectAfterRewind?: boolean }) => void;
+  onConfirm: (options: { revertEditorState: boolean; redirectAfterRewind?: boolean; navigateOnly?: boolean }) => void;
 }
 
 export function AdkRewindConfirmDialog({
@@ -31,6 +39,10 @@ export function AdkRewindConfirmDialog({
   canOfferStateRevert = false,
   showHeavyWorkWarning = false,
   redirectTargetLabel,
+  isFirstMessage = false,
+  isLastMessage = false,
+  threadDeleteKind = "main",
+  featureGate = "none",
   onClose,
   onConfirm,
 }: AdkRewindConfirmDialogProps): React.JSX.Element | null {
@@ -39,21 +51,57 @@ export function AdkRewindConfirmDialog({
   const trimmedPreview = previewText.trim();
   const preview = trimmedPreview.length > 160 ? `${trimmedPreview.slice(0, 160).trimEnd()}…` : trimmedPreview;
   const onSameFeature = scopeMatch === "full";
-  const showRedirectOption = scopeMatch === "cross_domain";
+  const threadLabel = threadDeleteKind === "sub" ? "sub-thread" : "chat thread";
+  const isDelete = mode === "delete";
+  const featureName = redirectTargetLabel ?? "that page";
+  const isNavigateGate = mode === "edit" && featureGate === "navigate_required";
+  const isMissingGate = mode === "edit" && featureGate === "feature_missing";
+  const useTwoActionLayout = isDelete && canOfferStateRevert && !isNavigateGate && !isMissingGate;
+  const showOffFeatureDeleteHint = isDelete && scopeMatch === "cross_domain";
 
-  const bodyText =
-    mode === "edit"
-      ? onSameFeature
-        ? `Editing and sending will rewind your chat to this point and send a new message.`
-        : `This message belongs to your ${redirectTargetLabel ?? "other"} flow. Rewind updates that conversation thread.`
-      : onSameFeature
-        ? `This removes this message and everything after it from the chat.`
-        : `This message belongs to your ${redirectTargetLabel ?? "other"} flow. Rewind removes it and later turns from that thread.`;
+  const title = isMissingGate
+    ? "Can't edit this message"
+    : isNavigateGate
+      ? `Open ${featureName} to edit?`
+      : mode === "edit"
+        ? "Edit and rewind chat?"
+        : isFirstMessage
+          ? `Delete entire ${threadLabel}?`
+          : "Delete and rewind chat?";
+
+  const bodyText = isMissingGate
+    ? `This message belongs to ${featureLabel}, but that content is no longer available. You can still delete the chat message — editing and sending is not available.`
+    : isNavigateGate
+      ? `Editing and sending needs you on the ${featureName} page first so Unibot can sync the latest content. Open it, then edit this message again.`
+      : mode === "edit"
+        ? onSameFeature
+          ? `Editing and sending will rewind your chat to this point and send a new message.`
+          : `This message belongs to your ${featureName} flow.`
+        : isFirstMessage
+          ? `This is the first message in this ${threadLabel}. Deleting it removes the entire ${threadLabel} permanently.`
+          : isLastMessage
+            ? onSameFeature
+              ? `This removes this message from the chat.`
+              : `This removes this message from the chat. Editor changes on ${featureName} are left as-is.`
+            : onSameFeature
+              ? `This removes this message and everything after it from the chat.`
+              : `This removes this message and later turns from the chat. Editor changes on ${featureName} are left as-is.`;
 
   const stateRevertHint =
     mode === "edit"
-      ? `You can also revert your ${featureLabel} work to match the conversation at this point.`
-      : `You can also revert your ${featureLabel} work to match the conversation at this point.`;
+      ? `You can also revert ${featureLabel} to match the conversation at this point.`
+      : isFirstMessage
+        ? `Unibot made changes to ${featureLabel} during this ${threadLabel}. You can revert those changes before deleting.`
+        : `Unibot made changes to ${featureLabel} after this message. You can revert those changes when deleting.`;
+
+  const primaryDeleteLabel = useTwoActionLayout
+    ? "Just Delete"
+    : isFirstMessage
+      ? "Delete"
+      : mode === "edit"
+        ? "Rewind & send"
+        : "Rewind & delete";
+  const revertWorkLabel = isFirstMessage || isDelete ? "Revert changes" : mode === "edit" ? "Revert work & send" : "Revert work too";
 
   return createPortal(
     <div
@@ -70,9 +118,13 @@ export function AdkRewindConfirmDialog({
       >
         <div className="mb-3 flex items-start justify-between gap-3">
           <div className="flex items-center gap-2 text-slate-800 dark:text-slate-100">
-            <Undo2 size={18} className="shrink-0 text-brand-600" aria-hidden />
+            {isFirstMessage && isDelete ? (
+              <Trash2 size={18} className="shrink-0 text-red-600" aria-hidden />
+            ) : (
+              <Undo2 size={18} className="shrink-0 text-brand-600" aria-hidden />
+            )}
             <h2 id="adk-rewind-title" className="text-sm font-semibold">
-              {mode === "edit" ? "Edit and rewind chat?" : "Delete and rewind chat?"}
+              {title}
             </h2>
           </div>
           <button
@@ -94,73 +146,117 @@ export function AdkRewindConfirmDialog({
           </p>
         ) : null}
 
-        {onSameFeature && canOfferStateRevert ? (
+        {onSameFeature && canOfferStateRevert && !showHeavyWorkWarning && featureGate === "none" ? (
           <p className="mt-3 text-[12px] text-slate-500 dark:text-slate-400">{stateRevertHint}</p>
         ) : null}
 
         {showHeavyWorkWarning ? (
           <p className="mt-3 rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-[12px] leading-relaxed text-amber-900 dark:border-amber-900/50 dark:bg-amber-950/40 dark:text-amber-100">
-            You have edited {featureLabel} since Unibot last synced with this chat. Reverting your work may undo changes that are not
-            reflected in the conversation. We recommend rewinding the chat only.
+            You have edited {featureLabel} since Unibot last synced with this chat. Reverting may undo edits that are not reflected in the
+            conversation. We recommend deleting the chat only.
           </p>
         ) : null}
 
-        {scopeMatch === "partial" ? (
+        {scopeMatch === "partial" && !(isFirstMessage && isDelete) && featureGate === "none" ? (
           <p className="mt-3 text-[12px] text-slate-500 dark:text-slate-400">
-            This message is from a specific section of {featureLabel} (e.g. headline), not the whole page. Only the chat will be rewound —
-            your profile on screen stays as-is unless you accepted a change there.
+            This message is from a specific section of {featureLabel}. Only the chat will be rewound here.
           </p>
         ) : null}
 
-        {showRedirectOption ? (
+        {showOffFeatureDeleteHint ? (
           <p className="mt-3 text-[12px] text-slate-500 dark:text-slate-400">
-            Rewind here only updates the conversation. Open {redirectTargetLabel ?? "that flow"} to verify editor changes there.
+            You are not on the {featureName} page, so only the chat is updated. Open {featureName} if you also want to revert editor changes
+            there.
           </p>
         ) : null}
 
         <div className="mt-5 flex flex-col gap-2 sm:flex-row-reverse">
-          <button
-            type="button"
-            disabled={isSubmitting}
-            onClick={() => onConfirm({ revertEditorState: false })}
-            className="inline-flex items-center justify-center gap-2 rounded-xl bg-brand-600 px-4 py-2.5 text-[13px] font-medium text-white transition-colors hover:bg-brand-700 disabled:opacity-60"
-          >
-            {isSubmitting ? <Loader2 size={14} className="animate-spin" /> : null}
-            {mode === "edit" ? "Rewind & send" : "Rewind & delete"}
-          </button>
-
-          {canOfferStateRevert ? (
+          {isMissingGate ? (
             <button
               type="button"
               disabled={isSubmitting}
-              onClick={() => onConfirm({ revertEditorState: true })}
-              className="inline-flex items-center justify-center gap-2 rounded-xl border border-slate-200 px-4 py-2.5 text-[13px] font-medium text-slate-700 transition-colors hover:bg-slate-50 disabled:opacity-60 dark:border-slate-600 dark:text-slate-200 dark:hover:bg-slate-800"
+              onClick={onClose}
+              className="inline-flex items-center justify-center rounded-xl bg-brand-600 px-4 py-2.5 text-[13px] font-medium text-white transition-colors hover:bg-brand-700 disabled:opacity-60"
             >
-              {isSubmitting ? <Loader2 size={14} className="animate-spin" /> : null}
-              {mode === "edit" ? "Revert work & send" : "Revert work too"}
+              Got it
             </button>
-          ) : null}
+          ) : isNavigateGate ? (
+            <>
+              <button
+                type="button"
+                disabled={isSubmitting}
+                onClick={() => onConfirm({ revertEditorState: false, navigateOnly: true })}
+                className="inline-flex items-center justify-center gap-2 rounded-xl bg-brand-600 px-4 py-2.5 text-[13px] font-medium text-white transition-colors hover:bg-brand-700 disabled:opacity-60"
+              >
+                {isSubmitting ? <Loader2 size={14} className="animate-spin" /> : null}
+                Open {featureName}
+              </button>
+              <button
+                type="button"
+                disabled={isSubmitting}
+                onClick={onClose}
+                className="inline-flex items-center justify-center rounded-xl border border-slate-200 px-4 py-2.5 text-[13px] font-medium text-slate-700 transition-colors hover:bg-slate-50 disabled:opacity-60 dark:border-slate-600 dark:text-slate-200 dark:hover:bg-slate-800"
+              >
+                Cancel
+              </button>
+            </>
+          ) : useTwoActionLayout ? (
+            <>
+              <button
+                type="button"
+                disabled={isSubmitting}
+                onClick={() => onConfirm({ revertEditorState: true })}
+                className="inline-flex items-center justify-center gap-2 rounded-xl bg-brand-600 px-4 py-2.5 text-[13px] font-medium text-white transition-colors hover:bg-brand-700 disabled:opacity-60"
+              >
+                {isSubmitting ? <Loader2 size={14} className="animate-spin" /> : null}
+                {revertWorkLabel}
+              </button>
+              <button
+                type="button"
+                disabled={isSubmitting}
+                onClick={() => onConfirm({ revertEditorState: false })}
+                className="inline-flex items-center justify-center gap-2 rounded-xl border border-red-200 bg-white px-4 py-2.5 text-[13px] font-medium text-red-700 transition-colors hover:bg-red-50 disabled:opacity-60 dark:border-red-900/60 dark:bg-transparent dark:text-red-300 dark:hover:bg-red-950/30"
+              >
+                {isSubmitting ? <Loader2 size={14} className="animate-spin" /> : null}
+                {primaryDeleteLabel}
+              </button>
+            </>
+          ) : (
+            <>
+              <button
+                type="button"
+                disabled={isSubmitting}
+                onClick={() => onConfirm({ revertEditorState: false })}
+                className={`inline-flex items-center justify-center gap-2 rounded-xl px-4 py-2.5 text-[13px] font-medium text-white transition-colors disabled:opacity-60 ${
+                  isFirstMessage && isDelete ? "bg-red-600 hover:bg-red-700" : "bg-brand-600 hover:bg-brand-700"
+                }`}
+              >
+                {isSubmitting ? <Loader2 size={14} className="animate-spin" /> : null}
+                {primaryDeleteLabel}
+              </button>
 
-          {showRedirectOption ? (
-            <button
-              type="button"
-              disabled={isSubmitting}
-              onClick={() => onConfirm({ revertEditorState: false, redirectAfterRewind: true })}
-              className="inline-flex items-center justify-center gap-2 rounded-xl border border-brand-200 px-4 py-2.5 text-[13px] font-medium text-brand-700 transition-colors hover:bg-brand-50 disabled:opacity-60 dark:border-brand-800 dark:text-brand-300 dark:hover:bg-brand-950/30"
-            >
-              {isSubmitting ? <Loader2 size={14} className="animate-spin" /> : null}
-              Open {redirectTargetLabel ?? "that flow"}
-            </button>
-          ) : null}
+              {canOfferStateRevert ? (
+                <button
+                  type="button"
+                  disabled={isSubmitting}
+                  onClick={() => onConfirm({ revertEditorState: true })}
+                  className="inline-flex items-center justify-center gap-2 rounded-xl border border-slate-200 px-4 py-2.5 text-[13px] font-medium text-slate-700 transition-colors hover:bg-slate-50 disabled:opacity-60 dark:border-slate-600 dark:text-slate-200 dark:hover:bg-slate-800"
+                >
+                  {isSubmitting ? <Loader2 size={14} className="animate-spin" /> : null}
+                  {revertWorkLabel}
+                </button>
+              ) : null}
 
-          <button
-            type="button"
-            disabled={isSubmitting}
-            onClick={onClose}
-            className="inline-flex items-center justify-center rounded-xl border border-slate-200 px-4 py-2.5 text-[13px] font-medium text-slate-700 transition-colors hover:bg-slate-50 disabled:opacity-60 dark:border-slate-600 dark:text-slate-200 dark:hover:bg-slate-800"
-          >
-            Cancel
-          </button>
+              <button
+                type="button"
+                disabled={isSubmitting}
+                onClick={onClose}
+                className="inline-flex items-center justify-center rounded-xl border border-slate-200 px-4 py-2.5 text-[13px] font-medium text-slate-700 transition-colors hover:bg-slate-50 disabled:opacity-60 dark:border-slate-600 dark:text-slate-200 dark:hover:bg-slate-800"
+              >
+                Cancel
+              </button>
+            </>
+          )}
         </div>
       </div>
     </div>,

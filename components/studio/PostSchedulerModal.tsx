@@ -4,6 +4,7 @@ import React, { useEffect, useMemo, useState, useCallback, useRef } from "react"
 import { createPortal } from "react-dom";
 import { DocumentSaveStatusBar } from "@/components/application-assets/DocumentSaveStatusBar";
 import ProfilePictureWithFallback from "@/components/user-profile/ProfilePictureWithFallback";
+import { FINISH_ONBOARDING_CTA, ONBOARDING_GATE_MESSAGES } from "@/constants/onboarding-tooltips";
 import { MIN_LINKEDIN_POST_CHARS, LINKEDIN_POST_TOO_SHORT_MESSAGE } from "@/features/linkedin/constants";
 import {
   formatSessionEndsDate,
@@ -15,10 +16,11 @@ import {
   toScheduleDateKey,
   type LinkedInPublishAccess,
 } from "@/features/linkedin/utils/linkedinPublishAccess";
+import { onboardingHref } from "@/features/onboarding/featureGates";
 import { MODAL_OVERLAY_Z_CLASS } from "@/lib/ui/modal-overlay";
 import { useDocumentAutosave } from "@/src/hooks/useDocumentAutosave";
 import { sanitizeUserFacingError } from "@/utils/message-from-failed-response";
-import { X, Send, CheckCircle2, Wand2 } from "lucide-react";
+import { X, Send, CheckCircle2, Wand2, Info } from "lucide-react";
 import { LinkedInPublishAccessNotice } from "./LinkedInPublishAccessNotice";
 import { LinkedInScheduleDateTimePicker } from "./LinkedInScheduleDateTimePicker";
 import StudioMediaPreviewImage from "./StudioMediaPreviewImage";
@@ -49,6 +51,8 @@ interface PostSchedulerModalProps {
   };
   linkedInPublishAccess?: LinkedInPublishAccess;
   userId?: number;
+  /** When true, user must finish onboarding before posting/scheduling. */
+  onboardingBlocked?: boolean;
 }
 
 const PostSchedulerModal: React.FC<PostSchedulerModalProps> = ({
@@ -68,6 +72,7 @@ const PostSchedulerModal: React.FC<PostSchedulerModalProps> = ({
   initialData,
   linkedInPublishAccess: linkedInPublishAccessProp,
   userId,
+  onboardingBlocked = false,
 }) => {
   const linkedInPublishAccess = linkedInPublishAccessProp ?? resolveLinkedInPublishAccess(null);
   const [currentContent, setCurrentContent] = useState(content);
@@ -93,7 +98,7 @@ const PostSchedulerModal: React.FC<PostSchedulerModalProps> = ({
   const sessionEndsLabel = linkedInPublishAccess.sessionEndsAt ? formatSessionEndsDate(linkedInPublishAccess.sessionEndsAt) : undefined;
   const publishBlocked = !linkedInPublishAccess.canPost;
   const contentTooShort = currentContent.trim().length < MIN_LINKEDIN_POST_CHARS;
-  const publishActionsDisabled = publishBlocked || contentTooShort;
+  const publishActionsDisabled = publishBlocked || contentTooShort || onboardingBlocked;
   const confirmDisabled =
     isSubmitting || showSuccess || publishActionsDisabled || (isScheduling && (!scheduleDate || !scheduleTime || scheduleBeyondSession));
 
@@ -261,7 +266,7 @@ const PostSchedulerModal: React.FC<PostSchedulerModalProps> = ({
   );
 
   const renderFloatingPreviewColumn = () => (
-    <div className="flex w-full max-w-[min(92vw,36rem)] flex-col lg:h-[min(90vh,calc(100vh-2rem))] lg:max-w-[min(40vw,36rem)]">
+    <div className="flex w-full flex-col lg:h-[min(90vh,calc(100vh-2rem))]">
       {renderLinkedInPostCard()}
       <button
         type="button"
@@ -288,11 +293,13 @@ const PostSchedulerModal: React.FC<PostSchedulerModalProps> = ({
     >
       <div className="mx-auto flex min-h-full w-full max-w-[min(96vw,72rem)] items-center justify-center py-2">
         <div className="flex w-full flex-col items-stretch gap-6 lg:flex-row lg:items-stretch lg:justify-center lg:gap-8">
-          {/* Left: floating LinkedIn preview — transparent, sits on backdrop */}
-          <div className="order-1 flex justify-center lg:justify-end">{renderFloatingPreviewColumn()}</div>
+          {/* Left: width from same responsive min() caps — on the flex child so w-full inside resolves */}
+          <div className="order-1 flex w-[min(92vw,36rem)] shrink-0 justify-center lg:w-[min(40vw,36rem)] lg:justify-end">
+            {renderFloatingPreviewColumn()}
+          </div>
 
           {/* Right: Review & Schedule panel */}
-          <div className="relative order-2 flex w-full max-w-md shrink-0 flex-col overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-2xl animate-in zoom-in-95 duration-200 dark:border-slate-800 dark:bg-slate-900 lg:h-[min(90vh,calc(100vh-2rem))]">
+          <div className="relative order-2 flex w-full max-w-md shrink-0 flex-col overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-2xl animate-in zoom-in-95 duration-200 dark:border-slate-800 dark:bg-slate-900 lg:w-auto lg:h-[min(90vh,calc(100vh-2rem))]">
             {errorToast ? (
               <div className="absolute right-4 top-16 z-30 animate-in slide-in-from-top-2 fade-in duration-200">
                 <div
@@ -344,6 +351,21 @@ const PostSchedulerModal: React.FC<PostSchedulerModalProps> = ({
               {publishBlocked ? (
                 <div className="mb-4">
                   <LinkedInPublishAccessNotice access={linkedInPublishAccess} userId={userId} />
+                </div>
+              ) : onboardingBlocked ? (
+                <div className="mb-4 rounded-xl border border-slate-200 bg-slate-50/90 px-3 py-2.5 shadow-sm dark:border-slate-700 dark:bg-slate-900/50">
+                  <div className="flex gap-2">
+                    <Info size={16} className="mt-0.5 shrink-0 text-brand-600 dark:text-brand-400" aria-hidden />
+                    <p className="text-sm text-slate-700 dark:text-slate-200">{ONBOARDING_GATE_MESSAGES.linkedin_publish}</p>
+                  </div>
+                  <div className="mt-3 flex justify-end">
+                    <a
+                      href={onboardingHref("profile_setup")}
+                      className="inline-flex items-center rounded-full bg-brand-600 px-4 py-2 text-xs font-semibold text-white shadow-sm transition hover:bg-brand-700"
+                    >
+                      {FINISH_ONBOARDING_CTA}
+                    </a>
+                  </div>
                 </div>
               ) : null}
 
@@ -445,9 +467,11 @@ const PostSchedulerModal: React.FC<PostSchedulerModalProps> = ({
                       ? linkedInPublishAccess.blockReason === "connect"
                         ? "Connect LinkedIn to post"
                         : "Sign in with LinkedIn again to post"
-                      : scheduleBeyondSession
-                        ? "Choose a date within your LinkedIn connection window"
-                        : undefined
+                      : onboardingBlocked
+                        ? ONBOARDING_GATE_MESSAGES.linkedin_publish
+                        : scheduleBeyondSession
+                          ? "Choose a date within your LinkedIn connection window"
+                          : undefined
                 }
                 className="flex items-center gap-2 rounded-xl bg-brand-600 px-8 py-3 text-sm font-medium text-white shadow-xl shadow-brand-500/20 transition-all hover:bg-brand-700 active:scale-95 disabled:pointer-events-none disabled:opacity-60"
               >

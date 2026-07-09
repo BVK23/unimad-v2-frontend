@@ -193,9 +193,28 @@ export function deriveScopeFromTopicKind(params: {
   };
 }
 
+export function scopeAssetKey(scope: ContentScope): string {
+  const parts = scope.contentKey.split(":");
+  if (scope.domain === "resume" || scope.domain === "portfolio") {
+    return parts.length >= 2 ? `${parts[0]}:${parts[1]}` : scope.contentKey;
+  }
+  if (scope.domain === "linkedin") {
+    return parts[0] === "linkedin" && parts[1] ? `linkedin:${parts[1]}` : scope.contentKey;
+  }
+  return scope.contentKey;
+}
+
+export function scopesShareSameAsset(activeScope: ContentScope, messageScope: ContentScope): boolean {
+  if (activeScope.domain !== messageScope.domain) return false;
+  if (activeScope.contentKey === messageScope.contentKey) return true;
+  return scopeAssetKey(activeScope) === scopeAssetKey(messageScope);
+}
+
 export function scopesMatch(activeScope: ContentScope, messageScope: ContentScope): ScopeMatch {
   if (activeScope.domain !== messageScope.domain) return "cross_domain";
-  return activeScope.contentKey === messageScope.contentKey ? "full" : "partial";
+  if (activeScope.contentKey === messageScope.contentKey) return "full";
+  if (scopesShareSameAsset(activeScope, messageScope)) return "full";
+  return "partial";
 }
 
 function applicationAssetScopeLabel(scope: ContentScope): string {
@@ -286,7 +305,7 @@ export function getRedirectPathForScope(scope: ContentScope | null | undefined):
   return null;
 }
 
-/** Human label for rewind dialog copy on the current feature page. */
+/** Human label for rewind dialog copy on the current feature page (includes possessive where natural). */
 export function getContentScopeFeatureLabel(scope: ContentScope | null | undefined): string {
   if (!scope) return "this page";
   switch (scope.domain) {
@@ -315,10 +334,15 @@ export function getContentScopeRedirectLabel(scope: ContentScope | null | undefi
       return "Portfolio";
     case "linkedin":
       return "LinkedIn";
-    case "application_asset":
+    case "application_asset": {
+      const assetType = (scope.section ?? scope.contentKey.split(":")[0] ?? "").trim().toLowerCase();
+      if (assetType === "coverletter") return "Cover letter";
+      if (assetType === "coldemail") return "Cold email";
+      if (assetType === "referral") return "Referral";
       return "Studio";
+    }
     case "content_gen":
-      return "Content Lab";
+      return "LinkedIn post";
     default:
       return undefined;
   }

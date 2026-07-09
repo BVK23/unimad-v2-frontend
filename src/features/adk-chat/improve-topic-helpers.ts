@@ -7,6 +7,7 @@ import type { ChatMessage } from "@/types";
 import { loadSessionHistoryAction } from "./actions";
 import { agentMessageToChatMessage } from "./agent-message-to-chat";
 import { resolveAdkSessionOptionsForSessionId } from "./resolve-sub-session-adk-app";
+import { noteSessionMutatingTool } from "./session-mutating-tool-tracker";
 import { getSessionRegistry, setSessionRegistry, type UnibotAdkSessionRow } from "./session-registry";
 import { resolveRegistryContentKey } from "./sub-session-content-key";
 import { deriveSubSessionDisplayTitle, deriveSubSessionSubtitle } from "./sub-session-titles";
@@ -21,10 +22,22 @@ function parseTimestamp(ts: Date | string | number): Date {
   return new Date(ts);
 }
 
+/** Restore mutating-tool flags for a sub-session without rebuilding nested messages. */
+export async function hydrateSubSessionMutatingTools(userId: string, subAdkSessionId: string): Promise<void> {
+  const result = await loadSessionHistoryAction(userId, subAdkSessionId, resolveAdkSessionOptionsForSessionId(subAdkSessionId));
+  if (!result.success) return;
+  for (const toolName of result.mutatingToolNames ?? []) {
+    noteSessionMutatingTool(subAdkSessionId, toolName);
+  }
+}
+
 /** Load ADK sub-session history into nested topic messages (chronological). */
 export async function loadSubSessionChatMessages(userId: string, subAdkSessionId: string): Promise<ChatMessage[]> {
   const result = await loadSessionHistoryAction(userId, subAdkSessionId, resolveAdkSessionOptionsForSessionId(subAdkSessionId));
   if (!result.success || result.messages.length === 0) return [];
+  for (const toolName of result.mutatingToolNames ?? []) {
+    noteSessionMutatingTool(subAdkSessionId, toolName);
+  }
   return result.messages.map(m =>
     agentMessageToChatMessage({
       ...m,
@@ -169,6 +182,7 @@ export async function mergeSubSessionsIntoMainMessages(
 
   const topicBlocks: ChatMessage[] = [];
   for (const sub of subs) {
+    await hydrateSubSessionMutatingTools(userId, sub.adk_session_id);
     const topicId = topicIdForSubSession(sub.adk_session_id);
     if (existingSubIds.has(sub.adk_session_id) || existingTopicIds.has(topicId)) continue;
     const nested = await loadSubSessionChatMessages(userId, sub.adk_session_id);

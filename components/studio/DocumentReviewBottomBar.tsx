@@ -1,5 +1,6 @@
 "use client";
 
+import { HoverTooltip } from "@/components/ui/HoverTooltip";
 import { Check, RotateCcw, Save } from "lucide-react";
 
 type DocumentReviewBottomBarProps = {
@@ -75,18 +76,21 @@ const DocumentReviewBottomBar = ({
           >
             Revert all
           </button>
-          <button
-            type="button"
-            onClick={onApply}
-            disabled={busy || applyDisabled}
-            title={applyDisabled ? applyDisabledReason : undefined}
-            className={`flex items-center gap-1.5 rounded-full px-4 py-1.5 text-xs font-medium text-white shadow-sm transition-colors disabled:opacity-50 ${
-              allReviewed ? "bg-brand-600 hover:bg-brand-700" : "bg-slate-800 hover:bg-slate-900 dark:bg-brand-600 dark:hover:bg-brand-700"
-            }`}
-          >
-            <Save size={14} />
-            Apply
-          </button>
+          <HoverTooltip content={applyDisabledReason ?? ""} enabled={applyDisabled && Boolean(applyDisabledReason)}>
+            <button
+              type="button"
+              onClick={onApply}
+              disabled={busy || applyDisabled}
+              className={`flex items-center gap-1.5 rounded-full px-4 py-1.5 text-xs font-medium text-white shadow-sm transition-colors disabled:opacity-50 ${
+                allReviewed
+                  ? "bg-brand-600 hover:bg-brand-700"
+                  : "bg-slate-800 hover:bg-slate-900 dark:bg-brand-600 dark:hover:bg-brand-700"
+              }`}
+            >
+              <Save size={14} />
+              Apply
+            </button>
+          </HoverTooltip>
         </div>
       </div>
     </div>

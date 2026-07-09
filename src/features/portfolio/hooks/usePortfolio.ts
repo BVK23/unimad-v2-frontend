@@ -41,7 +41,8 @@ export function usePortfolio() {
     if (lastHydratedSnapshotRef.current === nextSnapshot) return;
 
     const current = usePortfolioStore.getState().getPortfolioData(portfolioId);
-    if (current && getPortfolioContentSignature(current) === getPortfolioContentSignature(query.data)) {
+    if (current) {
+      // Portfolio editor seeds the store on mount; never replace active in-memory edits from query cache.
       lastHydratedSnapshotRef.current = nextSnapshot;
       return;
     }

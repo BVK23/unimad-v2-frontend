@@ -284,6 +284,7 @@ export type OnboardingSaveType =
   | "whatsapp"
   | "linkedin_url"
   | "goal"
+  | "career_stage"
   | "personalization_profile"
   | "complete_minimal";
 
@@ -321,7 +322,7 @@ export const getGroundedNicheSuggestions = async (): Promise<GroundedNicheRespon
         const match = title.trim().match(/^(.*?)\s*\(([^)]+)\)\s*$/);
         const cleanTitle = match ? match[1].trim() : title.trim();
         const rationale = match
-          ? `${match[2].trim().charAt(0).toUpperCase()}${match[2].trim().slice(1)} — suggested from your profile and career intent.`
+          ? `${match[2].trim().charAt(0).toUpperCase()}${match[2].trim().slice(1)}. Suggested from your profile and career intent.`
           : "Suggested from your profile and career intent.";
         return {
           id: `role-${i}`,
@@ -334,6 +335,97 @@ export const getGroundedNicheSuggestions = async (): Promise<GroundedNicheRespon
   }
 
   return (await response.json()) as GroundedNicheResponse;
+};
+
+export type NicheDiscoveryQuestion = {
+  id: string;
+  text: string;
+  options?: string[];
+};
+
+export type NicheDiscoveryAnswer = {
+  question_id: string;
+  question: string;
+  answer: string;
+};
+
+export type NicheDiscoveryState = {
+  initial_suggestions?: GroundedNicheSuggestion[];
+  initial_source?: string | null;
+  rejected_suggestions?: GroundedNicheSuggestion[];
+  accepted_role?: string | null;
+  discovery_count?: number;
+  status?: string;
+};
+
+export const getNicheDiscoveryQuestions = async (
+  rejectedSuggestions: GroundedNicheSuggestion[] = [],
+  options?: { allowRerun?: boolean }
+): Promise<{ questions: NicheDiscoveryQuestion[]; can_rerun?: boolean }> => {
+  const accessToken = await getAccessToken();
+  if (!accessToken) throw new Error("Unauthorized");
+
+  const response = await fetch(`${BACKEND_URL}/api/onboarding/niche-discovery/questions/`, {
+    method: "POST",
+    headers: {
+      Authorization: `Bearer ${accessToken}`,
+      "Content-Type": "application/json",
+    },
+    body: JSON.stringify({
+      rejected_suggestions: rejectedSuggestions,
+      allow_rerun: options?.allowRerun ?? false,
+    }),
+    cache: "no-store",
+  });
+
+  if (!response.ok) {
+    let message = "Failed to load discovery questions";
+    try {
+      const err = await response.json();
+      if (err?.error) message = err.error;
+    } catch {
+      // ignore
+    }
+    throw new Error(message);
+  }
+
+  return (await response.json()) as { questions: NicheDiscoveryQuestion[]; can_rerun?: boolean };
+};
+
+export const refineNicheDiscovery = async (
+  answers: NicheDiscoveryAnswer[],
+  rejectedSuggestions: GroundedNicheSuggestion[] = [],
+  options?: { allowRerun?: boolean }
+): Promise<GroundedNicheResponse & { niche_discovery?: NicheDiscoveryState }> => {
+  const accessToken = await getAccessToken();
+  if (!accessToken) throw new Error("Unauthorized");
+
+  const response = await fetch(`${BACKEND_URL}/api/onboarding/niche-discovery/refine/`, {
+    method: "POST",
+    headers: {
+      Authorization: `Bearer ${accessToken}`,
+      "Content-Type": "application/json",
+    },
+    body: JSON.stringify({
+      answers,
+      rejected_suggestions: rejectedSuggestions,
+      allow_rerun: options?.allowRerun ?? false,
+    }),
+    cache: "no-store",
+  });
+
+  if (!response.ok) {
+    let message = "Failed to refine niche suggestions";
+    try {
+      const err = await response.json();
+      if (err?.error) message = err.error;
+    } catch {
+      // ignore
+    }
+    throw new Error(message);
+  }
+
+  return (await response.json()) as GroundedNicheResponse & { niche_discovery?: NicheDiscoveryState };
 };
 
 export const saveOnboardingData = async (type: OnboardingSaveType, data: Record<string, unknown>) => {

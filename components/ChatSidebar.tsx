@@ -3,7 +3,7 @@
 import React, { useState, useEffect, useRef, useCallback, useMemo } from "react";
 import { createPortal } from "react-dom";
 import { AdkDraftReviewDecisionStatus } from "@/components/chat/AdkDraftReviewDecisionStatus";
-import { AdkRewindConfirmDialog } from "@/components/chat/AdkRewindConfirmDialog";
+import { AdkRewindConfirmDialog, type FeatureGateKind } from "@/components/chat/AdkRewindConfirmDialog";
 import ApplicationAssetReviewStepperCard from "@/components/studio/ApplicationAssetReviewStepperCard";
 import { PanelResizeHandle } from "@/components/ui/PanelResizeHandle";
 import { consumeLandingUnibotDraft } from "@/constants/landing-unibot";
@@ -113,6 +113,7 @@ import { runDjangoContentGenDraftFallback } from "@/features/content-lab/hooks/r
 import { createContentGenShell } from "@/features/content-lab/server-actions/content-lab-actions";
 import { useContentGenStudioStore } from "@/features/content-lab/store/useContentGenStudioStore";
 import { useOnboardingGate } from "@/features/onboarding/context/OnboardingGateContext";
+import { useNicheDiscoveryStore } from "@/features/onboarding/niche-discovery/useNicheDiscoveryStore";
 import { mapStrengthsFocusTrigger, useStrengthsFocusStore } from "@/features/onboarding/strengths-focus/useStrengthsFocusStore";
 import { buildAdkPortfolioDataMap, buildAdkPortfolioStateDelta } from "@/features/portfolio/api/mappers";
 import { portfolioQueryKey } from "@/features/portfolio/hooks/usePortfolio";
@@ -142,8 +143,15 @@ import {
   type ScopeMatch,
 } from "@/src/features/adk-chat/content-scope";
 import { ensureApplicationAssetTopicSubSession, ensureContentGenTopicSubSession } from "@/src/features/adk-chat/ensure-topic-sub-session";
+import { checkFeatureAvailability } from "@/src/features/adk-chat/feature-availability";
 import { useSyncUnibotUiToRoute } from "@/src/features/adk-chat/hooks/useSyncUnibotUiToRoute";
 import { SUB_THREAD_COLLAPSE_THRESHOLD } from "@/src/features/adk-chat/hydrate-loaded-topics";
+import {
+  isFirstThreadUserMessage,
+  isLastThreadUserMessage,
+  resolveThreadDeleteKind,
+  type ThreadDeleteKind,
+} from "@/src/features/adk-chat/is-first-thread-user-message";
 import { useActiveResumeIdForPatch } from "@/src/features/adk-chat/resolve-active-resume-id";
 import {
   resolveApplicationAssetReviewNavTarget,
@@ -171,6 +179,7 @@ import {
   deriveSubSessionSubtitle,
 } from "@/src/features/adk-chat/sub-session-titles";
 import { dismissSyncedContentGenReviews } from "@/src/features/adk-chat/sync-content-gen-review-with-persisted";
+import { canOfferRevertOnThreadDelete, resolveMainSessionIdForRevert } from "@/src/features/adk-chat/thread-revert-eligibility";
 import {
   APPLICATION_ASSET_IMPROVE_NUDGE,
   CONTENT_GEN_IMPROVE_NUDGE,
@@ -206,6 +215,7 @@ import {
   buildResumeImproveDisplayMessage,
   resumeImproveUserDisplayText,
 } from "@/src/features/resume/api/resume-improve-prompts";
+import { resumesListQueryKey } from "@/src/features/resume/hooks/useResumesList";
 import {
   getFollowUpStreamActivityLabel,
   streamActivityLabelForMessage,
@@ -230,16 +240,18 @@ import {
   Check,
 } from "lucide-react";
 import { usePathname, useRouter, useSearchParams } from "next/navigation";
-import type { AssetActionMeta, ChatMessage } from "../types";
+import type { AssetActionMeta, ChatMessage, ResumeData } from "../types";
 import Logo from "./Logo";
 import UnimadUMark from "./UnimadUMark";
 import { useAdkChatContext } from "./chat/AdkChatProvider";
 import { ContentGenDraftReviewChips } from "./chat/ContentGenDraftReviewChips";
 import { ContentGenTopicChips } from "./chat/ContentGenTopicChips";
 import { FormattedAgentMessage } from "./chat/FormattedAgentMessage";
+import NicheDiscoveryFocusView from "./chat/NicheDiscoveryFocusView";
 import StrengthsOnboardingFocusView from "./chat/StrengthsOnboardingFocusView";
 import { SubThreadGoToAssetLink } from "./chat/SubThreadGoToAssetLink";
 import { UnibotActionItemHighlight } from "./chat/UnibotActionItemHighlight";
+import { UnibotBotMessageToolbar } from "./chat/UnibotBotMessageToolbar";
 import { UnibotErrorBubble } from "./chat/UnibotErrorBubble";
 import { UnibotJobCardStrip } from "./chat/UnibotJobCardStrip";
 import { UnibotLinkedInSuggestionCards } from "./chat/UnibotLinkedInSuggestionCards";
@@ -337,7 +349,7 @@ function AdkReviewCardBlock({
 
   return (
     <div
-      className={`mt-2 w-full max-w-[95%] rounded-xl border px-3 py-2.5 shadow-sm transition-opacity ${
+      className={`mt-2 w-full self-stretch rounded-xl border px-3 py-2.5 shadow-sm transition-opacity ${
         isActive
           ? "border-slate-200 bg-slate-50 dark:border-white/10 dark:bg-[#141414]"
           : "border-slate-100 bg-slate-50/70 opacity-70 dark:border-white/5 dark:bg-[#121212]"
@@ -346,7 +358,7 @@ function AdkReviewCardBlock({
       <p className="text-[12px] font-semibold text-slate-800 dark:text-slate-100">{card.bannerTitle}</p>
       {isActive ? (
         hideActions ? null : (
-          <div className="mt-2.5 flex flex-nowrap items-center gap-2">
+          <div className="mt-2.5 flex flex-nowrap items-center justify-end gap-2">
             <button
               type="button"
               disabled={actionsDisabled}
@@ -493,6 +505,7 @@ const ChatSidebar: React.FC<ChatSidebarProps> = ({ incomingRequest, onRequestHan
     clearStreamError,
     setStreamError,
     rewindToMessage,
+    deleteThreadFromFirstMessage,
     isRewinding,
   } = useAdkChatContext();
   const liveStreamActivity = useUnibotStreamActivityLabel();
@@ -513,6 +526,9 @@ const ChatSidebar: React.FC<ChatSidebarProps> = ({ incomingRequest, onRequestHan
     scopeMatch: ScopeMatch;
     messageScope?: ContentScope;
     assetActionMeta?: AssetActionMeta;
+    isFirstMessage: boolean;
+    isLastMessage: boolean;
+    threadDeleteKind: ThreadDeleteKind;
   } | null>(null);
 
   type UserMessageRewindContext = {
@@ -522,6 +538,9 @@ const ChatSidebar: React.FC<ChatSidebarProps> = ({ incomingRequest, onRequestHan
     topicId?: string;
     scopeMatch: ScopeMatch;
     messageScope?: ContentScope;
+    isFirstMessage: boolean;
+    isLastMessage: boolean;
+    threadDeleteKind: ThreadDeleteKind;
   };
 
   type PendingRewindConfirm =
@@ -556,6 +575,11 @@ const ChatSidebar: React.FC<ChatSidebarProps> = ({ incomingRequest, onRequestHan
   const strengthsDevPreview = isStrengthsNudgeDevPreview(searchParams);
   const strengthsFocusActive = useStrengthsFocusStore(s => s.active);
   const strengthsFocusEnteredAt = useStrengthsFocusStore(s => s.enteredAt);
+  const nicheDiscoveryActive = useNicheDiscoveryStore(s => s.active);
+
+  useEffect(() => {
+    if (nicheDiscoveryActive) setIsCollapsed(false);
+  }, [nicheDiscoveryActive]);
 
   const focusChatMessages = useMemo(() => {
     if (!strengthsFocusActive || !strengthsFocusEnteredAt) return [];
@@ -667,6 +691,9 @@ const ChatSidebar: React.FC<ChatSidebarProps> = ({ incomingRequest, onRequestHan
         topicId,
         scopeMatch,
         messageScope: messageScope ?? undefined,
+        isFirstMessage: isFirstThreadUserMessage(messages, message, topicId),
+        isLastMessage: isLastThreadUserMessage(messages, message, topicId),
+        threadDeleteKind: resolveThreadDeleteKind(topicId),
       };
     },
     [canRewind, deriveCurrentScope, messages]
@@ -722,6 +749,9 @@ const ChatSidebar: React.FC<ChatSidebarProps> = ({ incomingRequest, onRequestHan
         topicId: edit.topicId,
         scopeMatch: edit.scopeMatch,
         messageScope: edit.messageScope,
+        isFirstMessage: edit.isFirstMessage,
+        isLastMessage: edit.isLastMessage,
+        threadDeleteKind: edit.threadDeleteKind,
       },
       editDraftText: trimmed,
       assetActionMeta: edit.assetActionMeta,
@@ -746,6 +776,9 @@ const ChatSidebar: React.FC<ChatSidebarProps> = ({ incomingRequest, onRequestHan
         scopeMatch: ctx.scopeMatch,
         messageScope: ctx.messageScope,
         assetActionMeta: message.assetActionMeta,
+        isFirstMessage: ctx.isFirstMessage,
+        isLastMessage: ctx.isLastMessage,
+        threadDeleteKind: ctx.threadDeleteKind,
       });
     },
     [buildUserMessageRewindContext]
@@ -1905,7 +1938,6 @@ const ChatSidebar: React.FC<ChatSidebarProps> = ({ incomingRequest, onRequestHan
       }
 
       if (!existing) {
-        const nested = await loadSubSessionChatMessages(userId, subAdkSessionId);
         const subRow = getRegistryRow(subAdkSessionId);
         const userMsg: ChatMessage = {
           id: newId("u"),
@@ -1933,13 +1965,26 @@ const ChatSidebar: React.FC<ChatSidebarProps> = ({ incomingRequest, onRequestHan
           topicTitle: title,
           isExpanded,
           subSessionAdkId: subAdkSessionId,
-          messages: [...nested, userMsg, placeholderMsg],
+          messages: [userMsg, placeholderMsg],
         };
         setMessages(prev => insertTopicInMainThread(prev, newTopic));
         if (!suppressFocus) {
           setImproveReplyTopicId(topicId);
         }
         pendingRetryRef.current = { text: agentText, topicId, botMsgId };
+        void loadSubSessionChatMessages(userId, subAdkSessionId).then(nested => {
+          if (!nested.length) return;
+          setMessages(prev =>
+            prev.map(msg =>
+              msg.id === topicId && msg.isTopic
+                ? {
+                    ...msg,
+                    messages: [...nested, ...(msg.messages ?? [])],
+                  }
+                : msg
+            )
+          );
+        });
         try {
           await sendTopicMessage(agentText, botMsgId, { sessionIdOverride: subAdkSessionId });
           pendingRetryRef.current = null;
@@ -2048,11 +2093,17 @@ const ChatSidebar: React.FC<ChatSidebarProps> = ({ incomingRequest, onRequestHan
       const prompt = UNIBOT_SECTION_REVIEW_PROMPTS[req.section];
       if (!prompt) return;
 
+      ensureOptimisticUnibotActivity();
+
       void (async () => {
         try {
-          if (!userId || !sessionReady) return;
+          if (!userId || !sessionReady) {
+            cancelOptimisticUnibotActivity();
+            return;
+          }
           await sendMainMessage(prompt, { excludeFromTitleGeneration: true });
         } catch (err) {
+          cancelOptimisticUnibotActivity();
           handleStreamFailure(err, { text: prompt });
         }
       })();
@@ -2424,10 +2475,16 @@ const ChatSidebar: React.FC<ChatSidebarProps> = ({ incomingRequest, onRequestHan
         })
       : promptText;
 
+    if (isImproveSubSession || req.improveType === "resume") {
+      ensureOptimisticUnibotActivity();
+    }
+
     void (async () => {
       try {
-        if (!userId || !sessionReady) return;
-        ensureOptimisticUnibotActivity();
+        if (!userId || !sessionReady) {
+          cancelOptimisticUnibotActivity();
+          return;
+        }
 
         if (isImproveSubSession && req.featureId && req.section) {
           const mainId = currentMainSessionId ?? sessionId;
@@ -2489,7 +2546,7 @@ const ChatSidebar: React.FC<ChatSidebarProps> = ({ incomingRequest, onRequestHan
             }
           }
 
-          await refreshSessions();
+          void refreshSessions();
           await openImproveSubTopic(
             resolved.adkSessionId,
             resolved.title ??
@@ -3220,14 +3277,45 @@ const ChatSidebar: React.FC<ChatSidebarProps> = ({ incomingRequest, onRequestHan
   );
 
   const handleConfirmRewind = useCallback(
-    async (options: { revertEditorState: boolean; redirectAfterRewind?: boolean }) => {
+    async (options: { revertEditorState: boolean; redirectAfterRewind?: boolean; navigateOnly?: boolean }) => {
       const pending = pendingRewindConfirmRef.current;
       if (!pending) return;
 
       closeRewindConfirm();
 
       try {
-        await runUserMessageRewind(pending.ctx, { revertEditorState: options.revertEditorState });
+        if (options.navigateOnly) {
+          const redirectScope = resolveRewindRedirectScope(pending.ctx.targetSessionId, pending.ctx.messageScope);
+          const path = getRedirectPathForScope(redirectScope);
+          if (path) router.push(path);
+          return;
+        }
+
+        // Off-feature edit must navigate first — never rewind/send from the wrong page.
+        if (pending.mode === "edit" && pending.ctx.scopeMatch === "cross_domain") {
+          const redirectScope = resolveRewindRedirectScope(pending.ctx.targetSessionId, pending.ctx.messageScope);
+          const path = getRedirectPathForScope(redirectScope);
+          if (path) router.push(path);
+          return;
+        }
+
+        if (pending.mode === "delete" && pending.ctx.isFirstMessage) {
+          await deleteThreadFromFirstMessage({
+            targetSessionId: pending.ctx.targetSessionId,
+            topicId: pending.ctx.topicId,
+            revertEditorState: options.revertEditorState,
+            targetScope: pending.ctx.messageScope,
+            scopeMatch: pending.ctx.scopeMatch,
+          });
+          await refreshSessions();
+          return;
+        }
+
+        // Off-feature delete: chat rewind only — never revert editor state.
+        const revertEditorState =
+          pending.mode === "delete" && pending.ctx.scopeMatch === "cross_domain" ? false : options.revertEditorState;
+
+        await runUserMessageRewind(pending.ctx, { revertEditorState });
 
         if (pending.mode === "edit") {
           setEditingUserMessage(null);
@@ -3247,7 +3335,16 @@ const ChatSidebar: React.FC<ChatSidebarProps> = ({ incomingRequest, onRequestHan
         setStreamError(formatUnibotStreamError(err, { source: "rewind" }));
       }
     },
-    [closeRewindConfirm, runUserMessageRewind, sendUserMessageToTopic, sendMainMessage, setStreamError, router]
+    [
+      closeRewindConfirm,
+      deleteThreadFromFirstMessage,
+      refreshSessions,
+      runUserMessageRewind,
+      sendUserMessageToTopic,
+      sendMainMessage,
+      setStreamError,
+      router,
+    ]
   );
 
   const renderEditableUserMessage = useCallback(
@@ -3268,7 +3365,7 @@ const ChatSidebar: React.FC<ChatSidebarProps> = ({ incomingRequest, onRequestHan
       }
 
       return (
-        <>
+        <div className="flex flex-col items-end gap-0.5">
           <div className={bubbleClassName}>
             <span className="whitespace-pre-wrap">{displayText}</span>
           </div>
@@ -3279,7 +3376,7 @@ const ChatSidebar: React.FC<ChatSidebarProps> = ({ incomingRequest, onRequestHan
               onDelete={() => void handleDeleteUserMessage(message, targetSessionId, topicId)}
             />
           ) : null}
-        </>
+        </div>
       );
     },
     [
@@ -4318,6 +4415,34 @@ const ChatSidebar: React.FC<ChatSidebarProps> = ({ incomingRequest, onRequestHan
     ? assessRewindStateRevert(pendingRewindConfirm.ctx.messageScope, pendingRewindConfirm.ctx.scopeMatch)
     : null;
 
+  const canOfferStateRevert = pendingRewindConfirm
+    ? pendingRewindConfirm.mode === "delete" && pendingRewindConfirm.ctx.scopeMatch !== "cross_domain"
+      ? canOfferRevertOnThreadDelete({
+          scopeMatch: pendingRewindConfirm.ctx.scopeMatch,
+          targetSessionId: pendingRewindConfirm.ctx.targetSessionId,
+          messageScope: pendingRewindConfirm.ctx.messageScope,
+          userId: userId ?? "",
+          mainSessionId: resolveMainSessionIdForRevert(pendingRewindConfirm.ctx.targetSessionId, reviewMainSessionId || sessionId),
+          messages,
+          topicId: pendingRewindConfirm.ctx.topicId,
+        }) ||
+        (rewindStateAssessment?.canOfferStateRevert ?? false)
+      : pendingRewindConfirm.mode === "edit" && pendingRewindConfirm.ctx.scopeMatch !== "cross_domain"
+        ? (rewindStateAssessment?.canOfferStateRevert ?? false)
+        : false
+    : false;
+
+  const editFeatureGate: FeatureGateKind = (() => {
+    if (!pendingRewindConfirm || pendingRewindConfirm.mode !== "edit") return "none";
+    if (pendingRewindConfirm.ctx.scopeMatch !== "cross_domain") return "none";
+    const list = queryClient.getQueryData<ResumeData[]>(resumesListQueryKey);
+    const availability = checkFeatureAvailability(pendingRewindConfirm.ctx.messageScope, {
+      knownResumeIds: list?.map(resume => resume.id) ?? [],
+    });
+    if (availability === "missing") return "feature_missing";
+    return "navigate_required";
+  })();
+
   const rewindConfirmDialog = pendingRewindConfirm ? (
     <AdkRewindConfirmDialog
       open
@@ -4327,8 +4452,18 @@ const ChatSidebar: React.FC<ChatSidebarProps> = ({ incomingRequest, onRequestHan
       scopeMatch={pendingRewindConfirm.ctx.scopeMatch}
       featureLabel={getContentScopeFeatureLabel(pendingRewindConfirm.ctx.messageScope)}
       redirectTargetLabel={getContentScopeRedirectLabel(pendingRewindConfirm.ctx.messageScope)}
-      canOfferStateRevert={rewindStateAssessment?.canOfferStateRevert ?? false}
-      showHeavyWorkWarning={rewindStateAssessment?.showHeavyWorkWarning ?? false}
+      canOfferStateRevert={canOfferStateRevert}
+      showHeavyWorkWarning={
+        pendingRewindConfirm.mode === "delete" && canOfferStateRevert
+          ? false
+          : pendingRewindConfirm.ctx.isFirstMessage
+            ? false
+            : (rewindStateAssessment?.showHeavyWorkWarning ?? false)
+      }
+      isFirstMessage={pendingRewindConfirm.mode === "delete" && pendingRewindConfirm.ctx.isFirstMessage}
+      isLastMessage={pendingRewindConfirm.mode === "delete" && pendingRewindConfirm.ctx.isLastMessage}
+      threadDeleteKind={pendingRewindConfirm.ctx.threadDeleteKind}
+      featureGate={editFeatureGate}
       onClose={closeRewindConfirm}
       onConfirm={options => void handleConfirmRewind(options)}
     />
@@ -4391,6 +4526,13 @@ const ChatSidebar: React.FC<ChatSidebarProps> = ({ incomingRequest, onRequestHan
             streamingStatusLabel={streamingStatusLabel}
           />
         </div>
+      ) : nicheDiscoveryActive ? (
+        <div
+          ref={messagesScrollRef}
+          className="flex min-h-0 flex-1 flex-col gap-6 overflow-y-auto overflow-x-hidden bg-white p-4 dark:bg-slate-950 scrollbar-on-hover"
+        >
+          <NicheDiscoveryFocusView />
+        </div>
       ) : (
         <>
           <div
@@ -4412,7 +4554,10 @@ const ChatSidebar: React.FC<ChatSidebarProps> = ({ incomingRequest, onRequestHan
                 seenTopicIds.add(msg.id);
                 return true;
               });
-            })().map(msg => {
+            })().map((msg, messageIndex, allMessages) => {
+              const prevMessage = messageIndex > 0 ? allMessages[messageIndex - 1] : undefined;
+              const tightAfterUser =
+                !msg.isTopic && msg.role === "model" && prevMessage != null && !prevMessage.isTopic && prevMessage.role === "user";
               if (msg.isTopic) {
                 const expanded = msg.isExpanded !== false;
                 const subRow = msg.subSessionAdkId ? getRegistryRow(msg.subSessionAdkId) : undefined;
@@ -4487,7 +4632,7 @@ const ChatSidebar: React.FC<ChatSidebarProps> = ({ incomingRequest, onRequestHan
                         ) : null}
                         <div className="flex flex-col gap-4 mb-3">
                           {groupSubMessagesIntoTurns(compactTopicSubMessages(msg.messages ?? [], activeStreamingMessageId)).map(turn => (
-                            <div key={turn.map(m => m.id).join(":")} className="flex flex-col gap-1.5">
+                            <div key={turn.map(m => m.id).join(":")} className="flex flex-col gap-0.5">
                               {turn.map(subMsg => {
                                 const isContentGen = msg.topicKind === "content_gen";
                                 const isApplicationAsset = msg.topicKind === "application_asset";
@@ -4584,7 +4729,7 @@ const ChatSidebar: React.FC<ChatSidebarProps> = ({ incomingRequest, onRequestHan
                                     {subMsg.isError ? (
                                       <UnibotErrorBubble message={subMsg} onRetry={retryFailedStream} />
                                     ) : hasActionCard ? (
-                                      <div className="group flex max-w-full flex-col items-end">
+                                      <div className="flex max-w-full flex-col items-end">
                                         <RefineActionCard meta={subMsg.assetActionMeta!} />
                                         {subMsg.invocationId ? (
                                           <UnibotUserMessageToolbar
@@ -4596,7 +4741,7 @@ const ChatSidebar: React.FC<ChatSidebarProps> = ({ incomingRequest, onRequestHan
                                       </div>
                                     ) : showModelBubble || showUserBubble ? (
                                       subMsg.role === "user" && showUserBubble ? (
-                                        <div className="group flex max-w-full flex-col items-end">
+                                        <div className="flex max-w-full flex-col items-end">
                                           {renderEditableUserMessage(
                                             subMsg,
                                             msg.subSessionAdkId ?? sessionId,
@@ -4621,34 +4766,39 @@ const ChatSidebar: React.FC<ChatSidebarProps> = ({ incomingRequest, onRequestHan
                                               });
                                           if (!modelVisibleText && !streamingPlaceholder) return null;
                                           return (
-                                            <div className="text-[13px] py-2 px-3 leading-relaxed text-slate-600 dark:text-slate-300">
-                                              {modelVisibleText ? (
-                                                <>
-                                                  <FormattedAgentMessage content={modelVisibleText} />
-                                                  {(() => {
-                                                    const followUp = getFollowUpStreamActivityLabel(
-                                                      subMsg.id,
-                                                      liveStreamActivity,
-                                                      streamActivityLabel,
-                                                      {
-                                                        agentLoading: isAgentLoading,
-                                                        isSyncingContext,
-                                                        hasVisibleText: true,
-                                                        waitingLabel: streamingStatusLabel,
-                                                      }
-                                                    );
-                                                    if (!followUp) return null;
-                                                    return (
-                                                      <div className="mt-2 flex items-center gap-2 text-slate-400">
-                                                        <Loader2 size={12} className="animate-spin shrink-0" />
-                                                        <span className="text-xs">{followUp}</span>
-                                                      </div>
-                                                    );
-                                                  })()}
-                                                </>
-                                              ) : (
-                                                streamingPlaceholder
-                                              )}
+                                            <div className="flex max-w-full flex-col items-start gap-0.5">
+                                              <div className="px-3 pb-2 pt-0 text-[13px] leading-relaxed text-slate-600 dark:text-slate-300">
+                                                {modelVisibleText ? (
+                                                  <>
+                                                    <FormattedAgentMessage content={modelVisibleText} />
+                                                    {(() => {
+                                                      const followUp = getFollowUpStreamActivityLabel(
+                                                        subMsg.id,
+                                                        liveStreamActivity,
+                                                        streamActivityLabel,
+                                                        {
+                                                          agentLoading: isAgentLoading,
+                                                          isSyncingContext,
+                                                          hasVisibleText: true,
+                                                          waitingLabel: streamingStatusLabel,
+                                                        }
+                                                      );
+                                                      if (!followUp) return null;
+                                                      return (
+                                                        <div className="mt-2 flex items-center gap-2 text-slate-400">
+                                                          <Loader2 size={12} className="animate-spin shrink-0" />
+                                                          <span className="text-xs">{followUp}</span>
+                                                        </div>
+                                                      );
+                                                    })()}
+                                                  </>
+                                                ) : (
+                                                  streamingPlaceholder
+                                                )}
+                                              </div>
+                                              {modelVisibleText && subMsg.id !== "welcome" ? (
+                                                <UnibotBotMessageToolbar textToCopy={modelVisibleText} />
+                                              ) : null}
                                             </div>
                                           );
                                         })()
@@ -4835,8 +4985,8 @@ const ChatSidebar: React.FC<ChatSidebarProps> = ({ incomingRequest, onRequestHan
                           </div>
                         ) : null}
 
-                        {/* Topic Input - Seamless (nextjs layout; textarea for multi-line) */}
-                        <div className="relative flex items-center gap-2 pt-2">
+                        {/* Topic Input — no chrome until focused; send bottom-right while focused */}
+                        <div className="group/topic-reply relative mt-1 rounded-lg border-0 bg-transparent px-0 pb-0 pt-1 shadow-none outline-none ring-0 transition-[border-color,background-color,box-shadow,padding] duration-200 ease-out focus-within:border focus-within:border-slate-200/80 focus-within:bg-white/60 focus-within:px-2.5 focus-within:pb-8 focus-within:pt-1.5 focus-within:shadow-sm dark:focus-within:border-slate-600/50 dark:focus-within:bg-slate-900/40">
                           <textarea
                             ref={el => {
                               topicInputRefs.current[msg.id] = el;
@@ -4858,13 +5008,15 @@ const ChatSidebar: React.FC<ChatSidebarProps> = ({ incomingRequest, onRequestHan
                             placeholder="Reply..."
                             rows={1}
                             disabled={!canSend}
-                            className="max-h-48 flex-1 resize-none overflow-y-auto border-none bg-transparent py-2 text-[13px] outline-none text-slate-700 placeholder:text-slate-300 transition-colors disabled:opacity-50 dark:text-slate-200 dark:placeholder:text-slate-700"
+                            className="max-h-48 w-full resize-none overflow-y-auto border-0 bg-transparent py-1.5 text-[13px] text-slate-700 outline-none ring-0 placeholder:text-slate-500 transition-colors focus:border-0 focus:outline-none focus:ring-0 disabled:opacity-50 dark:text-slate-200 dark:placeholder:text-slate-400"
                           />
                           <button
                             type="button"
+                            tabIndex={-1}
+                            onMouseDown={e => e.preventDefault()}
                             onClick={() => handleTopicSend(msg.id)}
                             disabled={!topicInputs[msg.id]?.trim() || !canSend}
-                            className="p-2 text-slate-300 transition-all hover:text-brand-600 disabled:opacity-0"
+                            className="pointer-events-none absolute bottom-1.5 right-1.5 p-1.5 text-slate-300 opacity-0 transition-opacity hover:text-brand-600 group-focus-within/topic-reply:pointer-events-auto group-focus-within/topic-reply:opacity-100 disabled:opacity-0"
                             aria-label="Send reply"
                           >
                             <Send size={16} />
@@ -4894,11 +5046,14 @@ const ChatSidebar: React.FC<ChatSidebarProps> = ({ incomingRequest, onRequestHan
                       : msg.text;
 
               return (
-                <div key={msg.id} className={`flex min-w-0 flex-col gap-1 ${msg.role === "user" ? "items-end" : "items-start"}`}>
+                <div
+                  key={msg.id}
+                  className={`flex min-w-0 flex-col gap-1 ${msg.role === "user" ? "items-end" : "items-start"} ${tightAfterUser ? "-mt-3" : ""}`}
+                >
                   {msg.isError ? (
                     <UnibotErrorBubble message={msg} onRetry={retryFailedStream} />
                   ) : msg.role === "user" && msg.text ? (
-                    <div className="group flex max-w-[90%] flex-col items-end">
+                    <div className="flex max-w-[90%] flex-col items-end">
                       {renderEditableUserMessage(
                         msg,
                         sessionId,
@@ -4935,29 +5090,32 @@ const ChatSidebar: React.FC<ChatSidebarProps> = ({ incomingRequest, onRequestHan
                           });
                       if (!mainModelVisible && !streamingPlaceholder) return null;
                       return (
-                        <div className="max-w-full bg-transparent px-1 text-[13px] leading-relaxed text-slate-600 dark:text-slate-300">
-                          {mainModelVisible ? (
-                            <>
-                              <FormattedAgentMessage content={mainModelVisible} />
-                              {(() => {
-                                const followUp = getFollowUpStreamActivityLabel(msg.id, liveStreamActivity, streamActivityLabel, {
-                                  agentLoading: isAgentLoading,
-                                  isSyncingContext,
-                                  hasVisibleText: true,
-                                  waitingLabel: streamingStatusLabel,
-                                });
-                                if (!followUp) return null;
-                                return (
-                                  <div className="mt-2 flex items-center gap-2 text-slate-400 px-1">
-                                    <Loader2 size={12} className="animate-spin shrink-0" />
-                                    <span className="text-xs">{followUp}</span>
-                                  </div>
-                                );
-                              })()}
-                            </>
-                          ) : (
-                            streamingPlaceholder
-                          )}
+                        <div className="flex max-w-full flex-col items-start gap-0.5">
+                          <div className="max-w-full bg-transparent px-1 text-[13px] leading-relaxed text-slate-600 dark:text-slate-300">
+                            {mainModelVisible ? (
+                              <>
+                                <FormattedAgentMessage content={mainModelVisible} />
+                                {(() => {
+                                  const followUp = getFollowUpStreamActivityLabel(msg.id, liveStreamActivity, streamActivityLabel, {
+                                    agentLoading: isAgentLoading,
+                                    isSyncingContext,
+                                    hasVisibleText: true,
+                                    waitingLabel: streamingStatusLabel,
+                                  });
+                                  if (!followUp) return null;
+                                  return (
+                                    <div className="mt-2 flex items-center gap-2 text-slate-400 px-1">
+                                      <Loader2 size={12} className="animate-spin shrink-0" />
+                                      <span className="text-xs">{followUp}</span>
+                                    </div>
+                                  );
+                                })()}
+                              </>
+                            ) : (
+                              streamingPlaceholder
+                            )}
+                          </div>
+                          {mainModelVisible && msg.id !== "welcome" ? <UnibotBotMessageToolbar textToCopy={mainModelVisible} /> : null}
                         </div>
                       );
                     })()

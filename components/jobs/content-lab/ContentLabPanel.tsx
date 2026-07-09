@@ -1,4 +1,6 @@
 import React from "react";
+import { ComingSoonBadge } from "@/components/ui/ComingSoonBadge";
+import { VPD_FEATURE_ENABLED } from "@/constants/feature-flags";
 import { ArrowRight, FileText, Mail, UserCheck, Sparkles } from "lucide-react";
 import { GeneratorContext } from "../../../types/jobs";
 
@@ -76,13 +78,24 @@ export default function ContentLabPanel({ onNavigateToStudio }: ContentLabPanelP
       <div className="relative z-10 grid grid-cols-2 gap-3 sm:grid-cols-4 sm:gap-4">
         {CONTENT_LAB_TOOLS.map(tool => {
           const Icon = tool.icon;
+          const isLocked = tool.type === "vpd" && !VPD_FEATURE_ENABLED;
           return (
             <button
               key={tool.name}
               type="button"
-              onClick={() => onNavigateToStudio({ type: tool.type })}
-              className={`group relative flex cursor-pointer flex-col items-center justify-start gap-4 rounded-2xl border border-slate-200 bg-white px-4 pb-6 pt-6 text-center shadow-sm transition-all duration-300 ease-in-out hover:-translate-y-1 hover:shadow-md dark:border-slate-800 dark:bg-slate-900/50 dark:hover:bg-slate-800 ${tool.hoverBorderClass}`}
+              onClick={() => {
+                if (isLocked) return;
+                onNavigateToStudio({ type: tool.type });
+              }}
+              disabled={isLocked}
+              title={isLocked ? "Coming soon" : undefined}
+              className={`group relative flex cursor-pointer flex-col items-center justify-start gap-4 rounded-2xl border px-4 pb-6 pt-6 text-center shadow-sm transition-all duration-300 ease-in-out ${
+                isLocked
+                  ? "cursor-not-allowed border-slate-200/80 bg-slate-50/50 dark:border-slate-800 dark:bg-slate-900/30"
+                  : "border-slate-200 bg-white hover:-translate-y-1 hover:shadow-md dark:border-slate-800 dark:bg-slate-900/50 dark:hover:bg-slate-800"
+              } ${!isLocked ? tool.hoverBorderClass : ""}`}
             >
+              {isLocked ? <ComingSoonBadge variant="corner" className="right-2 top-2" /> : null}
               <div
                 className={`flex h-12 w-12 items-center justify-center rounded-full transition-transform duration-300 group-hover:scale-110 ${tool.iconBgClass} ${tool.iconColorClass}`}
               >

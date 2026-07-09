@@ -6,11 +6,14 @@
 export type StreamActivitySnapshot = {
   activityLabel: string | null;
   assistantMessageId: string | null;
+  /** True from optimistic Improve/send until the SSE stream finishes. */
+  submitInFlight: boolean;
 };
 
 let snapshot: StreamActivitySnapshot = {
   activityLabel: null,
   assistantMessageId: null,
+  submitInFlight: false,
 };
 
 const listeners = new Set<() => void>();
@@ -24,13 +27,13 @@ export function subscribeStreamActivity(listener: () => void): () => void {
   return () => listeners.delete(listener);
 }
 
-export function setStreamActivitySnapshot(next: StreamActivitySnapshot): void {
-  snapshot = next;
+export function setStreamActivitySnapshot(next: Partial<StreamActivitySnapshot>): void {
+  snapshot = { ...snapshot, ...next };
   for (const listener of listeners) {
     listener();
   }
 }
 
 export function clearStreamActivitySnapshot(): void {
-  setStreamActivitySnapshot({ activityLabel: null, assistantMessageId: null });
+  setStreamActivitySnapshot({ activityLabel: null, assistantMessageId: null, submitInFlight: false });
 }

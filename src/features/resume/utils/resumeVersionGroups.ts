@@ -14,57 +14,44 @@ export function getVersionRootTitle(title: string): string {
   return match ? match[1] : title;
 }
 
-function getVersionSuffixNumber(title: string, rootTitle: string): number | null {
-  if (title === rootTitle) {
-    return 0;
+type ResumeVersionInput = Pick<ResumeData, "id" | "title" | "duplicatedFrom">;
+
+function findVersionRootId(resume: ResumeVersionInput, byId: Map<string, ResumeVersionInput>): string {
+  let current = resume;
+  const seen = new Set<string>();
+
+  while (current.duplicatedFrom && !seen.has(current.id)) {
+    seen.add(current.id);
+    const parent = byId.get(current.duplicatedFrom);
+    if (!parent) {
+      break;
+    }
+    current = parent;
   }
 
-  const match = title.match(VERSION_SUFFIX_PATTERN);
-  if (!match || match[1] !== rootTitle) {
-    return null;
-  }
-
-  return Number.parseInt(match[2], 10);
+  return current.id;
 }
 
-export function buildResumeVersionMetadata(resumes: Pick<ResumeData, "id" | "title">[]): Map<string, ResumeVersionMetadata> {
-  const families = new Map<string, Pick<ResumeData, "id" | "title">[]>();
+export function buildResumeVersionMetadata(resumes: ResumeVersionInput[]): Map<string, ResumeVersionMetadata> {
+  const byId = new Map(resumes.map(resume => [resume.id, resume]));
+  const families = new Map<string, ResumeVersionInput[]>();
 
   for (const resume of resumes) {
-    const rootTitle = getVersionRootTitle(resume.title);
-    const members = families.get(rootTitle) ?? [];
+    const rootId = findVersionRootId(resume, byId);
+    const members = families.get(rootId) ?? [];
     members.push(resume);
-    families.set(rootTitle, members);
+    families.set(rootId, members);
   }
 
   const metadata = new Map<string, ResumeVersionMetadata>();
 
-  for (const [rootTitle, members] of families) {
+  for (const [rootId, members] of families) {
     const familySize = members.length;
-    let rootCardId = members[0]?.id ?? "";
-
-    if (familySize > 1) {
-      const exactRoot = members.find(member => member.title === rootTitle);
-      if (exactRoot) {
-        rootCardId = exactRoot.id;
-      } else {
-        let lowestSuffixMember = members[0];
-        let lowestSuffix = Number.POSITIVE_INFINITY;
-
-        for (const member of members) {
-          const suffix = getVersionSuffixNumber(member.title, rootTitle);
-          if (suffix !== null && suffix < lowestSuffix) {
-            lowestSuffix = suffix;
-            lowestSuffixMember = member;
-          }
-        }
-
-        rootCardId = lowestSuffixMember.id;
-      }
-    }
+    const rootResume = byId.get(rootId);
+    const rootTitle = rootResume?.title ?? members[0]?.title ?? "";
 
     for (const member of members) {
-      const isRootCard = member.id === rootCardId;
+      const isRootCard = member.id === rootId;
       metadata.set(member.id, {
         rootTitle,
         familySize,

@@ -75,11 +75,35 @@ export const useProfileBuilderStore = create<ProfileBuilderStore>((set, get) => 
     if (section === "projects") set(state => ({ engine: { ...state.engine, draftProject: {} } }));
   },
   setEducations: educations => set(state => ({ data: { ...state.data, educations } })),
-  setExperiences: experiences => set(state => ({ data: { ...state.data, experiences } })),
-  setProjects: projects => set(state => ({ data: { ...state.data, projects } })),
+  setExperiences: experiences =>
+    set(state => ({
+      data: {
+        ...state.data,
+        experiences,
+        experienceSkipped: experiences.length > 0 ? false : state.data.experienceSkipped,
+      },
+    })),
+  setProjects: projects =>
+    set(state => ({
+      data: {
+        ...state.data,
+        projects,
+        projectsSkipped: projects.length > 0 ? false : state.data.projectsSkipped,
+      },
+    })),
   setSkills: skills => set(state => ({ data: { ...state.data, skills } })),
-  markExperienceSkipped: () => set(state => ({ data: { ...state.data, experienceSkipped: true } })),
-  markProjectsSkipped: () => set(state => ({ data: { ...state.data, projectsSkipped: true } })),
+  markExperienceSkipped: () =>
+    set(state => ({
+      data: {
+        ...state.data,
+        experienceSkipped: !state.data.experienceSkipped,
+        experiences: state.data.experienceSkipped ? state.data.experiences : [],
+      },
+    })),
+  markProjectsSkipped: () =>
+    set(state => ({
+      data: { ...state.data, projectsSkipped: true },
+    })),
   reset: () =>
     set({
       data: { ...EMPTY_PROFILE },

@@ -12,6 +12,7 @@ export type FeatureGates = {
   linkedin_section_improve: boolean;
   application_assets_draft: boolean;
   strengths_recommended: boolean;
+  niche_refine_available: boolean;
   jobs_prepare_application: boolean;
   jobs_recommended_roles: boolean;
 };
@@ -30,6 +31,7 @@ export const DEFAULT_FEATURE_GATES: FeatureGates = {
   linkedin_section_improve: false,
   application_assets_draft: false,
   strengths_recommended: false,
+  niche_refine_available: false,
   jobs_prepare_application: false,
   jobs_recommended_roles: false,
 };
@@ -51,6 +53,7 @@ export function parseFeatureGates(raw: unknown): FeatureGates {
     linkedin_section_improve: Boolean(g.linkedin_section_improve),
     application_assets_draft: Boolean(g.application_assets_draft),
     strengths_recommended: Boolean(g.strengths_recommended),
+    niche_refine_available: Boolean(g.niche_refine_available),
     jobs_prepare_application: Boolean(g.jobs_prepare_application),
     jobs_recommended_roles: Boolean(g.jobs_recommended_roles),
   };
@@ -60,9 +63,9 @@ export type OnboardingPromptKind = "niche" | "strengths" | "profile_setup";
 
 export const ONBOARDING_PROMPT_COPY: Record<OnboardingPromptKind, { title: string; body: string; cta: string }> = {
   niche: {
-    title: "Find your niche first",
-    body: "Finish niche discovery so Unibot can tailor resumes, job matches, and content to your target role.",
-    cta: "Complete niche step",
+    title: "Refine your target role",
+    body: "Answer a few questions so we can suggest a niche that fits you better.",
+    cta: "Refine niche",
   },
   strengths: {
     title: "Add your strengths",
@@ -79,5 +82,11 @@ export const ONBOARDING_PROMPT_COPY: Record<OnboardingPromptKind, { title: strin
 export function onboardingHref(kind: OnboardingPromptKind): string {
   if (kind === "niche") return "/uniboard/onboarding?mode=niche";
   if (kind === "strengths") return "/uniboard/onboarding?mode=strengths";
-  return "/uniboard/onboarding";
+  // Jump into resume/profile-builder step for users finishing after minimal entry.
+  return "/uniboard/onboarding?mode=profile_setup";
+}
+
+/** Soft “finish onboarding” CTA — field-based, not timestamp-based. */
+export function needsProfileSetup(gates: Pick<FeatureGates, "profile_setup_complete" | "niche_complete">): boolean {
+  return !gates.profile_setup_complete || !gates.niche_complete;
 }

@@ -10,6 +10,7 @@ export const MUTATING_RESUME_TOOL_NAMES = new Set<string>([
   "add_education",
   "remove_education",
   "update_experience",
+  "update_experience_description",
   "add_experience",
   "remove_experience",
   "add_bullet",
@@ -509,6 +510,7 @@ export function labelForToolCall(name: string, args?: Record<string, unknown>): 
     case "remove_education":
       return "Refreshing your education…";
     case "update_experience":
+    case "update_experience_description":
     case "add_experience":
     case "remove_experience":
     case "add_bullet":
@@ -610,6 +612,7 @@ export function labelForMutatingToolResponse(name: string): string {
     case "remove_education":
       return "Education updated — refreshing your view…";
     case "update_experience":
+    case "update_experience_description":
     case "add_experience":
     case "remove_experience":
     case "add_bullet":
@@ -667,6 +670,7 @@ export function completionMessageForMutatingTool(name: string): string | null {
     case "remove_education":
       return "I've updated your education section. Review the highlighted changes in the editor.";
     case "update_experience":
+    case "update_experience_description":
     case "add_experience":
     case "remove_experience":
     case "add_bullet":

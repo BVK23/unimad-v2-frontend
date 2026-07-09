@@ -1,3 +1,4 @@
+import { nextResumeEntryId } from "@/features/resume/utils/resume-entry-ids";
 import type { ResumeData, ResumeEducation, ResumeExperience, ResumeSkill } from "@/types";
 
 const DEFAULT_SUMMARY =
@@ -25,7 +26,7 @@ export function applyAtsFixes(resume: ResumeData): ResumeData {
 
   if (next.experience.length === 0) {
     const placeholder: ResumeExperience = {
-      id: `exp-fix-${Date.now()}`,
+      id: nextResumeEntryId([], "exp"),
       company: "Company Name",
       role: "Your Role",
       startDate: "",
@@ -51,7 +52,13 @@ export function applyAtsFixes(resume: ResumeData): ResumeData {
     for (const name of DEFAULT_SKILLS) {
       if (next.skills.length + toAdd.length >= 4) break;
       if (!existingNames.has(name.toLowerCase())) {
-        toAdd.push({ id: `skill-fix-${Date.now()}-${toAdd.length}`, name });
+        toAdd.push({
+          id: nextResumeEntryId(
+            [...next.skills, ...toAdd].map(s => s.id),
+            "skill"
+          ),
+          name,
+        });
         existingNames.add(name.toLowerCase());
       }
     }
@@ -60,7 +67,7 @@ export function applyAtsFixes(resume: ResumeData): ResumeData {
 
   if (next.education.length === 0) {
     const placeholder: ResumeEducation = {
-      id: `edu-fix-${Date.now()}`,
+      id: nextResumeEntryId([], "edu"),
       school: "University Name",
       degree: "Degree / Program",
       startDate: "",

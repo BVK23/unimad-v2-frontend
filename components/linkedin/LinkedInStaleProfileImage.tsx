@@ -1,25 +1,11 @@
 "use client";
 
 import React, { useEffect, useState } from "react";
+import { HoverTooltip } from "@/components/ui/HoverTooltip";
 import { ImageOff } from "lucide-react";
 
 const STALE_IMAGE_TOOLTIP =
   "LinkedIn rotates image links over time, so previews from your last analysis may no longer load. Re-Analyze to refresh your photos and scores.";
-
-function StaleImageTooltip({ children }: { children: React.ReactNode }) {
-  return (
-    <div className="group/stale-img relative h-full w-full cursor-help" title={STALE_IMAGE_TOOLTIP}>
-      {children}
-      <div
-        role="tooltip"
-        className="pointer-events-none invisible absolute top-full left-1/2 z-50 mt-2 w-56 -translate-x-1/2 rounded-lg border border-slate-700 bg-slate-900 p-2.5 text-[11px] leading-snug text-white opacity-0 shadow-xl transition-all group-hover/stale-img:visible group-hover/stale-img:opacity-100"
-      >
-        {STALE_IMAGE_TOOLTIP}
-        <div className="absolute bottom-full left-1/2 -translate-x-1/2 border-4 border-transparent border-b-slate-900" />
-      </div>
-    </div>
-  );
-}
 
 type LinkedInStaleProfileImageProps = {
   src: string | null | undefined;
@@ -61,7 +47,11 @@ export function LinkedInStaleProfileImage({
       );
 
     if (trimmedSrc && failed) {
-      return <StaleImageTooltip>{fallback}</StaleImageTooltip>;
+      return (
+        <HoverTooltip content={STALE_IMAGE_TOOLTIP} side="bottom" className="h-full w-full cursor-help">
+          {fallback}
+        </HoverTooltip>
+      );
     }
 
     return fallback;

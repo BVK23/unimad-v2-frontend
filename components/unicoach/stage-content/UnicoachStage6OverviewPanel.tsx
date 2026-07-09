@@ -1,6 +1,8 @@
 "use client";
 
 import { useState } from "react";
+import { ComingSoonBadge } from "@/components/ui/ComingSoonBadge";
+import { VPD_FEATURE_ENABLED } from "@/constants/feature-flags";
 import { UNICOACH_VPD_VIDEO_URL } from "@/constants/unicoach-niche-content";
 import { ChevronDown, ChevronUp, ExternalLink } from "lucide-react";
 import Link from "next/link";
@@ -42,13 +44,22 @@ export const UnicoachStage6OverviewPanel = () => (
         <li>How do you fit in with the company culture?</li>
       </ul>
       <p className="mt-3 text-sm text-slate-600 dark:text-slate-300">Because in 2025, proactive candidates win.</p>
-      <Link
-        href="/uniboard/applications/vpd"
-        className="mt-3 inline-flex items-center gap-2 rounded-xl bg-brand-600 px-4 py-2 text-sm font-medium text-white hover:bg-brand-700"
-      >
-        Generate VPD
-        <ExternalLink size={14} />
-      </Link>
+      {VPD_FEATURE_ENABLED ? (
+        <Link
+          href="/uniboard/studio?type=vpd"
+          className="mt-3 inline-flex items-center gap-2 rounded-xl bg-brand-600 px-4 py-2 text-sm font-medium text-white hover:bg-brand-700"
+        >
+          Generate VPD
+          <ExternalLink size={14} />
+        </Link>
+      ) : (
+        <div
+          className="mt-3 inline-flex items-center gap-2 rounded-xl border border-dashed border-brand-200/80 bg-brand-50/40 px-4 py-2.5 dark:border-brand-900/50 dark:bg-brand-950/20"
+          title="Coming soon"
+        >
+          <ComingSoonBadge label="coming-soon" />
+        </div>
+      )}
     </Accordion>
 
     <Accordion title="Interview preparation">

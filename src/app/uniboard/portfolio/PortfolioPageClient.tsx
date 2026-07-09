@@ -3,11 +3,14 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import Portfolio from "@/components/Portfolio";
 import PortfolioCreatingOverlay from "@/components/portfolio/PortfolioCreatingOverlay";
+import { UniboardHelpFloater } from "@/components/uniboard/UniboardHelpFloater";
 import { useOnboardingGate } from "@/features/onboarding/context/OnboardingGateContext";
 import { onboardingHref } from "@/features/onboarding/featureGates";
+import { mapBackendPortfolioToFrontend } from "@/features/portfolio/api/mappers";
 import type { PortfolioCreationVariant } from "@/features/portfolio/constants/portfolioCreationCopy";
-import { defaultBootstrapCreateInput, useCreatePortfolio } from "@/features/portfolio/hooks/useCreatePortfolio";
+import { blankPortfolioCreateInput, defaultBootstrapCreateInput, useCreatePortfolio } from "@/features/portfolio/hooks/useCreatePortfolio";
 import { usePortfolio } from "@/features/portfolio/hooks/usePortfolio";
+import { replacePortfolioTemplate } from "@/features/portfolio/server-actions/portfolio-actions";
 import { usePortfolioStore } from "@/features/portfolio/store/usePortfolioStore";
 import Link from "next/link";
 
@@ -29,14 +32,17 @@ const getFriendlyLoadError = (err: unknown) => {
   return message;
 };
 
+const POST_ONBOARDING_PROMPT_KEY = "portfolio-post-onboarding-generate-prompt-dismissed";
+
 /**
  * Single-portfolio UX: load (or bootstrap-create) the user's portfolio and open the editor directly.
- * No multi-portfolio dashboard or base-portfolio picker.
  */
 export default function PortfolioPageClient() {
   const bootstrapAttemptedRef = useRef(false);
-  const { featureGates, promptOnboarding } = useOnboardingGate();
-  const [onboardingHintDismissed, setOnboardingHintDismissed] = useState(false);
+  const { featureGates } = useOnboardingGate();
+  const [onboardingModalDismissed, setOnboardingModalDismissed] = useState(false);
+  const [showPostOnboardingPrompt, setShowPostOnboardingPrompt] = useState(false);
+  const [isGeneratingTemplate, setIsGeneratingTemplate] = useState(false);
   const canAutoCreate = featureGates.portfolio_auto_create;
   const portfolioQuery = usePortfolio();
   const createPortfolioMutation = useCreatePortfolio();
@@ -53,34 +59,36 @@ export default function PortfolioPageClient() {
 
   const { mutate: mutateCreatePortfolio, isPending: isCreatePending, isError: isCreateError } = createPortfolioMutation;
 
+  const createInput = canAutoCreate ? defaultBootstrapCreateInput : blankPortfolioCreateInput;
+
   useEffect(() => {
-    if (!canAutoCreate) {
-      return;
-    }
-    if (portfolioQuery.isLoading || portfolioQuery.isFetching) {
-      return;
-    }
-    if (portfolioQuery.isError) {
-      return;
-    }
-    if (portfolioQuery.data) {
-      return;
-    }
-    if (bootstrapAttemptedRef.current || isCreatePending) {
-      return;
-    }
+    if (portfolioQuery.isLoading || portfolioQuery.isFetching) return;
+    if (portfolioQuery.isError) return;
+    if (portfolioQuery.data) return;
+    if (bootstrapAttemptedRef.current || isCreatePending) return;
 
     bootstrapAttemptedRef.current = true;
-    mutateCreatePortfolio(defaultBootstrapCreateInput);
+    mutateCreatePortfolio(createInput);
   }, [
+    createInput,
     isCreatePending,
     mutateCreatePortfolio,
     portfolioQuery.data,
     portfolioQuery.isError,
     portfolioQuery.isFetching,
     portfolioQuery.isLoading,
-    canAutoCreate,
   ]);
+
+  useEffect(() => {
+    if (!canAutoCreate || !displayPortfolio?.id) return;
+    if (typeof window === "undefined") return;
+    if (window.sessionStorage.getItem(POST_ONBOARDING_PROMPT_KEY) === "1") return;
+    const items = displayPortfolio.items ?? [];
+    const isBlankish = items.length <= 1;
+    if (isBlankish) {
+      setShowPostOnboardingPrompt(true);
+    }
+  }, [canAutoCreate, displayPortfolio?.id, displayPortfolio?.items]);
 
   const awaitingBootstrap = useMemo(
     () => portfolioQuery.isFetched && !portfolioQuery.data && !displayPortfolio?.id && !isCreateError,
@@ -88,18 +96,10 @@ export default function PortfolioPageClient() {
   );
 
   const phase: PortfolioCreationPhase = useMemo(() => {
-    if ((isCreateError || portfolioQuery.isError) && !displayPortfolio?.id) {
-      return "error";
-    }
-    if (portfolioQuery.isLoading && !portfolioQuery.data) {
-      return "fetching";
-    }
-    if (isCreatePending || awaitingBootstrap) {
-      return "creating";
-    }
-    if (displayPortfolio?.id) {
-      return "ready";
-    }
+    if ((isCreateError || portfolioQuery.isError) && !displayPortfolio?.id) return "error";
+    if (portfolioQuery.isLoading && !portfolioQuery.data) return "fetching";
+    if (isCreatePending || awaitingBootstrap) return "creating";
+    if (displayPortfolio?.id) return "ready";
     return "idle";
   }, [
     awaitingBootstrap,
@@ -111,15 +111,42 @@ export default function PortfolioPageClient() {
     portfolioQuery.isLoading,
   ]);
 
-  const activeOverlayVariant: PortfolioCreationVariant = phase === "fetching" ? "fetch" : "ai_initial";
+  const activeOverlayVariant: PortfolioCreationVariant = phase === "fetching" ? "fetch" : canAutoCreate ? "ai_initial" : "blank";
 
   const handleRetryCreate = () => {
     createPortfolioMutation.reset();
     bootstrapAttemptedRef.current = true;
-    mutateCreatePortfolio(defaultBootstrapCreateInput);
+    mutateCreatePortfolio(createInput);
   };
 
-  const showOverlay = (phase === "fetching" || phase === "creating") && !displayPortfolio?.id;
+  const handleGeneratePersonalizedPortfolio = async () => {
+    if (typeof window !== "undefined") {
+      window.sessionStorage.setItem(POST_ONBOARDING_PROMPT_KEY, "1");
+    }
+    setShowPostOnboardingPrompt(false);
+    setIsGeneratingTemplate(true);
+    try {
+      const response = await replacePortfolioTemplate();
+      const portfolio = mapBackendPortfolioToFrontend(response.assetData);
+      if (portfolio.id) {
+        usePortfolioStore.getState().setPortfolioData(portfolio.id, portfolio);
+      }
+      await portfolioQuery.refetch();
+    } catch {
+      // User can retry from floater
+    } finally {
+      setIsGeneratingTemplate(false);
+    }
+  };
+
+  const dismissPostOnboardingPrompt = () => {
+    if (typeof window !== "undefined") {
+      window.sessionStorage.setItem(POST_ONBOARDING_PROMPT_KEY, "1");
+    }
+    setShowPostOnboardingPrompt(false);
+  };
+
+  const showCreatingOverlay = (phase === "fetching" || phase === "creating") && !displayPortfolio?.id;
   const loadErrorMessage = portfolioQuery.isError ? getFriendlyLoadError(portfolioQuery.error) : null;
   const createErrorMessage = isCreateError ? getFriendlyCreateError(createPortfolioMutation.error) : null;
   const errorMessage = loadErrorMessage ?? createErrorMessage;
@@ -132,64 +159,7 @@ export default function PortfolioPageClient() {
     handleRetryCreate();
   };
 
-  if (!canAutoCreate && !displayPortfolio?.id) {
-    return (
-      <div className="relative flex h-full min-h-[40vh] flex-col items-center justify-center gap-6 px-6 py-10 text-center">
-        {!onboardingHintDismissed ? (
-          <div className="w-full max-w-md rounded-2xl border border-slate-200 bg-white p-6 shadow-lg dark:border-slate-800 dark:bg-slate-900">
-            <h2 className="text-lg font-semibold text-slate-900 dark:text-white">Finish onboarding for a personalised portfolio</h2>
-            <p className="mt-2 text-sm text-slate-600 dark:text-slate-300">
-              Complete niche discovery (and optionally strengths) so Unibot can generate a portfolio tailored to you — or start from a blank
-              template.
-            </p>
-            <div className="mt-5 flex flex-col gap-2 sm:flex-row">
-              <Link
-                href={onboardingHref("niche")}
-                className="inline-flex flex-1 items-center justify-center rounded-xl bg-brand-600 px-4 py-3 text-sm font-medium text-white hover:bg-brand-700"
-              >
-                Complete onboarding
-              </Link>
-              <button
-                type="button"
-                onClick={() => {
-                  setOnboardingHintDismissed(true);
-                  bootstrapAttemptedRef.current = true;
-                  mutateCreatePortfolio(defaultBootstrapCreateInput);
-                }}
-                className="inline-flex flex-1 items-center justify-center rounded-xl border border-slate-200 px-4 py-3 text-sm font-medium text-slate-700 hover:bg-slate-50 dark:border-slate-700 dark:text-slate-200"
-              >
-                Start from scratch
-              </button>
-            </div>
-            <button
-              type="button"
-              onClick={() => setOnboardingHintDismissed(true)}
-              className="mt-4 text-xs text-slate-400 hover:text-slate-600"
-            >
-              Dismiss
-            </button>
-          </div>
-        ) : (
-          <div className="flex flex-col items-center gap-4">
-            <p className="max-w-sm text-sm text-slate-500">Start a blank portfolio or finish onboarding for AI-generated content.</p>
-            <button
-              type="button"
-              onClick={() => {
-                bootstrapAttemptedRef.current = true;
-                mutateCreatePortfolio(defaultBootstrapCreateInput);
-              }}
-              className="rounded-full bg-brand-600 px-6 py-2.5 text-sm font-semibold text-white hover:bg-brand-700"
-            >
-              Create blank portfolio
-            </button>
-            <button type="button" onClick={() => promptOnboarding("niche")} className="text-sm text-brand-600 hover:underline">
-              Finish onboarding instead
-            </button>
-          </div>
-        )}
-      </div>
-    );
-  }
+  const showOnboardingGateModal = !canAutoCreate && displayPortfolio?.id && !onboardingModalDismissed;
 
   if (phase === "error" && !displayPortfolio) {
     return (
@@ -214,7 +184,7 @@ export default function PortfolioPageClient() {
     );
   }
 
-  if (showOverlay) {
+  if (showCreatingOverlay) {
     return (
       <div className="relative h-full">
         <PortfolioCreatingOverlay variant={activeOverlayVariant} />
@@ -226,6 +196,72 @@ export default function PortfolioPageClient() {
     return (
       <div className="relative h-full transition-opacity duration-200">
         <Portfolio key={displayPortfolio.id} portfolioId={displayPortfolio.id} initialData={displayPortfolio} />
+
+        {showOnboardingGateModal ? (
+          <div className="absolute inset-0 z-40 flex items-center justify-center bg-slate-900/40 p-6 backdrop-blur-[2px]">
+            <div className="w-full max-w-md rounded-2xl border border-slate-200 bg-white p-6 shadow-xl dark:border-slate-800 dark:bg-slate-900">
+              <h2 className="text-lg font-semibold text-slate-900 dark:text-white">Personalise your portfolio</h2>
+              <p className="mt-2 text-sm leading-relaxed text-slate-600 dark:text-slate-300">
+                Complete your onboarding and discover and finalize your niche, so Unibot can help you create a portfolio draft personalised
+                for you.
+              </p>
+              <div className="mt-5 flex flex-col gap-2 sm:flex-row">
+                <button
+                  type="button"
+                  onClick={() => setOnboardingModalDismissed(true)}
+                  className="inline-flex flex-1 items-center justify-center rounded-xl border border-slate-200 px-4 py-3 text-sm font-medium text-slate-700 hover:bg-slate-50 dark:border-slate-700 dark:text-slate-200 dark:hover:bg-slate-800"
+                >
+                  Start from scratch
+                </button>
+                <Link
+                  href={onboardingHref("niche")}
+                  className="inline-flex flex-1 items-center justify-center rounded-xl bg-brand-600 px-4 py-3 text-sm font-medium text-white hover:bg-brand-700"
+                >
+                  Complete onboarding
+                </Link>
+              </div>
+            </div>
+          </div>
+        ) : null}
+
+        {showPostOnboardingPrompt ? (
+          <div className="absolute inset-0 z-40 flex items-center justify-center bg-slate-900/40 p-6 backdrop-blur-[2px]">
+            <div className="w-full max-w-md rounded-2xl border border-slate-200 bg-white p-6 shadow-xl dark:border-slate-800 dark:bg-slate-900">
+              <h2 className="text-lg font-semibold text-slate-900 dark:text-white">Generate your portfolio?</h2>
+              <p className="mt-2 text-sm leading-relaxed text-slate-600 dark:text-slate-300">
+                You&apos;ve finished onboarding — want Unibot to generate a personalised portfolio draft for you?
+              </p>
+              <div className="mt-5 flex flex-col gap-2 sm:flex-row">
+                <button
+                  type="button"
+                  onClick={dismissPostOnboardingPrompt}
+                  className="inline-flex flex-1 items-center justify-center rounded-xl border border-slate-200 px-4 py-3 text-sm font-medium text-slate-700 hover:bg-slate-50 dark:border-slate-700 dark:text-slate-200"
+                >
+                  Explore on my own
+                </button>
+                <button
+                  type="button"
+                  onClick={handleGeneratePersonalizedPortfolio}
+                  disabled={isGeneratingTemplate}
+                  className="inline-flex flex-1 items-center justify-center rounded-xl bg-brand-600 px-4 py-3 text-sm font-medium text-white hover:bg-brand-700 disabled:opacity-50"
+                >
+                  Yes, generate draft
+                </button>
+              </div>
+            </div>
+          </div>
+        ) : null}
+
+        {isGeneratingTemplate ? (
+          <div className="absolute inset-0 z-50">
+            <PortfolioCreatingOverlay variant="ai_initial" />
+          </div>
+        ) : null}
+
+        <UniboardHelpFloater
+          showPortfolioGenerate={canAutoCreate && showPostOnboardingPrompt === false && (displayPortfolio.items?.length ?? 0) <= 1}
+          onGeneratePortfolio={handleGeneratePersonalizedPortfolio}
+        />
       </div>
     );
   }

@@ -153,6 +153,9 @@ export function mapBackendResumeToFrontend(dto: Record<string, unknown>): Resume
     typeof publishedAtRaw === "string" && publishedAtRaw.trim().length > 0 ? publishedAtRaw.trim() : (publishedAtRaw ?? undefined);
 
   const educationLeftRaw = dto.education_left_column ?? dto.educationLeftColumn;
+  const duplicatedFromRaw = dto.duplicated_from ?? dto.duplicatedFrom;
+  const duplicatedFrom =
+    typeof duplicatedFromRaw === "string" && duplicatedFromRaw.trim().length > 0 ? duplicatedFromRaw.trim() : undefined;
 
   return {
     // Identity / metadata
@@ -163,6 +166,7 @@ export function mapBackendResumeToFrontend(dto: Record<string, unknown>): Resume
     isBase: readIsBaseResumeFlag(dto),
     ...(slug ? { slug } : {}),
     ...(publishedAt ? { publishedAt: String(publishedAt) } : {}),
+    ...(duplicatedFrom ? { duplicatedFrom } : {}),
 
     // Profile
     profile: mapProfile(profile, dto.summary),

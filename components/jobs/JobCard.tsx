@@ -2,7 +2,6 @@
 
 import React from "react";
 import { Button } from "@/components/ui/Button";
-import { useOnboardingGate } from "@/features/onboarding/context/OnboardingGateContext";
 import { Clock } from "lucide-react";
 import { Job } from "../../types/jobs";
 import { CompanyLogo } from "./CompanyLogo";
@@ -33,8 +32,6 @@ const JobCard: React.FC<JobCardProps> = ({
   onClick,
   onVpdPromptClick,
 }) => {
-  const { profileSetupRequired, promptProfileSetup } = useOnboardingGate();
-
   return (
     <div
       onClick={() => onClick(job)}
@@ -104,15 +101,9 @@ const JobCard: React.FC<JobCardProps> = ({
             size="sm"
             onClick={e => {
               e.stopPropagation();
-              if (profileSetupRequired) {
-                promptProfileSetup();
-                return;
-              }
               onPrepare(job);
             }}
-            title={profileSetupRequired ? "Finish onboarding fully to prepare applications" : undefined}
-            disabled={profileSetupRequired}
-            className="relative flex-1 active:scale-95 disabled:cursor-not-allowed disabled:opacity-60"
+            className="relative flex-1 active:scale-95"
           >
             {hasPreparedApplication ? "Continue" : "Prepare"}
             {showVpdPrompt && (

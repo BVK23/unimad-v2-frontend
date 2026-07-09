@@ -4,6 +4,7 @@ import type { ChatMessage } from "@/types";
 import type { AcceptSnapshot, AcceptSnapshotPayload, AcceptSnapshotsMap } from "./accept-snapshots";
 import type { ContentScope } from "./content-scope";
 import type { ReviewDecisionsMap } from "./review-decisions";
+import { snapshotMatchesScopeRelaxed } from "./thread-revert-eligibility";
 
 export type DjangoRestoreTarget = {
   snapshot: AcceptSnapshot;
@@ -29,7 +30,7 @@ function collectAssistantIdsInOrderFromThread(messages: ChatMessage[], topicId?:
 }
 
 function snapshotMatchesScope(snapshot: AcceptSnapshot, targetScope: ContentScope): boolean {
-  return snapshot.contentKey === targetScope.contentKey && snapshot.domain === targetScope.domain;
+  return snapshotMatchesScopeRelaxed(snapshot, targetScope);
 }
 
 function pickPayload(snapshot: AcceptSnapshot, usePost: boolean): AcceptSnapshotPayload {

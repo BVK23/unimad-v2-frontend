@@ -5,7 +5,10 @@ import { createPortal } from "react-dom";
 import { ApplicationAssetDownloadMenu } from "@/components/application-assets/ApplicationAssetDownloadMenu";
 import { DocumentSaveStatusBar } from "@/components/application-assets/DocumentSaveStatusBar";
 import InterviewLaunchOverlay from "@/components/interview-prep/InterviewLaunchOverlay";
+import { OnboardingGateTooltip } from "@/components/ui/OnboardingGateTooltip";
+import { FINISH_ONBOARDING_CTA, getPrepareApplicationGateMessageKey } from "@/constants/onboarding-tooltips";
 import { getLinkedAssetId } from "@/features/application-tracker/application-assets";
+import { useOnboardingGate } from "@/features/onboarding/context/OnboardingGateContext";
 import { useDocumentAutosave } from "@/hooks/useDocumentAutosave";
 import { setPrepareReturnSession, consumePrepareReturnContentSnapshot } from "@/lib/jobs/prepare-application-return";
 import { buildResumePrepareHref, type PrepareNavigateTarget } from "@/lib/jobs/prepare-application-url";
@@ -83,6 +86,8 @@ const PrepareApplicationModal: React.FC<PrepareApplicationModalProps> = ({
   onNavigateToStudio,
   onStartInterviewPrep,
 }) => {
+  const { featureGates } = useOnboardingGate();
+  const canGenerateAssets = featureGates.jobs_prepare_application;
   const router = useRouter();
   const [activeTab, setActiveTab] = useState<PrepareTabId>(initialTab);
   const [tabStates, setTabStates] = useState<Record<GeneratableTab, TabAssetState>>({
@@ -282,6 +287,8 @@ const PrepareApplicationModal: React.FC<PrepareApplicationModalProps> = ({
     !isInterviewTab && (activeTab === "vpd" ? tabStates.vpd.status === "loading" : isTabPending(activeTab as GeneratablePrepareTab));
 
   const handleGenerate = (tab: GeneratableTab = activeTab as GeneratableTab) => {
+    if (!canGenerateAssets) return;
+
     if (tab === "vpd") {
       setTabState("vpd", { status: "loading", error: null });
       window.setTimeout(() => {
@@ -358,6 +365,7 @@ const PrepareApplicationModal: React.FC<PrepareApplicationModalProps> = ({
     roundType: StartInterviewFromJobPayload["roundType"];
     mode: StartInterviewFromJobPayload["mode"];
   }) => {
+    if (!canGenerateAssets) return;
     setIsStartingInterview(true);
     setInterviewLaunchError(null);
     setEnsureError(null);
@@ -536,7 +544,14 @@ const PrepareApplicationModal: React.FC<PrepareApplicationModalProps> = ({
 
   const renderMainPanel = () => {
     if (isInterviewTab) {
-      return <PrepareInterviewPanel job={job} isStarting={isStartingInterview || ensuringApp} onStart={handleStartInterview} />;
+      return (
+        <PrepareInterviewPanel
+          job={job}
+          isStarting={isStartingInterview || ensuringApp}
+          onStart={handleStartInterview}
+          generateDisabled={!canGenerateAssets}
+        />
+      );
     }
 
     const state = tabStates[activeTab as GeneratableTab];
@@ -551,17 +566,22 @@ const PrepareApplicationModal: React.FC<PrepareApplicationModalProps> = ({
       return <PrepareAssetGenerationLoading kind={loadingKind} />;
     }
 
+    const gateMessageKey = getPrepareApplicationGateMessageKey(activeTab as GeneratableTab);
+
     if (state.status === "error") {
       return (
         <div className="flex flex-1 flex-col items-center justify-center rounded-2xl border border-red-100 bg-red-50/50 p-8 text-center dark:border-red-900/30 dark:bg-red-950/20">
           <p className="mb-4 text-sm text-red-600 dark:text-red-400">{state.error ?? ensureError ?? "Something went wrong"}</p>
-          <button
-            type="button"
-            onClick={() => handleGenerate(activeTab as GeneratableTab)}
-            className="rounded-xl bg-brand-600 px-5 py-2 text-sm font-medium text-white hover:bg-brand-700"
-          >
-            Try again
-          </button>
+          <OnboardingGateTooltip enabled={!canGenerateAssets} messageKey={gateMessageKey} ctaLabel={FINISH_ONBOARDING_CTA}>
+            <button
+              type="button"
+              onClick={() => handleGenerate(activeTab as GeneratableTab)}
+              disabled={!canGenerateAssets}
+              className="rounded-xl bg-brand-600 px-5 py-2 text-sm font-medium text-white hover:bg-brand-700 disabled:cursor-not-allowed disabled:opacity-50"
+            >
+              Try again
+            </button>
+          </OnboardingGateTooltip>
         </div>
       );
     }
@@ -625,15 +645,17 @@ const PrepareApplicationModal: React.FC<PrepareApplicationModalProps> = ({
             : `We'll save this job to your tracker, then create a tailored ${tabLabel.toLowerCase()} from your profile and the job description.`}
         </p>
         {ensureError && <p className="mb-4 text-xs text-red-500">{ensureError}</p>}
-        <button
-          type="button"
-          onClick={() => handleGenerate(activeTab as GeneratableTab)}
-          disabled={isActiveTabGenerating}
-          className="flex items-center gap-2 rounded-xl bg-brand-600 px-6 py-2.5 font-medium text-white shadow-lg shadow-brand-500/20 transition-all hover:bg-brand-700 active:scale-95 disabled:opacity-50"
-        >
-          <Wand2 size={16} fill="currentColor" />
-          Generate Draft
-        </button>
+        <OnboardingGateTooltip enabled={!canGenerateAssets} messageKey={gateMessageKey} ctaLabel={FINISH_ONBOARDING_CTA}>
+          <button
+            type="button"
+            onClick={() => handleGenerate(activeTab as GeneratableTab)}
+            disabled={isActiveTabGenerating || !canGenerateAssets}
+            className="flex items-center gap-2 rounded-xl bg-brand-600 px-6 py-2.5 font-medium text-white shadow-lg shadow-brand-500/20 transition-all hover:bg-brand-700 active:scale-95 disabled:cursor-not-allowed disabled:opacity-50"
+          >
+            <Wand2 size={16} fill="currentColor" />
+            Generate Draft
+          </button>
+        </OnboardingGateTooltip>
       </div>
     );
   };

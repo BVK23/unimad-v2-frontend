@@ -1,3 +1,4 @@
+import { VPD_FEATURE_ENABLED } from "@/constants/feature-flags";
 import type { Job } from "@/types/jobs";
 
 const STORAGE_KEY = "interview-vpd-prompts-v1";
@@ -22,6 +23,7 @@ function writePrompts(map: PromptMap) {
 
 /** Show indicator when job is Interviewing and prompt has not been dismissed for this cycle. */
 export function shouldShowInterviewVpdPrompt(job: Job): boolean {
+  if (!VPD_FEATURE_ENABLED) return false;
   if (job.applicationStatus !== "interviewing") return false;
   const map = readPrompts();
   return map[job.id] !== false;

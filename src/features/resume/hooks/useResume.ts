@@ -2,6 +2,7 @@ import { useEffect, useRef } from "react";
 import { useQuery } from "@tanstack/react-query";
 import type { ResumeData } from "../../../../types";
 import { mapBackendResumeToFrontend } from "../api/mappers";
+import { isPersistedResumeId } from "../constants/resumeDraft";
 import { fetchResumeContent } from "../server-actions/resume-actions";
 import { useResumeStore } from "../store/useResumeStore";
 import { getResumeContentSignature } from "../utils/getResumeContentSignature";
@@ -25,21 +26,21 @@ export function useResume(resumeId: string | undefined) {
 
       return mapBackendResumeToFrontend(response.resumeData);
     },
-    // Don't fetch if resumeId is missing
-    enabled: !!resumeId,
+    enabled: isPersistedResumeId(resumeId),
     // Slightly shorter stale time for individual edits
     staleTime: 1000 * 60 * 2, // 2 minutes
   });
 
   // Hydrate zustand store when data changes
   useEffect(() => {
-    if (!query.data || !resumeId) return;
+    if (!query.data || !resumeId || !isPersistedResumeId(resumeId)) return;
 
     const nextSnapshot = `${resumeId}:${getResumeContentSignature(query.data)}`;
     if (lastHydratedSnapshotRef.current === nextSnapshot) return;
 
     const current = useResumeStore.getState().getResumeData(resumeId);
-    if (current && getResumeContentSignature(current) === getResumeContentSignature(query.data)) {
+    if (current) {
+      // ResumeEditor seeds the store on mount; never replace active in-memory edits from query cache.
       lastHydratedSnapshotRef.current = nextSnapshot;
       return;
     }

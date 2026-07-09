@@ -40,7 +40,7 @@ unimad-app/
 │   └── proxy.ts
 ├── components/                 # All UI (shared + feature-specific)
 │   ├── <Feature>.tsx          # Shared or entry components at root
-│   ├── jobs/, studio/, community/, resume/  # Feature UI subfolders
+│   ├── jobs/, studio/, community/, resume/, uniboard/  # Feature UI subfolders
 │   └── resume/templates/, resume/config/, resume/shared/
 ├── utils/                      # Shared utility functions
 ├── constants/                  # Shared constants (e.g. errors)

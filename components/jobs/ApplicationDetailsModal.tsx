@@ -4,7 +4,6 @@ import React, { useState, useEffect } from "react";
 import { createPortal } from "react-dom";
 import { applicationHasAnyLinkedAsset, parseApplicationAssets } from "@/features/application-tracker/application-assets";
 import type { Application, ApplicationStatus, UpdateApplicationInput } from "@/features/application-tracker/types";
-import { useOnboardingGate } from "@/features/onboarding/context/OnboardingGateContext";
 import { MODAL_OVERLAY_Z_CLASS } from "@/lib/ui/modal-overlay";
 import { formatRelativeTimeFromNow } from "@/utils/format-relative-time";
 import { X, FileText, ExternalLink, Pencil, ChevronDown, CheckCircle2 } from "lucide-react";
@@ -47,7 +46,6 @@ const ApplicationDetailsModal: React.FC<ApplicationDetailsModalProps> = ({
   onStatusChange,
   onPrepare,
 }) => {
-  const { profileSetupRequired, promptProfileSetup } = useOnboardingGate();
   const [role, setRole] = useState("");
   const [company, setCompany] = useState("");
   const [jobDescription, setJobDescription] = useState("");
@@ -329,17 +327,8 @@ const ApplicationDetailsModal: React.FC<ApplicationDetailsModalProps> = ({
 
         <div className="flex items-center gap-4 border-t border-slate-100 bg-white p-6 dark:border-slate-800 dark:bg-[#1a1a1a]">
           <button
-            onClick={() => {
-              if (profileSetupRequired) {
-                promptProfileSetup();
-                return;
-              }
-              onPrepare(application);
-            }}
-            title={profileSetupRequired ? "Finish onboarding fully to prepare applications" : undefined}
-            className={`flex flex-1 items-center justify-center gap-2 rounded-xl border border-slate-200 bg-white py-3 font-medium text-slate-900 shadow-sm transition-all active:scale-95 dark:border-slate-700 dark:bg-slate-800 dark:text-white ${
-              profileSetupRequired ? "cursor-not-allowed opacity-60" : "hover:bg-slate-50 dark:hover:bg-slate-700"
-            }`}
+            onClick={() => onPrepare(application)}
+            className="flex flex-1 items-center justify-center gap-2 rounded-xl border border-slate-200 bg-white py-3 font-medium text-slate-900 shadow-sm transition-all active:scale-95 hover:bg-slate-50 dark:border-slate-700 dark:bg-slate-800 dark:text-white dark:hover:bg-slate-700"
           >
             <FileText size={18} className="text-brand-500" /> {hasPreparedApplication ? "Continue Application" : "Prepare Application"}
           </button>

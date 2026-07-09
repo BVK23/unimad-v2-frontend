@@ -2,6 +2,7 @@
 
 import React, { useEffect, useMemo, useState } from "react";
 import { ModalPortalOverlay } from "@/components/ui/ModalPortalOverlay";
+import { VPD_FEATURE_ENABLED } from "@/constants/feature-flags";
 import { useApplications } from "@/features/application-tracker/hooks/useApplications";
 import { createApplication, updateApplication } from "@/features/application-tracker/server-actions/application-actions";
 import type { Application, ApplicationStatus, CreateApplicationInput } from "@/features/application-tracker/types";
@@ -157,6 +158,7 @@ const ApplicationTracker: React.FC<ApplicationTrackerProps> = ({ onNavigateToStu
   };
 
   const handleOpenInterviewVpd = (job: Job) => {
+    if (!VPD_FEATURE_ENABLED) return;
     onNavigateToStudio(buildInterviewVpdStudioContext(job));
   };
 
@@ -177,7 +179,9 @@ const ApplicationTracker: React.FC<ApplicationTrackerProps> = ({ onNavigateToStu
       if (newStatus === "interviewing" && app.status !== "interviewing") {
         activateInterviewVpdPrompt(applicationId);
         setVpdPromptTick(t => t + 1);
-        setInterviewingPromptJob(applicationToJob({ ...app, status: newStatus }));
+        if (VPD_FEATURE_ENABLED) {
+          setInterviewingPromptJob(applicationToJob({ ...app, status: newStatus }));
+        }
       }
 
       if (app.status === "interviewing" && newStatus === "applied") {

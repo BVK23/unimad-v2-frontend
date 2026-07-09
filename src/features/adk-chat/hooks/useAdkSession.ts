@@ -7,6 +7,7 @@ import { clearPersistedActiveSessionId, loadPersistedActiveSessionId, persistAct
 import { UNTITLED_THREAD_TITLE } from "../constants";
 import { findReusableUntitledMainSession } from "../main-session-activity";
 import type { UnibotSessionKind } from "../session-metadata";
+import { clearAllSessionMutatingToolTracking } from "../session-mutating-tool-tracker";
 import { getRegistryRow, getSubsForMain, removeRegistrySessions, setSessionRegistry, upsertRegistryRow } from "../session-registry";
 import {
   deleteUnibotAdkSessionRegistryAction,
@@ -219,6 +220,8 @@ export function useAdkSession(userId: string): UseAdkSessionReturn {
         if (failedIds.length > 0) {
           markSessionsLocallyDeleted(userId, failedIds);
         }
+
+        clearAllSessionMutatingToolTracking(adkIds);
 
         if (optimisticIds.has(previousSessionId) && remainingSessions.length === 0) {
           const created = await createSessionAction(userId);

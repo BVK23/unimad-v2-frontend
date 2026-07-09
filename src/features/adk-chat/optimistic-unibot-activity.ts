@@ -30,7 +30,7 @@ export function beginOptimisticUnibotActivity(params?: { assistantMessageId?: st
   const assistantMessageId = params?.assistantMessageId?.trim() || null;
   const label = params?.label?.trim() || SYNCING_CONTEXT_LABEL;
 
-  setStreamActivitySnapshot({ activityLabel: label, assistantMessageId });
+  setStreamActivitySnapshot({ activityLabel: label, assistantMessageId, submitInFlight: true });
   handlers?.onBegin({ assistantMessageId, label });
   dispatchActivityEvents({ loading: true, activityLabel: label, assistantMessageId });
 }
@@ -44,7 +44,7 @@ export function attachOptimisticAssistantMessage(assistantMessageId: string): vo
   const label = current.activityLabel?.trim() || SYNCING_CONTEXT_LABEL;
   if (current.assistantMessageId === trimmed && current.activityLabel === label) return;
 
-  setStreamActivitySnapshot({ activityLabel: label, assistantMessageId: trimmed });
+  setStreamActivitySnapshot({ activityLabel: label, assistantMessageId: trimmed, submitInFlight: true });
   dispatchActivityEvents({ loading: true, activityLabel: label, assistantMessageId: trimmed });
 }
 
@@ -52,7 +52,7 @@ export function attachOptimisticAssistantMessage(assistantMessageId: string): vo
 export function ensureOptimisticUnibotActivity(params?: { assistantMessageId?: string | null; label?: string }): void {
   const assistantMessageId = params?.assistantMessageId?.trim() || null;
   const current = getStreamActivitySnapshot();
-  if (current.activityLabel?.trim()) {
+  if (current.submitInFlight || current.activityLabel?.trim()) {
     if (assistantMessageId) {
       attachOptimisticAssistantMessage(assistantMessageId);
     }
@@ -64,6 +64,6 @@ export function ensureOptimisticUnibotActivity(params?: { assistantMessageId?: s
 /** Clear optimistic loading when setup fails before submitMessage runs. */
 export function cancelOptimisticUnibotActivity(): void {
   handlers?.onCancel();
-  setStreamActivitySnapshot({ activityLabel: null, assistantMessageId: null });
+  setStreamActivitySnapshot({ activityLabel: null, assistantMessageId: null, submitInFlight: false });
   dispatchActivityEvents({ loading: false, activityLabel: null, assistantMessageId: null });
 }

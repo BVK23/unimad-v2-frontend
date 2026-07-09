@@ -1,7 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { flushSync } from "react-dom";
+import { useCallback, useEffect, useMemo, useRef, useState, useSyncExternalStore } from "react";
 import { syncSessionStateAction } from "@/features/adk-chat/actions";
 import { buildAdkApplicationAssetStateDelta } from "@/features/application-assets/api/adk-mappers";
 import { useApplicationAssetStudioStore } from "@/features/application-assets/store/useApplicationAssetStudioStore";
@@ -17,6 +16,7 @@ import { deriveActiveScope, deriveScopeFromRegistryRow, type ContentScope } from
 import { resolveActiveResumeIdForPatch } from "@/src/features/adk-chat/resolve-active-resume-id";
 import { resolveAdkSessionOptionsForSessionId } from "@/src/features/adk-chat/resolve-sub-session-adk-app";
 import { noteAdkSessionSynced } from "@/src/features/adk-chat/rewind-state-divergence";
+import { noteSessionMutatingTool } from "@/src/features/adk-chat/session-mutating-tool-tracker";
 import { getRegistryRow } from "@/src/features/adk-chat/session-registry";
 import { isAdkActivityTraceEnabled } from "@/src/features/adk-chat/streaming/activity-trace";
 import {
@@ -57,7 +57,12 @@ import {
   type StreamActivityHeartbeat,
 } from "../streaming/stream-activity-heartbeat";
 import { createStreamActivityPresenter, type StreamActivityPresenter } from "../streaming/stream-activity-presenter";
-import { clearStreamActivitySnapshot, setStreamActivitySnapshot } from "../streaming/stream-activity-store";
+import {
+  clearStreamActivitySnapshot,
+  getStreamActivitySnapshot,
+  setStreamActivitySnapshot,
+  subscribeStreamActivity,
+} from "../streaming/stream-activity-store";
 import type { AgentMessage, ProcessedEvent } from "../types";
 import { isStreamingMachineReadablePayloadOnly } from "../utils/strip-machine-readable-payload";
 import { useAdkStreaming } from "./useAdkStreaming";
@@ -98,6 +103,7 @@ function dispatchStreamActivity(detail: UnibotStreamActivityDetail): void {
     setStreamActivitySnapshot({
       activityLabel: detail.activityLabel.trim(),
       assistantMessageId: detail.assistantMessageId?.trim() || null,
+      submitInFlight: detail.loading !== false,
     });
   } else if (detail.loading === false) {
     clearStreamActivitySnapshot();
@@ -161,11 +167,8 @@ export function useAdkStreamingManager({
   if (activityPresenterRef.current === null) {
     activityPresenterRef.current = createStreamActivityPresenter({
       onPresent: ({ label, assistantMessageId }) => {
-        const snapshot = { activityLabel: label, assistantMessageId };
-        setStreamActivitySnapshot(snapshot);
-        flushSync(() => {
-          setStreamActivityLabel(label);
-        });
+        setStreamActivitySnapshot({ activityLabel: label, assistantMessageId, submitInFlight: true });
+        setStreamActivityLabel(label);
         dispatchStreamActivity({
           loading: true,
           activityLabel: label,
@@ -186,25 +189,15 @@ export function useAdkStreamingManager({
 
   useEffect(() => {
     registerOptimisticUnibotActivityHandlers({
-      onBegin: ({ assistantMessageId, label }) => {
+      onBegin: ({ assistantMessageId }) => {
         optimisticActivityStartedRef.current = true;
         if (assistantMessageId) {
           pendingReviewAssistantIdRef.current = assistantMessageId;
           activityPresenterRef.current?.setAssistantMessageId(assistantMessageId);
         }
-        flushSync(() => {
-          setIsSubmitInFlight(true);
-          setIsSyncingContext(true);
-          setStreamActivityLabel(label);
-        });
       },
       onCancel: () => {
         optimisticActivityStartedRef.current = false;
-        flushSync(() => {
-          setIsSubmitInFlight(false);
-          setIsSyncingContext(false);
-          setStreamActivityLabel(null);
-        });
         clearStreamActivitySnapshot();
       },
     });
@@ -249,7 +242,12 @@ export function useAdkStreamingManager({
   }, [pathname, queryClient]);
 
   const { isLoading: isStreamLoading, currentAgent, startStream } = useAdkStreaming(retryWithBackoff);
-  const isLoading = isSubmitInFlight || isStreamLoading;
+  const liveSubmitInFlight = useSyncExternalStore(
+    subscribeStreamActivity,
+    () => getStreamActivitySnapshot().submitInFlight,
+    () => false
+  );
+  const isLoading = isSubmitInFlight || isStreamLoading || liveSubmitInFlight;
 
   const handleMessageUpdate = useCallback(
     (am: AgentMessage) => {
@@ -704,6 +702,10 @@ export function useAdkStreamingManager({
   const streamExtras = useMemo(
     () => ({
       onMutatingToolResponse: (toolName: string, aiMessageId: string) => {
+        const pullSessionId = pendingPullSessionIdRef.current ?? sessionId;
+        if (pullSessionId) {
+          noteSessionMutatingTool(pullSessionId, toolName);
+        }
         if (isMutatingResumeTool(toolName)) {
           const id = resolveResumeIdForSessionPull();
           if (id) {
@@ -818,14 +820,13 @@ export function useAdkStreamingManager({
       } else {
         activityPresenterRef.current?.reset();
         activityPresenterRef.current?.setAssistantMessageId(assistantId);
-        flushSync(() => {
-          setIsSubmitInFlight(true);
-          setIsSyncingContext(true);
-          setStreamActivityLabel(SYNCING_CONTEXT_LABEL);
-        });
+        setIsSubmitInFlight(true);
+        setIsSyncingContext(true);
+        setStreamActivityLabel(SYNCING_CONTEXT_LABEL);
         setStreamActivitySnapshot({
           activityLabel: SYNCING_CONTEXT_LABEL,
           assistantMessageId: assistantId,
+          submitInFlight: true,
         });
         dispatchStreamActivity({
           loading: true,
@@ -912,6 +913,7 @@ export function useAdkStreamingManager({
         const finishSubmit = (): void => {
           activityPresenterRef.current?.reset();
           setIsSubmitInFlight(false);
+          setIsSyncingContext(false);
           setStreamActivityLabel(null);
           clearStreamActivitySnapshot();
           dispatchStreamActivity({

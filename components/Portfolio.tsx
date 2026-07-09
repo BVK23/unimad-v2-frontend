@@ -1679,7 +1679,7 @@ const Portfolio: React.FC<PortfolioProps> = ({ portfolioId, initialData, onBack,
           {isEditMode && profile.showCover === false ? (
             <div className="max-w-5xl mx-auto px-4 mt-6">
               <button
-                onClick={() => setProfile({ ...profile, showCover: true })}
+                onClick={() => setProfile(prev => ({ ...prev, showCover: true }))}
                 className="w-full py-4 border-2 border-dashed border-slate-200 dark:border-white/10 rounded-xl text-slate-400 hover:text-brand-600 hover:border-brand-500 transition-colors flex items-center justify-center gap-2 text-sm font-medium"
               >
                 <ImageIcon size={16} /> Show Cover Image
@@ -1728,7 +1728,7 @@ const Portfolio: React.FC<PortfolioProps> = ({ portfolioId, initialData, onBack,
                         </button>
                       ) : null}
                       <button
-                        onClick={() => setProfile({ ...profile, showCover: false })}
+                        onClick={() => setProfile(prev => ({ ...prev, showCover: false }))}
                         className="bg-red-500 text-white p-2.5 rounded-full shadow-xl hover:scale-105 active:scale-95 transition-transform"
                         title="Hide Cover"
                       >
@@ -1769,7 +1769,7 @@ const Portfolio: React.FC<PortfolioProps> = ({ portfolioId, initialData, onBack,
               <div className="mb-6 flex justify-end">
                 <button
                   type="button"
-                  onClick={() => setProfile({ ...profile, showProfileSection: true })}
+                  onClick={() => setProfile(prev => ({ ...prev, showProfileSection: true }))}
                   className="inline-flex items-center gap-2 rounded-full border border-slate-200 bg-white px-4 py-2 text-xs font-medium text-slate-700 shadow-sm transition-colors hover:border-brand-500/40 dark:border-white/10 dark:bg-slate-900 dark:text-slate-200"
                 >
                   <Eye size={14} aria-hidden /> Show profile section
@@ -1822,7 +1822,7 @@ const Portfolio: React.FC<PortfolioProps> = ({ portfolioId, initialData, onBack,
                     <div className="absolute right-4 top-4 z-30">
                       <button
                         type="button"
-                        onClick={() => setProfile({ ...profile, showProfileSection: false })}
+                        onClick={() => setProfile(prev => ({ ...prev, showProfileSection: false }))}
                         className="inline-flex items-center gap-1.5 rounded-full border border-slate-200 bg-white/95 px-3 py-1.5 text-[11px] font-medium text-slate-600 shadow-sm backdrop-blur hover:border-slate-300 dark:border-white/10 dark:bg-slate-900/95 dark:text-slate-300"
                       >
                         <EyeOff size={14} aria-hidden /> Hide profile
@@ -1950,7 +1950,7 @@ const Portfolio: React.FC<PortfolioProps> = ({ portfolioId, initialData, onBack,
                         />
                         <input
                           value={profile.tagline}
-                          onChange={e => setProfile({ ...profile, tagline: e.target.value })}
+                          onChange={e => setProfile(prev => ({ ...prev, tagline: e.target.value }))}
                           className={`text-[12px] md:text-[15px] font-medium text-slate-500 dark:text-slate-400 bg-transparent outline-none w-full ${
                             profile.profileAlignment === "center"
                               ? "text-center"

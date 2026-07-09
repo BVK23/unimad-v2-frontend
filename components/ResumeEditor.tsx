@@ -7,7 +7,7 @@ import {
   AtsScoreModalRecalculateProgress,
 } from "@/components/resume/AtsScoreModalLoading";
 import { AtsSectionAnalysisRow } from "@/components/resume/AtsSectionAnalysisRow";
-import ResumeKnowledgeBaseModal from "@/components/resume/ResumeKnowledgeBaseModal";
+import { ActionHintTooltip } from "@/components/ui/ActionHintTooltip";
 import { ModalPortalOverlay } from "@/components/ui/ModalPortalOverlay";
 import { PanelResizeHandle } from "@/components/ui/PanelResizeHandle";
 import { DOCUMENT_SAVED_CONFIRMATION_MS } from "@/constants/documentAutosave";
@@ -16,7 +16,8 @@ import { useAdkResumeReviewStore } from "@/features/adk-chat/stores/useAdkResume
 import { buildAtsFixPlan, canRunAtsFix } from "@/features/resume/api/ats-fix-plan";
 import { buildAtsFixMainSessionTitle } from "@/features/resume/api/build-ats-improve-prompt";
 import { formatAtsDeltaLabel, mapAtsScoreToViewModel } from "@/features/resume/api/mapAtsScoreToViewModel";
-import { mapFrontendResumeToBackend } from "@/features/resume/api/mappers";
+import { mapBackendResumeToFrontend, mapFrontendResumeToBackend } from "@/features/resume/api/mappers";
+import { isPersistedResumeId } from "@/features/resume/constants/resumeDraft";
 import { useCalculateAtsScore } from "@/features/resume/hooks/useCalculateAtsScore";
 import { useDebouncedResumePreview } from "@/features/resume/hooks/useDebouncedResumePreview";
 import { useGeolocationTemplate } from "@/features/resume/hooks/useGeolocationTemplate";
@@ -26,6 +27,13 @@ import { useUpdateResume } from "@/features/resume/hooks/useUpdateResume";
 import { publishResumeAsset } from "@/features/resume/server-actions/resume-actions";
 import { useResumeStore } from "@/features/resume/store/useResumeStore";
 import { downloadResumePdf } from "@/features/resume/utils/downloadResumePdf";
+import { getResumeContentSignature } from "@/features/resume/utils/getResumeContentSignature";
+import { nextResumeEntryId } from "@/features/resume/utils/resume-entry-ids";
+import {
+  focusResumeValidationField,
+  formatResumeValidationMessage,
+  resumeFieldDomId,
+} from "@/features/resume/utils/resume-validation-focus";
 import { copyResumePublicLink, isResumePublished } from "@/features/resume/utils/resumePublish";
 import {
   clearPrepareReturnSession,
@@ -52,7 +60,7 @@ import {
   ResumeTemplateId,
   CustomSectionItem,
 } from "@/types";
-import { validateResume, ValidationError } from "@/utils/validation";
+import { getAtsGateState, validateResume, ValidationError } from "@/utils/validation";
 import { useQueryClient } from "@tanstack/react-query";
 import {
   ArrowLeft,
@@ -95,7 +103,6 @@ import {
   Award,
   Eye,
   EyeOff,
-  Info,
   RefreshCw,
   Wand2,
   CheckCircle2,
@@ -294,7 +301,8 @@ const MonthYearPicker: React.FC<{
   align?: "left" | "right";
   allowPresent?: boolean;
   className?: string;
-}> = ({ value, onChange, placeholder, disabled = false, min, max, align = "left", allowPresent = false, className = "" }) => {
+  id?: string;
+}> = ({ value, onChange, placeholder, disabled = false, min, max, align = "left", allowPresent = false, className = "", id }) => {
   const [isOpen, setIsOpen] = useState(false);
   const containerRef = useRef<HTMLDivElement>(null);
   const now = new Date();
@@ -342,7 +350,7 @@ const MonthYearPicker: React.FC<{
   };
 
   return (
-    <div ref={containerRef} className="relative">
+    <div ref={containerRef} id={id} className="relative">
       <button
         type="button"
         disabled={disabled}
@@ -567,7 +575,7 @@ const ResumeEditor: React.FC<ResumeEditorProps> = ({
   );
 
   const { mutateAsync: updateResumeMutation, isPending: isSavingRemote } = useUpdateResume();
-  const { data: atsCache, isLoading: atsCacheLoading } = useResumeAtsScore(resumeId, Boolean(resumeId?.trim()));
+  const { data: atsCache, isLoading: atsCacheLoading } = useResumeAtsScore(resumeId, isPersistedResumeId(resumeId));
   const {
     mutateAsync: runAtsScore,
     data: atsMutationVm,
@@ -599,14 +607,15 @@ const ResumeEditor: React.FC<ResumeEditorProps> = ({
   const { panelWidth: formsPanelWidth, isResizing: isFormsPanelResizing, startResize: startFormsPanelResize } = useResumeFormsPanelResize();
   const [draggedSectionId, setDraggedSectionId] = useState<string | null>(null);
   const lastSectionDropTargetRef = useRef<string | null>(null);
-  const [lastAcknowledgedSnapshot, setLastAcknowledgedSnapshot] = useState<string>(() => JSON.stringify(getInitialResume()));
+  const [lastAcknowledgedSnapshot, setLastAcknowledgedSnapshot] = useState("");
+  const acknowledgedSeededForIdRef = useRef<string | null>(null);
   const [activeSaveSource, setActiveSaveSource] = useState<"auto" | "manual" | null>(null);
   const [savedConfirmationVisible, setSavedConfirmationVisible] = useState(false);
   const savedConfirmationTimerRef = useRef<number | null>(null);
   const saveInFlightRef = useRef(false);
   const queuedSaveRef = useRef(false);
   const runSaveRef = useRef<((source: "auto" | "manual") => Promise<void>) | null>(null);
-  const latestSnapshotRef = useRef(JSON.stringify(getInitialResume()));
+  const latestSnapshotRef = useRef("");
   const profileFieldsRef = useRef<ResumePersonalDetailsFieldsHandle>(null);
 
   // Toast notification state
@@ -629,7 +638,6 @@ const ResumeEditor: React.FC<ResumeEditorProps> = ({
   const [showAtsModal, setShowAtsModal] = useState(false);
   const [fixAllUsed, setFixAllUsed] = useState(false);
   const [recalcError, setRecalcError] = useState<string | null>(null);
-  const [showKnowledgeBaseModal, setShowKnowledgeBaseModal] = useState(false);
   const [pendingDeleteSectionId, setPendingDeleteSectionId] = useState<string | null>(null);
   const [pendingDeleteSkillCategoryId, setPendingDeleteSkillCategoryId] = useState<string | null>(null);
   const [pendingDeleteEntry, setPendingDeleteEntry] = useState<{
@@ -669,7 +677,7 @@ const ResumeEditor: React.FC<ResumeEditorProps> = ({
   }, [resume.slug]);
 
   const handleSharePublicLinkSubmit = useCallback(async () => {
-    if (!resumeId?.trim()) {
+    if (!isPersistedResumeId(resumeId)) {
       showToast("Save your resume before publishing.", "error");
       return;
     }
@@ -747,7 +755,10 @@ const ResumeEditor: React.FC<ResumeEditorProps> = ({
 
   const addSkillCategory = () => {
     const newCategory = {
-      id: Date.now().toString(),
+      id: nextResumeEntryId(
+        (resume.skillCategories ?? []).map(c => c.id),
+        "skill_cat"
+      ),
       name: "",
     };
     updateResume(prev => ({
@@ -797,7 +808,12 @@ const ResumeEditor: React.FC<ResumeEditorProps> = ({
       const existingCategory = (prev.skillCategories || []).find(
         category => category.name.trim().toLowerCase() === trimmedName.toLowerCase()
       );
-      const categoryId = existingCategory?.id || Date.now().toString();
+      const categoryId =
+        existingCategory?.id ||
+        nextResumeEntryId(
+          (prev.skillCategories || []).map(c => c.id),
+          "skill_cat"
+        );
 
       return {
         ...prev,
@@ -817,27 +833,38 @@ const ResumeEditor: React.FC<ResumeEditorProps> = ({
   };
 
   const hideTooltip = () => setTooltip(null);
-  const currentSnapshot = useMemo(() => JSON.stringify(resume), [resume]);
+  const currentSnapshot = useMemo(() => getResumeContentSignature(resume), [resume]);
 
   useEffect(() => {
     latestSnapshotRef.current = currentSnapshot;
   }, [currentSnapshot]);
 
   useEffect(() => {
-    const initialSnapshot = JSON.stringify(getInitialResume());
+    if (acknowledgedSeededForIdRef.current !== resumeId) {
+      acknowledgedSeededForIdRef.current = null;
+    }
+  }, [resumeId]);
+
+  useEffect(() => {
+    if (acknowledgedSeededForIdRef.current === resumeId) return;
+    const stored = useResumeStore.getState().getResumeData(resumeId);
+    if (!stored) return;
+
+    acknowledgedSeededForIdRef.current = resumeId;
+    const initialSnapshot = getResumeContentSignature(stored);
     setLastAcknowledgedSnapshot(initialSnapshot);
     latestSnapshotRef.current = initialSnapshot;
     saveInFlightRef.current = false;
     queuedSaveRef.current = false;
     setActiveSaveSource(null);
-  }, [resumeId, getInitialResume]);
+  }, [resumeId, resumeFromStore]);
 
   useEffect(() => {
     resetAtsMutation();
   }, [resumeId, resetAtsMutation]);
 
   useEffect(() => {
-    if (!resumeId?.trim()) return;
+    if (!isPersistedResumeId(resumeId)) return;
     const session = loadResumeAtsSession(resumeId);
     setFixAllUsed(session.fixAllUsed);
   }, [resumeId]);
@@ -858,7 +885,7 @@ const ResumeEditor: React.FC<ResumeEditorProps> = ({
   const atsResumeUpdatedAt = atsMutationVm?.resume_updated_at ?? (atsCache?.ok ? atsCache.resume_updated_at : null);
 
   useEffect(() => {
-    if (!showAtsModal || !resumeId?.trim()) return;
+    if (!showAtsModal || !isPersistedResumeId(resumeId)) return;
     if (atsCacheLoading) return;
     if (cachedAtsVm) return;
     void runAtsScore({ resumeId, force: false }).catch(() => {});
@@ -907,10 +934,22 @@ const ResumeEditor: React.FC<ResumeEditorProps> = ({
 
   // -- Validation --
   const validationErrors = useMemo(() => validateResume(resume), [resume]);
+  const atsGate = useMemo(() => getAtsGateState(resume), [resume]);
+  const atsGated = !atsGate.ok;
   const adkReviewBlocksAutosave = useAdkResumeReviewStore(s => s.hasPendingReviewForResume(resumeId));
   const pdfHighlightRegions = useAdkResumeReviewStore(s => s.reviewStack.at(-1)?.highlights ?? EMPTY_PDF_HIGHLIGHT_MAP);
   const hasPendingUnsavedChanges = !adkReviewBlocksAutosave && currentSnapshot !== lastAcknowledgedSnapshot;
   const isSaving = isSavingRemote;
+
+  useEffect(() => {
+    if (!hasPendingUnsavedChanges) return;
+    setSavedConfirmationVisible(false);
+    if (savedConfirmationTimerRef.current) {
+      window.clearTimeout(savedConfirmationTimerRef.current);
+      savedConfirmationTimerRef.current = null;
+    }
+  }, [hasPendingUnsavedChanges]);
+
   const atsRecalculateState = useMemo(
     () =>
       getAtsRecalculateState({
@@ -923,7 +962,7 @@ const ResumeEditor: React.FC<ResumeEditorProps> = ({
   );
 
   const handleRecalculate = async () => {
-    if (!resumeId?.trim() || atsScorePending || !atsRecalculateState.allowed) return;
+    if (!isPersistedResumeId(resumeId) || atsScorePending || !atsRecalculateState.allowed) return;
     setRecalcError(null);
     try {
       await runAtsScore({ resumeId, force: true });
@@ -947,13 +986,31 @@ const ResumeEditor: React.FC<ResumeEditorProps> = ({
     return validationErrors.find(e => e.section === section && e.field === field && e.id === id);
   };
 
+  const goToFirstValidationError = useCallback(
+    (error: ValidationError) => {
+      const sectionId =
+        error.section === "custom"
+          ? error.id && resume.customSections.some(s => s.id === error.id)
+            ? error.id
+            : (resume.customSections.find(s => s.items.some(i => i.id === error.id))?.id ?? "profile")
+          : error.section;
+
+      setActiveSection(sectionId);
+      if (error.id) {
+        setExpandedItems(prev => ({ ...prev, [error.id!]: true }));
+      }
+      window.setTimeout(() => focusResumeValidationField(error), 80);
+    },
+    [resume.customSections]
+  );
+
   const handleExportClick = () => {
     profileFieldsRef.current?.flushToStore();
     const latestResume = useResumeStore.getState().getResumeData(resumeId) ?? resume;
     const exportValidationErrors = validateResume(latestResume);
     if (exportValidationErrors.length > 0) {
       setShowFieldValidation(true);
-      showToast("Please fill in all required fields before exporting.", "error");
+      goToFirstValidationError(exportValidationErrors[0]);
       return;
     }
     setIsExportDropdownOpen(prev => !prev);
@@ -1006,7 +1063,10 @@ const ResumeEditor: React.FC<ResumeEditorProps> = ({
 
   const addExperience = () => {
     const newExp: ResumeExperience = {
-      id: Date.now().toString(),
+      id: nextResumeEntryId(
+        resume.experience.map(e => e.id),
+        "exp"
+      ),
       company: "",
       role: "",
       startDate: "",
@@ -1044,7 +1104,10 @@ const ResumeEditor: React.FC<ResumeEditorProps> = ({
 
   const addEducation = () => {
     const newEdu: ResumeEducation = {
-      id: Date.now().toString(),
+      id: nextResumeEntryId(
+        resume.education.map(e => e.id),
+        "edu"
+      ),
       school: "",
       degree: "",
       startDate: "",
@@ -1084,7 +1147,10 @@ const ResumeEditor: React.FC<ResumeEditorProps> = ({
     updateResume(prev => {
       const categoryName = categoryId ? (prev.skillCategories || []).find(cat => cat.id === categoryId)?.name : undefined;
       const newSkill: ResumeSkill = {
-        id: Date.now().toString(),
+        id: nextResumeEntryId(
+          prev.skills.map(s => s.id),
+          "skill"
+        ),
         name: skillName && skillName.trim().length > 0 ? skillName.trim() : "New Skill",
         categoryId,
         category: categoryName,
@@ -1114,7 +1180,10 @@ const ResumeEditor: React.FC<ResumeEditorProps> = ({
   // -- Projects CRUD --
   const addProject = () => {
     const newProject: ResumeProject = {
-      id: Date.now().toString(),
+      id: nextResumeEntryId(
+        resume.projects.map(p => p.id),
+        "proj"
+      ),
       title: "",
       url: "",
       description: "",
@@ -1143,7 +1212,10 @@ const ResumeEditor: React.FC<ResumeEditorProps> = ({
   // -- Certifications CRUD --
   const addCertification = () => {
     const newCert: ResumeCertification = {
-      id: Date.now().toString(),
+      id: nextResumeEntryId(
+        resume.certifications.map(c => c.id),
+        "cert"
+      ),
       title: "Certification Title",
       issuer: "Issuer",
       description: "Description of the Project...",
@@ -1170,18 +1242,21 @@ const ResumeEditor: React.FC<ResumeEditorProps> = ({
   };
 
   const addCustomSection = () => {
-    const itemId = Date.now().toString();
     const newSection: CustomSection = {
-      id: (Date.now() + 1).toString(),
+      id: nextResumeEntryId(
+        resume.customSections.map(s => s.id),
+        "custom"
+      ),
       title: "",
       items: [
         {
-          id: itemId,
+          id: nextResumeEntryId([], "custom_item"),
           title: "",
           description: "",
         },
       ],
     };
+    const itemId = newSection.items[0]!.id;
     updateResume(prev => ({
       ...prev,
       customSections: [...prev.customSections, newSection],
@@ -1224,8 +1299,9 @@ const ResumeEditor: React.FC<ResumeEditorProps> = ({
   };
 
   const addCustomSectionItem = (sectionId: string) => {
+    const section = resume.customSections.find(s => s.id === sectionId);
     const newItem = {
-      id: Date.now().toString(),
+      id: nextResumeEntryId(section?.items.map(i => i.id) ?? [], "custom_item"),
       title: "",
       subtitle: "",
       description: "",
@@ -1333,7 +1409,11 @@ const ResumeEditor: React.FC<ResumeEditorProps> = ({
         }, DOCUMENT_SAVED_CONFIRMATION_MS);
 
         if (result.created && onSave) {
-          onSave({ ...dataToSave, id: result.id });
+          const savedResume = {
+            ...mapBackendResumeToFrontend(result.resume_data),
+            id: result.id,
+          };
+          onSave(savedResume);
         } else if (onSave) {
           onSave(dataToSave);
         }
@@ -1434,7 +1514,12 @@ const ResumeEditor: React.FC<ResumeEditorProps> = ({
     const onDiscard = (e: Event) => {
       const detail = (e as CustomEvent<{ resumeId: string; baselineJson: string }>).detail;
       if (!detail || detail.resumeId !== resumeId) return;
-      setLastAcknowledgedSnapshot(detail.baselineJson);
+      try {
+        const baseline = JSON.parse(detail.baselineJson) as ResumeData;
+        setLastAcknowledgedSnapshot(getResumeContentSignature(baseline));
+      } catch {
+        setLastAcknowledgedSnapshot(detail.baselineJson);
+      }
     };
     window.addEventListener("resume-adk-discard", onDiscard as EventListener);
     return () => window.removeEventListener("resume-adk-discard", onDiscard as EventListener);
@@ -1465,6 +1550,15 @@ const ResumeEditor: React.FC<ResumeEditorProps> = ({
     window.addEventListener("beforeunload", handleBeforeUnload);
     return () => window.removeEventListener("beforeunload", handleBeforeUnload);
   }, [hasPendingUnsavedChanges]);
+
+  const handleBack = useCallback(() => {
+    profileFieldsRef.current?.flushToStore();
+    if (hasPendingUnsavedChanges && !adkReviewBlocksAutosave && runSaveRef.current) {
+      void runSaveRef.current("auto").finally(onBack);
+      return;
+    }
+    onBack();
+  }, [adkReviewBlocksAutosave, hasPendingUnsavedChanges, onBack]);
 
   const handleTemplateSelect = (id: string) => {
     updateResume(prev => ({ ...prev, templateId: id as ResumeTemplateId }));
@@ -1711,18 +1805,6 @@ const ResumeEditor: React.FC<ResumeEditorProps> = ({
     </div>
   );
 
-  const resumeToolbarKnowledgeBaseButton = (
-    <button
-      type="button"
-      onClick={() => setShowKnowledgeBaseModal(true)}
-      className="flex items-center justify-center p-2 rounded-lg border border-slate-200 dark:border-slate-700 hover:border-brand-300 text-slate-600 dark:text-slate-300 bg-white dark:bg-slate-800 transition-all hover:shadow-sm"
-      title="Resume knowledge base"
-      aria-label="Resume knowledge base"
-    >
-      <Info size={18} className="text-brand-600" />
-    </button>
-  );
-
   const resumeToolbarTemplateButton = (
     <button
       type="button"
@@ -1736,17 +1818,49 @@ const ResumeEditor: React.FC<ResumeEditorProps> = ({
   );
 
   const resumeToolbarAtsButton = (
-    <button
-      type="button"
-      onClick={() => setShowAtsModal(true)}
-      className="flex items-center gap-2 rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm font-medium text-slate-700 transition-all hover:border-brand-200 hover:shadow-md dark:border-slate-700 dark:bg-slate-800 dark:text-slate-200"
+    <ActionHintTooltip
+      enabled={atsGated}
+      side="bottom"
+      align="right"
+      message={
+        atsGate.ok
+          ? ""
+          : atsGate.reason === "fields" && atsGate.firstError
+            ? formatResumeValidationMessage(atsGate.firstError)
+            : atsGate.message
+      }
+      ctaLabel={atsGate.ok ? undefined : atsGate.reason === "fields" && atsGate.firstError ? "Go to field" : undefined}
+      onCta={
+        !atsGate.ok && atsGate.reason === "fields" && atsGate.firstError
+          ? () => {
+              setShowFieldValidation(true);
+              goToFirstValidationError(atsGate.firstError!);
+            }
+          : undefined
+      }
     >
-      <TrendingUp size={16} className={atsPillScore == null ? "text-slate-400" : atsScoreClass} />
-      <span className="text-slate-600 dark:text-slate-400">
-        ATS Score:{" "}
-        <span className={atsPillScore == null ? "text-slate-400" : atsScoreClass}>{atsPillScore == null ? "—" : atsPillScore}</span>
-      </span>
-    </button>
+      <button
+        type="button"
+        onClick={() => {
+          if (atsGated) return;
+          setShowAtsModal(true);
+        }}
+        disabled={atsGated}
+        className={`flex items-center gap-2 rounded-lg border px-3 py-2 text-sm font-medium transition-all dark:border-slate-700 dark:bg-slate-800 ${
+          atsGated
+            ? "cursor-not-allowed border-slate-200 bg-slate-100 text-slate-400 opacity-70 dark:text-slate-500"
+            : "border-slate-200 bg-white text-slate-700 hover:border-brand-200 hover:shadow-md dark:text-slate-200"
+        }`}
+      >
+        <TrendingUp size={16} className={atsGated || atsPillScore == null ? "text-slate-400" : atsScoreClass} />
+        <span className={atsGated ? "text-slate-400 dark:text-slate-500" : "text-slate-600 dark:text-slate-400"}>
+          ATS Score:{" "}
+          <span className={atsGated || atsPillScore == null ? "text-slate-400" : atsScoreClass}>
+            {atsGated || atsPillScore == null ? "—" : atsPillScore}
+          </span>
+        </span>
+      </button>
+    </ActionHintTooltip>
   );
 
   return (
@@ -1777,7 +1891,6 @@ const ResumeEditor: React.FC<ResumeEditorProps> = ({
                 {resumeToolbarSaveStatus}
                 {resumeToolbarTemplateButton}
                 {resumeToolbarAtsButton}
-                {resumeToolbarKnowledgeBaseButton}
               </>
             }
           />
@@ -1786,7 +1899,7 @@ const ResumeEditor: React.FC<ResumeEditorProps> = ({
         <div className="absolute top-0 right-0 left-0 z-20 flex h-16 items-center gap-4 border-b border-slate-200 bg-white/80 px-6 backdrop-blur-md dark:border-slate-700 dark:bg-slate-900/80">
           <div className="flex min-w-0 flex-1 items-center gap-4">
             <button
-              onClick={onBack}
+              onClick={handleBack}
               className="shrink-0 rounded-full p-2 text-slate-500 transition-colors hover:bg-slate-100 dark:text-slate-400 dark:hover:bg-slate-800"
             >
               <ArrowLeft size={20} />
@@ -1795,6 +1908,11 @@ const ResumeEditor: React.FC<ResumeEditorProps> = ({
               <input
                 value={resume.title}
                 onChange={e => updateResume(prev => ({ ...prev, title: e.target.value }))}
+                onBlur={() => {
+                  if (hasPendingUnsavedChanges && !isSaving) {
+                    void runSave("manual");
+                  }
+                }}
                 className="w-full truncate border-b border-transparent bg-transparent px-1 py-0.5 font-medium text-slate-900 outline-none transition-all hover:border-slate-300 focus:border-brand-500 dark:text-white dark:hover:border-slate-600"
                 placeholder="Untitled Resume"
               />
@@ -1805,24 +1923,35 @@ const ResumeEditor: React.FC<ResumeEditorProps> = ({
             {resumeToolbarSaveStatus}
             {resumeToolbarTemplateButton}
             {resumeToolbarAtsButton}
-            {resumeToolbarKnowledgeBaseButton}
 
             <div className="relative" ref={exportDropdownRef}>
-              <button
-                type="button"
-                onClick={handleExportClick}
-                title={validationErrors.length > 0 ? "Please fill in all required fields" : "Export Resume"}
-                className={`flex items-center gap-2 px-4 py-2 rounded-lg font-medium text-sm transition-all shadow-md ${
-                  validationErrors.length > 0
-                    ? "bg-slate-400 hover:bg-slate-500 text-white"
-                    : isPublishedResume
-                      ? "border border-green-500/30 bg-green-50 text-green-800 hover:bg-green-100 hover:shadow-lg hover:-translate-y-0.5 dark:border-green-500/25 dark:bg-green-950/40 dark:text-green-300 dark:hover:bg-green-950/55"
-                      : "bg-slate-900 hover:bg-slate-800 text-white hover:shadow-lg hover:-translate-y-0.5"
-                }`}
+              <ActionHintTooltip
+                enabled={validationErrors.length > 0}
+                side="bottom"
+                message={validationErrors[0] ? formatResumeValidationMessage(validationErrors[0]) : "Please fill in all required fields."}
+                ctaLabel="Go to field"
+                align="right"
+                onCta={() => {
+                  if (!validationErrors[0]) return;
+                  setShowFieldValidation(true);
+                  goToFirstValidationError(validationErrors[0]);
+                }}
               >
-                {isPublishedResume ? <ResumePublishedBeacon label="Resume published" /> : null}
-                <Share2 size={16} /> Share & Download
-              </button>
+                <button
+                  type="button"
+                  onClick={handleExportClick}
+                  className={`flex items-center gap-2 px-4 py-2 rounded-lg font-medium text-sm transition-all shadow-md ${
+                    validationErrors.length > 0
+                      ? "bg-slate-400 hover:bg-slate-500 text-white"
+                      : isPublishedResume
+                        ? "border border-green-500/30 bg-green-50 text-green-800 hover:bg-green-100 hover:shadow-lg hover:-translate-y-0.5 dark:border-green-500/25 dark:bg-green-950/40 dark:text-green-300 dark:hover:bg-green-950/55"
+                        : "bg-slate-900 hover:bg-slate-800 text-white hover:shadow-lg hover:-translate-y-0.5"
+                  }`}
+                >
+                  {isPublishedResume ? <ResumePublishedBeacon label="Resume published" /> : null}
+                  <Share2 size={16} /> Share & Download
+                </button>
+              </ActionHintTooltip>
 
               {isExportDropdownOpen && (
                 <div
@@ -1865,7 +1994,7 @@ const ResumeEditor: React.FC<ResumeEditorProps> = ({
                       <button
                         type="button"
                         onClick={handleEnterPublishMode}
-                        disabled={!resumeId?.trim()}
+                        disabled={!isPersistedResumeId(resumeId)}
                         className="flex w-full items-center gap-3 px-4 py-2.5 text-sm text-slate-700 transition-colors hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-50 dark:text-slate-200 dark:hover:bg-slate-800"
                       >
                         <Share2 size={16} className="text-slate-500" />
@@ -2114,6 +2243,7 @@ const ResumeEditor: React.FC<ResumeEditorProps> = ({
                           <div className="grid grid-cols-2 gap-3">
                             <div>
                               <input
+                                id={resumeFieldDomId("experience", "role", exp.id)}
                                 placeholder="Role"
                                 value={exp.role}
                                 onChange={e => updateExperience(exp.id, "role", e.target.value)}
@@ -2129,6 +2259,7 @@ const ResumeEditor: React.FC<ResumeEditorProps> = ({
                             </div>
                             <div>
                               <input
+                                id={resumeFieldDomId("experience", "company", exp.id)}
                                 placeholder="Company"
                                 value={exp.company}
                                 onChange={e => updateExperience(exp.id, "company", e.target.value)}
@@ -2146,6 +2277,7 @@ const ResumeEditor: React.FC<ResumeEditorProps> = ({
                           <div className="grid grid-cols-2 gap-3">
                             <div>
                               <MonthYearPicker
+                                id={resumeFieldDomId("experience", "startDate", exp.id)}
                                 placeholder="Start Date"
                                 value={exp.startDate}
                                 onChange={val => updateExperience(exp.id, "startDate", val)}
@@ -2161,6 +2293,7 @@ const ResumeEditor: React.FC<ResumeEditorProps> = ({
                             </div>
                             <div>
                               <MonthYearPicker
+                                id={resumeFieldDomId("experience", "endDate", exp.id)}
                                 disabled={exp.current}
                                 min={exp.startDate}
                                 placeholder={exp.current ? "Ongoing" : "End Date"}
@@ -2301,6 +2434,7 @@ const ResumeEditor: React.FC<ResumeEditorProps> = ({
                           <div className="grid grid-cols-2 gap-3">
                             <div>
                               <input
+                                id={resumeFieldDomId("education", "school", edu.id)}
                                 placeholder="School/University"
                                 value={edu.school}
                                 onChange={e => updateEducation(edu.id, "school", e.target.value)}
@@ -2316,6 +2450,7 @@ const ResumeEditor: React.FC<ResumeEditorProps> = ({
                             </div>
                             <div>
                               <input
+                                id={resumeFieldDomId("education", "degree", edu.id)}
                                 placeholder="Degree/Major"
                                 value={edu.degree}
                                 onChange={e => updateEducation(edu.id, "degree", e.target.value)}
@@ -2333,6 +2468,7 @@ const ResumeEditor: React.FC<ResumeEditorProps> = ({
                           <div className="grid grid-cols-2 gap-3">
                             <div>
                               <MonthYearPicker
+                                id={resumeFieldDomId("education", "startDate", edu.id)}
                                 placeholder="Start Date"
                                 value={edu.startDate}
                                 onChange={val => updateEducation(edu.id, "startDate", val)}
@@ -2348,6 +2484,7 @@ const ResumeEditor: React.FC<ResumeEditorProps> = ({
                             </div>
                             <div>
                               <MonthYearPicker
+                                id={resumeFieldDomId("education", "endDate", edu.id)}
                                 disabled={edu.current}
                                 min={edu.startDate}
                                 placeholder={edu.current ? "Ongoing" : "End Date"}
@@ -2636,18 +2773,34 @@ const ResumeEditor: React.FC<ResumeEditorProps> = ({
                           <div className="grid grid-cols-2 gap-3">
                             <div>
                               <input
+                                id={resumeFieldDomId("projects", "title", proj.id)}
                                 placeholder="Project Title"
                                 value={proj.title}
                                 onChange={e => updateProject(proj.id, "title", e.target.value)}
-                                className="w-full p-3 bg-white dark:bg-slate-700 border border-slate-200 dark:border-slate-600 rounded-lg text-sm font-medium text-slate-900 dark:text-white focus:border-brand-500 focus:ring-1 focus:ring-brand-500 outline-none transition-all dark:placeholder:text-slate-400"
+                                className={`w-full p-3 bg-white dark:bg-slate-700 border rounded-lg text-sm font-medium text-slate-900 dark:text-white focus:border-brand-500 focus:ring-1 focus:ring-brand-500 outline-none transition-all dark:placeholder:text-slate-400 ${getError("projects", "title", proj.id) ? "border-red-500" : "border-slate-200 dark:border-slate-600"}`}
+                              />
+                              <ResumeFieldError
+                                errors={validationErrors}
+                                section="projects"
+                                field="title"
+                                id={proj.id}
+                                visible={showFieldValidation}
                               />
                             </div>
                             <div>
                               <input
+                                id={resumeFieldDomId("projects", "url", proj.id)}
                                 placeholder="Project URL"
                                 value={proj.url || ""}
                                 onChange={e => updateProject(proj.id, "url", e.target.value)}
-                                className="w-full p-3 bg-white dark:bg-slate-700 border border-slate-200 dark:border-slate-600 rounded-lg text-sm text-slate-900 dark:text-white focus:border-brand-500 focus:ring-1 focus:ring-brand-500 outline-none transition-all dark:placeholder:text-slate-400"
+                                className={`w-full p-3 bg-white dark:bg-slate-700 border rounded-lg text-sm text-slate-900 dark:text-white focus:border-brand-500 focus:ring-1 focus:ring-brand-500 outline-none transition-all dark:placeholder:text-slate-400 ${getError("projects", "url", proj.id) ? "border-red-500" : "border-slate-200 dark:border-slate-600"}`}
+                              />
+                              <ResumeFieldError
+                                errors={validationErrors}
+                                section="projects"
+                                field="url"
+                                id={proj.id}
+                                visible={showFieldValidation}
                               />
                             </div>
                           </div>
@@ -2740,10 +2893,18 @@ const ResumeEditor: React.FC<ResumeEditorProps> = ({
                         <div className="space-y-3 pt-2 border-t border-slate-200 dark:border-slate-700 mt-2">
                           <div>
                             <input
+                              id={resumeFieldDomId("certifications", "title", cert.id)}
                               placeholder="Certification Title"
                               value={cert.title}
                               onChange={e => updateCertification(cert.id, "title", e.target.value)}
-                              className="w-full p-3 bg-white dark:bg-slate-700 border border-slate-200 dark:border-slate-600 rounded-lg text-sm font-medium text-slate-900 dark:text-white focus:border-brand-500 focus:ring-1 focus:ring-brand-500 outline-none transition-all dark:placeholder:text-slate-400"
+                              className={`w-full p-3 bg-white dark:bg-slate-700 border rounded-lg text-sm font-medium text-slate-900 dark:text-white focus:border-brand-500 focus:ring-1 focus:ring-brand-500 outline-none transition-all dark:placeholder:text-slate-400 ${getError("certifications", "title", cert.id) ? "border-red-500" : "border-slate-200 dark:border-slate-600"}`}
+                            />
+                            <ResumeFieldError
+                              errors={validationErrors}
+                              section="certifications"
+                              field="title"
+                              id={cert.id}
+                              visible={showFieldValidation}
                             />
                           </div>
                           <div className="grid grid-cols-2 gap-3">
@@ -2767,10 +2928,18 @@ const ResumeEditor: React.FC<ResumeEditorProps> = ({
                           </div>
                           <div>
                             <input
+                              id={resumeFieldDomId("certifications", "credentialUrl", cert.id)}
                               placeholder="Credential URL"
                               value={cert.credentialUrl || ""}
                               onChange={e => updateCertification(cert.id, "credentialUrl", e.target.value)}
-                              className="w-full p-3 bg-white dark:bg-slate-700 border border-slate-200 dark:border-slate-600 rounded-lg text-sm text-slate-900 dark:text-white focus:border-brand-500 focus:ring-1 focus:ring-brand-500 outline-none transition-all dark:placeholder:text-slate-400"
+                              className={`w-full p-3 bg-white dark:bg-slate-700 border rounded-lg text-sm text-slate-900 dark:text-white focus:border-brand-500 focus:ring-1 focus:ring-brand-500 outline-none transition-all dark:placeholder:text-slate-400 ${getError("certifications", "credentialUrl", cert.id) ? "border-red-500" : "border-slate-200 dark:border-slate-600"}`}
+                            />
+                            <ResumeFieldError
+                              errors={validationErrors}
+                              section="certifications"
+                              field="credentialUrl"
+                              id={cert.id}
+                              visible={showFieldValidation}
                             />
                           </div>
                           <TiptapEditor
@@ -2798,6 +2967,7 @@ const ResumeEditor: React.FC<ResumeEditorProps> = ({
                             Section Title
                           </label>
                           <input
+                            id={resumeFieldDomId("custom", "title", sec.id)}
                             value={normalizeCustomSectionTitle(sec.title)}
                             onChange={e => updateCustomSectionTitle(sec.id, e.target.value)}
                             className={`text-xl font-medium text-slate-900 dark:text-white bg-transparent border-b hover:border-slate-300 dark:hover:border-slate-600 focus:border-brand-500 focus:ring-0 px-0 w-full transition-all placeholder:text-slate-900/55 dark:placeholder:text-white/55 ${getError("custom", "title", sec.id) ? "border-red-500" : "border-transparent"}`}
@@ -2881,6 +3051,7 @@ const ResumeEditor: React.FC<ResumeEditorProps> = ({
                             <div className="grid grid-cols-1 gap-3">
                               <div className="flex-1">
                                 <input
+                                  id={resumeFieldDomId("custom", "title", item.id)}
                                   value={normalizeCustomItemTitle(item.title)}
                                   onChange={e => updateCustomSectionItem(sec.id, item.id, "title", e.target.value)}
                                   className={`w-full p-2 bg-transparent text-sm font-medium border-b hover:border-slate-300 dark:hover:border-slate-600 outline-none transition-all dark:text-white placeholder:text-slate-800/60 dark:placeholder:text-slate-200/60 ${getError("custom", "title", item.id) ? "border-red-500" : "border-transparent"}`}
@@ -2923,12 +3094,14 @@ const ResumeEditor: React.FC<ResumeEditorProps> = ({
                               <>
                                 <div className="grid grid-cols-2 gap-3">
                                   <MonthYearPicker
+                                    id={resumeFieldDomId("custom", "startDate", item.id)}
                                     placeholder="Start Date"
                                     value={item.startDate || ""}
                                     onChange={val => updateCustomSectionItem(sec.id, item.id, "startDate", val)}
                                     className="border-slate-200 dark:border-slate-600"
                                   />
                                   <MonthYearPicker
+                                    id={resumeFieldDomId("custom", "endDate", item.id)}
                                     disabled={item.current}
                                     min={item.startDate}
                                     placeholder={item.current ? "Ongoing" : "End Date"}
@@ -2944,9 +3117,16 @@ const ResumeEditor: React.FC<ResumeEditorProps> = ({
                                     }}
                                     align="right"
                                     allowPresent
-                                    className="border-slate-200 dark:border-slate-600"
+                                    className={`${getError("custom", "endDate", item.id) ? "border-red-500" : "border-slate-200 dark:border-slate-600"}`}
                                   />
                                 </div>
+                                <ResumeFieldError
+                                  errors={validationErrors}
+                                  section="custom"
+                                  field="endDate"
+                                  id={item.id}
+                                  visible={showFieldValidation}
+                                />
                                 <div className="flex items-center gap-2 mt-2">
                                   <input
                                     type="checkbox"
@@ -3497,8 +3677,6 @@ const ResumeEditor: React.FC<ResumeEditorProps> = ({
             document.body
           )
         : null}
-
-      <ResumeKnowledgeBaseModal open={showKnowledgeBaseModal} onClose={() => setShowKnowledgeBaseModal(false)} />
 
       {pendingDeleteSkillCategoryId && (
         <ModalPortalOverlay className="flex items-center justify-center bg-slate-900/50 backdrop-blur-sm animate-in fade-in duration-200">

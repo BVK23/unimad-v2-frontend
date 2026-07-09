@@ -2,6 +2,7 @@
 
 import React, { forwardRef, useCallback, useEffect, useImperativeHandle, useRef, useState } from "react";
 import TiptapEditor from "@/components/TiptapEditor";
+import { resumeFieldDomId } from "@/features/resume/utils/resume-validation-focus";
 import type { ResumeProfile } from "@/types";
 import type { ValidationError } from "@/utils/validation";
 import ResumeFieldError from "./ResumeFieldError";
@@ -59,7 +60,12 @@ const ResumePersonalDetailsFields = forwardRef<ResumePersonalDetailsFieldsHandle
     );
 
     useEffect(() => {
+      if (syncTimerRef.current) return;
+
       const incoming = JSON.stringify(profile);
+      const localSignature = JSON.stringify(localProfileRef.current);
+      if (localSignature !== pushedSignatureRef.current) return;
+
       if (incoming === pushedSignatureRef.current) return;
       pushedSignatureRef.current = incoming;
       localProfileRef.current = profile;
@@ -95,6 +101,7 @@ const ResumePersonalDetailsFields = forwardRef<ResumePersonalDetailsFieldsHandle
         <div className="space-y-4">
           <div>
             <input
+              id={resumeFieldDomId("profile", "fullName")}
               placeholder="Full Name"
               value={localProfile.fullName ?? ""}
               onChange={e => handleFieldChange("fullName", e.target.value)}
@@ -113,6 +120,7 @@ const ResumePersonalDetailsFields = forwardRef<ResumePersonalDetailsFieldsHandle
           <div className="grid grid-cols-2 gap-4">
             <div>
               <input
+                id={resumeFieldDomId("profile", "email")}
                 placeholder="Email"
                 value={localProfile.email ?? ""}
                 onChange={e => handleFieldChange("email", e.target.value)}
@@ -123,6 +131,7 @@ const ResumePersonalDetailsFields = forwardRef<ResumePersonalDetailsFieldsHandle
             </div>
             <div>
               <input
+                id={resumeFieldDomId("profile", "phone")}
                 placeholder="Phone"
                 value={localProfile.phone ?? ""}
                 onChange={e => handleFieldChange("phone", e.target.value)}
@@ -163,12 +172,14 @@ const ResumePersonalDetailsFields = forwardRef<ResumePersonalDetailsFieldsHandle
             className={inputClass}
           />
           <input
+            id={resumeFieldDomId("profile", "portfolio")}
             placeholder="Portfolio (URL)"
             value={localProfile.portfolio || ""}
             onChange={e => handleFieldChange("portfolio", e.target.value)}
             onBlur={flushToStore}
-            className={inputClass}
+            className={`${inputClass} ${fieldError("portfolio") ? "border-red-500" : ""}`}
           />
+          <ResumeFieldError errors={validationErrors} section="profile" field="portfolio" visible={showFieldValidation} />
           <div className="pt-2">
             <label className="text-xs font-medium text-slate-500 dark:text-slate-400 block mb-2 uppercase tracking-wide">
               Professional Summary

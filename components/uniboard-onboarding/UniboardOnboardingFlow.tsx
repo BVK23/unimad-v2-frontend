@@ -1,24 +1,17 @@
 "use client";
 
-import { useCallback, useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import PhoneInput, { isValidPhoneNumber } from "react-phone-number-input";
 import "react-phone-number-input/style.css";
-import { extractResume, saveOnboardingData } from "@/lib/actions/onboardingActions";
+import { useOnboardingStore, type OnboardingAnswers } from "@/features/onboarding/useOnboardingStore";
+import { extractResume } from "@/lib/actions/onboardingActions";
 import { AnimatePresence, motion } from "framer-motion";
-import { Loader2 } from "lucide-react";
 import { useRouter } from "next/navigation";
 import NicheStep from "./NicheStep";
 import OnboardingTestPanel from "./OnboardingTestPanel";
 import { buildPersonalizationPayload, getPhoneValidationError, isExplorerOnlyGoals, validateLinkedInUrl } from "./helpers";
-import {
-  FOCUS_OPTIONS,
-  GOAL_OPTIONS,
-  PRAISE_OPTIONS,
-  PROBLEM_OPTIONS,
-  STAGE_OPTIONS,
-  STRENGTH_OPTIONS,
-  type OnboardingOption,
-} from "./options";
+// TODO(product): Re-enable STRENGTH_OPTIONS / PROBLEM_OPTIONS / PRAISE_OPTIONS when voice personalisation is wired into agents.
+import { GOAL_OPTIONS, STAGE_OPTIONS, type OnboardingOption } from "./options";
 import ProfileBuilderStep from "./profile-builder/ProfileBuilderStep";
 import { TEST_MOCK_NICHE_ROLES, type OnboardingStepKey, type OnboardingTestAnswers, type OnboardingTestConfig } from "./testMode";
 import {
@@ -39,8 +32,7 @@ const STEP_PROGRESS: Record<OnboardingStepKey, number> = {
   name: 0.08,
   phone: 0.14,
   linkedin: 0.2,
-  goals: 0.28,
-  focus: 0.36,
+  goals: 0.3,
   stage: 0.44,
   personalize: 0.5,
   resume: 0.58,
@@ -82,35 +74,45 @@ export default function UniboardOnboardingFlow({
   initialMode = null,
   testConfig = null,
 }: {
-  initialMode?: "niche" | "strengths" | null;
+  initialMode?: "niche" | "strengths" | "profile_setup" | null;
   testConfig?: OnboardingTestConfig | null;
 }) {
   const router = useRouter();
-  const [answers, setAnswers] = useState<OnboardingTestAnswers>(() => (testConfig ? { ...testConfig.answers } : { ...EMPTY }));
+
+  const answers = useOnboardingStore(s => s.answers);
+  const skipSave = useOnboardingStore(s => s.skipSave);
+  const setAnswers = useOnboardingStore(s => s.setAnswers);
+  const setSkipSave = useOnboardingStore(s => s.setSkipSave);
+  const save = useOnboardingStore(s => s.save);
+  const retryFailed = useOnboardingStore(s => s.retryFailed);
+  const flush = useOnboardingStore(s => s.flush);
+  const initFlow = useOnboardingStore(s => s.initFlow);
+  const replaceAnswers = useOnboardingStore(s => s.replaceAnswers);
+
   const [stack, setStack] = useState<OnboardingStepKey[]>(() => {
     if (testConfig) return [testConfig.initialStep];
     if (initialMode === "niche") return ["niche"];
     if (initialMode === "strengths") return ["strengths"];
+    // Minimal-onboarded users returning to finish resume + niche.
+    if (initialMode === "profile_setup") return ["resume"];
     return ["welcome"];
   });
-  const [skipSave, setSkipSave] = useState(() => testConfig?.skipSave ?? false);
   const [mockNiche, setMockNiche] = useState(() => testConfig?.mockNiche ?? false);
   const [direction, setDirection] = useState(1);
-  const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const current = stack[stack.length - 1];
 
-  const set = (patch: Partial<OnboardingTestAnswers>) => setAnswers(prev => ({ ...prev, ...patch }));
+  // Reset the store once per mount (the page remounts via key when test params change).
+  useEffect(() => {
+    initFlow({ answers: testConfig ? { ...testConfig.answers } : { ...EMPTY }, skipSave: testConfig?.skipSave ?? false });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
-  const saveData = async (type: Parameters<typeof saveOnboardingData>[0], data: Record<string, unknown>) => {
-    if (skipSave) {
-      console.info("[onboarding test] skip save", type, data);
-      return;
-    }
-    await saveOnboardingData(type, data);
-  };
+  const set = (patch: Partial<OnboardingAnswers>) => setAnswers(patch);
 
+  // Advance to the next step, re-sending any previously-failed saves as we go.
   const go = (next: OnboardingStepKey) => {
+    retryFailed();
     setDirection(1);
     setStack(s => [...s, next]);
   };
@@ -120,13 +122,13 @@ export default function UniboardOnboardingFlow({
     setStack(s => (s.length > 1 ? s.slice(0, -1) : s));
   };
 
-  const persistPersonalization = async (patch: Partial<OnboardingTestAnswers> = {}) => {
-    const merged = { ...answers, ...patch };
-    await saveData("personalization_profile", {
+  // Optimistically persist the personalization blob (+ goal). Non-blocking; deduped in the store.
+  const syncPersonalization = (patch: Partial<OnboardingAnswers> = {}) => {
+    const merged = { ...useOnboardingStore.getState().answers, ...patch };
+    save("personalization_profile", {
       profile: buildPersonalizationPayload({
         goals: merged.goals,
         focus: merged.focus,
-        stage: merged.stage,
         personalize: merged.personalize,
         strengths: merged.strengths,
         problems: merged.problems,
@@ -135,7 +137,10 @@ export default function UniboardOnboardingFlow({
       }),
     });
     if (merged.goals.length > 0) {
-      await saveData("goal", { goal: merged.goals[0] });
+      save("goal", { goal: merged.goals[0] });
+    }
+    if (merged.stage.length > 0) {
+      save("career_stage", { career_stage: merged.stage });
     }
   };
 
@@ -144,27 +149,17 @@ export default function UniboardOnboardingFlow({
     router.refresh();
   }, [router]);
 
-  const finishAndEnter = async () => {
-    setBusy(true);
-    try {
-      if (!skipSave) {
-        await persistPersonalization();
-        await saveData("complete_minimal", {});
-      } else {
-        console.info("[onboarding test] skip save — navigating to", ENTER_APP);
-      }
-      enterApp();
-    } catch (e) {
-      setError(e instanceof Error ? e.message : "Something went wrong");
-    } finally {
-      setBusy(false);
-    }
+  const finishAndEnter = (patch: Partial<OnboardingAnswers> = {}) => {
+    syncPersonalization(patch);
+    save("complete_minimal", {});
+    enterApp();
+    void flush().catch(err => console.warn("[onboarding] background flush failed", err));
   };
 
   const jumpToTestStep = (step: OnboardingStepKey, nextAnswers: OnboardingTestAnswers) => {
     setDirection(1);
     setStack([step]);
-    setAnswers(nextAnswers);
+    replaceAnswers(nextAnswers);
     setError(null);
   };
 
@@ -178,7 +173,6 @@ export default function UniboardOnboardingFlow({
           personalization={buildPersonalizationPayload({
             goals: answers.goals,
             focus: answers.focus,
-            stage: answers.stage,
             personalize: answers.personalize,
             strengths: answers.strengths,
             problems: answers.problems,
@@ -189,7 +183,7 @@ export default function UniboardOnboardingFlow({
           onBack={back}
           onComplete={async () => {
             set({ resumeUploaded: true });
-            await persistPersonalization({ resumeUploaded: true });
+            syncPersonalization({ resumeUploaded: true });
             go("niche");
           }}
         />
@@ -211,13 +205,6 @@ export default function UniboardOnboardingFlow({
     <>
       <div className={testConfig ? "pb-52" : undefined}>
         <OnboardingShell progress={STEP_PROGRESS[current]} onBack={back} showBack={showBack}>
-          {busy ? (
-            <div className="flex flex-col items-center gap-3 py-16">
-              <Loader2 className="animate-spin text-[#346DE0]" size={28} />
-              <p className="text-sm text-[#4A5568]">Saving…</p>
-            </div>
-          ) : null}
-
           {error ? (
             <p className="mb-4 text-center text-sm text-red-600" role="alert">
               {error}
@@ -233,7 +220,6 @@ export default function UniboardOnboardingFlow({
               animate="center"
               exit="exit"
               transition={{ duration: 0.28, ease: [0.22, 1, 0.36, 1] }}
-              className={busy ? "pointer-events-none opacity-0" : undefined}
             >
               {current === "welcome" && <WelcomeStep onStart={() => go("name")} />}
 
@@ -241,17 +227,10 @@ export default function UniboardOnboardingFlow({
                 <NameStep
                   value={answers.name}
                   onChange={v => set({ name: v })}
-                  onNext={async () => {
-                    setBusy(true);
+                  onNext={() => {
                     setError(null);
-                    try {
-                      await saveData("preferred_name", { preferred_name: answers.name.trim() });
-                      go("phone");
-                    } catch (e) {
-                      setError(e instanceof Error ? e.message : "Failed to save name");
-                    } finally {
-                      setBusy(false);
-                    }
+                    save("preferred_name", { preferred_name: answers.name.trim() });
+                    go("phone");
                   }}
                 />
               )}
@@ -260,8 +239,8 @@ export default function UniboardOnboardingFlow({
                 <PhoneStep
                   value={answers.phone}
                   onChange={v => set({ phone: v })}
-                  onNext={async phone => {
-                    await saveData("whatsapp", { whatsapp_number: phone });
+                  onNext={phone => {
+                    save("whatsapp", { whatsapp_number: phone });
                     go("linkedin");
                   }}
                 />
@@ -271,8 +250,13 @@ export default function UniboardOnboardingFlow({
                 <LinkedInStep
                   value={answers.linkedin}
                   onChange={v => set({ linkedin: v })}
-                  onContinue={async url => {
-                    await saveData("linkedin_url", { linkedin_url: url });
+                  onContinue={url => {
+                    if (skipSave) {
+                      console.info("[onboarding test] skip save", "linkedin_url", url);
+                      go("goals");
+                      return;
+                    }
+                    save("linkedin_url", { linkedin_url: url });
                     go("goals");
                   }}
                   onSkip={() => go("goals")}
@@ -280,29 +264,28 @@ export default function UniboardOnboardingFlow({
               )}
 
               {current === "goals" && (
-                <GoalsStep name={answers.name} value={answers.goals} onChange={v => set({ goals: v })} onNext={() => go("focus")} />
+                <GoalsStep
+                  name={answers.name}
+                  value={answers.goals}
+                  onChange={v => set({ goals: v })}
+                  onNext={() => {
+                    syncPersonalization();
+                    go("stage");
+                  }}
+                />
               )}
-
-              {current === "focus" && <FocusStep value={answers.focus} onChange={v => set({ focus: v })} onNext={() => go("stage")} />}
 
               {current === "stage" && (
                 <StageStep
                   value={answers.stage}
                   onChange={v => set({ stage: v })}
-                  onNext={async () => {
-                    setBusy(true);
+                  onNext={() => {
                     setError(null);
-                    try {
-                      await persistPersonalization();
-                      if (isExplorerOnlyGoals(answers.goals)) {
-                        await finishAndEnter();
-                      } else {
-                        go("personalize");
-                      }
-                    } catch (e) {
-                      setError(e instanceof Error ? e.message : "Failed to save");
-                    } finally {
-                      setBusy(false);
+                    syncPersonalization();
+                    if (isExplorerOnlyGoals(answers.goals)) {
+                      finishAndEnter();
+                    } else {
+                      go("personalize");
                     }
                   }}
                 />
@@ -311,28 +294,15 @@ export default function UniboardOnboardingFlow({
               {current === "personalize" && (
                 <PersonalizeStep
                   name={answers.name}
-                  onYes={async () => {
+                  onYes={() => {
                     set({ personalize: true });
-                    await persistPersonalization({ personalize: true });
+                    syncPersonalization({ personalize: true });
                     go("resume");
                   }}
-                  onSkip={async () => {
-                    setBusy(true);
+                  onSkip={() => {
                     setError(null);
-                    try {
-                      set({ personalize: false });
-                      if (!skipSave) {
-                        await persistPersonalization({ personalize: false });
-                        await saveData("complete_minimal", {});
-                      } else {
-                        console.info("[onboarding test] skip save — navigating to", ENTER_APP);
-                      }
-                      enterApp();
-                    } catch (e) {
-                      setError(e instanceof Error ? e.message : "Failed to save");
-                    } finally {
-                      setBusy(false);
-                    }
+                    set({ personalize: false });
+                    finishAndEnter({ personalize: false });
                   }}
                 />
               )}
@@ -350,7 +320,7 @@ export default function UniboardOnboardingFlow({
                         await extractResume(formData);
                       }
                       set({ resumeUploaded: true });
-                      await persistPersonalization({ resumeUploaded: true });
+                      syncPersonalization({ resumeUploaded: true });
                       go("niche");
                     } catch (e) {
                       setError(e instanceof Error ? e.message : "Failed to read resume");
@@ -365,69 +335,25 @@ export default function UniboardOnboardingFlow({
                 <NicheStep
                   name={answers.name}
                   mockRoles={mockNiche ? TEST_MOCK_NICHE_ROLES : undefined}
-                  onNext={async (role, allRoles) => {
-                    setBusy(true);
+                  liveDiscovery={!mockNiche}
+                  onNext={async (_role, allRoles) => {
                     setError(null);
-                    try {
-                      await saveData("desired_roles", { role: allRoles.filter(Boolean) });
-                      go("strengths");
-                    } catch (e) {
-                      setError(e instanceof Error ? e.message : "Failed to save role");
-                    } finally {
-                      setBusy(false);
-                    }
+                    save("desired_roles", { role: allRoles.filter(Boolean) });
+                    // TODO(product): After niche used to go to strengths → problems → praise.
+                    // Deferred until voice personalisation is wired into agents. Niche → done → product.
+                    syncPersonalization();
+                    save("complete_minimal", {});
+                    go("done");
                   }}
                 />
               )}
 
-              {current === "strengths" && (
-                <MultiSelectStep
-                  title={answers.name.trim() ? `Now the fun part, ${answers.name.trim()}` : "Now the fun part"}
-                  subtitle="What comes naturally to you?"
-                  options={STRENGTH_OPTIONS}
-                  value={answers.strengths}
-                  max={4}
-                  onChange={v => set({ strengths: v })}
-                  onNext={() => go("problems")}
-                  onSkip={async () => {
-                    setError(null);
-                    await finishAndEnter();
-                  }}
-                  skipLabel="Skip for now"
-                />
-              )}
+              {/*
+              TODO(product): Re-enable strengths / problems / praise steps once agents actually use them.
+              See options.ts STRENGTH_OPTIONS / PROBLEM_OPTIONS / PRAISE_OPTIONS and helpers.buildPersonalizationPayload.
+              */}
 
-              {current === "problems" && (
-                <MultiSelectStep
-                  title="What problems do you love solving?"
-                  options={PROBLEM_OPTIONS}
-                  value={answers.problems}
-                  max={3}
-                  onChange={v => set({ problems: v })}
-                  onNext={() => go("praise")}
-                />
-              )}
-
-              {current === "praise" && (
-                <MultiSelectStep
-                  title="What do people praise you for?"
-                  options={PRAISE_OPTIONS}
-                  value={answers.praise}
-                  max={3}
-                  onChange={v => set({ praise: v })}
-                  onNext={async () => {
-                    setBusy(true);
-                    try {
-                      await persistPersonalization();
-                      go("done");
-                    } finally {
-                      setBusy(false);
-                    }
-                  }}
-                />
-              )}
-
-              {current === "done" && <DoneStep name={answers.name} onEnter={finishAndEnter} />}
+              {current === "done" && <DoneStep name={answers.name} onEnter={() => finishAndEnter()} />}
             </motion.div>
           </AnimatePresence>
         </OnboardingShell>
@@ -526,17 +452,8 @@ function NameStep({ value, onChange, onNext }: { value: string; onChange: (v: st
   );
 }
 
-function PhoneStep({
-  value,
-  onChange,
-  onNext,
-}: {
-  value: string;
-  onChange: (v: string) => void;
-  onNext: (phone: string) => Promise<void>;
-}) {
+function PhoneStep({ value, onChange, onNext }: { value: string; onChange: (v: string) => void; onNext: (phone: string) => void }) {
   const [error, setError] = useState<string | null>(null);
-  const [saving, setSaving] = useState(false);
   const phoneValue = value || undefined;
 
   const inputClassName =
@@ -547,7 +464,7 @@ function PhoneStep({
 
   const fieldBorderClass = error ? "border-rose-300" : "border-[rgba(12,15,26,0.12)]";
 
-  const handleContinue = async () => {
+  const handleContinue = () => {
     const validationError = getPhoneValidationError(phoneValue, isValidPhoneNumber);
     if (validationError) {
       setError(validationError);
@@ -555,22 +472,15 @@ function PhoneStep({
     }
 
     setError(null);
-    setSaving(true);
-    try {
-      await onNext(phoneValue!);
-    } catch (e) {
-      setError(e instanceof Error ? e.message : "Could not save your number. Please try again.");
-    } finally {
-      setSaving(false);
-    }
+    onNext(phoneValue!);
   };
 
   return (
     <div className="flex flex-col items-center gap-7">
       <QuestionHeader title="What's your WhatsApp number?" subtitle="We'll only reach out about things that matter to your search." />
-      <div className="w-full max-w-md">
+      <div className="onboarding-phone-input relative z-[60] w-full max-w-md overflow-visible">
         <div
-          className={`[&_.PhoneInput]:flex [&_.PhoneInput]:w-full [&_.PhoneInput]:items-stretch [&_.PhoneInput]:gap-2 ${error ? "[&_.PhoneInputCountry]:border-rose-300" : ""}`}
+          className={`[&_.PhoneInput]:flex [&_.PhoneInput]:w-full [&_.PhoneInput]:items-stretch [&_.PhoneInput]:gap-2 [&_.PhoneInputCountry]:relative [&_.PhoneInputCountry]:z-[70] ${error ? "[&_.PhoneInputCountry]:border-rose-300" : ""}`}
         >
           <PhoneInput
             international
@@ -585,6 +495,9 @@ function PhoneStep({
             numberInputProps={{
               className: `${inputClassName} ${fieldBorderClass}`,
               placeholder: "Phone number",
+              onKeyDown: (e: React.KeyboardEvent<HTMLInputElement>) => {
+                if (e.key === "Enter") handleContinue();
+              },
             }}
             countrySelectProps={{
               className: `${countrySelectClassName} ${fieldBorderClass}`,
@@ -593,9 +506,25 @@ function PhoneStep({
         </div>
         {error ? <p className="mt-2 text-left text-sm text-rose-600">{error}</p> : null}
       </div>
-      <PrimaryButton onClick={handleContinue} disabled={saving}>
-        {saving ? "Saving…" : "Continue"}
-      </PrimaryButton>
+      <style jsx global>{`
+        .onboarding-phone-input .PhoneInputCountry {
+          position: relative;
+          z-index: 70;
+        }
+        .onboarding-phone-input .PhoneInputCountrySelect {
+          position: absolute;
+          inset: 0;
+          width: 100%;
+          height: 100%;
+          opacity: 0;
+          cursor: pointer;
+          z-index: 2;
+        }
+        .onboarding-phone-input .PhoneInputCountryIcon {
+          z-index: 1;
+        }
+      `}</style>
+      <PrimaryButton onClick={handleContinue}>Continue</PrimaryButton>
     </div>
   );
 }
@@ -608,13 +537,12 @@ function LinkedInStep({
 }: {
   value: string;
   onChange: (v: string) => void;
-  onContinue: (url: string) => Promise<void>;
+  onContinue: (url: string) => void;
   onSkip: () => void;
 }) {
   const [error, setError] = useState<string | null>(null);
-  const [saving, setSaving] = useState(false);
 
-  const handleContinue = async () => {
+  const handleContinue = () => {
     const validationError = validateLinkedInUrl(value);
     if (validationError) {
       setError(validationError);
@@ -622,14 +550,7 @@ function LinkedInStep({
     }
 
     setError(null);
-    setSaving(true);
-    try {
-      await onContinue(value.trim());
-    } catch (e) {
-      setError(e instanceof Error ? e.message : "Could not save your LinkedIn URL. Please try again.");
-    } finally {
-      setSaving(false);
-    }
+    onContinue(value.trim());
   };
 
   return (
@@ -649,12 +570,8 @@ function LinkedInStep({
         />
       </div>
       <div className="flex items-center gap-3">
-        <PrimaryButton onClick={handleContinue} disabled={saving}>
-          {saving ? "Saving…" : "Continue"}
-        </PrimaryButton>
-        <GhostButton onClick={onSkip} disabled={saving}>
-          Skip for now
-        </GhostButton>
+        <PrimaryButton onClick={handleContinue}>Continue</PrimaryButton>
+        <GhostButton onClick={onSkip}>Skip for now</GhostButton>
       </div>
     </div>
   );
@@ -676,7 +593,7 @@ function GoalsStep({
     <div className="flex flex-col items-center gap-6">
       <QuestionHeader
         title={name.trim() ? `Nice to meet you, ${name.trim()}. What brings you here?` : "What brings you to Unimad?"}
-        subtitle="Pick up to 3."
+        subtitle="Pick up to 3. We'll tailor everything around these."
       />
       <div className="grid w-full gap-2.5 sm:grid-cols-2">
         {GOAL_OPTIONS.map(opt => (
@@ -697,28 +614,6 @@ function GoalsStep({
           {value.length}/{MAX}
         </span>
       </div>
-    </div>
-  );
-}
-
-function FocusStep({ value, onChange, onNext }: { value: string[]; onChange: (v: string[]) => void; onNext: () => void }) {
-  return (
-    <div className="flex flex-col items-center gap-6">
-      <QuestionHeader title="What should we help you with?" subtitle="Choose all that apply." />
-      <div className="flex w-full flex-col gap-2.5">
-        {FOCUS_OPTIONS.map(opt => (
-          <OptionCard
-            key={opt.id}
-            label={opt.label}
-            description={opt.description}
-            selected={value.includes(opt.id)}
-            onClick={() => onChange(toggle(value, opt.id))}
-          />
-        ))}
-      </div>
-      <PrimaryButton onClick={onNext} disabled={value.length === 0}>
-        Continue
-      </PrimaryButton>
     </div>
   );
 }

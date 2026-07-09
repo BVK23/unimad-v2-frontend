@@ -84,6 +84,20 @@ export async function createPortfolioFromBase(body: Record<string, unknown> = {}
   return res.json();
 }
 
+export async function replacePortfolioTemplate(): Promise<{ assetData: Record<string, unknown> }> {
+  const res = await authedFetch("/api/portfolio/replace-template/", {
+    method: "POST",
+    body: JSON.stringify({}),
+  });
+
+  if (!res.ok) {
+    const data = await res.json().catch(() => ({}));
+    throw new Error(data?.error ?? "Failed to generate portfolio template");
+  }
+
+  return res.json();
+}
+
 export async function updatePortfolioContent(body: Record<string, unknown>): Promise<{
   message: string;
   portfolio: Record<string, unknown>;

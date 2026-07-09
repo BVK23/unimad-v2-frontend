@@ -110,7 +110,7 @@ export default function OnboardingTestPanel({
         <div className="flex flex-wrap gap-1.5">
           {ONBOARDING_TEST_QUICK_LINKS.map(link => (
             <button
-              key={link.query}
+              key={link.label}
               type="button"
               onClick={() => router.replace(`/uniboard/onboarding?${link.query}`, { scroll: false })}
               className="rounded-md bg-white px-2 py-1 text-[10px] font-medium text-[#346DE0] ring-1 ring-[#346DE0]/25 hover:bg-[#F0F6FE]"

@@ -1,5 +1,6 @@
 "use client";
 
+import { VPD_FEATURE_ENABLED } from "@/constants/feature-flags";
 import { LINKEDIN_COMMENT_EXTENSION_URL } from "@/features/linkedin/constants";
 import type { ExecutionTracker, JourneyFlags } from "@/features/unicoach/types";
 import { CheckCircle2, Circle, ExternalLink, Target } from "lucide-react";
@@ -143,8 +144,8 @@ export const UnicoachExecutionDashboard = ({ tracker, flags, includeInterviewPre
               label="VPD work"
               done={0}
               target={1}
-              hint="Generate and refine your value proposition."
-              href="/uniboard/applications/vpd"
+              hint={VPD_FEATURE_ENABLED ? "Generate and refine your value proposition." : "Coming soon — available after soft launch."}
+              href={VPD_FEATURE_ENABLED ? "/uniboard/studio?type=vpd" : undefined}
             />
           </>
         ) : null}

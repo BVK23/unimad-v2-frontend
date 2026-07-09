@@ -4,7 +4,6 @@ import React, { useState } from "react";
 import { createPortal } from "react-dom";
 import { useApplications } from "@/features/application-tracker/hooks/useApplications";
 import { jobHasPreparedApplication } from "@/features/application-tracker/job-application-lookup";
-import { useOnboardingGate } from "@/features/onboarding/context/OnboardingGateContext";
 import { MODAL_OVERLAY_Z_CLASS } from "@/lib/ui/modal-overlay";
 import type { StartInterviewFromJobPayload } from "@/src/features/interview-prep/types";
 import { X, ExternalLink, FileText, CheckCircle2, DollarSign, ChevronDown } from "lucide-react";
@@ -49,7 +48,6 @@ const JobDetailsModal: React.FC<JobDetailsModalProps> = ({
   onNavigateToStudio,
   onStartInterviewPrep,
 }) => {
-  const { profileSetupRequired, promptProfileSetup } = useOnboardingGate();
   const [isStatusDropdownOpen, setIsStatusDropdownOpen] = useState(false);
   const [showPrepareModal, setShowPrepareModal] = useState(false);
   const { data: applications = [] } = useApplications();
@@ -194,17 +192,8 @@ const JobDetailsModal: React.FC<JobDetailsModalProps> = ({
         {/* Footer Actions */}
         <div className="p-6 border-t border-slate-100 dark:border-slate-800 bg-white dark:bg-slate-900 flex items-center gap-4">
           <button
-            onClick={() => {
-              if (profileSetupRequired) {
-                promptProfileSetup();
-                return;
-              }
-              setShowPrepareModal(true);
-            }}
-            title={profileSetupRequired ? "Finish onboarding fully to prepare applications" : undefined}
-            className={`flex-1 py-3 bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 text-slate-900 dark:text-white font-medium rounded-xl transition-all shadow-sm flex items-center justify-center gap-2 active:scale-95 ${
-              profileSetupRequired ? "cursor-not-allowed opacity-60" : "hover:bg-slate-50 dark:hover:bg-slate-700"
-            }`}
+            onClick={() => setShowPrepareModal(true)}
+            className="flex-1 py-3 bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 text-slate-900 dark:text-white font-medium rounded-xl transition-all shadow-sm flex items-center justify-center gap-2 active:scale-95 hover:bg-slate-50 dark:hover:bg-slate-700"
           >
             <FileText size={18} className="text-brand-500" /> {hasPreparedApplication ? "Continue Application" : "Prepare Application"}
           </button>

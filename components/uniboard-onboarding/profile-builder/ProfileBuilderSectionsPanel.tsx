@@ -246,8 +246,12 @@ function ExperienceEditor() {
 
       <div className="flex flex-wrap gap-2">
         <AddButton onClick={openNew} label="Add experience" />
-        <button type="button" onClick={markExperienceSkipped} className="text-xs text-[#4A5568] underline">
-          I&apos;m a fresher
+        <button
+          type="button"
+          onClick={markExperienceSkipped}
+          className="rounded-lg px-2 py-1.5 text-xs font-medium text-[#4A5568] underline hover:text-[#346DE0]"
+        >
+          {experienceSkipped ? "Undo fresher" : "I'm a fresher"}
         </button>
       </div>
     </EditorShell>
@@ -315,6 +319,10 @@ function ProjectsEditor() {
   const projects = useProfileBuilderStore(s => s.data.projects);
   const setProjects = useProfileBuilderStore(s => s.setProjects);
   const markProjectsSkipped = useProfileBuilderStore(s => s.markProjectsSkipped);
+  const experiences = useProfileBuilderStore(s => s.data.experiences);
+  const experienceSkipped = useProfileBuilderStore(s => s.data.experienceSkipped);
+  const projectsSkipped = useProfileBuilderStore(s => s.data.projectsSkipped);
+  const needsProject = experiences.length === 0 || experienceSkipped;
   const [openKey, setOpenKey] = useState<OpenKey>(null);
   const [draft, setDraft] = useState(emptyProject());
 
@@ -338,6 +346,9 @@ function ProjectsEditor() {
 
   return (
     <EditorShell>
+      {projectsSkipped && !needsProject ? (
+        <p className="text-xs text-[#4A5568]">Projects skipped. Add one anytime if you change your mind.</p>
+      ) : null}
       {projects.map((proj, idx) => (
         <CollapsibleEntry
           key={`proj-${idx}`}
@@ -356,9 +367,17 @@ function ProjectsEditor() {
 
       <div className="flex flex-wrap gap-2">
         <AddButton onClick={openNew} label="Add project" />
-        <button type="button" onClick={markProjectsSkipped} className="text-xs text-[#4A5568] underline">
-          Skip projects
-        </button>
+        {!needsProject ? (
+          <button
+            type="button"
+            onClick={markProjectsSkipped}
+            className="rounded-lg px-2 py-1.5 text-xs font-medium text-[#4A5568] underline hover:text-[#346DE0]"
+          >
+            Skip projects
+          </button>
+        ) : (
+          <p className="self-center text-xs text-[#A9B4C2]">Add at least one project (required for freshers).</p>
+        )}
       </div>
     </EditorShell>
   );

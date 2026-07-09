@@ -291,6 +291,8 @@ export interface ResumeData {
   slug?: string;
   /** ISO timestamp when resume was last published (`published_at` from API). */
   publishedAt?: string | null;
+  /** Resume id this copy was duplicated from, when set by the duplicate action. */
+  duplicatedFrom?: string | null;
   profile: ResumeProfile;
   experience: ResumeExperience[];
   education: ResumeEducation[];

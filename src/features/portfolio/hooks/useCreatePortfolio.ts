@@ -93,3 +93,9 @@ export const defaultBootstrapCreateInput: CreatePortfolioInput = {
   mode: "initial",
   with_ai_template: true,
 };
+
+/** Minimal blank portfolio — name/email only, no prefilled sections. */
+export const blankPortfolioCreateInput: CreatePortfolioInput = {
+  mode: "initial",
+  with_ai_template: false,
+};

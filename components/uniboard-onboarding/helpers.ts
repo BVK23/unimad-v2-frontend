@@ -3,7 +3,6 @@ import type { PersonalizationProfile } from "@/features/onboarding/types";
 export function buildPersonalizationPayload(answers: {
   goals: string[];
   focus: string[];
-  stage: string[];
   personalize: boolean | null;
   strengths: string[];
   problems: string[];
@@ -15,7 +14,6 @@ export function buildPersonalizationPayload(answers: {
   return {
     goals: answers.goals,
     focus: answers.focus,
-    stage: answers.stage,
     personalize_opt_in: answers.personalize,
     strengths: answers.strengths,
     problems: answers.problems,
@@ -44,6 +42,11 @@ const EXPLORER_GOAL_IDS = new Set(["just_exploring", "just_stalking"]);
 export function isExplorerOnlyGoals(goals: string[]): boolean {
   if (goals.length === 0) return false;
   return goals.every(g => EXPLORER_GOAL_IDS.has(g));
+}
+
+/** True when at least one selected goal is an explorer goal (may be mixed with real goals). */
+export function hasExplorerGoal(goals: string[]): boolean {
+  return goals.some(g => EXPLORER_GOAL_IDS.has(g));
 }
 
 /** @deprecated Use isExplorerOnlyGoals — kept for callers that only need any explorer goal. */

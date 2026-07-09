@@ -5,6 +5,7 @@ import ResumeDashboard from "@/components/ResumeDashboard";
 import ResumeEditor from "@/components/ResumeEditor";
 import { ModalPortalOverlay } from "@/components/ui/ModalPortalOverlay";
 import { RESUME_OPEN_FULL_IMPROVE_EVENT } from "@/features/resume/api/resume-full-improve-presets";
+import { NEW_RESUME_DRAFT_ID } from "@/features/resume/constants/resumeDraft";
 import { useResume, resumeByIdQueryKey } from "@/features/resume/hooks/useResume";
 import { useResumeUrlActions, useResumeUrlState } from "@/features/resume/hooks/useResumeUrlState";
 import { resumesListQueryKey } from "@/features/resume/hooks/useResumesList";
@@ -47,6 +48,12 @@ const NEW_RESUME_TEMPLATE: ResumeData = {
     { id: "projects" },
     { id: "certifications" },
   ],
+};
+
+const NEW_DRAFT_INITIAL_DATA: ResumeData = {
+  ...NEW_RESUME_TEMPLATE,
+  id: "",
+  title: "New Resume",
 };
 
 const getFriendlyResumeLoadError = (err: unknown) => {
@@ -249,8 +256,8 @@ function ResumePageContent({ initialResumeId, initialIsNewDraft = false }: Resum
   } else if (showNewDraftEditor) {
     content = (
       <ResumeEditor
-        resumeId=""
-        initialData={{ ...NEW_RESUME_TEMPLATE, id: "", title: "New Resume" }}
+        resumeId={NEW_RESUME_DRAFT_ID}
+        initialData={NEW_DRAFT_INITIAL_DATA}
         onBack={handleBackToLanding}
         onSave={data => {
           if (data.id) {

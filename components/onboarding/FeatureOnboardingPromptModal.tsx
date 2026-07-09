@@ -3,6 +3,7 @@
 import React from "react";
 import { ModalPortalOverlay } from "@/components/ui/ModalPortalOverlay";
 import { ONBOARDING_PROMPT_COPY, onboardingHref, type OnboardingPromptKind } from "@/features/onboarding/featureGates";
+import { useNicheDiscoveryStore } from "@/features/onboarding/niche-discovery/useNicheDiscoveryStore";
 import { X } from "lucide-react";
 import Link from "next/link";
 
@@ -35,12 +36,25 @@ export default function FeatureOnboardingPromptModal({ open, kind, onDismiss }: 
         <h2 className="pr-8 text-lg font-semibold text-slate-900 dark:text-white">{copy.title}</h2>
         <p className="mt-2 text-sm text-slate-600 dark:text-slate-300">{copy.body}</p>
         <div className="mt-6 flex flex-col gap-3 sm:flex-row">
-          <Link
-            href={onboardingHref(kind)}
-            className="inline-flex flex-1 items-center justify-center rounded-xl bg-brand-600 px-4 py-3 text-sm font-medium text-white shadow-sm transition-colors hover:bg-brand-700"
-          >
-            {copy.cta}
-          </Link>
+          {kind === "niche" ? (
+            <button
+              type="button"
+              onClick={() => {
+                useNicheDiscoveryStore.getState().enter();
+                onDismiss();
+              }}
+              className="inline-flex flex-1 items-center justify-center rounded-xl bg-brand-600 px-4 py-3 text-sm font-medium text-white shadow-sm transition-colors hover:bg-brand-700"
+            >
+              {copy.cta}
+            </button>
+          ) : (
+            <Link
+              href={onboardingHref(kind)}
+              className="inline-flex flex-1 items-center justify-center rounded-xl bg-brand-600 px-4 py-3 text-sm font-medium text-white shadow-sm transition-colors hover:bg-brand-700"
+            >
+              {copy.cta}
+            </Link>
+          )}
           <button
             type="button"
             onClick={onDismiss}

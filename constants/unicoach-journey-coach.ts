@@ -27,6 +27,7 @@ export const COACH_MILESTONE_BY_UX_STAGE: Partial<Record<string, CoachMilestoneA
     label: "Mark Discovery call complete",
     targetStage: "call_1",
     helperText: "Mark after your Discovery session. Unlocks LinkedIn branding for the student.",
+    skipTaskGate: true,
   },
   "call-2": {
     label: "Mark LinkedIn call complete",

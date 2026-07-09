@@ -14,9 +14,9 @@
     "lint:fix": "eslint . --fix",
     "format": "prettier --write .",
     "format:check": "prettier --check .",
+    "prepare": "husky",
     "typecheck": "tsc --noEmit",
-    "prebuild": "pnpm typecheck",
-    "prepare": "husky"
+    "prebuild": "pnpm typecheck"
   },
   "dependencies": {
     "@dnd-kit/core": "^6.3.1",
@@ -24,6 +24,7 @@
     "@dnd-kit/utilities": "^3.2.2",
     "@google-cloud/storage": "^7.19.0",
     "@google/genai": "^1.34.0",
+    "@radix-ui/react-tooltip": "^1.2.12",
     "@react-pdf/renderer": "^4.3.2",
     "@tanstack/react-query": "^5.90.21",
     "@tiptap/extension-link": "^3.20.0",
@@ -32,7 +33,6 @@
     "@tiptap/react": "^3.20.0",
     "@tiptap/starter-kit": "^3.20.0",
     "@types/canvas-confetti": "^1.9.0",
-    "@vercel/analytics": "^2.0.1",
     "canvas-confetti": "^1.9.4",
     "cheerio": "^1.2.0",
     "docx": "^9.7.1",
@@ -49,7 +49,8 @@
     "rehype-raw": "^7.0.0",
     "rehype-sanitize": "^6.0.0",
     "remark-gfm": "^4.0.1",
-    "zustand": "^5.0.11"
+    "zustand": "^5.0.11",
+    "@vercel/analytics": "^2.0.1"
   },
   "devDependencies": {
     "@trivago/prettier-plugin-sort-imports": "^6.0.2",

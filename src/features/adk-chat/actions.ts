@@ -9,6 +9,7 @@ import {
   resolveEffectiveAdkAppForSession,
   type AdkSessionServiceOptions,
 } from "./session-history";
+import { extractMutatingToolNamesFromAdkEvents } from "./session-mutating-tool-tracker";
 import type { AgentMessage, ProcessedEvent } from "./types";
 
 export async function createSessionAction(userId: string, options?: SessionCreationOptions): Promise<SessionCreationResult> {
@@ -148,6 +149,7 @@ export interface SessionHistoryResult {
   success: boolean;
   messages: AgentMessage[];
   messageEventsEntries: [string, ProcessedEvent[]][];
+  mutatingToolNames?: string[];
   error?: string;
 }
 
@@ -164,10 +166,14 @@ export async function loadSessionHistoryAction(
         success: true,
         messages: [],
         messageEventsEntries: [],
+        mutatingToolNames: [],
       };
     }
 
-    const { messages: historicalMessages } = convertAdkEventsToMessages(sessionWithEvents.events || []);
+    const events = sessionWithEvents.events || [];
+    const mutatingToolNames = extractMutatingToolNamesFromAdkEvents(events);
+
+    const { messages: historicalMessages } = convertAdkEventsToMessages(events);
 
     const messageEvents = new Map<string, ProcessedEvent[]>();
     historicalMessages.forEach(message => {
@@ -205,6 +211,7 @@ export async function loadSessionHistoryAction(
       success: true,
       messages: historicalMessages,
       messageEventsEntries: Array.from(messageEvents.entries()),
+      mutatingToolNames,
     };
   } catch (error) {
     console.error("loadSessionHistoryAction error:", error);

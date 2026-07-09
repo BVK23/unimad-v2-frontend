@@ -1,3 +1,4 @@
+import { AppTooltipProvider } from "@/components/ui/AppTooltipProvider";
 import type { Metadata } from "next";
 import { ReactQueryProvider } from "./ReactQueryProvider";
 import "./globals.css";
@@ -45,7 +46,9 @@ export default function RootLayout({
       </head>
       <body className="bg-slate-50 text-slate-900 text-sm font-light overflow-x-hidden font-sans antialiased" suppressHydrationWarning>
         {/* PROD CUTOVER: <GoogleTagManager /> */}
-        <ReactQueryProvider>{children}</ReactQueryProvider>
+        <ReactQueryProvider>
+          <AppTooltipProvider>{children}</AppTooltipProvider>
+        </ReactQueryProvider>
         {/* PROD CUTOVER: <Analytics /> <SpeedInsights /> */}
       </body>
     </html>

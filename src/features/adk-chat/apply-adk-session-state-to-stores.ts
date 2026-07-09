@@ -16,6 +16,7 @@ import { useResumeStore } from "@/src/features/resume/store/useResumeStore";
 import type { QueryClient } from "@tanstack/react-query";
 import { pullSessionStateAction } from "./actions";
 import type { ContentScope } from "./content-scope";
+import { resolveAdkSessionOptionsForSessionId } from "./resolve-sub-session-adk-app";
 import { noteAdkSessionSynced } from "./rewind-state-divergence";
 
 const CONTENT_GEN_FUNNELS = new Set<ContentGenFunnel>(["top", "middle", "bottom"]);
@@ -44,7 +45,8 @@ export async function applyAdkSessionStateToStores(
   queryClient: QueryClient,
   options?: { forceStudioHydrate?: boolean; targetScope?: ContentScope | null; afterRewind?: boolean }
 ): Promise<{ applied: boolean; error?: string }> {
-  const pullResult = await pullSessionStateAction(userId, sessionId);
+  const adkOptions = resolveAdkSessionOptionsForSessionId(sessionId);
+  const pullResult = await pullSessionStateAction(userId, sessionId, adkOptions);
   if (!pullResult.success || !pullResult.state) {
     return {
       applied: false,
@@ -65,11 +67,20 @@ export async function applyAdkSessionStateToStores(
   if (shouldApplyResume && state.resume_data) {
     const nextResumes = mapAdkResumeDataMapToFrontend(state.resume_data);
     const currentResumeIdRaw = state.current_resume;
+    const scopedResumeId = options?.targetScope?.domain === "resume" ? options.targetScope.contentKey.split(":")[1]?.trim() : null;
     const currentResumeId =
-      typeof currentResumeIdRaw === "string" && currentResumeIdRaw.trim().length > 0 ? currentResumeIdRaw.trim() : null;
-    useResumeStore.setState({ resumeData: nextResumes });
-    if (currentResumeId && nextResumes[currentResumeId]) {
-      queryClient.setQueryData(resumeByIdQueryKey(currentResumeId), nextResumes[currentResumeId]);
+      (typeof currentResumeIdRaw === "string" && currentResumeIdRaw.trim().length > 0 ? currentResumeIdRaw.trim() : null) ??
+      scopedResumeId ??
+      null;
+    // Merge so other open resumes in Zustand are not wiped by a sub-session snapshot.
+    useResumeStore.setState(prev => ({
+      resumeData: { ...prev.resumeData, ...nextResumes },
+    }));
+    const resumeToCache = (currentResumeId && nextResumes[currentResumeId]) || Object.values(nextResumes)[0];
+    if (currentResumeId && resumeToCache) {
+      queryClient.setQueryData(resumeByIdQueryKey(currentResumeId), resumeToCache);
+    } else if (resumeToCache?.id) {
+      queryClient.setQueryData(resumeByIdQueryKey(String(resumeToCache.id)), resumeToCache);
     }
     applied = true;
   }

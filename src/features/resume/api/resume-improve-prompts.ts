@@ -40,7 +40,7 @@ export type ResumeImprovePromptInput = {
 };
 
 const DISPLAY_WHEN_CONTENT: Record<UnibotResumeSection, string> = {
-  summary: "Improve my current summary",
+  summary: "Improve my professional summary",
   education: "Improve this education entry",
   experience: "Improve this experience entry",
   projects: "Improve my project description for this entry",
@@ -50,7 +50,7 @@ const DISPLAY_WHEN_CONTENT: Record<UnibotResumeSection, string> = {
 };
 
 const DISPLAY_WHEN_EMPTY: Record<UnibotResumeSection, string> = {
-  summary: "Craft a summary for this resume",
+  summary: "Craft a summary for my resume",
   education: "Add coursework for this education entry",
   experience: "Add experience bullet points for this entry",
   projects: "Add a project description for this entry",
@@ -59,31 +59,25 @@ const DISPLAY_WHEN_EMPTY: Record<UnibotResumeSection, string> = {
   custom: "Add content for this custom section entry",
 };
 
-const AGENT_WHEN_CONTENT: Record<UnibotResumeSection, string> = {
-  summary:
-    "Improve my professional summary. Use get_summary and read experiences, skills, education, and projects for context, then update_summary.",
-  education:
-    "Improve this education entry. Use get_education or find_education and read related sections for context, then update_education.",
-  experience:
-    "Improve this work experience entry. Use get_experiences or get_experience_by_id and read related sections for context, then apply the smallest set of experience tools.",
-  projects:
-    "Improve this project entry. Use get_projects or get_project_by_id and read related sections for context, then update the project.",
-  certifications: "Improve this certification entry. Read certifications from the resume and update the entry.",
-  skills: "Improve my skills section. Use get_skills and read related sections for context, then update skills.",
-  custom: "Improve this custom section entry. Read the custom section and update the targeted entry.",
+/** User-facing improve prompts — same copy shown in chat and sent to the agent. */
+const IMPROVE_PROMPT: Record<UnibotResumeSection, { withContent: string; empty: string }> = {
+  summary: { withContent: "Improve my professional summary", empty: "Craft a summary for my resume" },
+  education: { withContent: "Improve this education entry", empty: "Add coursework for this education entry" },
+  experience: { withContent: "Improve this experience entry", empty: "Add experience bullet points for this entry" },
+  projects: { withContent: "Improve this project description", empty: "Add a project description for this entry" },
+  certifications: { withContent: "Improve this certification entry", empty: "Add a description for this certification entry" },
+  skills: { withContent: "Improve my skills section", empty: "Add skills for this resume" },
+  custom: { withContent: "Improve this custom section entry", empty: "Add content for this custom section entry" },
 };
 
-const AGENT_WHEN_EMPTY: Record<UnibotResumeSection, string> = {
-  summary:
-    "Craft a professional summary for this resume. Read experiences, skills, education, and projects with tools, then update_summary.",
-  education: "Add coursework and supporting details for this education entry. Use get_education or find_education, then update_education.",
-  experience:
-    "Add strong bullet points for this experience entry. Use get_experiences or get_experience_by_id, then add_bullet or update_experience_description as needed.",
-  projects: "Add a project description for this entry. Use get_projects or get_project_by_id, then update the project description.",
-  certifications: "Add a description for this certification entry using the certification tools.",
-  skills: "Add relevant skills for this resume using get_skills and the skills update tools.",
-  custom: "Add content for this custom section entry using the custom section tools.",
-};
+/** Legacy verbose agent bootstraps — map to friendly display after reload. */
+const LEGACY_AGENT_BOOTSTRAPS = new Set([
+  "Improve my professional summary. Use get_summary and read experiences, skills, education, and projects for context, then update_summary.",
+  "Craft a professional summary for this resume. Read experiences, skills, education, and projects with tools, then update_summary.",
+  "Craft a professional summary for this resume. Use get_summary and get_section for resume data; if sections are empty, call fetch_user_personal_details for onboarding profile. Explain what's missing if sparse, then update_summary or offer a placeholder template.",
+  "Please review my professional summary on my resume and suggest concrete improvements. You can use my current resume context from the session.",
+  "Please review my professional summary on my resume. Use get_summary and get_section for resume data; if sections are empty, call fetch_user_personal_details for onboarding profile. Explain what's missing if sparse and offer guidance or a placeholder template — do not report the section as unavailable.",
+]);
 
 function normalizeSection(section: string): UnibotResumeSection {
   const key = section.trim().toLowerCase() as UnibotResumeSection;
@@ -96,16 +90,11 @@ export function buildResumeImproveDisplayMessage(input: ResumeImprovePromptInput
   return input.hasContent ? DISPLAY_WHEN_CONTENT[section] : DISPLAY_WHEN_EMPTY[section];
 }
 
-/** Agent turn — no pasted resume body; tools load context from session. */
+/** Agent turn — natural language only; entry scope is in session `resume_improve_entry_id`. */
 export function buildResumeImproveAgentMessage(input: ResumeImprovePromptInput): string {
   const section = normalizeSection(input.section);
-  const base = input.hasContent ? AGENT_WHEN_CONTENT[section] : AGENT_WHEN_EMPTY[section];
-  const entryId = input.entryId?.trim();
-  if (!entryId) return base;
-  return `${base} Session resume_improve_entry_id is "${entryId}" — focus on that entry.`;
+  return input.hasContent ? IMPROVE_PROMPT[section].withContent : IMPROVE_PROMPT[section].empty;
 }
-
-const ALL_AGENT_BOOTSTRAPS = new Set([...Object.values(AGENT_WHEN_CONTENT), ...Object.values(AGENT_WHEN_EMPTY)]);
 
 const ALL_DISPLAY_MESSAGES = new Set([...Object.values(DISPLAY_WHEN_CONTENT), ...Object.values(DISPLAY_WHEN_EMPTY)]);
 
@@ -117,8 +106,8 @@ export function resumeImproveUserDisplayText(sentText: string, section?: string,
   const atsDisplay = resumeDisplayTextForAtsImproveAgentMessage(trimmed, section);
   if (atsDisplay) return atsDisplay;
   if (ALL_DISPLAY_MESSAGES.has(trimmed)) return trimmed;
-  if (ALL_AGENT_BOOTSTRAPS.has(trimmed)) {
-    const hasContent = !trimmed.toLowerCase().includes("craft ") && !trimmed.toLowerCase().includes("add ");
+  if (LEGACY_AGENT_BOOTSTRAPS.has(trimmed)) {
+    const hasContent = trimmed.toLowerCase().includes("improve ") && !trimmed.toLowerCase().includes("craft ");
     return buildResumeImproveDisplayMessage({
       section: normalizeSection(section ?? "summary"),
       hasContent,
@@ -133,8 +122,11 @@ export function resumeImproveUserDisplayText(sentText: string, section?: string,
       entryId,
     });
   }
-  if (trimmed.includes("Session resume_improve_entry_id")) {
-    const hasContent = trimmed.toLowerCase().includes("improve ");
+  if (trimmed.includes('Focus on entry id "') || trimmed.includes("Session resume_improve_entry_id")) {
+    const stripped = trimmed.replace(/\s*Focus on entry id "[^"]+"\.?\s*/i, "").trim();
+    if (ALL_DISPLAY_MESSAGES.has(stripped)) return stripped;
+    const hasContent =
+      stripped.toLowerCase().includes("improve ") && !stripped.toLowerCase().includes("add ") && !stripped.toLowerCase().includes("craft ");
     return buildResumeImproveDisplayMessage({
       section: normalizeSection(section ?? "summary"),
       hasContent,
@@ -149,7 +141,7 @@ export function isResumeImproveHandoffPrompt(text: string): boolean {
   if (!trimmed) return false;
   if (trimmed.startsWith(RESUME_IMPROVE_PREFIX)) return true;
   if (resumeDisplayTextForAtsImproveAgentMessage(trimmed) != null) return true;
-  if (ALL_AGENT_BOOTSTRAPS.has(trimmed)) return true;
+  if (LEGACY_AGENT_BOOTSTRAPS.has(trimmed)) return true;
   if (ALL_DISPLAY_MESSAGES.has(trimmed)) return true;
   return false;
 }

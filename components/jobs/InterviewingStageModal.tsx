@@ -1,5 +1,7 @@
 import React from "react";
+import { ComingSoonBadge } from "@/components/ui/ComingSoonBadge";
 import { ModalPortalOverlay } from "@/components/ui/ModalPortalOverlay";
+import { VPD_FEATURE_ENABLED } from "@/constants/feature-flags";
 import { X, Sparkles, Mic2 } from "lucide-react";
 import { Job } from "../../types/jobs";
 
@@ -42,14 +44,24 @@ const InterviewingStageModal: React.FC<InterviewingStageModalProps> = ({ job, on
       </p>
 
       <div className="mt-6 flex flex-col gap-2.5">
-        <button
-          type="button"
-          onClick={onBuildVpd}
-          className="flex w-full items-center justify-center gap-2 rounded-xl bg-brand-600 py-3 text-sm font-semibold text-white shadow-md shadow-brand-500/20 transition-all hover:bg-brand-700 active:scale-[0.99]"
-        >
-          <Sparkles size={16} />
-          Build your VPD
-        </button>
+        {VPD_FEATURE_ENABLED ? (
+          <button
+            type="button"
+            onClick={onBuildVpd}
+            className="flex w-full items-center justify-center gap-2 rounded-xl bg-brand-600 py-3 text-sm font-semibold text-white shadow-md shadow-brand-500/20 transition-all hover:bg-brand-700 active:scale-[0.99]"
+          >
+            <Sparkles size={16} />
+            Build your VPD
+          </button>
+        ) : (
+          <div
+            className="flex w-full flex-col items-center gap-2 rounded-xl border border-dashed border-brand-200/80 bg-brand-50/40 px-4 py-3 dark:border-brand-900/50 dark:bg-brand-950/20"
+            title="Coming soon"
+          >
+            <ComingSoonBadge label="coming-soon" />
+            <p className="text-center text-xs text-slate-500 dark:text-slate-400">Value Prop Doc launches after soft launch.</p>
+          </div>
+        )}
         <button
           type="button"
           onClick={onStartInterviewPrep}

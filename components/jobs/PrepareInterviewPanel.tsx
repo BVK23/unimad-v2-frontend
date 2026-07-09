@@ -1,6 +1,8 @@
 "use client";
 
 import React, { useState } from "react";
+import { OnboardingGateTooltip } from "@/components/ui/OnboardingGateTooltip";
+import { FINISH_ONBOARDING_CTA } from "@/constants/onboarding-tooltips";
 import type { InterviewRoundType, InterviewSessionMode } from "@/src/features/interview-prep/types";
 import type { Job } from "@/types/jobs";
 import { Mic2, ChevronRight, Loader2, AlertCircle, MessageSquare, Radio } from "lucide-react";
@@ -15,11 +17,14 @@ interface PrepareInterviewPanelProps {
   job: Job;
   isStarting?: boolean;
   onStart: (payload: { roundType: InterviewRoundType; mode: InterviewSessionMode }) => void;
+  /** When true, start CTA is disabled (e.g. onboarding incomplete). */
+  generateDisabled?: boolean;
 }
 
-const PrepareInterviewPanel: React.FC<PrepareInterviewPanelProps> = ({ job, isStarting = false, onStart }) => {
+const PrepareInterviewPanel: React.FC<PrepareInterviewPanelProps> = ({ job, isStarting = false, onStart, generateDisabled = false }) => {
   const [roundType, setRoundType] = useState<InterviewRoundType>("technical");
   const [mode, setMode] = useState<InterviewSessionMode>("questions");
+  const startBlocked = isStarting || generateDisabled;
 
   return (
     <div className="flex h-full flex-col overflow-y-auto font-sans">
@@ -44,7 +49,7 @@ const PrepareInterviewPanel: React.FC<PrepareInterviewPanelProps> = ({ job, isSt
             <button
               key={r.id}
               type="button"
-              disabled={isStarting}
+              disabled={startBlocked}
               onClick={() => setRoundType(r.id)}
               className={`rounded-xl border px-3 py-3 text-left transition-all ${
                 roundType === r.id
@@ -64,7 +69,7 @@ const PrepareInterviewPanel: React.FC<PrepareInterviewPanelProps> = ({ job, isSt
         <div className="grid grid-cols-1 gap-2 sm:grid-cols-2">
           <button
             type="button"
-            disabled={isStarting}
+            disabled={startBlocked}
             onClick={() => setMode("live")}
             className={`flex items-start gap-3 rounded-xl border px-4 py-3 text-left transition-all ${
               mode === "live" ? "border-blue-500 bg-blue-50 dark:bg-blue-950/30" : "border-slate-200 dark:border-slate-700"
@@ -78,7 +83,7 @@ const PrepareInterviewPanel: React.FC<PrepareInterviewPanelProps> = ({ job, isSt
           </button>
           <button
             type="button"
-            disabled={isStarting}
+            disabled={startBlocked}
             onClick={() => setMode("questions")}
             className={`flex items-start gap-3 rounded-xl border px-4 py-3 text-left transition-all ${
               mode === "questions" ? "border-blue-500 bg-blue-50 dark:bg-blue-950/30" : "border-slate-200 dark:border-slate-700"
@@ -93,23 +98,30 @@ const PrepareInterviewPanel: React.FC<PrepareInterviewPanelProps> = ({ job, isSt
         </div>
       </div>
 
-      <button
-        type="button"
-        disabled={isStarting}
-        onClick={() => onStart({ roundType, mode })}
-        className="flex w-full items-center justify-center gap-2 rounded-xl bg-blue-600 py-3.5 text-sm font-medium text-white shadow-md shadow-blue-500/20 transition-all hover:bg-blue-700 active:scale-[0.99] disabled:opacity-50"
+      <OnboardingGateTooltip
+        enabled={generateDisabled}
+        messageKey="interview_prep"
+        ctaLabel={FINISH_ONBOARDING_CTA}
+        className="block w-full"
       >
-        {isStarting ? (
-          <>
-            <Loader2 size={18} className="animate-spin" /> Starting…
-          </>
-        ) : (
-          <>
-            <Mic2 size={18} /> Start {ROUNDS.find(r => r.id === roundType)?.label} interview
-            <ChevronRight size={16} />
-          </>
-        )}
-      </button>
+        <button
+          type="button"
+          disabled={startBlocked}
+          onClick={() => onStart({ roundType, mode })}
+          className="flex w-full items-center justify-center gap-2 rounded-xl bg-blue-600 py-3.5 text-sm font-medium text-white shadow-md shadow-blue-500/20 transition-all hover:bg-blue-700 active:scale-[0.99] disabled:cursor-not-allowed disabled:opacity-50"
+        >
+          {isStarting ? (
+            <>
+              <Loader2 size={18} className="animate-spin" /> Starting…
+            </>
+          ) : (
+            <>
+              <Mic2 size={18} /> Start {ROUNDS.find(r => r.id === roundType)?.label} interview
+              <ChevronRight size={16} />
+            </>
+          )}
+        </button>
+      </OnboardingGateTooltip>
 
       <p className="mt-4 flex items-start gap-2 text-xs font-light leading-relaxed text-slate-400">
         <AlertCircle size={14} className="mt-0.5 shrink-0" />

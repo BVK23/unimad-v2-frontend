@@ -21,8 +21,15 @@ const HtmlRenderer: React.FC<HtmlRendererProps> = ({ html, style, listFontSize }
   // Remove wrapper <div> if any
   let cleanHtml = html.replace(/^<div.*?>|<\/div>$/g, "");
 
-  // Common cleanup: Remove <p> tags if they are inside <li> (Tiptap sometimes does <li><p>...</p></li>)
-  cleanHtml = cleanHtml.replace(/<li>\s*<p>(.*?)<\/p>\s*<\/li>/g, "<li>$1</li>");
+  // Unwrap <p> from <li> so bullet + text share one line (Tiptap often does <li><p>…</p></li>)
+  cleanHtml = cleanHtml.replace(/<li>([\s\S]*?)<\/li>/gi, (_match, inner: string) => {
+    const stripped = inner
+      .replace(/<p[^>]*>/gi, "")
+      .replace(/<\/p>/gi, " ")
+      .trim();
+    if (!stripped) return "";
+    return `<li>${stripped}</li>`;
+  });
 
   const parseInline = (text: string) => {
     // Tokenize by splitting on tags — includes <u> for underline support
@@ -129,15 +136,40 @@ const HtmlRenderer: React.FC<HtmlRendererProps> = ({ html, style, listFontSize }
           ...style,
         };
         const markerStyle = { fontWeight: 600 as const };
+        let olCounter = 0;
         blocks.push(
           <View key={key} style={style}>
             {items.map((item, i) => {
-              const marker = tag === "ol" ? `${i + 1}. ` : "• ";
+              const text = item.replace(/<\/?li[^>]*>/gi, "").trim();
+              if (!text) return null;
+              olCounter++;
+              const marker = tag === "ol" ? `${olCounter}.` : "•";
+              const markerWidth = tag === "ol" ? 14 : 8;
               return (
-                <Text key={`${key}-${i}`} style={itemTextStyle}>
-                  <Text style={markerStyle}>{marker}</Text>
-                  {parseInline(item.replace(/<\/?li.*?>/g, ""))}
-                </Text>
+                <View
+                  key={`${key}-${i}`}
+                  wrap={false}
+                  style={{
+                    flexDirection: "row",
+                    alignItems: "flex-start",
+                    marginBottom: 2,
+                  }}
+                >
+                  <Text
+                    style={{
+                      ...markerStyle,
+                      fontSize: liSize,
+                      lineHeight: 1.4,
+                      width: markerWidth,
+                      color: style?.color || "#334155",
+                    }}
+                  >
+                    {marker}
+                  </Text>
+                  <View style={{ flex: 1, minWidth: 0 }}>
+                    <Text style={{ ...itemTextStyle, marginBottom: 0 }}>{parseInline(text)}</Text>
+                  </View>
+                </View>
               );
             })}
           </View>

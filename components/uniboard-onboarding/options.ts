@@ -6,31 +6,38 @@ export type OnboardingOption = {
 
 export const EXPLORER_GOAL_IDS = new Set(["just_exploring", "just_stalking"]);
 
-/** "What brings you to Unimad?" — multi-select, max 3. */
+/**
+ * "What brings you to Unimad?" — the intent question (why they are here), multi-select, max 3.
+ * 8 distinct reasons so we can actually segment users instead of lumping variations together.
+ * IDs are kept stable with the previous set where possible so the backend `goal` column
+ * (goals[0]) and explorer detection keep working with no migration.
+ */
 export const GOAL_OPTIONS: OnboardingOption[] = [
   { id: "full_time_job", label: "Land a full-time job", description: "I'm actively job hunting" },
-  { id: "build_a_portfolio", label: "Build my portfolio", description: "Show my work beautifully" },
-  { id: "personal_branding", label: "Grow on LinkedIn", description: "Build my personal brand" },
-  { id: "switch_careers", label: "Switch careers", description: "Move into a new field" },
-  { id: "just_exploring", label: "Just exploring", description: "Seeing what's possible" },
-  { id: "just_stalking", label: "Just having a look", description: "Curious what this is" },
-];
-
-export const FOCUS_OPTIONS: OnboardingOption[] = [
-  { id: "interviews", label: "Get more interviews", description: "Turn applications into callbacks" },
-  { id: "stand_out", label: "Stand out online", description: "Be the candidate people remember" },
-  { id: "apply_confidently", label: "Apply with confidence", description: "Know my materials are strong" },
+  { id: "build_a_portfolio", label: "Build my portfolio", description: "Showcase my work beautifully" },
+  { id: "personal_branding", label: "Grow my personal brand on LinkedIn", description: "Build my brand and stand out" },
+  { id: "switch_careers", label: "Switch careers or change fields", description: "Move into a new kind of role" },
+  { id: "interview_vpd", label: "Ace my interviews", description: "Prepare and stand out in the process" },
+  { id: "apply_confidently", label: "Stand out in applications", description: "Apply with confidence" },
   { id: "find_direction", label: "Find my direction", description: "Figure out what fits me" },
-  { id: "build_connections", label: "Build connections", description: "Grow a network that matters" },
+  { id: "just_exploring", label: "Just exploring", description: "Curious what's possible here" },
 ];
 
+/**
+ * "Where are you in your journey?" — the identity question (who they are), single-select.
+ * Kept broad on purpose so we can serve beyond the core ICP (international master's students):
+ * bachelors, local students, professionals, and career switchers.
+ */
 export const STAGE_OPTIONS: OnboardingOption[] = [
-  { id: "student", label: "Student", description: "Still studying" },
-  { id: "recent_grad", label: "Recent graduate", description: "Just stepped out" },
-  { id: "early_career", label: "Early career", description: "1–3 years of experience" },
-  { id: "experienced", label: "Experienced", description: "3+ years in the game" },
+  { id: "undergrad", label: "Undergraduate student", description: "Doing my Bachelor's" },
+  { id: "postgrad", label: "Master's or PhD student", description: "Doing my postgraduate studies" },
+  { id: "recent_grad", label: "Recent graduate", description: "Just finished studying" },
+  { id: "early_career", label: "Early career", description: "1 to 3 years of experience" },
+  { id: "experienced", label: "Experienced professional", description: "3+ years in the game" },
+  { id: "career_switcher", label: "Career switcher", description: "Moving into a new field" },
 ];
 
+// TODO(product): Re-enable strengths / problems / praise when voice personalisation is wired into agents.
 export const STRENGTH_OPTIONS: OnboardingOption[] = [
   { id: "talking", label: "Talking to people" },
   { id: "writing", label: "Writing & storytelling" },

@@ -19,6 +19,7 @@ import { useAdkSession } from "@/src/features/adk-chat/hooks/useAdkSession";
 import { useAdkStreamingManager } from "@/src/features/adk-chat/hooks/useAdkStreamingManager";
 import { hydrateLoadedTopicMessages } from "@/src/features/adk-chat/hydrate-loaded-topics";
 import { mergeSubSessionsIntoMainMessages, sortMainThreadChronologically } from "@/src/features/adk-chat/improve-topic-helpers";
+import { getThreadMessages } from "@/src/features/adk-chat/is-first-thread-user-message";
 import { beginOptimisticUnibotActivity } from "@/src/features/adk-chat/optimistic-unibot-activity";
 import { pruneRewindSessionMetadata } from "@/src/features/adk-chat/prune-rewind-session-metadata";
 import { reconcileStudioContentAfterRewind } from "@/src/features/adk-chat/reconcile-studio-after-rewind";
@@ -39,14 +40,23 @@ import {
   parseReviewDecisionsFromAdkState,
   setReviewDecisionsCache,
 } from "@/src/features/adk-chat/review-decisions";
-import { getRegistryRow, getSessionRegistry } from "@/src/features/adk-chat/session-registry";
+import {
+  clearAllSessionMutatingToolTracking,
+  clearSessionMutatingToolTracking,
+  noteSessionMutatingTool,
+} from "@/src/features/adk-chat/session-mutating-tool-tracker";
+import { getRegistryRow, getSessionRegistry, getSubsForMain } from "@/src/features/adk-chat/session-registry";
 import { useAdkApplicationAssetReviewStore } from "@/src/features/adk-chat/stores/useAdkApplicationAssetReviewStore";
 import { useAdkContentGenReviewStore } from "@/src/features/adk-chat/stores/useAdkContentGenReviewStore";
 import { useAdkLinkedInReviewStore } from "@/src/features/adk-chat/stores/useAdkLinkedInReviewStore";
 import { useAdkPortfolioReviewStore } from "@/src/features/adk-chat/stores/useAdkPortfolioReviewStore";
 import { useAdkResumeReviewStore } from "@/src/features/adk-chat/stores/useAdkResumeReviewStore";
+import { scopeAllowsEditorRevert } from "@/src/features/adk-chat/thread-revert-eligibility";
 import type { AgentMessage, ProcessedEvent } from "@/src/features/adk-chat/types";
+import { resumeByIdQueryKey } from "@/src/features/resume/hooks/useResume";
+import { useResumeStore } from "@/src/features/resume/store/useResumeStore";
 import { UNIBOT_AGENT_LOADING_EVENT } from "@/src/hooks/useUnibotAgentBusy";
+import type { ResumeData } from "@/types";
 import type { ChatMessage } from "@/types";
 import { useQueryClient } from "@tanstack/react-query";
 import { usePathname, useSearchParams } from "next/navigation";
@@ -119,6 +129,14 @@ export interface AdkChatContextValue {
     revertEditorState: boolean;
     targetSessionId?: string;
     topicId?: string;
+    targetScope?: ContentScope;
+    scopeMatch?: ScopeMatch;
+  }) => Promise<void>;
+  /** Delete an entire main or sub thread when removing its first user message. */
+  deleteThreadFromFirstMessage: (options: {
+    targetSessionId: string;
+    topicId?: string;
+    revertEditorState: boolean;
     targetScope?: ContentScope;
     scopeMatch?: ScopeMatch;
   }) => Promise<void>;
@@ -297,6 +315,10 @@ export function AdkChatProvider({ userId, children }: { userId: string; children
         if (cancelled) return;
 
         if (result.success) {
+          for (const toolName of result.mutatingToolNames ?? []) {
+            noteSessionMutatingTool(historySessionId, toolName);
+          }
+
           const mapped = result.messages.map(m => agentMessageToChatMessage(m));
           const scopedMapped = mapped.map(message => {
             if (message.role !== "user") return message;
@@ -441,6 +463,7 @@ export function AdkChatProvider({ userId, children }: { userId: string; children
       if (!userId || !sessionId) {
         throw new Error("Session not ready");
       }
+      beginOptimisticUnibotActivity({ assistantMessageId });
       try {
         const { hadAssistantText } = await submitMessage(prompt, {
           aiMessageId: assistantMessageId,
@@ -549,7 +572,7 @@ export function AdkChatProvider({ userId, children }: { userId: string; children
         const reviewMainSessionId = targetRow?.parent_adk_session_id?.trim() || sessionId;
         const remainingMessages = options.topicId ? rewoundThreadMessages : remainingMainMessages.filter(message => !message.isTopic);
         const shouldRevertDjango =
-          options.revertEditorState && options.scopeMatch === "full" && targetScope && removedAssistantIds.size > 0;
+          options.revertEditorState && scopeAllowsEditorRevert(options.scopeMatch) && targetScope && removedAssistantIds.size > 0;
 
         if (shouldRevertDjango) {
           const restoreTarget = resolveDjangoRestoreTarget({
@@ -580,18 +603,10 @@ export function AdkChatProvider({ userId, children }: { userId: string; children
           if (removedAssistantIds.size > 0) {
             await pruneRewindSessionMetadata(userId, reviewMainSessionId, removedAssistantIds);
           }
-          const hydrateSessionId =
-            shouldRevertDjango &&
-            targetScope &&
-            (targetScope.domain === "application_asset" ||
-              targetScope.domain === "content_gen" ||
-              targetScope.domain === "resume" ||
-              targetScope.domain === "portfolio" ||
-              targetScope.domain === "linkedin")
-              ? reviewMainSessionId
-              : targetSessionId;
-          await applyAdkSessionStateToStores(userId, hydrateSessionId, pathname, queryClient, {
-            targetScope: options.targetScope ?? null,
+          // Always pull from the session that was rewound (sub-thread state is the
+          // point-in-time snapshot ADK restored). Main-session state is often stale.
+          await applyAdkSessionStateToStores(userId, targetSessionId, pathname, queryClient, {
+            targetScope: options.targetScope ?? targetScope,
             forceStudioHydrate: true,
             afterRewind: true,
           });
@@ -624,6 +639,121 @@ export function AdkChatProvider({ userId, children }: { userId: string; children
     [messages, userId, sessionId, pathname, queryClient, clearStreamError, deriveCurrentActiveScope]
   );
 
+  const deleteThreadFromFirstMessage = useCallback(
+    async (options: {
+      targetSessionId: string;
+      topicId?: string;
+      revertEditorState: boolean;
+      targetScope?: ContentScope;
+      scopeMatch?: ScopeMatch;
+    }) => {
+      const targetSessionId = options.targetSessionId.trim();
+      if (!userId || !targetSessionId) {
+        throw new Error("Session not ready to delete thread");
+      }
+
+      setIsRewinding(true);
+      try {
+        const targetRow = getRegistryRow(targetSessionId);
+        const parentMainSessionId = targetRow?.parent_adk_session_id?.trim();
+        if (parentMainSessionId && sessionId === targetSessionId) {
+          await handleSessionSwitch(parentMainSessionId);
+        }
+
+        const threadMessages = getThreadMessages(messages, options.topicId);
+        const removedAssistantIds = new Set(
+          threadMessages.filter(message => message.role === "model" && message.id && !message.isError).map(message => message.id)
+        );
+        const targetScope = options.targetScope ?? (targetRow ? deriveScopeFromRegistryRow(targetRow) : null);
+        const reviewMainSessionId = parentMainSessionId || sessionId;
+        const shouldRevertDjango =
+          options.revertEditorState && scopeAllowsEditorRevert(options.scopeMatch) && targetScope && removedAssistantIds.size > 0;
+
+        let restoredFromSnapshot = false;
+        if (shouldRevertDjango) {
+          const restoreTarget = resolveDjangoRestoreTarget({
+            threadMessagesBeforeRewind: threadMessages,
+            remainingMessages: [],
+            removedAssistantIds,
+            acceptSnapshots: getAcceptSnapshotsCache(userId, reviewMainSessionId),
+            reviewDecisions: getReviewDecisionsCache(userId, reviewMainSessionId),
+            targetScope,
+            topicId: options.topicId,
+          });
+          if (restoreTarget) {
+            restoredFromSnapshot = await revertDjangoContentAfterRewind({
+              target: restoreTarget,
+              userId,
+              mainSessionId: reviewMainSessionId,
+              queryClient,
+            });
+          } else if (targetScope.domain === "resume") {
+            const resumeId = targetScope.contentKey.split(":")[1]?.trim();
+            const savedBaseline = resumeId ? queryClient.getQueryData<ResumeData>(resumeByIdQueryKey(resumeId)) : null;
+            if (resumeId && savedBaseline) {
+              useResumeStore.getState().setResumeData(resumeId, JSON.parse(JSON.stringify(savedBaseline)) as ResumeData);
+              restoredFromSnapshot = true;
+            }
+          }
+        }
+
+        if (options.revertEditorState) {
+          useAdkResumeReviewStore.getState().clearAllReviews();
+          useAdkPortfolioReviewStore.getState().clearAllReviews();
+          useAdkLinkedInReviewStore.getState().clearAllReviews();
+          useAdkContentGenReviewStore.getState().clearAllReviews();
+          useAdkApplicationAssetReviewStore.getState().clearAllReviews();
+          if (removedAssistantIds.size > 0) {
+            await pruneRewindSessionMetadata(userId, reviewMainSessionId, removedAssistantIds);
+          }
+          if (
+            shouldRevertDjango &&
+            !restoredFromSnapshot &&
+            targetScope &&
+            (targetScope.domain === "application_asset" ||
+              targetScope.domain === "content_gen" ||
+              targetScope.domain === "resume" ||
+              targetScope.domain === "portfolio" ||
+              targetScope.domain === "linkedin")
+          ) {
+            await applyAdkSessionStateToStores(userId, reviewMainSessionId, pathname, queryClient, {
+              targetScope,
+              forceStudioHydrate: true,
+              afterRewind: true,
+            });
+          }
+        } else if (removedAssistantIds.size > 0) {
+          useAdkResumeReviewStore.getState().clearReviewsByAssistantIds(removedAssistantIds);
+          useAdkPortfolioReviewStore.getState().clearReviewsByAssistantIds(removedAssistantIds);
+          useAdkLinkedInReviewStore.getState().clearReviewsByAssistantIds(removedAssistantIds);
+          useAdkContentGenReviewStore.getState().clearReviewsByAssistantIds(removedAssistantIds);
+          useAdkApplicationAssetReviewStore.getState().clearReviewsByAssistantIds(removedAssistantIds);
+          await pruneRewindSessionMetadata(userId, reviewMainSessionId, removedAssistantIds);
+        }
+
+        const row = getRegistryRow(targetSessionId);
+        const idsToClear = new Set<string>([targetSessionId]);
+        if (row?.kind === "main") {
+          getSubsForMain(targetSessionId).forEach(entry => idsToClear.add(entry.adk_session_id));
+        }
+        clearAllSessionMutatingToolTracking(idsToClear);
+
+        await handleDeleteSession(targetSessionId);
+
+        if (options.topicId) {
+          setMessages(prev => prev.filter(message => message.id !== options.topicId));
+        } else {
+          setMessages([WELCOME_MESSAGE]);
+        }
+
+        clearStreamError();
+      } finally {
+        setIsRewinding(false);
+      }
+    },
+    [clearStreamError, handleDeleteSession, handleSessionSwitch, messages, pathname, queryClient, sessionId, userId]
+  );
+
   const value = useMemo(
     (): AdkChatContextValue => ({
       userId,
@@ -648,6 +778,7 @@ export function AdkChatProvider({ userId, children }: { userId: string; children
       clearStreamError,
       setStreamError,
       rewindToMessage,
+      deleteThreadFromFirstMessage,
       isRewinding,
     }),
     [
@@ -671,6 +802,7 @@ export function AdkChatProvider({ userId, children }: { userId: string; children
       streamError,
       clearStreamError,
       rewindToMessage,
+      deleteThreadFromFirstMessage,
       isRewinding,
     ]
   );

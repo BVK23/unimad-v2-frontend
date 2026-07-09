@@ -6,7 +6,6 @@ export type OnboardingStepKey =
   | "phone"
   | "linkedin"
   | "goals"
-  | "focus"
   | "stage"
   | "personalize"
   | "resume"
@@ -48,7 +47,6 @@ export const ONBOARDING_STEP_ORDER: OnboardingStepKey[] = [
   "phone",
   "linkedin",
   "goals",
-  "focus",
   "stage",
   "personalize",
   "resume",
@@ -66,7 +64,6 @@ export const ONBOARDING_STEP_LABELS: Record<OnboardingStepKey, string> = {
   phone: "WhatsApp",
   linkedin: "LinkedIn",
   goals: "Goals",
-  focus: "Focus",
   stage: "Stage",
   personalize: "Personalize opt-in",
   resume: "Resume upload",
@@ -133,16 +130,16 @@ const PRESET_ANSWERS: Record<OnboardingTestPreset, OnboardingTestAnswers> = {
     phone: "+919876543210",
     linkedin: "https://www.linkedin.com/in/sam-explorer",
     goals: ["just_exploring"],
-    focus: ["find_direction"],
-    stage: ["student"],
+    focus: [],
+    stage: ["undergrad"],
   },
   job_seeker: {
     ...EMPTY_ANSWERS,
     name: "Alex",
     phone: "+919876543210",
     linkedin: "https://www.linkedin.com/in/alex-jobseeker",
-    goals: ["full_time_job", "apply_confidently"],
-    focus: ["interviews", "apply_confidently"],
+    goals: ["full_time_job", "ace_interviews"],
+    focus: [],
     stage: ["early_career"],
     personalize: true,
     resumeUploaded: true,
@@ -153,7 +150,7 @@ const PRESET_ANSWERS: Record<OnboardingTestPreset, OnboardingTestAnswers> = {
     phone: "+919876543210",
     linkedin: "https://www.linkedin.com/in/jordan-full",
     goals: ["full_time_job", "personal_branding"],
-    focus: ["interviews", "stand_out"],
+    focus: [],
     stage: ["recent_grad"],
     personalize: true,
     resumeUploaded: true,
@@ -166,8 +163,8 @@ const PRESET_ANSWERS: Record<OnboardingTestPreset, OnboardingTestAnswers> = {
     name: "Taylor",
     phone: "+919876543210",
     linkedin: "https://www.linkedin.com/in/taylor-post-niche",
-    goals: ["full_time_job", "apply_confidently"],
-    focus: ["interviews", "apply_confidently"],
+    goals: ["full_time_job", "ace_interviews"],
+    focus: [],
     stage: ["early_career"],
     personalize: true,
     resumeUploaded: true,
@@ -197,7 +194,8 @@ const PRESET_DEFAULT_STEP: Record<OnboardingTestPreset, OnboardingStepKey> = {
 /** Handy dev URLs — append to /uniboard/onboarding */
 export const ONBOARDING_TEST_QUICK_LINKS: { label: string; query: string }[] = [
   { label: "Profile builder", query: "test=1&step=profile_builder&preset=job_seeker" },
-  { label: "Niche", query: "test=1&step=niche&preset=post_niche&mockNiche=0" },
+  { label: "Niche (live API)", query: "test=1&step=niche&preset=post_niche&mockNiche=0" },
+  { label: "Niche (mock)", query: "test=1&step=niche&preset=post_niche" },
   { label: "Strengths", query: "test=1&step=strengths&preset=post_niche" },
   { label: "Problems", query: "test=1&step=problems&preset=personalized" },
   { label: "Praise", query: "test=1&step=praise&preset=personalized" },
@@ -213,24 +211,29 @@ function isPreset(value: string | null): value is OnboardingTestPreset {
   return Boolean(value && value in PRESET_ANSWERS);
 }
 
-/** Only active in development when ?test=1 is present. */
-export function parseOnboardingTestConfig(searchParams: URLSearchParams | null): OnboardingTestConfig | null {
-  if (process.env.NODE_ENV !== "development") return null;
-  if (searchParams?.get("test") !== "1") return null;
-
-  const presetParam = searchParams.get("preset");
-  const preset: OnboardingTestPreset = isPreset(presetParam) ? presetParam : "blank";
-  const stepParam = searchParams.get("step");
-  const initialStep = isStepKey(stepParam) ? stepParam : PRESET_DEFAULT_STEP[preset];
-
-  return {
-    enabled: true,
-    skipSave: searchParams.get("save") !== "1",
-    mockNiche: searchParams.get("mockNiche") !== "0",
-    initialStep,
-    preset,
-    answers: { ...PRESET_ANSWERS[preset] },
-  };
+/**
+ * Onboarding test panel (?test=1).
+ * Disabled so it is not exposed outside internal testing.
+ * TODO(dev): Re-enable for local QA by restoring the development + ?test=1 checks below.
+ */
+export function parseOnboardingTestConfig(_searchParams: URLSearchParams | null): OnboardingTestConfig | null {
+  return null;
+  // if (process.env.NODE_ENV !== "development") return null;
+  // if (_searchParams?.get("test") !== "1") return null;
+  //
+  // const presetParam = _searchParams.get("preset");
+  // const preset: OnboardingTestPreset = isPreset(presetParam) ? presetParam : "blank";
+  // const stepParam = _searchParams.get("step");
+  // const initialStep = isStepKey(stepParam) ? stepParam : PRESET_DEFAULT_STEP[preset];
+  //
+  // return {
+  //   enabled: true,
+  //   skipSave: _searchParams.get("save") !== "1",
+  //   mockNiche: _searchParams.get("mockNiche") !== "0",
+  //   initialStep,
+  //   preset,
+  //   answers: { ...PRESET_ANSWERS[preset] },
+  // };
 }
 
 export function isOnboardingStepKey(value: string): value is OnboardingStepKey {

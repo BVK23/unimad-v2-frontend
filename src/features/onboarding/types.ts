@@ -1,7 +1,6 @@
 export type PersonalizationProfile = {
   goals?: string[];
   focus?: string[];
-  stage?: string[];
   personalize_opt_in?: boolean | null;
   strengths?: string[];
   problems?: string[];

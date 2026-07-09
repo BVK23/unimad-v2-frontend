@@ -7,7 +7,7 @@ import { useSearchParams } from "next/navigation";
 export default function UniboardOnboardingPageClient() {
   const searchParams = useSearchParams();
   const mode = searchParams?.get("mode");
-  const initialMode = mode === "niche" || mode === "strengths" ? mode : null;
+  const initialMode = mode === "niche" || mode === "strengths" || mode === "profile_setup" ? mode : null;
   const testConfig = parseOnboardingTestConfig(searchParams);
   const testKey = testConfig ? searchParams?.toString() : "prod";
 

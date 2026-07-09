@@ -3,7 +3,10 @@
 import React, { useEffect, useState } from "react";
 import JobUrlImportLoading from "@/components/jobs/JobUrlImportLoading";
 import { ModalPortalOverlay } from "@/components/ui/ModalPortalOverlay";
+import { OnboardingGateTooltip } from "@/components/ui/OnboardingGateTooltip";
+import { FINISH_ONBOARDING_CTA } from "@/constants/onboarding-tooltips";
 import { importJobFromUrl } from "@/features/jobs/server-actions/jobs-actions";
+import { useOnboardingGate } from "@/features/onboarding/context/OnboardingGateContext";
 import type { InterviewPrepContext, InterviewRoundType, InterviewSessionMode } from "@/src/features/interview-prep/types";
 import { useQueryClient } from "@tanstack/react-query";
 import { X, Globe, ChevronRight, Loader2, Link as LinkIcon, FileText } from "lucide-react";
@@ -32,6 +35,8 @@ interface InterviewSetupModalProps {
 
 const InterviewSetupModal: React.FC<InterviewSetupModalProps> = ({ initialContext, isStarting = false, onClose, onStart }) => {
   const queryClient = useQueryClient();
+  const { featureGates } = useOnboardingGate();
+  const interviewGated = !featureGates.jobs_prepare_application;
   const [setupMode, setSetupMode] = useState<SetupMode>(initialContext?.applicationId ? "manual" : "url");
   const [jobUrl, setJobUrl] = useState("");
   const [importError, setImportError] = useState<string | null>(null);
@@ -276,48 +281,52 @@ const InterviewSetupModal: React.FC<InterviewSetupModalProps> = ({ initialContex
             Cancel
           </button>
           {setupMode === "url" && !initialContext?.applicationId && !isImporting ? (
-            <button
-              type="button"
-              disabled={!canStartUrl || busy}
-              onClick={() => void handleImportAndStart()}
-              className="flex flex-1 items-center justify-center gap-2 rounded-xl bg-blue-600 py-3.5 font-medium text-white shadow-lg shadow-blue-500/20 transition-all hover:bg-blue-700 active:scale-95 disabled:opacity-50"
-            >
-              {isImporting ? (
-                <>
-                  <Loader2 size={18} className="animate-spin" /> Importing…
-                </>
-              ) : (
-                <>
-                  Import & start {ROUNDS.find(r => r.id === roundType)?.label} round <ChevronRight size={18} />
-                </>
-              )}
-            </button>
+            <OnboardingGateTooltip enabled={interviewGated} messageKey="interview_prep" className="block flex-1">
+              <button
+                type="button"
+                disabled={!canStartUrl || busy || interviewGated}
+                onClick={() => void handleImportAndStart()}
+                className="flex w-full items-center justify-center gap-2 rounded-xl bg-blue-600 py-3.5 font-medium text-white shadow-lg shadow-blue-500/20 transition-all hover:bg-blue-700 active:scale-95 disabled:cursor-not-allowed disabled:opacity-50"
+              >
+                {isImporting ? (
+                  <>
+                    <Loader2 size={18} className="animate-spin" /> Importing…
+                  </>
+                ) : (
+                  <>
+                    Import & start {ROUNDS.find(r => r.id === roundType)?.label} round <ChevronRight size={18} />
+                  </>
+                )}
+              </button>
+            </OnboardingGateTooltip>
           ) : (
-            <button
-              type="button"
-              disabled={!canStartManual || busy || isImporting}
-              onClick={() =>
-                onStart({
-                  company: company.trim(),
-                  role: role.trim(),
-                  jobDescription: jobDescription.trim(),
-                  roundType,
-                  mode,
-                  applicationId: resolvedApplicationId,
-                })
-              }
-              className="flex flex-1 items-center justify-center gap-2 rounded-xl bg-blue-600 py-3.5 font-medium text-white shadow-lg shadow-blue-500/20 transition-all hover:bg-blue-700 active:scale-95 disabled:opacity-50"
-            >
-              {isStarting ? (
-                <>
-                  <Loader2 size={18} className="animate-spin" /> Preparing...
-                </>
-              ) : (
-                <>
-                  Start {ROUNDS.find(r => r.id === roundType)?.label} Round <ChevronRight size={18} />
-                </>
-              )}
-            </button>
+            <OnboardingGateTooltip enabled={interviewGated} messageKey="interview_prep" className="block flex-1">
+              <button
+                type="button"
+                disabled={!canStartManual || busy || isImporting || interviewGated}
+                onClick={() =>
+                  onStart({
+                    company: company.trim(),
+                    role: role.trim(),
+                    jobDescription: jobDescription.trim(),
+                    roundType,
+                    mode,
+                    applicationId: resolvedApplicationId,
+                  })
+                }
+                className="flex w-full items-center justify-center gap-2 rounded-xl bg-blue-600 py-3.5 font-medium text-white shadow-lg shadow-blue-500/20 transition-all hover:bg-blue-700 active:scale-95 disabled:cursor-not-allowed disabled:opacity-50"
+              >
+                {isStarting ? (
+                  <>
+                    <Loader2 size={18} className="animate-spin" /> Preparing...
+                  </>
+                ) : (
+                  <>
+                    Start {ROUNDS.find(r => r.id === roundType)?.label} Round <ChevronRight size={18} />
+                  </>
+                )}
+              </button>
+            </OnboardingGateTooltip>
           )}
         </div>
       </div>

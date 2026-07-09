@@ -4,6 +4,8 @@ import { ResumeCardSkeletonStyles, ResumeCardsLoadingSkeletons } from "@/compone
 import ResumeDashboardCard from "@/components/resume/ResumeDashboardCard";
 import ResumeGenerationOverlay from "@/components/resume/ResumeGenerationOverlay";
 import { ModalPortalOverlay } from "@/components/ui/ModalPortalOverlay";
+import { OnboardingGateTooltip } from "@/components/ui/OnboardingGateTooltip";
+import { FINISH_ONBOARDING_CTA } from "@/constants/onboarding-tooltips";
 import { importJobFromUrl } from "@/features/jobs/server-actions/jobs-actions";
 import { useOnboardingGate } from "@/features/onboarding/context/OnboardingGateContext";
 import { resumesListQueryKey, useResumesList } from "@/features/resume/hooks/useResumesList";
@@ -85,6 +87,7 @@ const ResumeDashboard: React.FC<ResumeDashboardProps> = ({ onEditResume, onCreat
 
   const resumeVersionMetadata = useMemo(() => buildResumeVersionMetadata(resumes), [resumes]);
   const sortedResumes = useMemo(() => [...resumes].sort((a, b) => b.lastModified.getTime() - a.lastModified.getTime()), [resumes]);
+  const hasBaseResume = useMemo(() => resumes.some(resume => resume.isBase), [resumes]);
 
   const handleSetCardRef = (id: string, element: HTMLDivElement | null) => {
     if (element) {
@@ -321,6 +324,10 @@ const ResumeDashboard: React.FC<ResumeDashboardProps> = ({ onEditResume, onCreat
         return;
       }
 
+      if (!hasBaseResume) {
+        await setBaseResume(String(result.id));
+      }
+
       resetUploadState();
       setCreateModalState("closed");
       await onCreateResume("upload", String(result.id));
@@ -457,7 +464,7 @@ const ResumeDashboard: React.FC<ResumeDashboardProps> = ({ onEditResume, onCreat
   return (
     <div
       ref={scrollContainerRef}
-      className="relative flex h-full min-h-0 w-full min-w-0 flex-1 flex-col overflow-x-hidden overflow-y-auto bg-slate-50 p-8"
+      className="scrollbar-on-hover relative flex h-full min-h-0 w-full min-w-0 flex-1 flex-col overflow-x-hidden overflow-y-auto bg-slate-50 p-8"
       onClick={() => closeActionsMenu()}
     >
       <div className="mx-auto w-full max-w-6xl min-w-0">
@@ -635,20 +642,26 @@ const ResumeDashboard: React.FC<ResumeDashboardProps> = ({ onEditResume, onCreat
                     <p className="text-xs text-slate-500">Build your resume step-by-step with our smart editor.</p>
                   </button>
 
-                  <button
-                    onClick={openTargetedResumeFlow}
-                    disabled={!featureGates.resume_jd_create}
-                    title={!featureGates.resume_jd_create ? "Complete niche onboarding to unlock" : undefined}
-                    className={`flex flex-col items-center text-center p-6 rounded-xl border border-slate-200 transition-all group ${
-                      featureGates.resume_jd_create ? "hover:border-brand-500 hover:bg-brand-50/50" : "cursor-not-allowed opacity-50"
-                    }`}
+                  <OnboardingGateTooltip
+                    enabled={!featureGates.resume_jd_create}
+                    messageKey="resume_jd"
+                    kind="profile_setup"
+                    className="block w-full"
                   >
-                    <div className="w-14 h-14 bg-teal-100 text-teal-600 rounded-full flex items-center justify-center mb-4 group-hover:scale-110 transition-transform">
-                      <FileType size={24} />
-                    </div>
-                    <h3 className="font-medium text-slate-900 mb-2">Target Job Description</h3>
-                    <p className="text-xs text-slate-500">Paste a JD and let AI tailor a resume for you.</p>
-                  </button>
+                    <button
+                      onClick={openTargetedResumeFlow}
+                      disabled={!featureGates.resume_jd_create}
+                      className={`flex w-full flex-col items-center text-center p-6 rounded-xl border border-slate-200 transition-all group ${
+                        featureGates.resume_jd_create ? "hover:border-brand-500 hover:bg-brand-50/50" : "cursor-not-allowed opacity-50"
+                      }`}
+                    >
+                      <div className="w-14 h-14 bg-teal-100 text-teal-600 rounded-full flex items-center justify-center mb-4 group-hover:scale-110 transition-transform">
+                        <FileType size={24} />
+                      </div>
+                      <h3 className="font-medium text-slate-900 mb-2">Target Job Description</h3>
+                      <p className="text-xs text-slate-500">Paste a JD and let AI tailor a resume for you.</p>
+                    </button>
+                  </OnboardingGateTooltip>
 
                   <button
                     onClick={() => {
@@ -802,8 +815,10 @@ const ResumeDashboard: React.FC<ResumeDashboardProps> = ({ onEditResume, onCreat
 
                   <div className="space-y-4">
                     <p className="text-sm text-slate-600 dark:text-slate-400">
-                      Upload a PDF to extract your experience, education, skills, and projects into a new resume. Your base resume will not
-                      be changed.
+                      Upload a PDF to extract your experience, education, skills, and projects into a new resume.
+                      {!hasBaseResume && (
+                        <> This resume will be your base resume used for personalising Unibot behaviour throughout the app.</>
+                      )}
                     </p>
                     <label className="block text-sm font-medium text-slate-700 dark:text-slate-300">
                       Upload your existing resume (PDF)

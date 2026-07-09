@@ -8,6 +8,9 @@ export const MODAL_OVERLAY_Z_INDEX = 500;
 /** Nested modals (crop on picker, gate on overlay, etc.) */
 export const MODAL_OVERLAY_NESTED_Z_INDEX = 510;
 
+/** Onboarding gate popovers — above standard modals (z-500). */
+export const ONBOARDING_GATE_POPOVER_Z_INDEX = 520;
+
 /** @deprecated Prefer zIndex on ModalPortalOverlay; kept for legacy className strings */
 export const MODAL_OVERLAY_Z_CLASS = "z-[500]";
 

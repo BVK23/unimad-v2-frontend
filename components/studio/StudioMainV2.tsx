@@ -2,8 +2,13 @@ import React, { useState, useEffect, useRef, useCallback, useMemo } from "react"
 import { DocumentSaveStatusBar } from "@/components/application-assets/DocumentSaveStatusBar";
 import { useOptionalAdkChatContext } from "@/components/chat/AdkChatProvider";
 import AssetPreviewLoadingOverlay from "@/components/studio/AssetPreviewLoadingOverlay";
+import { ComingSoonBadge } from "@/components/ui/ComingSoonBadge";
+import { HoverTooltip } from "@/components/ui/HoverTooltip";
 import { ModalPortalOverlay } from "@/components/ui/ModalPortalOverlay";
+import { OnboardingGateTooltip } from "@/components/ui/OnboardingGateTooltip";
 import { PanelResizeHandle } from "@/components/ui/PanelResizeHandle";
+import { VPD_FEATURE_ENABLED } from "@/constants/feature-flags";
+import { FINISH_ONBOARDING_CTA, ONBOARDING_GATE_MESSAGES } from "@/constants/onboarding-tooltips";
 import { loadPersistedActiveSessionId } from "@/features/adk-chat/active-session-persist";
 import { buildApplicationAssetContentKey, buildContentGenContentKey } from "@/features/adk-chat/content-scope";
 import { useAdkApplicationAssetReviewStore } from "@/features/adk-chat/stores/useAdkApplicationAssetReviewStore";
@@ -122,7 +127,6 @@ import DocumentListCard from "./DocumentListCard";
 import LinkedInOptimizeBanner from "./LinkedInOptimizeBanner";
 import LinkedInPostAuthorHeader from "./LinkedInPostAuthorHeader";
 import LinkedInPostListCard from "./LinkedInPostListCard";
-import { LinkedInPublishAccessTooltipWrap } from "./LinkedInPublishAccessNotice";
 import PostSchedulerModal from "./PostSchedulerModal";
 import { StudioAssetDeleteConfirmDialog, type StudioDeletableAssetKind } from "./StudioAssetDeleteConfirmDialog";
 import StudioDocumentPreview from "./StudioDocumentPreview";
@@ -168,6 +172,14 @@ function isPrepareReturnTab(type: string): type is PrepareApplicationTab {
 }
 
 const PREPARE_MODE_LOCKED_TOPICS = new Set(["linkedin-post", "referral"]);
+const isVpdFeatureLocked = !VPD_FEATURE_ENABLED;
+const DEFAULT_STUDIO_TOPIC = "linkedin-post";
+
+function resolveAccessibleStudioTopic(topic: string | null | undefined): string {
+  const next = topic ?? DEFAULT_STUDIO_TOPIC;
+  if (isVpdFeatureLocked && next === "vpd") return DEFAULT_STUDIO_TOPIC;
+  return next;
+}
 
 function isPrepareModeStudioTab(topic: string): topic is PrepareApplicationTab {
   return topic === "cover-letter" || topic === "cold-email" || topic === "vpd";
@@ -354,7 +366,7 @@ const StudioMainV2: React.FC<StudioMainProps> = ({ initialContext, initialAssetI
   const prepareApplicationAssets = useMemo(() => parseApplicationAssets(prepareApplication?.assets), [prepareApplication?.assets]);
   const prepareApplicationId = prepareApplication?.application_id ?? null;
   // V2 Force Refresh
-  const [selectedTopic, setSelectedTopic] = useState<string>(initialContext?.type ?? "linkedin-post");
+  const [selectedTopic, setSelectedTopic] = useState<string>(() => resolveAccessibleStudioTopic(initialContext?.type));
   const [generatedContent, setGeneratedContent] = useState("");
   const [isGenerating, setIsGenerating] = useState(false);
 
@@ -1062,11 +1074,13 @@ const StudioMainV2: React.FC<StudioMainProps> = ({ initialContext, initialAssetI
   );
 
   const handleSelectVpd = (vpd: VpdListItem) => {
+    if (isVpdFeatureLocked) return;
     setVpdProject({ ...vpd.project, id: String(vpd.id), title: vpd.title });
     setGeneratedContent(vpd.project.detailedBlocks?.[0]?.content?.toString() || "");
   };
 
   const handleCreateNewVpd = () => {
+    if (isVpdFeatureLocked) return;
     const fresh = createDefaultVpdProject();
     setVpdProject(fresh);
     setGeneratedContent("");
@@ -1107,6 +1121,13 @@ const StudioMainV2: React.FC<StudioMainProps> = ({ initialContext, initialAssetI
         setLinkedinGenerateError("Add a topic or use the wand to suggest one.");
         return;
       }
+      const onePostLimitReached =
+        !featureGates.studio_post_draft &&
+        (linkedinContentGenAssets.length > 0 || Boolean(linkedinPostAssetIdRef.current) || generatedContent.trim().length > 0);
+      if (onePostLimitReached) {
+        setLinkedinGenerateError("Finish onboarding to generate more LinkedIn posts.");
+        return;
+      }
       setLinkedinGenerateError(null);
       setIsGenerating(true);
       setLinkedinStreamActivityLabel("Starting your LinkedIn post draft…");
@@ -1134,7 +1155,7 @@ const StudioMainV2: React.FC<StudioMainProps> = ({ initialContext, initialAssetI
         }
       }
     },
-    [applyDraftGenerationResult, linkedinImages, mood]
+    [applyDraftGenerationResult, featureGates.studio_post_draft, generatedContent, linkedinContentGenAssets.length, linkedinImages, mood]
   );
 
   useEffect(() => {
@@ -1610,9 +1631,6 @@ const StudioMainV2: React.FC<StudioMainProps> = ({ initialContext, initialAssetI
         setLinkedinGenerateError("Finish media uploads before posting or scheduling.");
         return;
       }
-      if (!linkedInPublishAccess.canPost) {
-        return;
-      }
       setLinkedinGenerateError(null);
       if (d.mode === "schedule" && d.scheduledAt) {
         const parsed = new Date(d.scheduledAt);
@@ -1627,9 +1645,13 @@ const StudioMainV2: React.FC<StudioMainProps> = ({ initialContext, initialAssetI
     };
     window.addEventListener(CONTENT_GEN_EVENTS.requestPublish, onRequestPublish);
     return () => window.removeEventListener(CONTENT_GEN_EVENTS.requestPublish, onRequestPublish);
-  }, [generatedContent, isUploadingLinkedinMedia, linkedinPendingMedia.length, linkedinPostAssetId, linkedInPublishAccess.canPost]);
+  }, [generatedContent, isUploadingLinkedinMedia, linkedinPendingMedia.length, linkedinPostAssetId]);
 
   const handleTopicChange = (topicId: string) => {
+    if (isVpdFeatureLocked && topicId === "vpd") {
+      return;
+    }
+
     if (prepareReturn && PREPARE_MODE_LOCKED_TOPICS.has(topicId)) {
       return;
     }
@@ -1651,6 +1673,7 @@ const StudioMainV2: React.FC<StudioMainProps> = ({ initialContext, initialAssetI
     }
 
     if (prepareReturn && topicId === "vpd") {
+      if (isVpdFeatureLocked) return;
       pendingTopicRef.current = topicId;
       setSelectedTopic(topicId);
       setIsGenerating(false);
@@ -1709,11 +1732,16 @@ const StudioMainV2: React.FC<StudioMainProps> = ({ initialContext, initialAssetI
       return;
     }
 
-    if (urlType !== selectedTopic) {
-      resetDocumentSaveStatus();
-      setSelectedTopic(urlType);
+    const resolvedType = resolveAccessibleStudioTopic(urlType);
+    if (resolvedType !== urlType) {
+      updateStudioUrl({ type: resolvedType });
     }
-  }, [resetDocumentSaveStatus, searchParams, selectedTopic]);
+
+    if (resolvedType !== selectedTopic) {
+      resetDocumentSaveStatus();
+      setSelectedTopic(resolvedType);
+    }
+  }, [resetDocumentSaveStatus, searchParams, selectedTopic, updateStudioUrl]);
 
   useEffect(() => {
     if (!initialContext) return;
@@ -1721,9 +1749,14 @@ const StudioMainV2: React.FC<StudioMainProps> = ({ initialContext, initialAssetI
     if (initialContext.fromInterviewVpd && initialContext.type === "vpd") {
       const roleLabel = initialContext.role || "";
       const companyLabel = initialContext.company || "";
-      setSelectedTopic("vpd");
       setRole(roleLabel);
       setCompany(companyLabel);
+      if (isVpdFeatureLocked) {
+        setSelectedTopic("cover-letter");
+        updateStudioUrl({ type: "cover-letter" });
+        return;
+      }
+      setSelectedTopic("vpd");
       setVpdProject({
         ...createDefaultVpdProject(),
         title: roleLabel && companyLabel ? `${roleLabel} @ ${companyLabel}` : "Value Proposition Document",
@@ -1732,7 +1765,7 @@ const StudioMainV2: React.FC<StudioMainProps> = ({ initialContext, initialAssetI
       setGeneratedContent("");
       setShowVpdEditor(true);
     }
-  }, [initialContext]);
+  }, [initialContext, updateStudioUrl]);
 
   const syncPrepareReturnFromUrl = useCallback(async () => {
     const parsed = parseStudioSearchParams(searchParams);
@@ -1742,7 +1775,10 @@ const StudioMainV2: React.FC<StudioMainProps> = ({ initialContext, initialAssetI
 
     const stored = getPrepareReturnSession();
     const navigate = parsed.navigate ?? stored?.navigate ?? "tracker";
-    const tab = (isPrepareReturnTab(parsed.type ?? "") ? parsed.type : (stored?.tab ?? "cover-letter")) as PrepareApplicationTab;
+    let tab = (isPrepareReturnTab(parsed.type ?? "") ? parsed.type : (stored?.tab ?? "cover-letter")) as PrepareApplicationTab;
+    if (isVpdFeatureLocked && tab === "vpd") {
+      tab = "cover-letter";
+    }
 
     let company = stored?.company ?? "";
     let role = stored?.role ?? "";
@@ -2318,15 +2354,15 @@ const StudioMainV2: React.FC<StudioMainProps> = ({ initialContext, initialAssetI
 
   const handleGenerate = () => {
     if (selectedTopic === "cover-letter" || selectedTopic === "cold-email" || selectedTopic === "referral") {
-      if (!featureGates.niche_complete) {
-        router.push("/uniboard/onboarding?mode=niche");
+      if (!featureGates.application_assets_draft) {
         return;
       }
     }
 
+    // LinkedIn: allow a first basic draft for minimal onboarding; block only after one exists.
     if (selectedTopic === "linkedin-post") {
-      if (!featureGates.studio_post_draft) {
-        router.push("/uniboard/onboarding?mode=niche");
+      const alreadyHasPost = linkedinContentGenAssets.length > 0 || Boolean(linkedinPostAssetId) || generatedContent.trim().length > 0;
+      if (!featureGates.studio_post_draft && alreadyHasPost) {
         return;
       }
     }
@@ -2418,6 +2454,7 @@ const StudioMainV2: React.FC<StudioMainProps> = ({ initialContext, initialAssetI
     }
 
     if (selectedTopic === "vpd") {
+      if (isVpdFeatureLocked) return;
       setIsGenerating(true);
       setTimeout(() => {
         const content = generateMockContent();
@@ -2446,7 +2483,6 @@ const StudioMainV2: React.FC<StudioMainProps> = ({ initialContext, initialAssetI
   const handleGenerateAnother = () => {
     if (selectedTopic === "linkedin-post") {
       if (!featureGates.studio_post_draft) {
-        router.push("/uniboard/onboarding?mode=niche");
         return;
       }
       setLinkedinPostAssetId(null);
@@ -2512,6 +2548,9 @@ const StudioMainV2: React.FC<StudioMainProps> = ({ initialContext, initialAssetI
   };
 
   const handleNewLinkedinPost = useCallback(() => {
+    if (!featureGates.studio_post_draft) {
+      return;
+    }
     setLinkedinPostAssetId(null);
     setGeneratedContent("");
     setTopicIdea("");
@@ -2526,7 +2565,7 @@ const StudioMainV2: React.FC<StudioMainProps> = ({ initialContext, initialAssetI
     preservedLinkedinTabRef.current = null;
     hydratedAssetKeyRef.current = null;
     updateStudioUrl({ type: "linkedin-post" });
-  }, [clearLinkedinPendingMedia, updateStudioUrl]);
+  }, [clearLinkedinPendingMedia, featureGates.studio_post_draft, updateStudioUrl]);
 
   const handleNewApplicationAsset = useCallback(() => {
     if (!isDocumentTopic(selectedTopic)) return;
@@ -2572,6 +2611,7 @@ const StudioMainV2: React.FC<StudioMainProps> = ({ initialContext, initialAssetI
 
   const handleImproveWithUnibot = useCallback(() => {
     if (selectedTopic === "linkedin-post") {
+      if (!featureGates.studio_post_draft) return;
       const content = generatedContent.trim();
       if (!content) return;
       window.dispatchEvent(
@@ -2637,13 +2677,16 @@ const StudioMainV2: React.FC<StudioMainProps> = ({ initialContext, initialAssetI
     currentCoverLetterDraft?.id,
     currentReferralDraft?.content,
     currentReferralDraft?.id,
+    featureGates.studio_post_draft,
     generatedContent,
     jobDescription,
+    linkedinFunnel,
     linkedinPostAssetId,
     managerName,
     prepareApplicationId,
     role,
     selectedTopic,
+    topicIdea,
   ]);
 
   const isDocumentGenerating =
@@ -3135,9 +3178,9 @@ const StudioMainV2: React.FC<StudioMainProps> = ({ initialContext, initialAssetI
               <div>
                 <div className="mb-2 flex items-center gap-2">
                   <label className="block text-xs font-medium text-slate-500">Content Type</label>
-                  <div className="group/tooltip relative">
-                    <Info size={14} className="cursor-help text-slate-400" />
-                    <div className="invisible absolute bottom-full left-1/2 z-50 mb-2 w-64 -translate-x-1/2 rounded-lg border border-slate-700 bg-slate-900 p-3 text-xs text-white opacity-0 shadow-xl transition-all group-hover/tooltip:visible group-hover/tooltip:opacity-100">
+                  <HoverTooltip
+                    side="top"
+                    content={
                       <div className="space-y-2">
                         <p>
                           <strong>Top of Funnel:</strong> Broad appeal content to drive awareness and views.
@@ -3149,9 +3192,11 @@ const StudioMainV2: React.FC<StudioMainProps> = ({ initialContext, initialAssetI
                           <strong>Bottom of Funnel:</strong> Direct conversion content (e.g., looking for roles).
                         </p>
                       </div>
-                      <div className="absolute top-full left-1/2 -translate-x-1/2 border-4 border-transparent border-t-slate-900" />
-                    </div>
-                  </div>
+                    }
+                    contentClassName="max-w-64"
+                  >
+                    <Info size={14} className="cursor-help text-slate-400" />
+                  </HoverTooltip>
                 </div>
                 <select
                   value={linkedinContentTypeValue}
@@ -3336,65 +3381,99 @@ const StudioMainV2: React.FC<StudioMainProps> = ({ initialContext, initialAssetI
         {(showGenerateDraftCta || showGenerateAnotherCta) && (
           <div className={showNewAssetCtaGrid ? "mt-4 grid grid-cols-1 gap-3 sm:grid-cols-2" : "mt-4"}>
             {showGenerateAnotherCta && selectedTopic === "linkedin-post" ? (
-              <button
-                type="button"
-                onClick={handleNewLinkedinPost}
-                disabled={isStudioPrimaryActionLoading || isDocumentAdkLoading}
-                className="flex w-full items-center justify-center gap-2 rounded-xl border border-slate-200 bg-white py-4 font-medium text-slate-700 shadow-sm transition-all hover:border-slate-300 hover:bg-slate-50 active:scale-95 disabled:cursor-not-allowed disabled:opacity-70 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-200 dark:hover:bg-slate-800"
+              <OnboardingGateTooltip
+                enabled={linkedinMoreGated}
+                messageKey="linkedin_post"
+                ctaLabel={FINISH_ONBOARDING_CTA}
+                className="block w-full min-w-0 [&>button]:w-full"
               >
-                <Plus size={18} />
-                New Post
-              </button>
+                <button
+                  type="button"
+                  onClick={handleNewLinkedinPost}
+                  disabled={isStudioPrimaryActionLoading || isDocumentAdkLoading || linkedinMoreGated}
+                  className="flex w-full items-center justify-center gap-2 rounded-xl border border-slate-200 bg-white py-4 font-medium text-slate-700 shadow-sm transition-all hover:border-slate-300 hover:bg-slate-50 active:scale-95 disabled:cursor-not-allowed disabled:opacity-70 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-200 dark:hover:bg-slate-800"
+                >
+                  <Plus size={18} />
+                  New Post
+                </button>
+              </OnboardingGateTooltip>
             ) : null}
             {showGenerateAnotherCta && isDocumentTopic(selectedTopic) ? (
+              <OnboardingGateTooltip
+                enabled={documentGenerateGated}
+                messageKey={selectedTopic === "cover-letter" ? "cover_letter" : selectedTopic === "cold-email" ? "cold_email" : "referral"}
+                ctaLabel={FINISH_ONBOARDING_CTA}
+                className="block w-full min-w-0 [&>button]:w-full"
+              >
+                <button
+                  type="button"
+                  onClick={handleNewApplicationAsset}
+                  disabled={isNewApplicationAssetDisabled || documentGenerateGated}
+                  title={
+                    isNewApplicationAssetDisabled && prepareReturn
+                      ? "Start a fresh asset from Studio after you return to the job tracker."
+                      : undefined
+                  }
+                  className="flex w-full items-center justify-center gap-2 rounded-xl border border-slate-200 bg-white py-4 font-medium text-slate-700 shadow-sm transition-all hover:border-slate-300 hover:bg-slate-50 active:scale-95 disabled:cursor-not-allowed disabled:opacity-70 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-200 dark:hover:bg-slate-800"
+                >
+                  <Plus size={18} />
+                  {NEW_APPLICATION_ASSET_LABELS[selectedTopic]}
+                </button>
+              </OnboardingGateTooltip>
+            ) : null}
+            <OnboardingGateTooltip
+              enabled={primaryGenerateGated}
+              messageKey={
+                selectedTopic === "linkedin-post"
+                  ? "linkedin_post"
+                  : selectedTopic === "cover-letter"
+                    ? "cover_letter"
+                    : selectedTopic === "cold-email"
+                      ? "cold_email"
+                      : selectedTopic === "referral"
+                        ? "referral"
+                        : "cover_letter"
+              }
+              ctaLabel={FINISH_ONBOARDING_CTA}
+              className={showNewAssetCtaGrid ? "block w-full min-w-0 [&>button]:w-full" : "block w-full [&>button]:w-full"}
+            >
               <button
                 type="button"
-                onClick={handleNewApplicationAsset}
-                disabled={isNewApplicationAssetDisabled}
-                title={
-                  isNewApplicationAssetDisabled && prepareReturn
-                    ? "Start a fresh asset from Studio after you return to the job tracker."
-                    : undefined
+                onClick={showGenerateAnotherCta ? handleGenerateAnother : handleStudioPrimaryAction}
+                disabled={
+                  primaryGenerateGated ||
+                  (showGenerateAnotherCta && isDocumentTopic(selectedTopic)
+                    ? isDocumentGenerateAnotherBusy
+                    : isStudioPrimaryActionLoading || isDocumentAdkLoading)
                 }
-                className="flex w-full items-center justify-center gap-2 rounded-xl border border-slate-200 bg-white py-4 font-medium text-slate-700 shadow-sm transition-all hover:border-slate-300 hover:bg-slate-50 active:scale-95 disabled:cursor-not-allowed disabled:opacity-70 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-200 dark:hover:bg-slate-800"
+                className={`flex w-full items-center justify-center gap-2 rounded-xl py-4 font-medium transition-all active:scale-95 disabled:cursor-not-allowed disabled:opacity-70 ${
+                  showGenerateAnotherCta
+                    ? "border border-slate-200 bg-white text-slate-700 shadow-sm hover:border-brand-600 hover:bg-brand-600 hover:text-white hover:shadow-lg hover:shadow-brand-500/30 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-200 dark:hover:border-brand-600 dark:hover:bg-brand-600 dark:hover:text-white"
+                    : "bg-brand-600 text-white shadow-lg shadow-brand-500/30 hover:bg-brand-700"
+                }`}
               >
-                <Plus size={18} />
-                {NEW_APPLICATION_ASSET_LABELS[selectedTopic]}
+                {isDocumentGenerateAnotherBusy ? null : isStudioPrimaryActionLoading && selectedTopic !== "linkedin-post" ? (
+                  <div
+                    className={`h-4 w-4 animate-spin rounded-full border-2 border-t-transparent ${
+                      showGenerateAnotherCta
+                        ? "border-slate-400 group-hover:border-white/50 group-hover:border-t-white"
+                        : "border-white/50 border-t-white"
+                    }`}
+                  />
+                ) : (
+                  <Wand2 size={18} />
+                )}
+                {isDocumentGenerateAnotherBusy
+                  ? documentAssetActivityLabel
+                  : isStudioPrimaryActionLoading
+                    ? selectedTopic === "linkedin-post"
+                      ? linkedinGeneratingLabel
+                      : " Crafting..."
+                    : showGenerateAnotherCta
+                      ? "Generate Another"
+                      : "Generate Draft"}
               </button>
-            ) : null}
-            <button
-              type="button"
-              onClick={showGenerateAnotherCta ? handleGenerateAnother : handleStudioPrimaryAction}
-              disabled={
-                showGenerateAnotherCta && isDocumentTopic(selectedTopic)
-                  ? isDocumentGenerateAnotherBusy
-                  : isStudioPrimaryActionLoading || isDocumentAdkLoading
-              }
-              className={`flex w-full items-center justify-center gap-2 rounded-xl py-4 font-medium transition-all active:scale-95 disabled:cursor-not-allowed disabled:opacity-70 ${
-                showGenerateAnotherCta
-                  ? "border border-slate-200 bg-white text-slate-700 shadow-sm hover:border-brand-600 hover:bg-brand-600 hover:text-white hover:shadow-lg hover:shadow-brand-500/30 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-200 dark:hover:border-brand-600 dark:hover:bg-brand-600 dark:hover:text-white"
-                  : "bg-brand-600 text-white shadow-lg shadow-brand-500/30 hover:bg-brand-700"
-              }`}
-            >
-              {isDocumentGenerateAnotherBusy ? null : isStudioPrimaryActionLoading ? (
-                <div
-                  className={`h-4 w-4 animate-spin rounded-full border-2 border-t-transparent ${
-                    showGenerateAnotherCta
-                      ? "border-slate-400 group-hover:border-white/50 group-hover:border-t-white"
-                      : "border-white/50 border-t-white"
-                  }`}
-                />
-              ) : (
-                <Wand2 size={18} />
-              )}
-              {isDocumentGenerateAnotherBusy
-                ? documentAssetActivityLabel
-                : isStudioPrimaryActionLoading
-                  ? ` ${linkedinGeneratingLabel}`
-                  : showGenerateAnotherCta
-                    ? "Generate Another"
-                    : "Generate Draft"}
-            </button>
+            </OnboardingGateTooltip>
           </div>
         )}
 
@@ -3438,7 +3517,7 @@ const StudioMainV2: React.FC<StudioMainProps> = ({ initialContext, initialAssetI
               </button>
             </div>
 
-            <div className="flex flex-col gap-2">
+            <div className="scrollbar-on-hover flex min-h-0 flex-1 flex-col gap-2 overflow-y-auto pr-1">
               {scheduledPostsForModal.length === 0 ? (
                 <p className="rounded-xl border border-dashed border-slate-200 px-4 py-8 text-center text-xs text-slate-400 dark:border-slate-700">
                   Nothing scheduled yet. Generate a draft, then schedule it from the preview.
@@ -3594,7 +3673,8 @@ const StudioMainV2: React.FC<StudioMainProps> = ({ initialContext, initialAssetI
   const isStudioPrimaryActionLoading =
     selectedTopic === "linkedin-post" ? isGenerating : isDocumentPreviewLoading || (selectedTopic === "vpd" && isGenerating);
 
-  const linkedinGeneratingLabel = linkedinStreamActivityLabel ?? "Crafting…";
+  const linkedinGeneratingLabel =
+    selectedTopic === "linkedin-post" && isDocumentAdkLoading ? "Improving your draft" : "Generating your draft";
 
   const showGenerateAnotherCta = topicHasGeneratedDraft && (isDocumentTopic(selectedTopic) || selectedTopic === "linkedin-post");
 
@@ -3620,6 +3700,14 @@ const StudioMainV2: React.FC<StudioMainProps> = ({ initialContext, initialAssetI
   const showNewAssetCtaGrid = showGenerateAnotherCta && (selectedTopic === "linkedin-post" || isDocumentTopic(selectedTopic));
 
   const showGenerateDraftCta = (isDocumentTopic(selectedTopic) || selectedTopic === "linkedin-post") && !topicHasGeneratedDraft;
+
+  const linkedinOnePostLimitReached =
+    !featureGates.studio_post_draft &&
+    (linkedinContentGenAssets.length > 0 || Boolean(linkedinPostAssetId) || generatedContent.trim().length > 0);
+
+  const documentGenerateGated = isDocumentTopic(selectedTopic) && !featureGates.application_assets_draft;
+  const linkedinMoreGated = selectedTopic === "linkedin-post" && linkedinOnePostLimitReached;
+  const primaryGenerateGated = documentGenerateGated || linkedinMoreGated;
 
   const handleStudioPrimaryAction = handleGenerate;
 
@@ -3663,31 +3751,38 @@ const StudioMainV2: React.FC<StudioMainProps> = ({ initialContext, initialAssetI
         {/* RIGHT: Preview + Tabs */}
         <div className="flex min-h-0 min-w-0 flex-1 flex-col relative bg-slate-100 dark:bg-slate-950">
           {/* Top Bar for Tabs - Sticky */}
-          <div className="w-full px-8 py-6 border-b border-slate-200/50 dark:border-slate-800/50 bg-slate-100/50 dark:bg-slate-950 backdrop-blur-sm sticky top-0 z-20">
-            <div className="flex flex-wrap items-center justify-center gap-3">
+          <div className="sticky top-0 z-20 w-full border-b border-slate-200/50 bg-slate-100/50 px-8 py-6 backdrop-blur-sm dark:border-slate-800/50 dark:bg-slate-950">
+            <div className="flex flex-wrap items-center justify-center gap-3 overflow-visible">
               {TOPIC_GROUPS.map((group, gi) => (
                 <div
                   key={gi}
-                  className={`inline-flex rounded-full bg-slate-200/50 p-1 dark:bg-slate-900 ${
+                  className={`inline-flex overflow-visible rounded-full bg-slate-200/50 p-1 dark:bg-slate-900 ${
                     group.blueStroke ? "border border-brand-500/25 dark:border-brand-400/30" : "border border-transparent"
                   }`}
                 >
                   {group.topics.map(t => {
                     const isLockedInPrepareMode = prepareReturn != null && PREPARE_MODE_LOCKED_TOPICS.has(t.id);
+                    const isVpdLockedTab = isVpdFeatureLocked && t.id === "vpd";
+                    const isTabDisabled = isLockedInPrepareMode || isVpdLockedTab;
                     return (
                       <button
                         key={t.id}
                         type="button"
                         onClick={() => handleTopicChange(t.id)}
-                        disabled={isLockedInPrepareMode}
-                        title={isLockedInPrepareMode ? "Close the banner to switch to this tab" : undefined}
-                        className={`whitespace-nowrap rounded-full px-4 py-2 text-sm font-medium transition-all ${
-                          selectedTopic === t.id
-                            ? "bg-white text-slate-900 shadow-sm dark:bg-slate-800 dark:text-white"
-                            : "text-slate-500 hover:text-slate-700 dark:text-slate-400 dark:hover:text-slate-200"
+                        disabled={isTabDisabled}
+                        title={
+                          isLockedInPrepareMode ? "Close the banner to switch to this tab" : isVpdLockedTab ? "Coming soon" : undefined
+                        }
+                        className={`relative inline-flex items-center whitespace-nowrap rounded-full px-4 py-2 text-sm font-medium transition-all ${
+                          isVpdLockedTab
+                            ? "cursor-not-allowed pr-5 text-slate-400 dark:text-slate-500"
+                            : selectedTopic === t.id
+                              ? "bg-white text-slate-900 shadow-sm dark:bg-slate-800 dark:text-white"
+                              : "text-slate-500 hover:text-slate-700 dark:text-slate-400 dark:hover:text-slate-200"
                         } ${isLockedInPrepareMode ? "cursor-not-allowed opacity-40" : ""}`}
                       >
                         {t.label}
+                        {isVpdLockedTab ? <ComingSoonBadge variant="corner" /> : null}
                       </button>
                     );
                   })}
@@ -3700,7 +3795,11 @@ const StudioMainV2: React.FC<StudioMainProps> = ({ initialContext, initialAssetI
             <div className="flex min-h-0 flex-1 items-start justify-center overflow-y-auto p-8 scrollbar-on-hover">
               {isVpdTopic ? (
                 <div className="flex h-full min-h-[min(70vh,640px)] w-full max-w-3xl flex-col">
-                  <VpdPreview project={vpdProject} onOpenEditor={() => setShowVpdEditor(true)} variant="panel" />
+                  <VpdPreview
+                    project={vpdProject}
+                    onOpenEditor={isVpdFeatureLocked ? undefined : () => setShowVpdEditor(true)}
+                    variant="panel"
+                  />
                 </div>
               ) : (
                 <div className="relative w-full max-w-[210mm] group/preview">
@@ -3732,7 +3831,7 @@ const StudioMainV2: React.FC<StudioMainProps> = ({ initialContext, initialAssetI
                       ) : null}
                       <div className="relative mb-2 min-h-[min(42vh,360px)] flex-1">
                         {isGenerating && !getLinkedInPreviewContent().trim() ? (
-                          <AssetPreviewLoadingOverlay label={linkedinStreamActivityLabel ?? "Crafting your post…"} />
+                          <AssetPreviewLoadingOverlay label="Generating your draft" />
                         ) : null}
                         <textarea
                           value={getLinkedInPreviewContent()}
@@ -3808,48 +3907,43 @@ const StudioMainV2: React.FC<StudioMainProps> = ({ initialContext, initialAssetI
                       </div>
                       <div className="mt-4 flex shrink-0 justify-end gap-3 border-t border-slate-100 pt-4 dark:border-slate-800">
                         {topicHasGeneratedDraft ? (
-                          <button
-                            type="button"
-                            onClick={handleImproveWithUnibot}
-                            disabled={isDocumentAdkLoading || !getLinkedInPreviewContent().trim()}
-                            className="inline-flex items-center gap-2 rounded-full border border-brand-200 bg-brand-50 px-5 py-2.5 text-sm font-medium text-brand-700 transition-all hover:bg-brand-100 active:scale-[0.99] disabled:cursor-not-allowed disabled:opacity-40 dark:border-brand-800 dark:bg-brand-900/40 dark:text-brand-300 dark:hover:bg-brand-900/60"
+                          <OnboardingGateTooltip
+                            enabled={linkedinMoreGated}
+                            messageKey="linkedin_post"
+                            ctaLabel={FINISH_ONBOARDING_CTA}
+                            align="right"
+                            className="inline-flex shrink-0"
                           >
-                            <Wand2 size={16} />
-                            Improve with Unibot
-                          </button>
+                            <button
+                              type="button"
+                              onClick={handleImproveWithUnibot}
+                              disabled={linkedinMoreGated || isDocumentAdkLoading || !getLinkedInPreviewContent().trim()}
+                              className="inline-flex items-center gap-2 rounded-full border border-brand-200 bg-brand-50 px-5 py-2.5 text-sm font-medium text-brand-700 transition-all hover:bg-brand-100 active:scale-[0.99] disabled:cursor-not-allowed disabled:opacity-40 dark:border-brand-800 dark:bg-brand-900/40 dark:text-brand-300 dark:hover:bg-brand-900/60"
+                            >
+                              <Wand2 size={16} />
+                              Improve with Unibot
+                            </button>
+                          </OnboardingGateTooltip>
                         ) : null}
-                        <LinkedInPublishAccessTooltipWrap
-                          access={linkedInPublishAccess}
-                          userId={profileData?.user_id}
+                        <button
+                          type="button"
                           disabled={
-                            !linkedInPublishAccess.canPost ||
                             !getLinkedInPreviewContent().trim() ||
                             getLinkedInPreviewContent().trim().length < MIN_LINKEDIN_POST_CHARS ||
                             isUploadingLinkedinMedia ||
                             linkedinPendingMedia.length > 0
                           }
+                          onClick={() => {
+                            window.dispatchEvent(
+                              new CustomEvent(CONTENT_GEN_EVENTS.requestPublish, {
+                                detail: { mode: "schedule" },
+                              })
+                            );
+                          }}
+                          className="inline-flex shrink-0 items-center rounded-full bg-brand-600 px-6 py-2.5 text-sm font-medium text-white shadow-md shadow-brand-500/25 transition-all hover:bg-brand-700 active:scale-[0.99] disabled:cursor-not-allowed disabled:opacity-40"
                         >
-                          <button
-                            type="button"
-                            disabled={
-                              !linkedInPublishAccess.canPost ||
-                              !getLinkedInPreviewContent().trim() ||
-                              getLinkedInPreviewContent().trim().length < MIN_LINKEDIN_POST_CHARS ||
-                              isUploadingLinkedinMedia ||
-                              linkedinPendingMedia.length > 0
-                            }
-                            onClick={() => {
-                              window.dispatchEvent(
-                                new CustomEvent(CONTENT_GEN_EVENTS.requestPublish, {
-                                  detail: { mode: "schedule" },
-                                })
-                              );
-                            }}
-                            className="inline-flex items-center rounded-full bg-brand-600 px-6 py-2.5 text-sm font-medium text-white shadow-md shadow-brand-500/25 transition-all hover:bg-brand-700 active:scale-[0.99] disabled:cursor-not-allowed disabled:opacity-40"
-                          >
-                            Post / Schedule
-                          </button>
-                        </LinkedInPublishAccessTooltipWrap>
+                          Post / Schedule
+                        </button>
                       </div>
                     </div>
                   ) : isDocumentTopic(selectedTopic) ? (
@@ -3977,6 +4071,7 @@ const StudioMainV2: React.FC<StudioMainProps> = ({ initialContext, initialAssetI
           onImproveWithUnibot={handlePostSchedulerImprove}
           linkedInPublishAccess={linkedInPublishAccess}
           userId={profileData?.user_id}
+          onboardingBlocked={linkedinMoreGated}
           initialData={
             publishModalSeed ??
             (selectedPostData
@@ -4029,7 +4124,7 @@ const StudioMainV2: React.FC<StudioMainProps> = ({ initialContext, initialAssetI
         />
       )}
 
-      {showVpdEditor && (
+      {showVpdEditor && !isVpdFeatureLocked && (
         <VpdEditorWindow project={vpdProject} onClose={() => setShowVpdEditor(false)} onUpdateProject={updated => setVpdProject(updated)} />
       )}
 

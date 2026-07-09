@@ -11,7 +11,7 @@ type UnibotUserMessageToolbarProps = {
   onDelete: () => void;
 };
 
-/** Hover actions on a sent user message — edit re-sends after rewind; delete rewinds only. */
+/** Actions on a sent user message — edit re-sends after rewind; delete rewinds only. */
 export function UnibotUserMessageToolbar({
   disabled,
   showEdit = true,
@@ -22,7 +22,7 @@ export function UnibotUserMessageToolbar({
     "inline-flex items-center justify-center rounded-md p-1 text-slate-400 transition-colors hover:bg-slate-100 hover:text-brand-600 disabled:opacity-30 dark:hover:bg-white/10";
 
   return (
-    <div className="hidden items-center justify-end gap-0.5 group-hover:flex">
+    <div className="flex items-center justify-end gap-0.5">
       {showEdit && onEdit ? (
         <button type="button" onClick={onEdit} disabled={disabled} title="Edit message" aria-label="Edit message" className={btnClass}>
           <Pencil size={12} aria-hidden />

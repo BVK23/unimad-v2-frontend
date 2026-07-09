@@ -8,6 +8,8 @@ import { LinkedInStaleProfileImage } from "@/components/linkedin/LinkedInStalePr
 import type { LinkedInListItem } from "@/components/studio/LinkedInPostListCard";
 import { StudioAssetDeleteConfirmDialog } from "@/components/studio/StudioAssetDeleteConfirmDialog";
 import StudioSectionDot from "@/components/studio/StudioSectionDot";
+import { OnboardingGateTooltip } from "@/components/ui/OnboardingGateTooltip";
+import { FINISH_ONBOARDING_CTA } from "@/constants/onboarding-tooltips";
 import { deleteContentGenAsset } from "@/features/content-lab/server-actions/content-lab-actions";
 import {
   LinkedInAnalyzerClientError,
@@ -18,6 +20,7 @@ import {
 import { updateLinkedInProfileContent } from "@/features/linkedin/server-actions/linkedin-analyzer-actions";
 import { generateLinkedInConnectionRequest } from "@/features/linkedin/server-actions/linkedin-connection-actions";
 import type { LinkedInAnalyzeResult, LinkedInAnalyzerErrorCode, LinkedInAnalysisSnapshot } from "@/features/linkedin/types";
+import { useOnboardingGate } from "@/features/onboarding/context/OnboardingGateContext";
 import { useAdkLinkedInReviewStore } from "@/src/features/adk-chat/stores/useAdkLinkedInReviewStore";
 import { mapSnapshotToLinkedInSessionProfile } from "@/src/features/linkedin/api/adk-mappers";
 import { LINKEDIN_ADK_PROFILE_KEY, LINKEDIN_COMMENT_EXTENSION_URL, LINKEDIN_REANALYZE_EVENT } from "@/src/features/linkedin/constants";
@@ -57,6 +60,8 @@ const formatLastAnalyzedOn = (iso: string): string | null => {
 const LinkedInDashboard: React.FC<LinkedInDashboardProps> = ({ onImprove, onNavigateToStudio }) => {
   const router = useRouter();
   const queryClient = useQueryClient();
+  const { featureGates } = useOnboardingGate();
+  const canImproveSections = featureGates.linkedin_section_improve;
   const { data, isLoading, isError, error, refetch } = useLinkedInAnalysis();
   const analyzeMutation = useAnalyzeLinkedInProfile();
   const isUnibotBusy = useUnibotAgentBusy();
@@ -390,29 +395,36 @@ const LinkedInDashboard: React.FC<LinkedInDashboardProps> = ({ onImprove, onNavi
                                 </span>
                               ) : null}
                             </div>
-                            <button
-                              type="button"
-                              disabled={isUnibotBusy}
-                              onClick={() => {
-                                if (isUnibotBusy) return;
-                                const adkSection = linkedInSectionIdToAdkSection(section.id);
-                                if (!adkSection) return;
-                                setActiveImproveSectionId(section.id);
-                                onImprove({
-                                  type: "improve",
-                                  improveType: "linkedin",
-                                  feature: "linkedin",
-                                  featureId: LINKEDIN_ADK_PROFILE_KEY,
-                                  section: adkSection,
-                                  text: buildLinkedInImproveMessage(adkSection),
-                                  topicTitle: `LinkedIn · ${section.name}`,
-                                  requestKey: Date.now(),
-                                });
-                              }}
-                              className="flex shrink-0 items-center gap-1.5 rounded-lg bg-brand-50 px-3 py-1.5 text-xs font-medium text-brand-600 transition-colors hover:bg-brand-100 disabled:pointer-events-none disabled:opacity-50 dark:bg-brand-900/40 dark:text-brand-300 dark:hover:bg-brand-900/60"
+                            <OnboardingGateTooltip
+                              enabled={!canImproveSections}
+                              messageKey="linkedin_improve"
+                              ctaLabel={FINISH_ONBOARDING_CTA}
+                              align="right"
                             >
-                              {activeImproveSectionId === section.id && isUnibotBusy ? "Improving…" : "Improve"}
-                            </button>
+                              <button
+                                type="button"
+                                disabled={!canImproveSections || isUnibotBusy}
+                                onClick={() => {
+                                  if (!canImproveSections || isUnibotBusy) return;
+                                  const adkSection = linkedInSectionIdToAdkSection(section.id);
+                                  if (!adkSection) return;
+                                  setActiveImproveSectionId(section.id);
+                                  onImprove({
+                                    type: "improve",
+                                    improveType: "linkedin",
+                                    feature: "linkedin",
+                                    featureId: LINKEDIN_ADK_PROFILE_KEY,
+                                    section: adkSection,
+                                    text: buildLinkedInImproveMessage(adkSection),
+                                    topicTitle: `LinkedIn · ${section.name}`,
+                                    requestKey: Date.now(),
+                                  });
+                                }}
+                                className="flex shrink-0 items-center gap-1.5 rounded-lg bg-brand-50 px-3 py-1.5 text-xs font-medium text-brand-600 transition-colors hover:bg-brand-100 disabled:pointer-events-none disabled:opacity-50 dark:bg-brand-900/40 dark:text-brand-300 dark:hover:bg-brand-900/60"
+                              >
+                                {activeImproveSectionId === section.id && isUnibotBusy ? "Improving…" : "Improve"}
+                              </button>
+                            </OnboardingGateTooltip>
                           </div>
                           <p className="mb-2 text-sm leading-relaxed text-slate-600 dark:text-slate-400">{section.feedback}</p>
                           <p className="text-xs italic text-slate-400 dark:text-slate-500">Tip: {section.tip}</p>

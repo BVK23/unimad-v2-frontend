@@ -2,6 +2,7 @@ import { useMutation, useQueryClient } from "@tanstack/react-query";
 import type { ResumeData } from "../../../../types";
 import { mapBackendResumeToFrontend } from "../api/mappers";
 import { mapFrontendResumeToBackend } from "../api/mappers";
+import { isPersistedResumeId } from "../constants/resumeDraft";
 import { createResume, updateResumeContent } from "../server-actions/resume-actions";
 
 export type SaveResumeResult = { created: boolean; id: string; resume_data: Record<string, unknown> };
@@ -12,7 +13,7 @@ export function useUpdateResume() {
   return useMutation({
     mutationFn: async ({ resumeId, data }: { resumeId: string; data: ResumeData }): Promise<SaveResumeResult> => {
       const backendPayload = mapFrontendResumeToBackend(data);
-      const isNew = !resumeId || resumeId.trim() === "";
+      const isNew = !isPersistedResumeId(resumeId);
 
       if (isNew) {
         const response = await createResume(backendPayload);

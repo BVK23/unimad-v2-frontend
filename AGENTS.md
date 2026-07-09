@@ -8,6 +8,8 @@ When working in this repo, follow the project folder structure so new and modifi
   Use it to decide where to create or move files (feature logic vs UI, hooks, server actions, types, utils, etc.).
 - **Code guidelines (`useEffect`, React, overlays):** [docs/CODE_GUIDELINES.md](./docs/CODE_GUIDELINES.md)
 - **ADK session contract (PATCH / SSE / GET on mutating tools):** [docs/ADK_SESSION_CONTRACT.md](./docs/ADK_SESSION_CONTRACT.md)
+- **Uniboard help floater / feature knowledge bases:** [docs/UNIBOARD_HELP_FLOATER.md](./docs/UNIBOARD_HELP_FLOATER.md)
+- **Onboarding gates (field-based, not timestamps):** [docs/ONBOARDING_GATES.md](./docs/ONBOARDING_GATES.md)
 - **Design system (UI components, tokens, badges, cards):** `docs/internal/design-system.html` — browse at `/internal/design/design-system` when running locally, or when signed in as a team member in production.
 - **Brand guidelines:** `docs/internal/brand-book.html` — browse at `/internal/design/brand-book` under the same access rules.
 
@@ -18,5 +20,6 @@ When working in this repo, follow the project folder structure so new and modifi
 3. **Shared types** → `types/` or root `types.ts`. **Shared utils** → `utils/`. **Constants** → `constants/`. **External services** → `services/`.
 4. **Routes and pages** → `src/app/` (Next.js App Router).
 5. Do **not** move the existing `components/`, `utils/`, `constants/`, `types/`, or `services/` folders into `src/` unless the user explicitly asks for that migration.
+6. **Feature knowledge bases** open from `UniboardHelpFloater` (bottom-right sparkles FAB). Do **not** add a separate toolbar “i” / help button on the feature page — enable the floater’s Knowledge base CTA and mount the modal there. See [docs/UNIBOARD_HELP_FLOATER.md](./docs/UNIBOARD_HELP_FLOATER.md).
 
 For full details, examples, and the directory tree, see [STRUCTURE.md](./STRUCTURE.md).

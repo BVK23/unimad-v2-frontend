@@ -15,6 +15,8 @@ type UserData = {
   is_team_member?: boolean;
   onboarding_required?: boolean;
   profile_setup_required?: boolean;
+  onboarded_at?: string | null;
+  minimal_onboarded_at?: string | null;
   feature_gates?: FeatureGates;
   is_coach_acting_as_student?: boolean;
   viewing_student_profile_id?: number;
@@ -34,17 +36,17 @@ async function fetchUserData(): Promise<UserData | null> {
       return null;
     }
 
-    const headers: Record<string, string> = {
+    const requestHeaders: Record<string, string> = {
       Authorization: `Bearer ${accessTokenCookie.value}`,
     };
     const actAsId = cookieStore.get(COACH_ACT_AS_COOKIE)?.value?.trim();
     if (actAsId && /^\d+$/.test(actAsId)) {
-      headers[COACH_ACT_AS_HEADER] = actAsId;
+      requestHeaders[COACH_ACT_AS_HEADER] = actAsId;
     }
 
     const res = await fetch(`${process.env.NEXT_PUBLIC_BACKEND_URL}/api/user-data/`, {
       method: "GET",
-      headers,
+      headers: requestHeaders,
       redirect: "follow",
       cache: "no-store",
     });
@@ -53,8 +55,7 @@ async function fetchUserData(): Promise<UserData | null> {
       return null;
     }
 
-    const data = (await res.json()) as UserData;
-    return data;
+    return (await res.json()) as UserData;
   } catch {
     return null;
   }
