@@ -142,6 +142,11 @@ export type AssignedStudent = {
   email: string;
   phone_number?: string | null;
   linkedin_url?: string | null;
+  role?: string | null;
+  desired_roles?: string[] | null;
+  location_display?: string | null;
+  /** UnicoachStudentData.created_at — used when program_start_date is unset. */
+  enrolled_at?: string | null;
   program_start_date?: string | null;
   ux_stage?: string | null;
   program_label?: string | null;

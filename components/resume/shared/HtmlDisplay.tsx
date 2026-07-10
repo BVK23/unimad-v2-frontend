@@ -3,26 +3,15 @@ import React from "react";
 export type HtmlDisplayVariant = "default" | "pdfTight";
 
 /**
- * Hanging-indent list layout using text-indent + padding-left.
- * The ::before bullet is inline content on the same text line as the words,
- * so it shares the exact same baseline — no vertical drift on multi-line items.
+ * Native list markers with outside positioning so bullets stay inside the list
+ * padding box. Avoids ::before + negative text-indent, which overflow-hidden
+ * ancestors (ScaledA4PreviewShell, dashboard thumbnails, Prepare modal) clip away.
  */
 const RESUME_LIST_LAYOUT_CLASSES = [
-  // Strip native list styles (Tailwind preflight already does, but be explicit)
-  "[&_ul]:list-none [&_ul]:m-0 [&_ul]:p-0",
-  "[&_ol]:list-none [&_ol]:m-0 [&_ol]:p-0 [&_ol]:[counter-reset:li]",
-  // Hanging indent: padding makes wrapped lines indent, text-indent pulls first line back
-  "[&_ul>li]:pl-[0.9em] [&_ul>li]:[text-indent:-0.9em]",
-  "[&_ol>li]:pl-[1.2em] [&_ol>li]:[text-indent:-1.2em]",
-  // UL bullet — inline ::before on the same baseline as text
-  "[&_ul>li]:before:content-['•\\00a0'] [&_ul>li]:before:font-semibold",
-  // OL counter — inline ::before
-  "[&_ol>li]:[counter-increment:li] [&_ol>li]:before:[content:counter(li)'.\\00a0'] [&_ol>li]:before:font-semibold",
-  // Shared list-item spacing + prevent page-break splitting bullet from text
+  "[&_ul]:m-0 [&_ul]:list-disc [&_ul]:list-outside [&_ul]:pl-[1.1em]",
+  "[&_ol]:m-0 [&_ol]:list-decimal [&_ol]:list-outside [&_ol]:pl-[1.4em]",
   "[&_li]:mb-[2px] [&_li]:[break-inside:avoid]",
-  // Hide empty list items (no stray lone bullets)
-  "[&_li:empty]:hidden [&_li:empty]:before:content-none",
-  // Tiptap wraps li content in <p>; make it inline so text-indent works across it
+  "[&_li:empty]:hidden",
   "[&_li>p]:inline [&_li>p]:m-0",
 ].join(" ");
 

@@ -337,7 +337,7 @@ const Portfolio: React.FC<PortfolioProps> = ({ portfolioId, initialData, onBack,
 
   const { saveStatusLabel, runSave, hasPendingUnsavedChanges, isSavingRemote, savedConfirmationVisible, lastSaveError } =
     usePortfolioAutosave(portfolioId, {
-      enabled: !isReadOnly && !hasPendingAdkReview,
+      enabled: !isReadOnly,
     });
 
   const [textSelection, setTextSelection] = useState<RichTextEditorSelectionInfo | null>(null);
@@ -1558,7 +1558,7 @@ const Portfolio: React.FC<PortfolioProps> = ({ portfolioId, initialData, onBack,
           onUploadError={message => showToast(message)}
         />
       ) : (
-        <div className="flex-1 bg-slate-50 dark:bg-slate-950 h-full overflow-y-auto no-scrollbar relative">
+        <div className="scrollbar-on-hover [scrollbar-gutter:stable] relative h-full flex-1 overflow-y-auto bg-slate-50 dark:bg-slate-950">
           <input
             ref={coverInputRef}
             type="file"

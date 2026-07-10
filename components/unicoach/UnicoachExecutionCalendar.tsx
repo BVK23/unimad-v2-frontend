@@ -57,8 +57,8 @@ function CounterControls({
       </span>
       <button
         type="button"
-        disabled={readOnly}
-        onClick={() => onChange(Math.min(999, count + 1))}
+        disabled={readOnly || count >= target}
+        onClick={() => onChange(Math.min(target, count + 1))}
         className={btnClass}
         aria-label="Increase"
       >

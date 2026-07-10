@@ -22,14 +22,26 @@ interface CoverLetterInlineEditorProps {
   onChange: (val: string) => void;
   onActivate?: () => void;
   onDeactivate?: () => void;
+  /** Prepare Application modal: hug content height instead of studio min-height. */
+  compactPreview?: boolean;
+  /** Pointer events inside these nodes should not blur the editor or trigger onDeactivate. */
+  deactivateIgnoreRefs?: ReadonlyArray<React.RefObject<HTMLElement | null>>;
 }
 
 const normalizeEditorHtml = (raw: string) => stripTrailingEmptyListItems(normalizeContentToHtml(raw));
 
-const CoverLetterInlineEditor: React.FC<CoverLetterInlineEditorProps> = ({ value, onChange, onActivate, onDeactivate }) => {
+const CoverLetterInlineEditor: React.FC<CoverLetterInlineEditorProps> = ({
+  value,
+  onChange,
+  onActivate,
+  onDeactivate,
+  compactPreview = false,
+  deactivateIgnoreRefs,
+}) => {
   const [isActivated, setIsActivated] = React.useState(false);
   const wrapperRef = React.useRef<HTMLDivElement | null>(null);
   const onDeactivateRef = React.useRef(onDeactivate);
+  const deactivateIgnoreRefsRef = React.useRef(deactivateIgnoreRefs);
   const valueRef = React.useRef(value);
 
   React.useEffect(() => {
@@ -37,8 +49,16 @@ const CoverLetterInlineEditor: React.FC<CoverLetterInlineEditorProps> = ({ value
   }, [onDeactivate]);
 
   React.useEffect(() => {
+    deactivateIgnoreRefsRef.current = deactivateIgnoreRefs;
+  }, [deactivateIgnoreRefs]);
+
+  React.useEffect(() => {
     valueRef.current = value;
   }, [value]);
+
+  const editorSurfaceClass = compactPreview
+    ? `cover-letter-editor ProseMirror min-h-0 focus:outline-none ${APPLICATION_DOCUMENT_BODY_CLASS.replace("min-h-full", "min-h-0")} [&_ul]:list-disc [&_ul]:my-2 [&_ul]:ml-5 [&_ul]:pl-0 [&_ol]:list-decimal [&_ol]:my-2 [&_ol]:ml-5 [&_ol]:pl-0 [&_li]:mb-1`
+    : `cover-letter-editor ProseMirror min-h-[400px] focus:outline-none ${APPLICATION_DOCUMENT_BODY_CLASS} [&_ul]:list-disc [&_ul]:my-2 [&_ul]:ml-5 [&_ul]:pl-0 [&_ol]:list-decimal [&_ol]:my-2 [&_ol]:ml-5 [&_ol]:pl-0 [&_li]:mb-1`;
 
   const editor = useEditor({
     immediatelyRender: false,
@@ -56,7 +76,7 @@ const CoverLetterInlineEditor: React.FC<CoverLetterInlineEditorProps> = ({ value
     content: normalizeEditorHtml(value),
     editorProps: {
       attributes: {
-        class: `cover-letter-editor ProseMirror min-h-[400px] focus:outline-none ${APPLICATION_DOCUMENT_BODY_CLASS} [&_ul]:list-disc [&_ul]:my-2 [&_ul]:ml-5 [&_ul]:pl-0 [&_ol]:list-decimal [&_ol]:my-2 [&_ol]:ml-5 [&_ol]:pl-0 [&_li]:mb-1`,
+        class: editorSurfaceClass,
       },
     },
     onUpdate: ({ editor, transaction }) => {
@@ -79,6 +99,7 @@ const CoverLetterInlineEditor: React.FC<CoverLetterInlineEditorProps> = ({ value
       const wrapperEl = wrapperRef.current;
       if (!wrapperEl) return;
       if (wrapperEl.contains(target)) return;
+      if (deactivateIgnoreRefsRef.current?.some(ref => ref.current?.contains(target))) return;
       setIsActivated(false);
       if (onDeactivateRef.current) onDeactivateRef.current();
     };

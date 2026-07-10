@@ -1,3 +1,4 @@
+import { useAdkPortfolioReviewStore } from "@/features/adk-chat/stores/useAdkPortfolioReviewStore";
 import { normalizePortfolioData } from "@/features/portfolio/utils/normalizePortfolioItems";
 import type { PortfolioData } from "@/types";
 import { create } from "zustand";
@@ -53,7 +54,8 @@ export const usePortfolioStore = create<PortfolioStoreState>((set, get) => ({
 
   getPortfolioData: portfolioId => get().portfolioData[portfolioId],
 
-  updatePortfolio: (portfolioId, updater, options) =>
+  updatePortfolio: (portfolioId, updater, options) => {
+    useAdkPortfolioReviewStore.getState().dismissReviewsForPortfolio(portfolioId);
     set(state => {
       const current = state.portfolioData[portfolioId];
       if (!current) return state;
@@ -65,7 +67,8 @@ export const usePortfolioStore = create<PortfolioStoreState>((set, get) => ({
           [portfolioId]: { ...next, id: portfolioId },
         },
       };
-    }),
+    });
+  },
 
   setFocusedPageCardId: (portfolioId, pageCardId) =>
     set(state => ({

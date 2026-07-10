@@ -9,7 +9,9 @@ import {
 } from "@/constants/unicoach-coach-pipeline";
 import type { AssignedStudent, CoachData, UnicoachInitResponse, UnicoachStudentsByStage } from "@/features/unicoach/types";
 import { resolveProfilePicture } from "@/features/unicoach/utils/profile-picture";
-import { ArrowDownUp, Filter, Search } from "lucide-react";
+import { ArrowDownUp, ChevronLeft, ChevronRight, Filter, Search } from "lucide-react";
+
+const ROSTER_PAGE_SIZE = 9;
 
 export type UnicoachCoachStudentCardsProps = {
   coach: CoachData;
@@ -39,22 +41,30 @@ function stageToProgressPercent(stageKey: CoachPipelineStage): number {
   return Math.round((idx / n) * 100);
 }
 
-function linkedInPathLabel(url: string | null | undefined): string {
-  if (!url?.trim()) return "—";
-  try {
-    const u = new URL(url);
-    const path = u.pathname.replace(/^\//, "");
-    return path.length > 36 ? `${path.slice(0, 34)}…` : path || "Profile";
-  } catch {
-    return "LinkedIn";
-  }
-}
-
 function formatRosterStartDate(iso: string | null | undefined): string {
   if (!iso?.trim()) return "—";
   const d = new Date(iso.length === 10 ? `${iso}T12:00:00` : iso);
   if (Number.isNaN(d.getTime())) return "—";
   return d.toLocaleDateString(undefined, { day: "numeric", month: "short", year: "numeric" });
+}
+
+function desiredRoleLabel(user: AssignedStudent): string {
+  const explicit = user.role?.trim();
+  if (explicit) return explicit;
+  const fromList = user.desired_roles?.map(r => (typeof r === "string" ? r.trim() : "")).find(Boolean);
+  return fromList || "—";
+}
+
+function rosterRecencyTimestamp(user: AssignedStudent): number {
+  if (user.program_start_date?.trim()) {
+    const d = new Date(user.program_start_date.length === 10 ? `${user.program_start_date}T12:00:00` : user.program_start_date);
+    if (!Number.isNaN(d.getTime())) return d.getTime();
+  }
+  if (user.enrolled_at?.trim()) {
+    const d = new Date(user.enrolled_at);
+    if (!Number.isNaN(d.getTime())) return d.getTime();
+  }
+  return user.id;
 }
 
 function programProgressRingStroke(percent: number): string {
@@ -216,8 +226,21 @@ export const UnicoachCoachStudentCards: React.FC<UnicoachCoachStudentCardsProps>
   onPipelineChange,
 }) => {
   const [stageFilter, setStageFilter] = React.useState<CoachRosterStageFilter>("all");
-  const [rosterSort, setRosterSort] = React.useState<CoachRosterSort>("progress");
+  const [rosterSort, setRosterSort] = React.useState<CoachRosterSort>("joined");
   const [openPipelineId, setOpenPipelineId] = React.useState<number | null>(null);
+  const rosterListKey = `${searchQuery}|${stageFilter}|${rosterSort}`;
+  const [pageState, setPageState] = React.useState({ rosterListKey, page: 0 });
+  const page = pageState.rosterListKey === rosterListKey ? pageState.page : 0;
+  const setPage = React.useCallback(
+    (updater: number | ((prev: number) => number)) => {
+      setPageState(prev => {
+        const current = prev.rosterListKey === rosterListKey ? prev.page : 0;
+        const next = typeof updater === "function" ? updater(current) : updater;
+        return { rosterListKey, page: next };
+      });
+    },
+    [rosterListKey]
+  );
 
   const rosterById = useMemo(() => {
     const map = new Map<number, AssignedStudent>();
@@ -240,12 +263,14 @@ export const UnicoachCoachStudentCards: React.FC<UnicoachCoachStudentCardsProps>
       list = list.filter(u => {
         const stageKey = stageKeyForUser(stages, u.id);
         const stageLabel = COACH_PIPELINE_LABELS[stageKey].toLowerCase();
-        const phone = (u.phone_number || "").toLowerCase();
+        const roleLabel = desiredRoleLabel(u).toLowerCase();
+        const location = (u.location_display || "").toLowerCase();
         return (
           (u.name || "").toLowerCase().includes(q) ||
           (u.email || "").toLowerCase().includes(q) ||
-          phone.includes(q) ||
-          stageLabel.includes(q)
+          stageLabel.includes(q) ||
+          roleLabel.includes(q) ||
+          location.includes(q)
         );
       });
     }
@@ -258,9 +283,9 @@ export const UnicoachCoachStudentCards: React.FC<UnicoachCoachStudentCardsProps>
       const sb = stageToProgressPercent(stageKeyForUser(stages, b.id));
       if (rosterSort === "name") return (a.name || "").localeCompare(b.name || "");
       if (rosterSort === "joined") {
-        const da = a.program_start_date || "";
-        const db = b.program_start_date || "";
-        if (da !== db) return db.localeCompare(da);
+        const ta = rosterRecencyTimestamp(a);
+        const tb = rosterRecencyTimestamp(b);
+        if (tb !== ta) return tb - ta;
         return (a.name || "").localeCompare(b.name || "");
       }
       if (sb !== sa) return sb - sa;
@@ -268,6 +293,12 @@ export const UnicoachCoachStudentCards: React.FC<UnicoachCoachStudentCardsProps>
     });
     return sorted;
   }, [rosterById, searchQuery, stageFilter, rosterSort, stages]);
+
+  const totalPages = Math.max(1, Math.ceil(filteredUsers.length / ROSTER_PAGE_SIZE));
+  const safePage = Math.min(page, totalPages - 1);
+  const pagedUsers = filteredUsers.slice(safePage * ROSTER_PAGE_SIZE, safePage * ROSTER_PAGE_SIZE + ROSTER_PAGE_SIZE);
+  const rangeStart = filteredUsers.length === 0 ? 0 : safePage * ROSTER_PAGE_SIZE + 1;
+  const rangeEnd = Math.min(filteredUsers.length, (safePage + 1) * ROSTER_PAGE_SIZE);
 
   const isImpersonating = Boolean(init.is_being_impersonated);
 
@@ -284,7 +315,7 @@ export const UnicoachCoachStudentCards: React.FC<UnicoachCoachStudentCardsProps>
             type="search"
             value={searchQuery}
             onChange={e => onSearchQueryChange(e.target.value)}
-            placeholder="Search by name, email, phone, status…"
+            placeholder="Search by name, email, role, location, status…"
             autoComplete="off"
             className="w-full rounded-lg border border-slate-200 bg-white py-2 pl-9 pr-3 text-sm text-slate-900 shadow-sm outline-none transition placeholder:text-slate-400 focus:border-brand-500 focus:ring-1 focus:ring-brand-500 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-100 dark:placeholder:text-slate-500"
           />
@@ -315,7 +346,7 @@ export const UnicoachCoachStudentCards: React.FC<UnicoachCoachStudentCardsProps>
               aria-label="Sort students"
             >
               <option value="name">Name (A–Z)</option>
-              <option value="joined">Date joined (newest)</option>
+              <option value="joined">Recently added</option>
               <option value="progress">Progress (highest)</option>
             </select>
           </div>
@@ -332,7 +363,7 @@ export const UnicoachCoachStudentCards: React.FC<UnicoachCoachStudentCardsProps>
         </p>
       ) : (
         <div className="grid grid-cols-1 gap-4 md:grid-cols-2 xl:grid-cols-3">
-          {filteredUsers.map(user => {
+          {pagedUsers.map(user => {
             const isCurrentUser = sessionEmail === user.email;
             const disableOpen = isImpersonating && isCurrentUser;
             const pic = resolveProfilePicture({
@@ -385,28 +416,20 @@ export const UnicoachCoachStudentCards: React.FC<UnicoachCoachStudentCardsProps>
                     <span className="block truncate text-xs text-brand-600 dark:text-brand-400">{user.email}</span>
                     <dl className="space-y-1 text-[11px] text-slate-600 dark:text-slate-400">
                       <div className="flex gap-1.5">
+                        <dt className="w-14 shrink-0 text-slate-400 dark:text-slate-500">Role</dt>
+                        <dd className="min-w-0 truncate" title={desiredRoleLabel(user)}>
+                          {desiredRoleLabel(user)}
+                        </dd>
+                      </div>
+                      <div className="flex gap-1.5">
+                        <dt className="w-14 shrink-0 text-slate-400 dark:text-slate-500">Location</dt>
+                        <dd className="min-w-0 truncate" title={user.location_display || undefined}>
+                          {user.location_display?.trim() || "—"}
+                        </dd>
+                      </div>
+                      <div className="flex gap-1.5">
                         <dt className="w-14 shrink-0 text-slate-400 dark:text-slate-500">Start</dt>
                         <dd className="min-w-0">{formatRosterStartDate(user.program_start_date)}</dd>
-                      </div>
-                      <div className="flex items-baseline gap-1.5">
-                        <dt className="w-14 shrink-0 text-slate-400 dark:text-slate-500">Phone</dt>
-                        <dd className="min-w-0">
-                          {user.phone_number?.trim() ? (
-                            <span className="break-all text-brand-600 dark:text-brand-400">{user.phone_number}</span>
-                          ) : (
-                            "—"
-                          )}
-                        </dd>
-                      </div>
-                      <div className="flex items-start gap-1.5">
-                        <dt className="w-14 shrink-0 pt-0.5 text-slate-400 dark:text-slate-500">LinkedIn</dt>
-                        <dd className="min-w-0">
-                          {user.linkedin_url?.trim() ? (
-                            <span className="break-all text-brand-600 dark:text-brand-400">{linkedInPathLabel(user.linkedin_url)}</span>
-                          ) : (
-                            "—"
-                          )}
-                        </dd>
                       </div>
                     </dl>
                   </div>
@@ -416,6 +439,37 @@ export const UnicoachCoachStudentCards: React.FC<UnicoachCoachStudentCardsProps>
           })}
         </div>
       )}
+
+      {filteredUsers.length > ROSTER_PAGE_SIZE ? (
+        <div className="flex flex-col items-center gap-2 sm:flex-row sm:justify-between">
+          <p className="text-xs text-slate-500 dark:text-slate-400">
+            Showing {rangeStart}–{rangeEnd} of {filteredUsers.length} students
+          </p>
+          <div className="flex items-center gap-2">
+            <button
+              type="button"
+              onClick={() => setPage(p => Math.max(0, p - 1))}
+              disabled={safePage === 0}
+              className="inline-flex h-9 w-9 items-center justify-center rounded-lg border border-slate-200 bg-white text-slate-700 shadow-sm transition hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-40 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-200 dark:hover:bg-slate-800"
+              aria-label="Previous page"
+            >
+              <ChevronLeft className="h-4 w-4" />
+            </button>
+            <span className="min-w-[5.5rem] text-center text-xs font-medium text-slate-600 dark:text-slate-300">
+              Page {safePage + 1} of {totalPages}
+            </span>
+            <button
+              type="button"
+              onClick={() => setPage(p => Math.min(totalPages - 1, p + 1))}
+              disabled={safePage >= totalPages - 1}
+              className="inline-flex h-9 w-9 items-center justify-center rounded-lg border border-slate-200 bg-white text-slate-700 shadow-sm transition hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-40 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-200 dark:hover:bg-slate-800"
+              aria-label="Next page"
+            >
+              <ChevronRight className="h-4 w-4" />
+            </button>
+          </div>
+        </div>
+      ) : null}
 
       <p className="text-center text-sm text-slate-500 dark:text-slate-400">Select a student to open their program status.</p>
     </div>

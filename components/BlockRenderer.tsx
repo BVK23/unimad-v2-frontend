@@ -6,7 +6,7 @@ import {
   buildPortfolioTitleUpdate,
   isContentOnlyTextItem,
   isPortfolioTextContentEmpty,
-  normalizePortfolioHtmlForRender,
+  normalizePortfolioRichTextForRender,
   portfolioSectionTitleClassName,
   resolvePortfolioTextTitlePresentation,
 } from "@/features/portfolio/utils/portfolio-html";
@@ -48,6 +48,7 @@ const RICH_TEXT_CONTENT_CLASSES =
   "[&_strong]:font-bold [&_b]:font-bold " +
   "[&_em]:italic [&_i]:italic " +
   "[&_u]:underline " +
+  "[&_a]:text-brand-600 [&_a]:underline [&_a]:underline-offset-2 hover:[&_a]:text-brand-700 dark:[&_a]:text-brand-300 dark:hover:[&_a]:text-brand-200 " +
   "break-words [overflow-wrap:anywhere]";
 
 interface BlockRendererProps {
@@ -569,7 +570,8 @@ const BlockRenderer: React.FC<BlockRendererProps> = ({
               )}
               {isEditMode ? (
                 <RichTextEditor
-                  value={normalizePortfolioHtmlForRender(item.title || "")}
+                  autoLinkUrls
+                  value={normalizePortfolioRichTextForRender(item.title || "")}
                   onChange={value => onUpdate(item.id, buildPortfolioTitleUpdate(item, value))}
                   onToggleCollapsible={() => onUpdate(item.id, { isCollapsible: !item.isCollapsible })}
                   isCollapsible={Boolean(item.isCollapsible)}
@@ -578,7 +580,12 @@ const BlockRenderer: React.FC<BlockRendererProps> = ({
                   {...selectionEditorProps}
                 />
               ) : (
-                item.title && <TitleTag className={sectionTitleClassName} dangerouslySetInnerHTML={{ __html: titlePresentation.html }} />
+                item.title && (
+                  <TitleTag
+                    className={sectionTitleClassName}
+                    dangerouslySetInnerHTML={{ __html: normalizePortfolioRichTextForRender(titlePresentation.html) }}
+                  />
+                )
               )}
             </div>
           )}
@@ -587,7 +594,8 @@ const BlockRenderer: React.FC<BlockRendererProps> = ({
             <div className={`w-full min-w-0 ${useGridFillShell ? "min-h-0 flex-1" : ""}`}>
               {isEditMode ? (
                 <RichTextEditor
-                  value={normalizePortfolioHtmlForRender(item.content || "")}
+                  autoLinkUrls
+                  value={normalizePortfolioRichTextForRender(item.content || "")}
                   onChange={value => onUpdate(item.id, { content: value })}
                   className={`w-full min-w-0 outline-none bg-transparent ${hasBodyContent ? "min-h-[4rem]" : "min-h-0"} text-slate-600 dark:text-slate-300
                                     ${item.fontSize === "2xl" ? "text-2xl font-semibold" : item.fontSize === "xl" ? "text-xl font-semibold" : "text-base"}
@@ -604,7 +612,7 @@ const BlockRenderer: React.FC<BlockRendererProps> = ({
                                     ${item.fontSize === "2xl" ? "text-2xl font-semibold" : item.fontSize === "xl" ? "text-xl font-semibold" : "text-base"}
                                     ${RICH_TEXT_CONTENT_CLASSES}
                                 `}
-                  dangerouslySetInnerHTML={{ __html: normalizePortfolioHtmlForRender(item.content || "") }}
+                  dangerouslySetInnerHTML={{ __html: normalizePortfolioRichTextForRender(item.content || "") }}
                 />
               )}
             </div>
@@ -871,7 +879,8 @@ const BlockRenderer: React.FC<BlockRendererProps> = ({
               {isEditMode ? (
                 <div className={`space-y-3 ${showSubtitle ? "" : "space-y-2"}`} onClick={e => e.stopPropagation()}>
                   <RichTextEditor
-                    value={normalizePortfolioHtmlForRender(item.title || "")}
+                    autoLinkUrls
+                    value={normalizePortfolioRichTextForRender(item.title || "")}
                     onChange={value => onUpdate(item.id, { title: value })}
                     className={`w-full bg-transparent text-2xl font-semibold text-slate-900 dark:text-white min-h-[2rem] ${RICH_TEXT_CONTENT_CLASSES}`}
                     placeholder="Page Title"
@@ -879,7 +888,8 @@ const BlockRenderer: React.FC<BlockRendererProps> = ({
                   />
                   {showSubtitle && (
                     <RichTextEditor
-                      value={normalizePortfolioHtmlForRender(item.description || "")}
+                      autoLinkUrls
+                      value={normalizePortfolioRichTextForRender(item.description || "")}
                       onChange={value => onUpdate(item.id, { description: value })}
                       className={`w-full bg-transparent text-base text-slate-500 dark:text-slate-400 min-h-[3rem] ${RICH_TEXT_CONTENT_CLASSES}`}
                       placeholder="Subtitle (optional)"
@@ -892,13 +902,13 @@ const BlockRenderer: React.FC<BlockRendererProps> = ({
                   {hasTitle && (
                     <h3
                       className={`font-semibold text-2xl text-slate-900 dark:text-white leading-tight min-h-[2rem] ${RICH_TEXT_CONTENT_CLASSES}`}
-                      dangerouslySetInnerHTML={{ __html: normalizePortfolioHtmlForRender(normalizedTitle) }}
+                      dangerouslySetInnerHTML={{ __html: normalizePortfolioRichTextForRender(normalizedTitle) }}
                     />
                   )}
                   {showSubtitle && hasDescription && (
                     <p
                       className={`text-base text-slate-500 dark:text-slate-400 line-clamp-3 text-pretty min-h-[3rem] ${RICH_TEXT_CONTENT_CLASSES}`}
-                      dangerouslySetInnerHTML={{ __html: normalizePortfolioHtmlForRender(normalizedDescription) }}
+                      dangerouslySetInnerHTML={{ __html: normalizePortfolioRichTextForRender(normalizedDescription) }}
                     />
                   )}
                 </div>
@@ -985,7 +995,8 @@ const BlockRenderer: React.FC<BlockRendererProps> = ({
                       <td key={`cell-${rowIndex}-${colIndex}`} className="border border-slate-200 dark:border-white/10 p-0 align-top">
                         {isEditMode ? (
                           <RichTextEditor
-                            value={cell}
+                            autoLinkUrls
+                            value={normalizePortfolioRichTextForRender(cell)}
                             onChange={value => updateCell(rowIndex, colIndex, value)}
                             className={`w-full min-w-[120px] bg-transparent px-3 py-2 outline-none text-slate-700 dark:text-slate-200 min-h-[38px] ${RICH_TEXT_CONTENT_CLASSES}`}
                             placeholder={rowIndex === 0 ? `Header ${colIndex + 1}` : "Cell"}
@@ -994,7 +1005,7 @@ const BlockRenderer: React.FC<BlockRendererProps> = ({
                         ) : (
                           <div
                             className={`px-3 py-2 text-slate-700 dark:text-slate-200 min-h-[38px] ${RICH_TEXT_CONTENT_CLASSES}`}
-                            dangerouslySetInnerHTML={{ __html: cell }}
+                            dangerouslySetInnerHTML={{ __html: normalizePortfolioRichTextForRender(cell) }}
                           />
                         )}
                       </td>

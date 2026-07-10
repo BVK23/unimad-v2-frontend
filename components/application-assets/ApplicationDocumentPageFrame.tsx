@@ -17,6 +17,10 @@ type ApplicationDocumentPageFrameProps = {
   /** Toolbar / chrome rendered above the page (studio card header). */
   header?: ReactNode;
   className?: string;
+  /** Multiplier applied on top of compact auto fit-to-width scale. */
+  userZoom?: number;
+  /** When true, the parent owns scrolling (Prepare Application modal). */
+  externalScroll?: boolean;
 };
 
 /**
@@ -24,7 +28,14 @@ type ApplicationDocumentPageFrameProps = {
  * - studio: full width up to 210mm, scrollable body
  * - compact: scale-to-fit for narrow containers (Prepare modal)
  */
-export function ApplicationDocumentPageFrame({ variant, children, header, className = "" }: ApplicationDocumentPageFrameProps) {
+export function ApplicationDocumentPageFrame({
+  variant,
+  children,
+  header,
+  className = "",
+  userZoom = 1,
+  externalScroll = false,
+}: ApplicationDocumentPageFrameProps) {
   const viewportRef = useRef<HTMLDivElement>(null);
   const pageRef = useRef<HTMLDivElement>(null);
   const [scale, setScale] = useState(0.55);
@@ -40,8 +51,8 @@ export function ApplicationDocumentPageFrame({ variant, children, header, classN
     const update = () => {
       const width = viewport.clientWidth;
       if (width <= 0) return;
-      const nextScale = Math.min(MAX_SCALE, (width - PREVIEW_PADDING_PX) / A4_WIDTH_PX);
-      setScale(Math.max(MIN_SCALE, nextScale));
+      const fitScale = Math.min(MAX_SCALE, (width - PREVIEW_PADDING_PX) / A4_WIDTH_PX);
+      setScale(Math.max(MIN_SCALE, fitScale) * userZoom);
       setPageHeight(page.offsetHeight);
     };
 
@@ -50,7 +61,7 @@ export function ApplicationDocumentPageFrame({ variant, children, header, classN
     ro.observe(viewport);
     ro.observe(page);
     return () => ro.disconnect();
-  }, [variant, children]);
+  }, [variant, children, userZoom]);
 
   if (variant === "studio") {
     return (
@@ -67,16 +78,16 @@ export function ApplicationDocumentPageFrame({ variant, children, header, classN
 
   const scaledWidth = A4_WIDTH_PX * scale;
   const scaledHeight = pageHeight > 0 ? pageHeight * scale : undefined;
+  const viewportClassName = externalScroll
+    ? `w-full min-w-0 bg-slate-100 dark:bg-slate-900/50 ${className}`
+    : `scrollbar-on-hover flex h-full min-h-0 w-full min-w-0 flex-1 overflow-y-auto overflow-x-hidden bg-slate-100 dark:bg-slate-900/50 ${className}`;
 
   return (
-    <div
-      ref={viewportRef}
-      className={`scrollbar-on-hover flex h-full min-h-0 w-full min-w-0 flex-1 overflow-y-auto overflow-x-hidden bg-slate-100 dark:bg-slate-900/50 ${className}`}
-    >
+    <div ref={viewportRef} className={viewportClassName}>
       <div className="flex w-full min-w-0 justify-center py-4">
         <div
           className="relative shrink-0 overflow-hidden rounded-lg shadow-md ring-1 ring-slate-200/80 dark:ring-slate-700"
-          style={{ width: scaledWidth, minHeight: scaledHeight }}
+          style={scaledHeight ? { width: scaledWidth, height: scaledHeight } : { width: scaledWidth }}
         >
           <div
             ref={pageRef}

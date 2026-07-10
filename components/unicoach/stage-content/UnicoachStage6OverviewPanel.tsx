@@ -4,6 +4,7 @@ import { useState } from "react";
 import { ComingSoonBadge } from "@/components/ui/ComingSoonBadge";
 import { VPD_FEATURE_ENABLED } from "@/constants/feature-flags";
 import { UNICOACH_VPD_VIDEO_URL } from "@/constants/unicoach-niche-content";
+import { JOBS_INTERVIEW_HREF, JOBS_TRACKER_HREF } from "@/src/features/jobs/jobs-url";
 import { ChevronDown, ChevronUp, ExternalLink } from "lucide-react";
 import Link from "next/link";
 
@@ -67,7 +68,7 @@ export const UnicoachStage6OverviewPanel = () => (
         Use your job tracker interview prep tools for company research and mock rounds.
       </p>
       <Link
-        href="/uniboard/jobs?tab=interview"
+        href={JOBS_INTERVIEW_HREF}
         className="inline-flex items-center gap-2 rounded-xl border border-brand-200 bg-brand-50 px-4 py-2 text-sm font-medium text-brand-800 hover:bg-brand-100 dark:border-brand-900 dark:bg-brand-950/40 dark:text-brand-200"
       >
         Open interview prep
@@ -82,7 +83,7 @@ export const UnicoachStage6ResourcesPanel = () => (
     <p className="text-sm text-slate-600 dark:text-slate-300">
       Keep following the execution calendar on your dashboard. VPD and interview prep resources are in Overview.
     </p>
-    <Link href="/uniboard/jobs" className="inline-flex items-center gap-2 text-sm font-medium text-brand-600 hover:text-brand-700">
+    <Link href={JOBS_TRACKER_HREF} className="inline-flex items-center gap-2 text-sm font-medium text-brand-600 hover:text-brand-700">
       Jobs tracker
       <ExternalLink size={14} />
     </Link>

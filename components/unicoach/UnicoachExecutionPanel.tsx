@@ -10,7 +10,7 @@ import {
 } from "@/constants/unicoach-execution-daily";
 import { useExecutionDailyLog } from "@/features/unicoach/hooks/use-execution-daily-log";
 import type { DailyExecutionItemKey } from "@/features/unicoach/types";
-import { applicableExecutionItems, getCount } from "@/features/unicoach/utils/execution-daily-log";
+import { applicableExecutionItems, clampExecutionCount, getCount } from "@/features/unicoach/utils/execution-daily-log";
 import { ArrowRight, CalendarDays, Minus, Plus } from "lucide-react";
 import Link from "next/link";
 
@@ -36,7 +36,7 @@ export function UnicoachExecutionPanel({ executionStageId, journeyUserId, readOn
   const entryForEdit = getEntry(activeDateKey);
 
   const totals = useMemo(() => {
-    const applicable = applicableExecutionItems(dayItems, activeDateKey);
+    const applicable = applicableExecutionItems(dayItems, activeDateKey, entryForEdit);
     let done = 0;
     let target = 0;
     let habitsComplete = 0;
@@ -51,14 +51,14 @@ export function UnicoachExecutionPanel({ executionStageId, journeyUserId, readOn
 
   const remaining = totals.total - totals.habitsComplete;
 
-  const handleCountInput = (key: DailyExecutionItemKey, raw: string) => {
-    const parsed = raw === "" ? 0 : Math.max(0, Math.min(999, parseInt(raw, 10) || 0));
+  const handleCountInput = (key: DailyExecutionItemKey, raw: string, dailyTarget: number) => {
+    const parsed = raw === "" ? 0 : clampExecutionCount(parseInt(raw, 10) || 0, dailyTarget);
     setCount(activeDateKey, key, parsed);
   };
 
-  const stepCount = (key: DailyExecutionItemKey, delta: number) => {
+  const stepCount = (key: DailyExecutionItemKey, delta: number, dailyTarget: number) => {
     const current = getCount(entryForEdit, key);
-    setCount(activeDateKey, key, Math.max(0, Math.min(999, current + delta)));
+    setCount(activeDateKey, key, clampExecutionCount(current + delta, dailyTarget));
   };
 
   const dateLabel = useMemo(() => {
@@ -121,8 +121,8 @@ export function UnicoachExecutionPanel({ executionStageId, journeyUserId, readOn
                 item={item}
                 count={getCount(entryForEdit, item.key)}
                 readOnly={readOnly}
-                onCountChange={v => handleCountInput(item.key, v)}
-                onStep={delta => stepCount(item.key, delta)}
+                onCountChange={v => handleCountInput(item.key, v, item.dailyTarget)}
+                onStep={delta => stepCount(item.key, delta, item.dailyTarget)}
               />
             ))}
           </div>
@@ -294,7 +294,13 @@ function CountStepper({
           className="w-8 border-0 bg-transparent p-0 text-center text-sm font-semibold tabular-nums text-slate-900 outline-none focus:ring-0 dark:text-white"
           aria-label="Count done today"
         />
-        <button type="button" disabled={readOnly} onClick={() => onStep(1)} className={circleBtn} aria-label="Increase count">
+        <button
+          type="button"
+          disabled={readOnly || count >= target}
+          onClick={() => onStep(1)}
+          className={circleBtn}
+          aria-label="Increase count"
+        >
           <Plus size={14} strokeWidth={2} />
         </button>
       </div>

@@ -253,8 +253,12 @@ const ApplicationTracker: React.FC<ApplicationTrackerProps> = ({ onNavigateToStu
   const handlePrepareFromDetails = (app: Application) => {
     setTabState("");
     setSelectedApplication(null);
+    setShowRejectedModal(false);
     openPrepare(applicationToJob(app));
   };
+
+  const isViewingApplicationDetail = tabState === "toView" || tabState === "toEdit";
+  const showRejectedListModal = showRejectedModal && !isViewingApplicationDetail;
 
   const handleStatusChangeFromDetails = async (applicationId: string, newStatus: ApplicationStatus) => {
     const app = applications.find(a => a.application_id === applicationId);
@@ -414,7 +418,7 @@ const ApplicationTracker: React.FC<ApplicationTrackerProps> = ({ onNavigateToStu
         />
       )}
 
-      {showRejectedModal && (
+      {showRejectedListModal && (
         <ModalPortalOverlay className="flex items-center justify-center bg-black/50 p-4 backdrop-blur-sm">
           <div className="flex max-h-[80vh] w-full max-w-2xl flex-col rounded-3xl border border-slate-200 bg-white p-8 shadow-2xl dark:border-slate-800 dark:bg-slate-900">
             <div className="mb-6 flex items-center justify-between">
@@ -439,10 +443,7 @@ const ApplicationTracker: React.FC<ApplicationTrackerProps> = ({ onNavigateToStu
                       job={job}
                       hideDescription
                       hideButtons
-                      onClick={() => {
-                        setShowRejectedModal(false);
-                        handleViewApplication(app);
-                      }}
+                      onClick={() => handleViewApplication(app)}
                       onPrepare={() => openPrepare(job)}
                       onApply={() => {}}
                     />

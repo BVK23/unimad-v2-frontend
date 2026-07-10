@@ -1,4 +1,5 @@
 import type { DailyExecutionItemKey } from "@/features/unicoach/types";
+import { JOBS_BOARD_HREF, JOBS_TRACKER_HREF } from "@/src/features/jobs/jobs-url";
 
 export type ExecutionDailyItemDef = {
   key: DailyExecutionItemKey;
@@ -44,14 +45,14 @@ export const APPLICATIONS_EXECUTION_ITEMS: ExecutionDailyItemDef[] = [
     shortLabel: "Quality apps",
     dailyTarget: 2,
     hint: "Use Prepare Application in Jobs for each role.",
-    href: "/uniboard/jobs",
+    href: JOBS_BOARD_HREF,
   },
   {
     key: "quantity_applications",
     label: "Quantity applications",
     shortLabel: "Quantity apps",
     dailyTarget: 10,
-    href: "/uniboard/jobs",
+    href: JOBS_TRACKER_HREF,
   },
 ];
 

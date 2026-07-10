@@ -1,3 +1,5 @@
+import { JOBS_BOARD_HREF, JOBS_INTERVIEW_HREF, JOBS_TRACKER_HREF } from "@/src/features/jobs/jobs-url";
+
 export type ContentTab = "overview" | "resources" | "dashboard";
 
 export type OverviewSection = {
@@ -214,13 +216,13 @@ Outcome-based: Enhanced chatbot accuracy by 30% through customising 50 unique pr
       {
         title: "Sites to apply",
         body: "Use the Jobs feature to shortlist roles, prepare applications, and track every move.",
-        href: "/uniboard/jobs",
+        href: JOBS_BOARD_HREF,
         hrefLabel: "Open Jobs",
       },
       {
         title: "Application tracker",
         body: "Shortlist roles and use your job tracker to stay organised before and after your call.",
-        href: "/uniboard/jobs",
+        href: JOBS_TRACKER_HREF,
         hrefLabel: "Open Jobs tracker",
       },
     ],
@@ -244,13 +246,13 @@ What does this company offer your career?
 How do you fit into how they work and what they stand for?
 
 Proactive candidates win. This is how you become one.`,
-        href: "/uniboard/vpd",
+        href: "/uniboard/studio?type=vpd",
         hrefLabel: "Build your VPD now",
       },
       {
         title: "Interview preparation",
         body: "Research the company. Prep your answers. Run a mock round. Walk in knowing more about them than they expect any candidate to know.",
-        href: "/uniboard/interview-prep",
+        href: JOBS_INTERVIEW_HREF,
         hrefLabel: "Open Interview Prep",
       },
       {
@@ -268,7 +270,7 @@ Proactive candidates win. This is how you become one.`,
       {
         title: "Jobs tracker",
         body: "Track applications and interview-stage roles.",
-        href: "/uniboard/jobs",
+        href: JOBS_TRACKER_HREF,
         hrefLabel: "Open Jobs tracker",
       },
     ],

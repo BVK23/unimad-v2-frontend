@@ -97,7 +97,7 @@ function ResumeEditorById({
 
   useRehydrateResumeReviewFromAdk(resumeId, Boolean(editorData));
 
-  const isLoading = !editorData && !resumeQuery.isError && (resumeQuery.isLoading || resumeQuery.isFetching);
+  const isLoading = !editorData && !resumeQuery.isError && resumeQuery.isLoading;
 
   if (isLoading) {
     return (

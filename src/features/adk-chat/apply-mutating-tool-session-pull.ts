@@ -82,7 +82,7 @@ function applyResumeState(state: Record<string, unknown>, ctx: MutatingToolPullC
   if (!sourceResume) return;
 
   const baseline = ctx.baselines.resume;
-  if (baseline) {
+  if (baseline && ctx.assistantMessageId?.trim()) {
     const { highlights, bannerTitle } = computeAdkReviewFromDiff(baseline, sourceResume);
     if (Object.keys(highlights).length > 0) {
       useAdkResumeReviewStore.getState().beginReview({
@@ -110,7 +110,7 @@ function applyPortfolioState(state: Record<string, unknown>, ctx: MutatingToolPu
   if (!currentPortfolioId || !sourcePortfolio) return;
 
   const baseline = ctx.baselines.portfolio;
-  if (baseline) {
+  if (baseline && ctx.assistantMessageId?.trim()) {
     const { highlights, bannerTitle } = computeAdkPortfolioReviewFromDiff(baseline, sourcePortfolio);
     if (Object.keys(highlights).length > 0) {
       useAdkPortfolioReviewStore.getState().beginReview({
@@ -135,7 +135,7 @@ function applyLinkedInState(state: Record<string, unknown>, ctx: MutatingToolPul
   const previous = ctx.linkedInSnapshot ?? ctx.queryClient.getQueryData<LinkedInAnalysisSnapshot | null>(linkedinAnalysisQueryKey);
   const nextSnapshot = mapLinkedInSessionProfileToSnapshot(profile, previous ?? null);
 
-  if (baseline) {
+  if (baseline && ctx.assistantMessageId?.trim()) {
     const { highlights, bannerTitle } = computeAdkLinkedInReviewFromDiff(baseline, profile);
     if (Object.keys(highlights).length > 0) {
       useAdkLinkedInReviewStore.getState().beginReview({

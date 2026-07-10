@@ -555,7 +555,6 @@ const ResumeDashboard: React.FC<ResumeDashboardProps> = ({ onEditResume, onCreat
           onClick={e => e.stopPropagation()}
         >
           <div className="relative my-auto flex max-h-[min(90dvh,calc(100vh-2rem))] w-full max-w-2xl min-h-0 flex-col overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-2xl dark:border-slate-800 dark:bg-[#1a1a1a]">
-            {isGenerating && <ResumeGenerationOverlay variant="jd" />}
             <div className="shrink-0 border-b border-slate-100 bg-white p-6 dark:border-slate-800 dark:bg-[#1a1a1a]">
               <div className="flex items-center justify-between gap-3">
                 <div className="flex min-w-0 items-center gap-3">
@@ -624,7 +623,12 @@ const ResumeDashboard: React.FC<ResumeDashboardProps> = ({ onEditResume, onCreat
               )}
             </div>
 
-            <div className="scrollbar-on-hover min-h-0 flex-1 overflow-y-auto p-6 sm:p-8">
+            <div
+              className={`scrollbar-on-hover relative min-h-0 flex-1 p-6 sm:p-8 ${
+                isGenerating || isUploadingFromFile ? "overflow-hidden" : "overflow-y-auto"
+              }`}
+            >
+              {(isGenerating || isUploadingFromFile) && <ResumeGenerationOverlay variant={isUploadingFromFile ? "upload" : "jd"} />}
               {/* 1. MAIN MENU */}
               {createModalState === "menu" && (
                 <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
@@ -804,8 +808,7 @@ const ResumeDashboard: React.FC<ResumeDashboardProps> = ({ onEditResume, onCreat
 
               {/* 3. UPLOAD FORM */}
               {createModalState === "upload" && (
-                <div className="relative mx-auto max-w-lg space-y-6">
-                  {isUploadingFromFile && <ResumeGenerationOverlay variant="upload" />}
+                <div className="mx-auto max-w-lg space-y-6">
                   {uploadError && (
                     <div className="p-3 bg-amber-50 border border-amber-200 rounded-lg text-sm text-amber-800 flex items-start gap-2">
                       <AlertCircle size={18} className="shrink-0 mt-0.5" />

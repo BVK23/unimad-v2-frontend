@@ -45,7 +45,8 @@ function toSignature(value: unknown): string {
  * Mirrors the legacy `unimadai-frontendapp` behavior:
  * - `profile` updates are debounced at 750ms
  * - `experience`, `education`, `projects`, `certifications`, `customSections` are debounced at 750ms
- * - `skills`, `sectionOrder`, `templateId`, `title` update immediately
+ * - `skills`, `sectionOrder`, `templateId` update immediately
+ * - `title` is editor metadata only (not rendered in the PDF) — excluded from preview updates
  *
  * This hook only debounces what gets passed to the PDF preview renderer.
  */
@@ -137,9 +138,7 @@ export function useDebouncedResumePreview(resume: ResumeData) {
     const immediatePatch: Partial<ResumeData> = {};
 
     if (prev.title !== resume.title) {
-      immediatePatch.title = resume.title;
       prev.title = resume.title;
-      didImmediateUpdate = true;
     }
 
     if (prev.templateId !== resume.templateId) {

@@ -42,6 +42,8 @@ export type AdkResumeReviewState = {
   getBaselineResume: () => ResumeData | null;
   clearAllReviews: () => void;
   clearReviewsByAssistantIds: (assistantIds: Iterable<string>) => void;
+  /** User manual edit — drop pending review without reverting store content. */
+  dismissReviewsForResume: (resumeId: string) => void;
   /** After discard of active review — restores prior stacked review if any. */
   popReviewAfterDiscard: () => void;
 
@@ -71,6 +73,7 @@ export const useAdkResumeReviewStore = create<AdkResumeReviewState>((set, get) =
   },
 
   beginReview: ({ resumeId, baselineResume, highlights, bannerTitle, assistantMessageId }) => {
+    if (!assistantMessageId?.trim()) return;
     if (Object.keys(highlights).length === 0) return;
     if (hasReviewForAssistant(get().reviewStack, assistantMessageId)) return;
     const card: AdkReviewCard = {
@@ -107,6 +110,14 @@ export const useAdkResumeReviewStore = create<AdkResumeReviewState>((set, get) =
     if (drop.size === 0) return;
     set(state => ({
       reviewStack: state.reviewStack.filter(card => !card.assistantMessageId || !drop.has(card.assistantMessageId)),
+    }));
+  },
+
+  dismissReviewsForResume: resumeId => {
+    const id = resumeId.trim();
+    if (!id) return;
+    set(state => ({
+      reviewStack: state.reviewStack.filter(card => card.resumeId !== id),
     }));
   },
 

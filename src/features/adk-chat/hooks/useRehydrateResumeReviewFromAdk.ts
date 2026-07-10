@@ -2,10 +2,10 @@
 
 import { useEffect } from "react";
 import { useAdkChatContext } from "@/components/chat/AdkChatProvider";
-import { rehydrateResumeReviewFromAdkSessions } from "@/src/features/adk-chat/rehydrate-resume-review-from-adk";
+import { reconcileResumeAdkSessionsOnRefresh } from "@/src/features/adk-chat/rehydrate-resume-review-from-adk";
 import { useQueryClient } from "@tanstack/react-query";
 
-/** Re-open resume Accept/Discard after refresh once backend baseline is available. */
+/** Align stale ADK resume sessions to backend after refresh (no Accept/Discard cards). */
 export function useRehydrateResumeReviewFromAdk(resumeId: string | null | undefined, enabled = true): void {
   const { userId, sessionId } = useAdkChatContext();
   const queryClient = useQueryClient();
@@ -13,7 +13,7 @@ export function useRehydrateResumeReviewFromAdk(resumeId: string | null | undefi
   useEffect(() => {
     const id = resumeId?.trim();
     if (!enabled || !id || !userId || !sessionId) return;
-    void rehydrateResumeReviewFromAdkSessions({
+    void reconcileResumeAdkSessionsOnRefresh({
       userId,
       mainSessionId: sessionId,
       resumeId: id,

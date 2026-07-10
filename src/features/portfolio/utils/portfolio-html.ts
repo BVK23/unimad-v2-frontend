@@ -1,4 +1,72 @@
 import type { PortfolioItem } from "@/types";
+import { isHtmlLikeContent, markdownToHtml } from "@/utils/markdown-to-html";
+
+const PORTFOLIO_MARKDOWN_LINK_REGEX = /\[([^\]]+)\]\((https?:\/\/[^\s)]+)\)/gi;
+const PORTFOLIO_RAW_URL_REGEX = /https?:\/\/[^\s<>"']+/g;
+
+const trimTrailingUrlPunctuation = (url: string) => {
+  let trimmed = url;
+  let suffix = "";
+
+  while (trimmed.length > 0 && /[.,;:!?)]+$/.test(trimmed)) {
+    const punct = trimmed.match(/[.,;:!?)]+$/)?.[0] ?? "";
+    suffix = `${punct}${suffix}`;
+    trimmed = trimmed.slice(0, -punct.length);
+  }
+
+  return { url: trimmed, suffix };
+};
+
+const buildPortfolioAnchorHtml = (href: string, label: string) =>
+  `<a href="${href}" target="_blank" rel="noopener noreferrer">${label}</a>`;
+
+/** Convert markdown links and raw URLs in plain text into anchor tags. */
+export const linkifyPortfolioPlainText = (text: string): string => {
+  if (!text) return "";
+
+  let result = text.replace(PORTFOLIO_MARKDOWN_LINK_REGEX, (_, label: string, url: string) => buildPortfolioAnchorHtml(url, label));
+
+  result = result.replace(PORTFOLIO_RAW_URL_REGEX, matched => {
+    const { url, suffix } = trimTrailingUrlPunctuation(matched);
+    if (!url) return matched;
+    return `${buildPortfolioAnchorHtml(url, url)}${suffix}`;
+  });
+
+  return result;
+};
+
+/** Linkify plain-text segments in rich-text HTML without touching existing anchors. */
+export const linkifyPortfolioRichTextHtml = (html: string): string => {
+  if (!html?.trim()) return "";
+
+  const parts = html.split(/(<[^>]+>)/g);
+  let anchorDepth = 0;
+
+  return parts
+    .map(part => {
+      if (!part) return "";
+      if (part.startsWith("<")) {
+        if (/^<a\b/i.test(part)) anchorDepth += 1;
+        if (/^<\/a>/i.test(part)) anchorDepth = Math.max(0, anchorDepth - 1);
+        return part;
+      }
+      if (anchorDepth > 0) return part;
+      return linkifyPortfolioPlainText(part);
+    })
+    .join("");
+};
+
+/** Decode stored portfolio HTML and auto-link URLs for editor/preview rendering. */
+export const normalizePortfolioRichTextForRender = (html: string): string => {
+  const decoded = normalizePortfolioHtmlForRender(html);
+  if (!decoded) return "";
+
+  if (!isHtmlLikeContent(decoded)) {
+    return linkifyPortfolioRichTextHtml(markdownToHtml(decoded));
+  }
+
+  return linkifyPortfolioRichTextHtml(decoded);
+};
 
 /**
  * Prepare portfolio HTML from migration or RichTextEditor for rendering.

@@ -38,6 +38,7 @@ export type AdkPortfolioReviewState = {
   getBaselinePortfolio: () => PortfolioData | null;
   clearAllReviews: () => void;
   clearReviewsByAssistantIds: (assistantIds: Iterable<string>) => void;
+  dismissReviewsForPortfolio: (portfolioId: string) => void;
   popReviewAfterDiscard: () => void;
 
   registerSaveHandler: (portfolioId: string, fn: () => Promise<void>) => void;
@@ -66,6 +67,7 @@ export const useAdkPortfolioReviewStore = create<AdkPortfolioReviewState>((set, 
   },
 
   beginReview: ({ portfolioId, baselinePortfolio, highlights, bannerTitle, assistantMessageId }) => {
+    if (!assistantMessageId?.trim()) return;
     if (Object.keys(highlights).length === 0) return;
     if (hasReviewForAssistant(get().reviewStack, assistantMessageId)) return;
     const card: AdkPortfolioReviewCard = {
@@ -102,6 +104,14 @@ export const useAdkPortfolioReviewStore = create<AdkPortfolioReviewState>((set, 
     if (drop.size === 0) return;
     set(state => ({
       reviewStack: state.reviewStack.filter(card => !card.assistantMessageId || !drop.has(card.assistantMessageId)),
+    }));
+  },
+
+  dismissReviewsForPortfolio: portfolioId => {
+    const id = portfolioId.trim();
+    if (!id) return;
+    set(state => ({
+      reviewStack: state.reviewStack.filter(card => card.portfolioId !== id),
     }));
   },
 

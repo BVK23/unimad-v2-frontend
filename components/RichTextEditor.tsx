@@ -1,6 +1,7 @@
 import React, { useState, useEffect, useRef, useCallback } from "react";
 import { createPortal } from "react-dom";
 import type { PortfolioTitleHeadingLevel } from "@/features/portfolio/utils/portfolio-html";
+import { linkifyPortfolioRichTextHtml } from "@/features/portfolio/utils/portfolio-html";
 import { applyRefineAnchorMark, clearRefineAnchorMarks } from "@/utils/refine-anchor-highlight";
 import { ArrowRight, Sparkles } from "lucide-react";
 import {
@@ -40,6 +41,8 @@ interface RichTextEditorProps {
   selectionImproveSlot?: React.ReactNode;
   /** Persistent highlight for the text span sent to Unibot (survives toolbar dismiss). */
   refineAnchorText?: string;
+  /** When true, pasted or typed raw URLs are converted into anchor links on paste/blur. */
+  autoLinkUrls?: boolean;
 }
 
 type ActiveFormats = {
@@ -79,6 +82,7 @@ const RichTextEditor: React.FC<RichTextEditorProps> = ({
   unifiedSelectionToolbar = false,
   selectionImproveSlot,
   refineAnchorText = "",
+  autoLinkUrls = false,
 }) => {
   const editorRef = useRef<HTMLDivElement>(null);
   const anchorMarkRef = useRef<HTMLElement | null>(null);
@@ -189,6 +193,30 @@ const RichTextEditor: React.FC<RichTextEditorProps> = ({
       setAnchorCueRect(null);
     };
   }, [refineAnchorText, value, updateAnchorCuePosition]);
+
+  const applyAutoLinkedHtml = () => {
+    if (!autoLinkUrls || readOnly || !editorRef.current) return;
+    const linkified = linkifyPortfolioRichTextHtml(editorRef.current.innerHTML);
+    if (linkified === editorRef.current.innerHTML) return;
+    editorRef.current.innerHTML = linkified;
+    onChange(linkified);
+  };
+
+  const handlePaste = (e: React.ClipboardEvent<HTMLDivElement>) => {
+    if (readOnly || !autoLinkUrls) return;
+
+    const plain = e.clipboardData.getData("text/plain");
+    const html = e.clipboardData.getData("text/html");
+    if (!plain.trim()) return;
+
+    const hasExternalRichHtml = Boolean(html.trim()) && /<(p|div|span|a|strong|em|ul|ol|h[1-6]|table)\b/i.test(html);
+    if (hasExternalRichHtml) return;
+
+    e.preventDefault();
+    const inserted = linkifyPortfolioRichTextHtml(plain);
+    document.execCommand("insertHTML", false, inserted);
+    handleInput();
+  };
 
   const handleInput = () => {
     if (readOnly) return;
@@ -431,11 +459,13 @@ const RichTextEditor: React.FC<RichTextEditorProps> = ({
         ref={editorRef}
         contentEditable={!readOnly}
         onInput={handleInput}
+        onPaste={handlePaste}
         onSelect={handleSelect}
         onBlur={() => {
           setShowToolbar(false);
           onSelectionChange?.(null);
           if (!editorRef.current) return;
+          applyAutoLinkedHtml();
           const isEffectivelyEmpty = (editorRef.current.textContent || "").trim() === "";
           if (!isEffectivelyEmpty) return;
           if (editorRef.current.innerHTML !== "") {

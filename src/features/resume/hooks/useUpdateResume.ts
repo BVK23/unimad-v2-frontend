@@ -4,6 +4,7 @@ import { mapBackendResumeToFrontend } from "../api/mappers";
 import { mapFrontendResumeToBackend } from "../api/mappers";
 import { isPersistedResumeId } from "../constants/resumeDraft";
 import { createResume, updateResumeContent } from "../server-actions/resume-actions";
+import { resumesListQueryKey } from "./useResumesList";
 
 export type SaveResumeResult = { created: boolean; id: string; resume_data: Record<string, unknown> };
 
@@ -44,8 +45,8 @@ export function useUpdateResume() {
 
       queryClient.setQueryData(["resumes", result.id], resumeWithId);
 
-      const hasListCache = queryClient.getQueryState(["resumes"]);
-      queryClient.setQueryData<ResumeData[]>(["resumes"], current => {
+      const hasListCache = queryClient.getQueriesData({ queryKey: resumesListQueryKey }).length > 0;
+      queryClient.setQueriesData<ResumeData[]>({ queryKey: resumesListQueryKey }, current => {
         if (!current || !Array.isArray(current)) {
           return current;
         }
@@ -64,7 +65,7 @@ export function useUpdateResume() {
       });
 
       if (result.created && !hasListCache) {
-        queryClient.invalidateQueries({ queryKey: ["resumes"] });
+        queryClient.invalidateQueries({ queryKey: resumesListQueryKey });
       }
     },
   });

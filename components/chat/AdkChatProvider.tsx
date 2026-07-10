@@ -28,7 +28,7 @@ import {
   mergeLegacyAndSubTopics,
   reconstructLegacyTopicsFromMain,
 } from "@/src/features/adk-chat/reconstruct-legacy-topics";
-import { rehydrateResumeReviewFromAdkSessions } from "@/src/features/adk-chat/rehydrate-resume-review-from-adk";
+import { reconcileResumeAdkSessionsOnRefresh } from "@/src/features/adk-chat/rehydrate-resume-review-from-adk";
 import { useActiveResumeIdForPatch } from "@/src/features/adk-chat/resolve-active-resume-id";
 import { resolveDjangoRestoreTarget } from "@/src/features/adk-chat/resolve-django-restore-target";
 import { resolveAdkSessionOptionsForSessionId } from "@/src/features/adk-chat/resolve-sub-session-adk-app";
@@ -348,7 +348,7 @@ export function AdkChatProvider({ userId, children }: { userId: string; children
               void applyAdkSessionStateToStores(userId, mainSessionIdForLoad, pathname, queryClient);
             }
             if (pathname.startsWith("/uniboard/resume")) {
-              void rehydrateResumeReviewFromAdkSessions({
+              void reconcileResumeAdkSessionsOnRefresh({
                 userId,
                 mainSessionId: mainSessionIdForLoad,
                 resumeId: activeResumeId,

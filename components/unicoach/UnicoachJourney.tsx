@@ -2,6 +2,8 @@
 
 import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { openUnicoachPricing } from "@/components/UnicoachPricingModal";
+import { ComingSoonBadge } from "@/components/ui/ComingSoonBadge";
+import { VPD_FEATURE_ENABLED } from "@/constants/feature-flags";
 import { COACH_MILESTONE_BY_UX_STAGE } from "@/constants/unicoach-journey-coach";
 import {
   useJourneyAdvanceMutation,
@@ -39,6 +41,33 @@ import { UNICOACH_STAGES, videoUrlToEmbedSrc, type ContentTab, type UnicoachCurr
 import { UnicoachStage3ResourcesPanel } from "./stage-content/UnicoachStage3Panel";
 
 const STAGES = UNICOACH_STAGES;
+
+const isVpdStudioHref = (href: string) => href.includes("/uniboard/studio") && href.includes("type=vpd");
+
+function OverviewSectionHref({ href, label }: { href: string; label: string }) {
+  const vpdComingSoon = isVpdStudioHref(href) && !VPD_FEATURE_ENABLED;
+
+  if (vpdComingSoon) {
+    return (
+      <span
+        className="inline-flex cursor-not-allowed items-center gap-2 text-sm font-medium text-slate-400 dark:text-slate-500"
+        title="Coming soon"
+      >
+        {label}
+        <ComingSoonBadge label="soon" />
+      </span>
+    );
+  }
+
+  return (
+    <Link
+      href={href}
+      className="inline-flex items-center gap-1 text-sm font-medium text-brand-600 hover:text-brand-700 dark:text-brand-400"
+    >
+      {label}
+    </Link>
+  );
+}
 
 const UnicoachJourney: React.FC = () => {
   const queryClient = useQueryClient();
@@ -660,14 +689,7 @@ const UnicoachJourney: React.FC = () => {
                               {open && (
                                 <div className="px-3 pb-3 pl-9 text-sm text-slate-600 dark:text-slate-300 leading-relaxed border-t border-slate-100 dark:border-slate-800/80 pt-3 space-y-3">
                                   <p className="whitespace-pre-line">{section.body}</p>
-                                  {section.href ? (
-                                    <Link
-                                      href={section.href}
-                                      className="inline-flex items-center gap-1 text-sm font-medium text-brand-600 hover:text-brand-700 dark:text-brand-400"
-                                    >
-                                      {section.hrefLabel ?? "Open"}
-                                    </Link>
-                                  ) : null}
+                                  {section.href ? <OverviewSectionHref href={section.href} label={section.hrefLabel ?? "Open"} /> : null}
                                 </div>
                               )}
                             </div>

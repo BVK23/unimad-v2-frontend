@@ -2,7 +2,7 @@
 
 import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import type { PdfHighlightMap } from "@/features/adk-chat/adkResumeHighlightDiff";
-import { getResumeContentSignature } from "@/features/resume/utils/getResumeContentSignature";
+import { getResumePreviewContentSignature } from "@/features/resume/utils/getResumeContentSignature";
 import type { ResumeData } from "@/types";
 import { pdf } from "@react-pdf/renderer";
 import dynamic from "next/dynamic";
@@ -50,7 +50,10 @@ const ResumePDFPreviewInner: React.FC<ResumePDFPreviewProps> = ({
     highlightsRef.current = highlights;
   }, [highlights]);
 
-  const contentSignature = useMemo(() => `${getResumeContentSignature(data)}|${JSON.stringify(highlights ?? {})}`, [data, highlights]);
+  const contentSignature = useMemo(
+    () => `${getResumePreviewContentSignature(data)}|${JSON.stringify(highlights ?? {})}`,
+    [data, highlights]
+  );
 
   const [slot0Url, setSlot0Url] = useState<string | null>(null);
   const [slot1Url, setSlot1Url] = useState<string | null>(null);

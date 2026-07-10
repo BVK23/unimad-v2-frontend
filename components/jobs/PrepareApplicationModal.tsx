@@ -466,6 +466,7 @@ const PrepareApplicationModal: React.FC<PrepareApplicationModalProps> = ({
     if (!activeAsset?.assetId || activeTab === "resume" || activeTab === "vpd" || activeTab === "interview") return;
     const tab = activeTab as "cover-letter" | "cold-email";
     const content = activeTextContentRef.current;
+    if (content === savedTextBaselineRef.current) return;
     if (tab === "cover-letter") {
       await updateCoverLetter({ id: activeAsset.assetId, content });
     } else {
@@ -485,6 +486,11 @@ const PrepareApplicationModal: React.FC<PrepareApplicationModalProps> = ({
     enabled: showTextAssetActions,
     onSave: persistContentEdit,
   });
+
+  const handleTextAssetDeactivate = useCallback(() => {
+    if (activeTextContentRef.current === savedTextBaselineRef.current) return;
+    void runTextAssetSave();
+  }, [runTextAssetSave]);
 
   useEffect(() => {
     const content = activeAsset?.content ?? "";
@@ -617,7 +623,7 @@ const PrepareApplicationModal: React.FC<PrepareApplicationModalProps> = ({
           assetId={assetId}
           content={state.content}
           onContentChange={handleContentChange}
-          onSave={() => void runTextAssetSave()}
+          onSave={handleTextAssetDeactivate}
         />
       );
     }

@@ -504,12 +504,6 @@ const ResumeEditor: React.FC<ResumeEditorProps> = ({
     };
   }, [initialData]);
 
-  // Reseed only when switching resumes; `useResume` syncs after fetch without clobbering in-progress edits.
-  useEffect(() => {
-    useResumeStore.getState().setResumeData(resumeId, getInitialResume());
-    // eslint-disable-next-line react-hooks/exhaustive-deps -- intentional: not on every initialData refresh
-  }, [resumeId]);
-
   const resumeFromStore = useResumeStore(s => s.resumeData[resumeId]);
   const resume = resumeFromStore ?? getInitialResume();
   const resumeForPreview = useDebouncedResumePreview(resume);
@@ -566,12 +560,17 @@ const ResumeEditor: React.FC<ResumeEditorProps> = ({
   }, [isExportDropdownOpen]);
 
   const setResumeData = useResumeStore(s => s.setResumeData);
+  const updateResumeField = useResumeStore(s => s.updateResumeField);
+  const dismissAdkReviewOnManualEdit = useCallback(() => {
+    useAdkResumeReviewStore.getState().dismissReviewsForResume(resumeId);
+  }, [resumeId]);
   const updateResume = useCallback(
     (updater: (prev: ResumeData) => ResumeData) => {
+      dismissAdkReviewOnManualEdit();
       const prev = useResumeStore.getState().getResumeData(resumeId) ?? getInitialResume();
       setResumeData(resumeId, updater(prev));
     },
-    [resumeId, setResumeData, getInitialResume]
+    [dismissAdkReviewOnManualEdit, resumeId, setResumeData, getInitialResume]
   );
 
   const { mutateAsync: updateResumeMutation, isPending: isSavingRemote } = useUpdateResume();
@@ -608,7 +607,8 @@ const ResumeEditor: React.FC<ResumeEditorProps> = ({
   const [draggedSectionId, setDraggedSectionId] = useState<string | null>(null);
   const lastSectionDropTargetRef = useRef<string | null>(null);
   const [lastAcknowledgedSnapshot, setLastAcknowledgedSnapshot] = useState("");
-  const acknowledgedSeededForIdRef = useRef<string | null>(null);
+  const [titleDraft, setTitleDraft] = useState(() => getInitialResume().title);
+  const hydratedResumeIdRef = useRef<string | null>(null);
   const [activeSaveSource, setActiveSaveSource] = useState<"auto" | "manual" | null>(null);
   const [savedConfirmationVisible, setSavedConfirmationVisible] = useState(false);
   const savedConfirmationTimerRef = useRef<number | null>(null);
@@ -617,6 +617,24 @@ const ResumeEditor: React.FC<ResumeEditorProps> = ({
   const runSaveRef = useRef<((source: "auto" | "manual") => Promise<void>) | null>(null);
   const latestSnapshotRef = useRef("");
   const profileFieldsRef = useRef<ResumePersonalDetailsFieldsHandle>(null);
+
+  // Hydrate store + autosave baseline once per resume open (avoid clobbering in-progress edits on remount).
+  useEffect(() => {
+    if (hydratedResumeIdRef.current === resumeId) return;
+
+    hydratedResumeIdRef.current = resumeId;
+    const initial = getInitialResume();
+    useResumeStore.getState().setResumeData(resumeId, initial);
+    const snapshot = getResumeContentSignature(initial);
+    setTitleDraft(initial.title);
+    setLastAcknowledgedSnapshot(snapshot);
+    latestSnapshotRef.current = snapshot;
+    saveInFlightRef.current = false;
+    queuedSaveRef.current = false;
+    setActiveSaveSource(null);
+    setSavedConfirmationVisible(false);
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- intentional: not on every initialData refresh
+  }, [resumeId]);
 
   // Toast notification state
   const [toast, setToast] = useState<{
@@ -833,31 +851,12 @@ const ResumeEditor: React.FC<ResumeEditorProps> = ({
   };
 
   const hideTooltip = () => setTooltip(null);
-  const currentSnapshot = useMemo(() => getResumeContentSignature(resume), [resume]);
+  const resumeForAutosave = useMemo(() => ({ ...resume, title: titleDraft }), [resume, titleDraft]);
+  const currentSnapshot = useMemo(() => getResumeContentSignature(resumeForAutosave), [resumeForAutosave]);
 
   useEffect(() => {
     latestSnapshotRef.current = currentSnapshot;
   }, [currentSnapshot]);
-
-  useEffect(() => {
-    if (acknowledgedSeededForIdRef.current !== resumeId) {
-      acknowledgedSeededForIdRef.current = null;
-    }
-  }, [resumeId]);
-
-  useEffect(() => {
-    if (acknowledgedSeededForIdRef.current === resumeId) return;
-    const stored = useResumeStore.getState().getResumeData(resumeId);
-    if (!stored) return;
-
-    acknowledgedSeededForIdRef.current = resumeId;
-    const initialSnapshot = getResumeContentSignature(stored);
-    setLastAcknowledgedSnapshot(initialSnapshot);
-    latestSnapshotRef.current = initialSnapshot;
-    saveInFlightRef.current = false;
-    queuedSaveRef.current = false;
-    setActiveSaveSource(null);
-  }, [resumeId, resumeFromStore]);
 
   useEffect(() => {
     resetAtsMutation();
@@ -936,9 +935,8 @@ const ResumeEditor: React.FC<ResumeEditorProps> = ({
   const validationErrors = useMemo(() => validateResume(resume), [resume]);
   const atsGate = useMemo(() => getAtsGateState(resume), [resume]);
   const atsGated = !atsGate.ok;
-  const adkReviewBlocksAutosave = useAdkResumeReviewStore(s => s.hasPendingReviewForResume(resumeId));
   const pdfHighlightRegions = useAdkResumeReviewStore(s => s.reviewStack.at(-1)?.highlights ?? EMPTY_PDF_HIGHLIGHT_MAP);
-  const hasPendingUnsavedChanges = !adkReviewBlocksAutosave && currentSnapshot !== lastAcknowledgedSnapshot;
+  const hasPendingUnsavedChanges = currentSnapshot !== lastAcknowledgedSnapshot;
   const isSaving = isSavingRemote;
 
   useEffect(() => {
@@ -1390,14 +1388,17 @@ const ResumeEditor: React.FC<ResumeEditorProps> = ({
         return;
       }
 
-      const snapshotAtStart = latestSnapshotRef.current;
       profileFieldsRef.current?.flushToStore();
-      const dataToSave = useResumeStore.getState().getResumeData(resumeId) ?? resume;
+      const stored = useResumeStore.getState().getResumeData(resumeId) ?? resume;
+      const dataToSave = { ...stored, title: titleDraft };
+      const snapshotAtStart = getResumeContentSignature(dataToSave);
+      latestSnapshotRef.current = snapshotAtStart;
       saveInFlightRef.current = true;
       setActiveSaveSource(source);
 
       try {
         const result = await updateResumeMutation({ resumeId, data: dataToSave });
+        setTitleDraft(dataToSave.title);
         setLastAcknowledgedSnapshot(snapshotAtStart);
         setSavedConfirmationVisible(true);
         if (savedConfirmationTimerRef.current) {
@@ -1438,7 +1439,7 @@ const ResumeEditor: React.FC<ResumeEditorProps> = ({
         }
       }
     },
-    [onSave, resume, resumeId, showToast, updateResumeMutation]
+    [onSave, resume, resumeId, showToast, titleDraft, updateResumeMutation]
   );
 
   const syncPrepareReturnFromUrl = useCallback(async () => {
@@ -1553,12 +1554,17 @@ const ResumeEditor: React.FC<ResumeEditorProps> = ({
 
   const handleBack = useCallback(() => {
     profileFieldsRef.current?.flushToStore();
-    if (hasPendingUnsavedChanges && !adkReviewBlocksAutosave && runSaveRef.current) {
+    const stored = useResumeStore.getState().getResumeData(resumeId) ?? resume;
+    const dataToSave = { ...stored, title: titleDraft };
+    const snapshot = getResumeContentSignature(dataToSave);
+    latestSnapshotRef.current = snapshot;
+    const pending = snapshot !== lastAcknowledgedSnapshot;
+    if (pending && runSaveRef.current) {
       void runSaveRef.current("auto").finally(onBack);
       return;
     }
     onBack();
-  }, [adkReviewBlocksAutosave, hasPendingUnsavedChanges, onBack]);
+  }, [lastAcknowledgedSnapshot, onBack, resume, resumeId, titleDraft]);
 
   const handleTemplateSelect = (id: string) => {
     updateResume(prev => ({ ...prev, templateId: id as ResumeTemplateId }));
@@ -1906,10 +1912,19 @@ const ResumeEditor: React.FC<ResumeEditorProps> = ({
             </button>
             <div className="min-w-0 flex-1 max-w-xl">
               <input
-                value={resume.title}
-                onChange={e => updateResume(prev => ({ ...prev, title: e.target.value }))}
+                value={titleDraft}
+                onChange={e => {
+                  const nextTitle = e.target.value;
+                  dismissAdkReviewOnManualEdit();
+                  setTitleDraft(nextTitle);
+                  updateResumeField(resumeId, "title", nextTitle);
+                }}
                 onBlur={() => {
-                  if (hasPendingUnsavedChanges && !isSaving) {
+                  profileFieldsRef.current?.flushToStore();
+                  const stored = useResumeStore.getState().getResumeData(resumeId) ?? resume;
+                  const snapshot = getResumeContentSignature({ ...stored, title: titleDraft });
+                  latestSnapshotRef.current = snapshot;
+                  if (snapshot !== lastAcknowledgedSnapshot && !saveInFlightRef.current) {
                     void runSave("manual");
                   }
                 }}

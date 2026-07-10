@@ -1,7 +1,7 @@
 import React, { useState, useRef, type SetStateAction } from "react";
 import type { PortfolioHighlightMap } from "@/features/adk-chat/adkPortfolioHighlightDiff";
 import { getPortfolioBlockDeleteLabel } from "@/features/portfolio/utils/getPortfolioBlockDeleteLabel";
-import { normalizePortfolioHtmlForRender } from "@/features/portfolio/utils/portfolio-html";
+import { normalizePortfolioRichTextForRender } from "@/features/portfolio/utils/portfolio-html";
 import {
   formatPortfolioUploadError,
   logPortfolioUploadError,
@@ -35,7 +35,7 @@ import { PortfolioAdkBlockHighlight } from "./portfolio/PortfolioAdkBlockHighlig
 import PortfolioImage from "./portfolio/PortfolioImage";
 
 const PAGE_HERO_RICH_TEXT_CLASSES =
-  "[&_strong]:font-bold [&_b]:font-bold [&_em]:italic [&_i]:italic [&_u]:underline [&_p]:inline [&_br]:block";
+  "[&_strong]:font-bold [&_b]:font-bold [&_em]:italic [&_i]:italic [&_u]:underline [&_p]:inline [&_br]:block [&_a]:text-brand-200 [&_a]:underline [&_a]:underline-offset-2 hover:[&_a]:text-white";
 
 interface ProjectDetailViewProps {
   project: PortfolioItem;
@@ -357,7 +357,7 @@ const ProjectDetailView: React.FC<ProjectDetailViewProps> = ({
   };
 
   return (
-    <div className="flex-1 bg-slate-50 dark:bg-slate-950 h-full overflow-y-auto no-scrollbar relative animate-in slide-in-from-right duration-300">
+    <div className="scrollbar-on-hover [scrollbar-gutter:stable] relative h-full flex-1 animate-in overflow-y-auto bg-slate-50 duration-300 slide-in-from-right dark:bg-slate-950">
       <input
         ref={fileInputRef}
         type="file"
@@ -442,7 +442,8 @@ const ProjectDetailView: React.FC<ProjectDetailViewProps> = ({
           <div className={`${editorMaxWidth} mx-auto w-full group/text`}>
             {isEditMode ? (
               <RichTextEditor
-                value={normalizePortfolioHtmlForRender(project.title || "")}
+                autoLinkUrls
+                value={normalizePortfolioRichTextForRender(project.title || "")}
                 onChange={value => onUpdateProject({ ...project, title: value })}
                 className={`block w-full bg-transparent text-4xl md:text-6xl font-semibold text-white outline-none mb-2 placeholder:text-white/50 ${PAGE_HERO_RICH_TEXT_CLASSES}`}
                 placeholder="Page Title"
@@ -452,14 +453,15 @@ const ProjectDetailView: React.FC<ProjectDetailViewProps> = ({
               <h1
                 className={`text-4xl md:text-6xl font-black text-white mb-2 leading-tight drop-shadow-md ${PAGE_HERO_RICH_TEXT_CLASSES}`}
                 dangerouslySetInnerHTML={{
-                  __html: normalizePortfolioHtmlForRender(project.title || "Untitled Page"),
+                  __html: normalizePortfolioRichTextForRender(project.title || "Untitled Page"),
                 }}
               />
             )}
 
             {isEditMode ? (
               <RichTextEditor
-                value={normalizePortfolioHtmlForRender(project.description || "")}
+                autoLinkUrls
+                value={normalizePortfolioRichTextForRender(project.description || "")}
                 onChange={value => onUpdateProject({ ...project, description: value })}
                 className={`block w-full max-w-2xl resize-none bg-transparent text-xl text-white/80 outline-none placeholder:text-white/40 ${PAGE_HERO_RICH_TEXT_CLASSES}`}
                 placeholder="Add a description..."
@@ -469,7 +471,7 @@ const ProjectDetailView: React.FC<ProjectDetailViewProps> = ({
               project.description && (
                 <p
                   className={`text-xl text-white/80 max-w-2xl leading-relaxed text-balance drop-shadow-md ${PAGE_HERO_RICH_TEXT_CLASSES}`}
-                  dangerouslySetInnerHTML={{ __html: normalizePortfolioHtmlForRender(project.description) }}
+                  dangerouslySetInnerHTML={{ __html: normalizePortfolioRichTextForRender(project.description) }}
                 />
               )
             )}

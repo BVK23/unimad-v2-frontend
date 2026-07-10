@@ -1,5 +1,12 @@
 export type JobsTab = "discovery" | "tracker" | "interview";
 
+/** Job Board (discovery) tab — default when no tab is set. */
+export const JOBS_BOARD_HREF = "/uniboard/jobs?tab=discovery";
+/** Application tracker tab. */
+export const JOBS_TRACKER_HREF = "/uniboard/jobs?tab=tracker";
+/** Interview prep tab. */
+export const JOBS_INTERVIEW_HREF = "/uniboard/jobs?tab=interview";
+
 export type InterviewView = "dashboard" | "setup" | "active" | "voice" | "report" | "analyzing";
 
 const VALID_TABS: JobsTab[] = ["discovery", "tracker", "interview"];

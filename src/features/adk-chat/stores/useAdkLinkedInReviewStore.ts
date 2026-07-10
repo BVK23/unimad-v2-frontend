@@ -38,6 +38,7 @@ export type AdkLinkedInReviewState = {
   getBaselineProfile: () => LinkedInSessionProfile | null;
   clearAllReviews: () => void;
   clearReviewsByAssistantIds: (assistantIds: Iterable<string>) => void;
+  dismissReviewsForProfile: (profileKey: string) => void;
   popReviewAfterDiscard: () => void;
 
   registerSaveHandler: (profileKey: string, fn: () => Promise<void>) => void;
@@ -66,6 +67,7 @@ export const useAdkLinkedInReviewStore = create<AdkLinkedInReviewState>((set, ge
   },
 
   beginReview: ({ profileKey, baselineProfile, highlights, bannerTitle, assistantMessageId }) => {
+    if (!assistantMessageId?.trim()) return;
     if (Object.keys(highlights).length === 0) return;
     if (hasReviewForAssistant(get().reviewStack, assistantMessageId)) return;
     const card: AdkLinkedInReviewCard = {
@@ -102,6 +104,14 @@ export const useAdkLinkedInReviewStore = create<AdkLinkedInReviewState>((set, ge
     if (drop.size === 0) return;
     set(state => ({
       reviewStack: state.reviewStack.filter(card => !card.assistantMessageId || !drop.has(card.assistantMessageId)),
+    }));
+  },
+
+  dismissReviewsForProfile: profileKey => {
+    const key = profileKey.trim();
+    if (!key) return;
+    set(state => ({
+      reviewStack: state.reviewStack.filter(card => card.profileKey !== key),
     }));
   },
 

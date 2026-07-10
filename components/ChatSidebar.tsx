@@ -40,6 +40,12 @@ import { useAdkContentGenReviewStore } from "@/features/adk-chat/stores/useAdkCo
 import { useAdkLinkedInReviewStore, type AdkLinkedInReviewCard } from "@/features/adk-chat/stores/useAdkLinkedInReviewStore";
 import { useAdkPortfolioReviewStore, type AdkPortfolioReviewCard } from "@/features/adk-chat/stores/useAdkPortfolioReviewStore";
 import { useAdkResumeReviewStore, type AdkReviewCard } from "@/features/adk-chat/stores/useAdkResumeReviewStore";
+import {
+  syncAcceptedPortfolioToAllSessions,
+  syncAcceptedResumeToAllSessions,
+  syncDiscardedPortfolioToAllSessions,
+  syncDiscardedResumeToAllSessions,
+} from "@/features/adk-chat/sync-adk-asset-sessions";
 import { syncAdkContentStateOnAccept } from "@/features/adk-chat/sync-adk-content-on-accept";
 import {
   isStreamingMachineReadablePayloadOnly,
@@ -2786,7 +2792,7 @@ const ChatSidebar: React.FC<ChatSidebarProps> = ({ incomingRequest, onRequestHan
           postAcceptPayload: postPayload,
           acceptedAt: new Date().toISOString(),
         });
-        await syncAdkContentStateOnAccept(userId, reviewMainSessionId, postPayload);
+        await syncAcceptedResumeToAllSessions(userId, reviewMainSessionId, postResume);
         await persistReviewDecisionForSession(userId, reviewMainSessionId, card.assistantMessageId, "accepted");
       }
     } catch (err) {
@@ -2799,18 +2805,14 @@ const ChatSidebar: React.FC<ChatSidebarProps> = ({ incomingRequest, onRequestHan
   const handleAdkDiscard = useCallback(async () => {
     const card = useAdkResumeReviewStore.getState().getActiveCard();
     const baseline = useAdkResumeReviewStore.getState().getBaselineResume();
-    if (!baseline || !userId || !sessionId) return;
+    if (!baseline || !userId || !reviewMainSessionId) return;
     setAdkReviewBusy(true);
     try {
       const merged = { ...useResumeStore.getState().resumeData, [baseline.id]: baseline };
       useResumeStore.setState({ resumeData: merged });
       queryClient.setQueryData(resumeByIdQueryKey(baseline.id), baseline);
-      await syncSessionStateAction(userId, sessionId, {
-        active_context: "resume",
-        current_resume: baseline.id,
-        resume_data: buildAdkResumeDataMap(merged),
-      });
-      if (card?.assistantMessageId && reviewMainSessionId) {
+      await syncDiscardedResumeToAllSessions(userId, reviewMainSessionId, baseline);
+      if (card?.assistantMessageId) {
         await persistReviewDecisionForSession(userId, reviewMainSessionId, card.assistantMessageId, "discarded");
       }
       useAdkResumeReviewStore.getState().popReviewAfterDiscard();
@@ -2824,7 +2826,7 @@ const ChatSidebar: React.FC<ChatSidebarProps> = ({ incomingRequest, onRequestHan
     } finally {
       setAdkReviewBusy(false);
     }
-  }, [queryClient, reviewMainSessionId, sessionId, userId]);
+  }, [queryClient, reviewMainSessionId, userId]);
 
   const handleAdkPortfolioAccept = useCallback(async () => {
     const card = useAdkPortfolioReviewStore.getState().getActiveCard();
@@ -2844,7 +2846,7 @@ const ChatSidebar: React.FC<ChatSidebarProps> = ({ incomingRequest, onRequestHan
           postAcceptPayload: postPayload,
           acceptedAt: new Date().toISOString(),
         });
-        await syncAdkContentStateOnAccept(userId, reviewMainSessionId, postPayload);
+        await syncAcceptedPortfolioToAllSessions(userId, reviewMainSessionId, postPortfolio);
         await persistReviewDecisionForSession(userId, reviewMainSessionId, card.assistantMessageId, "accepted");
       }
     } catch (err) {
@@ -3056,20 +3058,14 @@ const ChatSidebar: React.FC<ChatSidebarProps> = ({ incomingRequest, onRequestHan
   const handleAdkPortfolioDiscard = useCallback(async () => {
     const card = useAdkPortfolioReviewStore.getState().getActiveCard();
     const baseline = useAdkPortfolioReviewStore.getState().getBaselinePortfolio();
-    if (!baseline || !userId || !sessionId) return;
+    if (!baseline || !userId || !reviewMainSessionId) return;
     setAdkReviewBusy(true);
     try {
       const merged = { ...usePortfolioStore.getState().portfolioData, [baseline.id]: baseline };
       usePortfolioStore.setState({ portfolioData: merged });
       queryClient.setQueryData(portfolioQueryKey, baseline);
-      const warmResume = buildAdkResumeDataMap(useResumeStore.getState().resumeData);
-      await syncSessionStateAction(userId, sessionId, {
-        ...buildAdkPortfolioStateDelta(baseline),
-        portfolio_data: buildAdkPortfolioDataMap(merged),
-        resume_data: warmResume,
-        current_resume: null,
-      });
-      if (card?.assistantMessageId && reviewMainSessionId) {
+      await syncDiscardedPortfolioToAllSessions(userId, reviewMainSessionId, baseline);
+      if (card?.assistantMessageId) {
         await persistReviewDecisionForSession(userId, reviewMainSessionId, card.assistantMessageId, "discarded");
       }
       useAdkPortfolioReviewStore.getState().popReviewAfterDiscard();
@@ -3083,7 +3079,7 @@ const ChatSidebar: React.FC<ChatSidebarProps> = ({ incomingRequest, onRequestHan
     } finally {
       setAdkReviewBusy(false);
     }
-  }, [queryClient, reviewMainSessionId, sessionId, userId]);
+  }, [queryClient, reviewMainSessionId, userId]);
 
   const linkedInReviewContentKey = useCallback((card: AdkLinkedInReviewCard): string => {
     const section = (Object.keys(card.highlights)[0] ?? "profile").trim().toLowerCase();
@@ -5257,146 +5253,6 @@ const ChatSidebar: React.FC<ChatSidebarProps> = ({ incomingRequest, onRequestHan
                 </div>
               );
             })}
-
-            {(adkReviewStack.some(c => !c.assistantMessageId) ||
-              adkPortfolioReviewStack.some(c => !c.assistantMessageId) ||
-              adkLinkedInReviewStack.some(c => !c.assistantMessageId) ||
-              adkContentGenReviewStack.some(c => !c.assistantMessageId) ||
-              adkApplicationAssetReviewStack.some(c => !c.assistantMessageId)) && (
-              <div className="flex flex-col gap-2 items-start pl-1">
-                {adkReviewStack
-                  .filter(c => !c.assistantMessageId)
-                  .map(card => {
-                    const nav = resolveResumeReviewNavTarget(card);
-                    const outOfContext =
-                      !isReviewNavActive(nav) || !isResumeReviewActionsInContext(activeResumeId, undefined, card.resumeId);
-                    return (
-                      <div key={card.id} className="w-full max-w-[95%]">
-                        {outOfContext ? (
-                          <SubThreadGoToAssetLink
-                            target={nav}
-                            highlighted={highlightedGoToHref === nav.href}
-                            onNavigate={href => router.push(href)}
-                          />
-                        ) : null}
-                        <AdkReviewCardBlock
-                          card={card}
-                          isActive={card.id === adkActiveReviewId}
-                          adkReviewBusy={adkReviewBusy}
-                          sessionReady={sessionReady}
-                          onAccept={handleAdkAccept}
-                          onDiscard={handleAdkDiscard}
-                          actionsOutOfContext={outOfContext}
-                          onBlockedAction={() => nudgeGoToFeature(nav.href)}
-                        />
-                      </div>
-                    );
-                  })}
-                {adkPortfolioReviewStack
-                  .filter(c => !c.assistantMessageId)
-                  .map((card: AdkPortfolioReviewCard) => {
-                    const nav = resolvePortfolioReviewNavTarget(card);
-                    const outOfContext = !isReviewNavActive(nav);
-                    return (
-                      <div key={card.id} className="w-full max-w-[95%]">
-                        {outOfContext ? (
-                          <SubThreadGoToAssetLink
-                            target={nav}
-                            highlighted={highlightedGoToHref === nav.href}
-                            onNavigate={href => router.push(href)}
-                          />
-                        ) : null}
-                        <AdkReviewCardBlock
-                          card={card}
-                          isActive={card.id === adkPortfolioActiveReviewId}
-                          adkReviewBusy={adkReviewBusy}
-                          sessionReady={sessionReady}
-                          onAccept={handleAdkPortfolioAccept}
-                          onDiscard={handleAdkPortfolioDiscard}
-                          actionsOutOfContext={outOfContext}
-                          onBlockedAction={() => nudgeGoToFeature(nav.href)}
-                        />
-                      </div>
-                    );
-                  })}
-                {adkLinkedInReviewStack
-                  .filter(c => !c.assistantMessageId)
-                  .map((card: AdkLinkedInReviewCard) => {
-                    const nav = resolveLinkedInReviewNavTarget(card);
-                    const outOfContext = !isReviewNavActive(nav);
-                    return (
-                      <div key={card.id} className="w-full max-w-[95%]">
-                        {outOfContext ? (
-                          <SubThreadGoToAssetLink
-                            target={nav}
-                            highlighted={highlightedGoToHref === nav.href}
-                            onNavigate={href => router.push(href)}
-                          />
-                        ) : null}
-                        <AdkReviewCardBlock
-                          card={card}
-                          isActive={card.id === adkLinkedInActiveReviewId}
-                          adkReviewBusy={adkReviewBusy}
-                          sessionReady={sessionReady}
-                          onAccept={handleAdkLinkedInAccept}
-                          onDiscard={handleAdkLinkedInDiscard}
-                          actionsOutOfContext={outOfContext}
-                          onBlockedAction={() => nudgeGoToFeature(nav.href)}
-                        />
-                      </div>
-                    );
-                  })}
-                {adkContentGenReviewStack.some(c => !c.assistantMessageId && c.id === adkContentGenActiveReviewId) ? (
-                  <div className="w-full max-w-[95%]">
-                    {!isReviewNavActive(resolveContentGenReviewNavTarget()) ? (
-                      <SubThreadGoToAssetLink
-                        target={resolveContentGenReviewNavTarget()}
-                        highlighted={highlightedGoToHref === resolveContentGenReviewNavTarget().href}
-                        onNavigate={href => router.push(href)}
-                      />
-                    ) : null}
-                    <ContentGenDraftReviewChips
-                      disabled={adkReviewBusy || !sessionReady}
-                      actionsOutOfContext={!isReviewNavActive(resolveContentGenReviewNavTarget())}
-                      onAccept={() => void handleContentGenAccept()}
-                      onImprove={() => void handleContentGenImprove(null)}
-                      onBlockedAction={() => nudgeGoToFeature(resolveContentGenReviewNavTarget().href)}
-                    />
-                  </div>
-                ) : null}
-                {adkApplicationAssetReviewStack
-                  .filter(c => !c.assistantMessageId)
-                  .map(card => {
-                    const nav = resolveApplicationAssetReviewNavTarget({
-                      assetType: card.assetType,
-                      assetId: useApplicationAssetStudioStore.getState().assetId,
-                    });
-                    const outOfContext = !isReviewNavActive(nav);
-                    return (
-                      <div key={card.id} className="w-full max-w-[95%]">
-                        {outOfContext ? (
-                          <SubThreadGoToAssetLink
-                            target={nav}
-                            highlighted={highlightedGoToHref === nav.href}
-                            onNavigate={href => router.push(href)}
-                          />
-                        ) : null}
-                        <AdkReviewCardBlock
-                          card={card}
-                          isActive={card.id === adkApplicationAssetActiveReviewId}
-                          adkReviewBusy={applicationAssetReviewBusy}
-                          sessionReady={sessionReady}
-                          onAccept={() => void acceptApplicationAssetReview()}
-                          onDiscard={discardApplicationAssetReview}
-                          hideActions={diffReviewUiActive}
-                          actionsOutOfContext={outOfContext}
-                          onBlockedAction={() => nudgeGoToFeature(nav.href)}
-                        />
-                      </div>
-                    );
-                  })}
-              </div>
-            )}
 
             {isAgentLoading && activeStreamingMessageId == null && !hasVisibleStreamingAssistantText && (
               <div className="flex flex-col gap-1 items-start pl-1">

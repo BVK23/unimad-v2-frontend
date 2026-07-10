@@ -3,6 +3,7 @@
 import { VPD_FEATURE_ENABLED } from "@/constants/feature-flags";
 import { LINKEDIN_COMMENT_EXTENSION_URL } from "@/features/linkedin/constants";
 import type { ExecutionTracker, JourneyFlags } from "@/features/unicoach/types";
+import { JOBS_BOARD_HREF, JOBS_INTERVIEW_HREF, JOBS_TRACKER_HREF } from "@/src/features/jobs/jobs-url";
 import { CheckCircle2, Circle, ExternalLink, Target } from "lucide-react";
 import Link from "next/link";
 
@@ -103,13 +104,13 @@ export const UnicoachExecutionDashboard = ({ tracker, flags, includeInterviewPre
           done={qualityDone}
           target={TARGETS.quality}
           hint="Use Prepare Application for each role."
-          href="/uniboard/jobs"
+          href={JOBS_BOARD_HREF}
         />
         <ProgressRow
           label="Quantity applications"
           done={t.quantity_applications_count ?? 0}
           target={TARGETS.quantity}
-          href="/uniboard/jobs"
+          href={JOBS_TRACKER_HREF}
         />
         <ProgressRow
           label="Connections"
@@ -138,7 +139,7 @@ export const UnicoachExecutionDashboard = ({ tracker, flags, includeInterviewPre
               done={flags?.has_interview_stage_application ? 1 : 0}
               target={1}
               hint="Start from an Interview-stage application."
-              href="/uniboard/jobs?tab=interview"
+              href={JOBS_INTERVIEW_HREF}
             />
             <ProgressRow
               label="VPD work"

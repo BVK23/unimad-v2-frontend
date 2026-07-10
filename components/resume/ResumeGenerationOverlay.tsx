@@ -32,7 +32,7 @@ const ResumeGenerationMessageRotator: React.FC<{ variant: ResumeGenerationMessag
 const ResumeGenerationOverlay: React.FC<ResumeGenerationOverlayProps> = ({ variant }) => {
   return (
     <div
-      className="absolute inset-0 z-20 flex items-center justify-center rounded-2xl bg-white/90 backdrop-blur-sm"
+      className="absolute inset-0 z-20 flex items-center justify-center bg-white/95 backdrop-blur-sm dark:bg-[#1a1a1a]/95"
       aria-busy="true"
       aria-live="polite"
       aria-label="Generating resume"

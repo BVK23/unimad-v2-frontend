@@ -60,14 +60,30 @@ export function getCount(entry: DailyExecutionDayEntry, key: DailyExecutionItemK
   return entry.counts?.[key] ?? 0;
 }
 
+/** Clamp a habit count to its configured daily target. */
+export function clampExecutionCount(count: number, dailyTarget: number): number {
+  return Math.max(0, Math.min(dailyTarget, count));
+}
+
 /** Posts alternate days — not counted toward daily target on off-days. */
 export function isPostsApplicableForDate(dateKey: string): boolean {
   const day = parseInt(dateKey.slice(-2), 10);
   return day % 2 === 1;
 }
 
-export function applicableExecutionItems(items: ExecutionDailyItemDef[], dateKey: string): ExecutionDailyItemDef[] {
-  return items.filter(item => item.key !== "posts" || isPostsApplicableForDate(dateKey));
+export function applicableExecutionItems(
+  items: ExecutionDailyItemDef[],
+  dateKey: string,
+  entry?: DailyExecutionDayEntry
+): ExecutionDailyItemDef[] {
+  return items.filter(item => {
+    if (item.key !== "posts") return true;
+    if (isPostsApplicableForDate(dateKey)) return true;
+    // Students can log posts on any day in day/week view — credit completion on the calendar too.
+    const postsDef = items.find(i => i.key === "posts");
+    if (entry && postsDef && getCount(entry, "posts") >= postsDef.dailyTarget) return true;
+    return false;
+  });
 }
 
 export type DayHabitScore = {
@@ -77,7 +93,7 @@ export type DayHabitScore = {
 };
 
 export function scoreDayHabits(entry: DailyExecutionDayEntry, items: ExecutionDailyItemDef[], dateKey: string): DayHabitScore {
-  const applicable = applicableExecutionItems(items, dateKey);
+  const applicable = applicableExecutionItems(items, dateKey, entry);
   let atTarget = 0;
   let withProgress = 0;
   for (const item of applicable) {
