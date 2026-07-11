@@ -1,8 +1,11 @@
 "use server";
 
+/**
+ * Onboarding server actions. Use `authedFetch` from `@/lib/authed-fetch` for every
+ * backend call — it handles auth cookies, Bearer vs Token scheme, and coach act-as.
+ */
 import type { OnboardingEducation, OnboardingExperience, OnboardingProject } from "@/features/onboarding/types";
 import { authedFetch } from "@/lib/authed-fetch";
-import { cookies } from "next/headers";
 
 export type OnboardingSavedProfile = {
   educations: OnboardingEducation[];
@@ -48,6 +51,10 @@ function asSkillArray(value: unknown): string[] {
   return value.filter((item): item is string => typeof item === "string" && item.trim().length > 0);
 }
 
+function isUnauthorizedError(error: unknown): boolean {
+  return error instanceof Error && error.message === "Unauthorized";
+}
+
 export type OnboardingCheckpoints = {
   name: string;
   preferred_name: string;
@@ -91,26 +98,8 @@ export const getUserOnboardingState = async (checkpoints: OnboardingCheckpoints)
   return "RETURNING_USER";
 };
 
-const BACKEND_URL = process.env.NEXT_PUBLIC_BACKEND_URL ?? "";
-
-async function getAccessToken() {
-  const cookieStore = await cookies();
-  const token = cookieStore.get("_ut");
-  return token?.value ?? null;
-}
-
 export async function fetchOnboardingCheckpoints(): Promise<OnboardingCheckpoints> {
-  const accessToken = await getAccessToken();
-  if (!accessToken) throw new Error("Unauthorized");
-
-  const response = await fetch(`${BACKEND_URL}/api/onboarding/checkpoints`, {
-    method: "GET",
-    headers: {
-      Authorization: `Bearer ${accessToken}`,
-      "Content-Type": "application/json",
-    },
-    cache: "no-store",
-  });
+  const response = await authedFetch("/api/onboarding/checkpoints", { method: "GET" });
 
   if (!response.ok) {
     let message = "Failed to load onboarding check data";
@@ -128,17 +117,7 @@ export async function fetchOnboardingCheckpoints(): Promise<OnboardingCheckpoint
 
 /** Load saved profile sections for onboarding forms (education, experience, etc.). */
 export async function fetchOnboardingSavedProfile(): Promise<OnboardingSavedProfile> {
-  const accessToken = await getAccessToken();
-  if (!accessToken) throw new Error("Unauthorized");
-
-  const response = await fetch(`${BACKEND_URL}/api/user-data/`, {
-    method: "GET",
-    headers: {
-      Authorization: `Bearer ${accessToken}`,
-      "Content-Type": "application/json",
-    },
-    cache: "no-store",
-  });
+  const response = await authedFetch("/api/user-data/", { method: "GET" });
 
   if (!response.ok) throw new Error("Failed to load saved profile data");
 
@@ -158,15 +137,13 @@ export async function fetchOnboardingSavedProfile(): Promise<OnboardingSavedProf
 export async function getMinimalOnboardingGateState(): Promise<
   { kind: "unauthenticated" } | { kind: "complete" } | { kind: "incomplete"; userState: OnboardingUserState }
 > {
-  const accessToken = await getAccessToken();
-  if (!accessToken) return { kind: "unauthenticated" };
-
   try {
     const checkpoints = await fetchOnboardingCheckpoints();
     if (checkpoints.phone_number) return { kind: "complete" };
     const userState = await getUserOnboardingState(checkpoints);
     return { kind: "incomplete", userState };
-  } catch {
+  } catch (error) {
+    if (isUnauthorizedError(error)) return { kind: "unauthenticated" };
     return { kind: "complete" };
   }
 }
@@ -175,28 +152,20 @@ export async function getMinimalOnboardingGateState(): Promise<
 export async function getOnboardingGateState(): Promise<
   { kind: "unauthenticated" } | { kind: "complete" } | { kind: "incomplete"; userState: OnboardingUserState }
 > {
-  const accessToken = await getAccessToken();
-  if (!accessToken) return { kind: "unauthenticated" };
-
   try {
     const checkpoints = await fetchOnboardingCheckpoints();
     const userState = await getUserOnboardingState(checkpoints);
     if (userState === "COMPLETED") return { kind: "complete" };
     return { kind: "incomplete", userState };
-  } catch {
+  } catch (error) {
+    if (isUnauthorizedError(error)) return { kind: "unauthenticated" };
     return { kind: "complete" };
   }
 }
 
 export async function extractResume(formData: FormData) {
-  const accessToken = await getAccessToken();
-  if (!accessToken) throw new Error("Unauthorized");
-
-  const response = await fetch(`${BACKEND_URL}/api/extract-resume-data/`, {
+  const response = await authedFetch("/api/extract-resume-data/", {
     method: "POST",
-    headers: {
-      Authorization: `Bearer ${accessToken}`,
-    },
     body: formData,
   });
 
@@ -219,15 +188,8 @@ export type PersonalizedStrengthOption = {
 };
 
 export async function getPersonalizedStrengthOptions(trigger: string): Promise<PersonalizedStrengthOption[]> {
-  const accessToken = await getAccessToken();
-  if (!accessToken) throw new Error("Unauthorized");
-
-  const response = await fetch(`${BACKEND_URL}/api/onboarding/suggestions`, {
+  const response = await authedFetch("/api/onboarding/suggestions", {
     method: "POST",
-    headers: {
-      Authorization: `Bearer ${accessToken}`,
-      "Content-Type": "application/json",
-    },
     body: JSON.stringify({
       section_name: "onboarding_strength",
       trigger,
@@ -246,15 +208,8 @@ export async function getPersonalizedStrengthOptions(trigger: string): Promise<P
 }
 
 export const getSuggestions = async (sectionName: SuggestionType, input: Record<string, unknown> = {}): Promise<{ data: string[] }> => {
-  const accessToken = await getAccessToken();
-  if (!accessToken) throw new Error("Unauthorized");
-
-  const response = await fetch(`${BACKEND_URL}/api/onboarding/suggestions`, {
+  const response = await authedFetch("/api/onboarding/suggestions", {
     method: "POST",
-    headers: {
-      Authorization: `Bearer ${accessToken}`,
-      "Content-Type": "application/json",
-    },
     body: JSON.stringify({
       section_name: sectionName,
       ...input,
@@ -302,17 +257,9 @@ export type GroundedNicheResponse = {
 };
 
 export const getGroundedNicheSuggestions = async (): Promise<GroundedNicheResponse> => {
-  const accessToken = await getAccessToken();
-  if (!accessToken) throw new Error("Unauthorized");
-
-  const response = await fetch(`${BACKEND_URL}/api/onboarding/suggest-niche/`, {
+  const response = await authedFetch("/api/onboarding/suggest-niche/", {
     method: "POST",
-    headers: {
-      Authorization: `Bearer ${accessToken}`,
-      "Content-Type": "application/json",
-    },
     body: JSON.stringify({}),
-    cache: "no-store",
   });
 
   if (!response.ok) {
@@ -363,20 +310,12 @@ export const getNicheDiscoveryQuestions = async (
   rejectedSuggestions: GroundedNicheSuggestion[] = [],
   options?: { allowRerun?: boolean }
 ): Promise<{ questions: NicheDiscoveryQuestion[]; can_rerun?: boolean }> => {
-  const accessToken = await getAccessToken();
-  if (!accessToken) throw new Error("Unauthorized");
-
-  const response = await fetch(`${BACKEND_URL}/api/onboarding/niche-discovery/questions/`, {
+  const response = await authedFetch("/api/onboarding/niche-discovery/questions/", {
     method: "POST",
-    headers: {
-      Authorization: `Bearer ${accessToken}`,
-      "Content-Type": "application/json",
-    },
     body: JSON.stringify({
       rejected_suggestions: rejectedSuggestions,
       allow_rerun: options?.allowRerun ?? false,
     }),
-    cache: "no-store",
   });
 
   if (!response.ok) {
@@ -398,21 +337,13 @@ export const refineNicheDiscovery = async (
   rejectedSuggestions: GroundedNicheSuggestion[] = [],
   options?: { allowRerun?: boolean }
 ): Promise<GroundedNicheResponse & { niche_discovery?: NicheDiscoveryState }> => {
-  const accessToken = await getAccessToken();
-  if (!accessToken) throw new Error("Unauthorized");
-
-  const response = await fetch(`${BACKEND_URL}/api/onboarding/niche-discovery/refine/`, {
+  const response = await authedFetch("/api/onboarding/niche-discovery/refine/", {
     method: "POST",
-    headers: {
-      Authorization: `Bearer ${accessToken}`,
-      "Content-Type": "application/json",
-    },
     body: JSON.stringify({
       answers,
       rejected_suggestions: rejectedSuggestions,
       allow_rerun: options?.allowRerun ?? false,
     }),
-    cache: "no-store",
   });
 
   if (!response.ok) {

@@ -5,6 +5,8 @@ import { create } from "zustand";
 import type { ProfileBuilderValidationError } from "./profileBuilderEntryValidation";
 import { EMPTY_PROFILE, type ChatEngineState, type ProfileBuilderData, type ProfileChatMessage, type ProfileSection } from "./types";
 
+type HighlightedEntry = { section: ProfileSection; index: number } | null;
+
 type ProfileBuilderStore = {
   data: ProfileBuilderData;
   messages: ProfileChatMessage[];
@@ -13,12 +15,14 @@ type ProfileBuilderStore = {
   openSections: Record<ProfileSection, boolean>;
   isThinking: boolean;
   validationErrors: ProfileBuilderValidationError[];
+  highlightedEntry: HighlightedEntry;
   setThinking: (v: boolean) => void;
   setActiveSection: (section: ProfileSection) => void;
   toggleSection: (section: ProfileSection) => void;
   setOpenSection: (section: ProfileSection, open: boolean) => void;
   setValidationErrors: (errors: ProfileBuilderValidationError[]) => void;
   clearValidationErrors: () => void;
+  setHighlightedEntry: (entry: HighlightedEntry) => void;
   addMessage: (msg: Omit<ProfileChatMessage, "id" | "timestamp"> & { id?: string }) => void;
   setEngine: (patch: Partial<ChatEngineState>) => void;
   resetEngineDraft: (section: ProfileSection) => void;
@@ -47,6 +51,7 @@ export const useProfileBuilderStore = create<ProfileBuilderStore>((set, get) => 
   openSections: { education: true, experience: false, projects: false, skills: false },
   isThinking: false,
   validationErrors: [],
+  highlightedEntry: null,
   setThinking: isThinking => set({ isThinking }),
   setActiveSection: activeSection => set({ activeSection }),
   toggleSection: section =>
@@ -58,7 +63,8 @@ export const useProfileBuilderStore = create<ProfileBuilderStore>((set, get) => 
       openSections: { ...state.openSections, [section]: open },
     })),
   setValidationErrors: validationErrors => set({ validationErrors }),
-  clearValidationErrors: () => set({ validationErrors: [] }),
+  clearValidationErrors: () => set({ validationErrors: [], highlightedEntry: null }),
+  setHighlightedEntry: highlightedEntry => set({ highlightedEntry }),
   addMessage: msg =>
     set(state => ({
       messages: [
@@ -120,5 +126,6 @@ export const useProfileBuilderStore = create<ProfileBuilderStore>((set, get) => 
       openSections: { education: true, experience: false, projects: false, skills: false },
       isThinking: false,
       validationErrors: [],
+      highlightedEntry: null,
     }),
 }));

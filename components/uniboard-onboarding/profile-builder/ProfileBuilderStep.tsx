@@ -31,6 +31,7 @@ export default function ProfileBuilderStep({
   const clearValidationErrors = useProfileBuilderStore(s => s.clearValidationErrors);
   const setActiveSection = useProfileBuilderStore(s => s.setActiveSection);
   const setOpenSection = useProfileBuilderStore(s => s.setOpenSection);
+  const setHighlightedEntry = useProfileBuilderStore(s => s.setHighlightedEntry);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
@@ -47,6 +48,7 @@ export default function ProfileBuilderStep({
       setError(first.message);
       setActiveSection(first.section);
       setOpenSection(first.section, true);
+      setHighlightedEntry(first.index !== undefined ? { section: first.section, index: first.index } : null);
       return;
     }
 

@@ -107,10 +107,20 @@ function EducationEditor() {
   const educations = useProfileBuilderStore(s => s.data.educations);
   const setEducations = useProfileBuilderStore(s => s.setEducations);
   const validationErrors = useProfileBuilderStore(s => s.validationErrors);
+  const highlightedEntry = useProfileBuilderStore(s => s.highlightedEntry);
   const [openKey, setOpenKey] = useState<OpenKey>(null);
   const [draft, setDraft] = useState<OnboardingEducation>(emptyEducation());
 
   const { suggestions, loading } = useProfileSuggestions("onboarding_education", draft.course);
+
+  const highlightKey =
+    highlightedEntry?.section === "education" &&
+    highlightedEntry.index !== undefined &&
+    highlightedEntry.index >= 0 &&
+    highlightedEntry.index < educations.length
+      ? `edu-${highlightedEntry.index}`
+      : null;
+  const activeKey = openKey ?? highlightKey;
 
   useLiveDraftSync(openKey, draft);
 
@@ -135,26 +145,39 @@ function EducationEditor() {
   return (
     <EditorShell>
       <SectionError message={sectionLevelError(validationErrors, "education")} />
-      {educations.map((edu, idx) => (
-        <CollapsibleEntry
-          key={`edu-${idx}`}
-          title={
-            edu.course.trim() || edu.institution.trim() ? `${edu.course || "Course"} · ${edu.institution || "University"}` : "New education"
-          }
-          subtitle={[formatDateRange(edu.startDate, edu.endDate), edu.courseWork].filter(Boolean).join(" · ")}
-          open={openKey === `edu-${idx}`}
-          onToggle={() => (openKey === `edu-${idx}` ? setOpenKey(null) : openEdit(idx))}
-          onRemove={() => remove(idx)}
-        >
-          <EducationForm
-            draft={draft}
-            setDraft={setDraft}
-            suggestions={suggestions}
-            suggestionsLoading={loading}
-            fieldErrors={fieldErrorsForEntry(validationErrors, "education", idx)}
-          />
-        </CollapsibleEntry>
-      ))}
+      {educations.map((edu, idx) => {
+        const entryKey = `edu-${idx}`;
+        const isOpen = activeKey === entryKey;
+        const rowDraft = isOpen && openKey === entryKey ? draft : edu;
+        return (
+          <CollapsibleEntry
+            key={entryKey}
+            title={
+              edu.course.trim() || edu.institution.trim()
+                ? `${edu.course || "Course"} · ${edu.institution || "University"}`
+                : "New education"
+            }
+            subtitle={[formatDateRange(edu.startDate, edu.endDate), edu.courseWork].filter(Boolean).join(" · ")}
+            open={isOpen}
+            onToggle={() => (isOpen ? setOpenKey(null) : openEdit(idx))}
+            onRemove={() => remove(idx)}
+          >
+            <EducationForm
+              draft={rowDraft}
+              setDraft={v => {
+                if (openKey !== entryKey) {
+                  setDraft({ ...edu });
+                  setOpenKey(entryKey);
+                }
+                setDraft(v);
+              }}
+              suggestions={suggestions}
+              suggestionsLoading={loading}
+              fieldErrors={fieldErrorsForEntry(validationErrors, "education", idx)}
+            />
+          </CollapsibleEntry>
+        );
+      })}
 
       <AddButton onClick={openNew} label="Add education" />
     </EditorShell>
@@ -226,10 +249,20 @@ function ExperienceEditor() {
   const markExperienceSkipped = useProfileBuilderStore(s => s.markExperienceSkipped);
   const experienceSkipped = useProfileBuilderStore(s => s.data.experienceSkipped);
   const validationErrors = useProfileBuilderStore(s => s.validationErrors);
+  const highlightedEntry = useProfileBuilderStore(s => s.highlightedEntry);
   const [openKey, setOpenKey] = useState<OpenKey>(null);
   const [draft, setDraft] = useState(emptyExperience());
 
   const { suggestions, loading } = useProfileSuggestions("onboarding_experience", draft.role);
+
+  const highlightKey =
+    highlightedEntry?.section === "experience" &&
+    highlightedEntry.index !== undefined &&
+    highlightedEntry.index >= 0 &&
+    highlightedEntry.index < experiences.length
+      ? `exp-${highlightedEntry.index}`
+      : null;
+  const activeKey = openKey ?? highlightKey;
 
   useLiveDraftSync(openKey, draft);
 
@@ -257,27 +290,55 @@ function ExperienceEditor() {
     <EditorShell>
       <SectionError message={sectionLevelError(validationErrors, "experience")} />
       {experienceSkipped ? <p className="text-xs text-[#4A5568]">Marked as fresher (no experience).</p> : null}
-      {experiences.map((exp, idx) => (
-        <CollapsibleEntry
-          key={`exp-${idx}`}
-          title={exp.role.trim() || exp.organisation.trim() ? `${exp.role || "Role"} · ${exp.organisation || "Company"}` : "New experience"}
-          subtitle={[formatDateRange(exp.startDate, exp.endDate), exp.descriptions[0]].filter(Boolean).join(" · ")}
-          open={openKey === `exp-${idx}`}
-          onToggle={() => (openKey === `exp-${idx}` ? setOpenKey(null) : openEdit(idx))}
-          onRemove={() => {
-            setExperiences(experiences.filter((_, i) => i !== idx));
-            if (openKey === `exp-${idx}`) setOpenKey(null);
-          }}
-        >
-          <ExperienceForm
-            draft={draft}
-            setDraft={setDraft}
-            suggestions={suggestions}
-            suggestionsLoading={loading}
-            fieldErrors={fieldErrorsForEntry(validationErrors, "experience", idx)}
-          />
-        </CollapsibleEntry>
-      ))}
+      {experiences.map((exp, idx) => {
+        const entryKey = `exp-${idx}`;
+        const isOpen = activeKey === entryKey;
+        const rowDraft =
+          isOpen && openKey === entryKey
+            ? draft
+            : {
+                organisation: exp.organisation,
+                role: exp.role,
+                startDate: exp.startDate,
+                endDate: exp.endDate,
+                descriptions: exp.descriptions.join("\n"),
+              };
+        return (
+          <CollapsibleEntry
+            key={entryKey}
+            title={
+              exp.role.trim() || exp.organisation.trim() ? `${exp.role || "Role"} · ${exp.organisation || "Company"}` : "New experience"
+            }
+            subtitle={[formatDateRange(exp.startDate, exp.endDate), exp.descriptions[0]].filter(Boolean).join(" · ")}
+            open={isOpen}
+            onToggle={() => (isOpen ? setOpenKey(null) : openEdit(idx))}
+            onRemove={() => {
+              setExperiences(experiences.filter((_, i) => i !== idx));
+              if (openKey === entryKey) setOpenKey(null);
+            }}
+          >
+            <ExperienceForm
+              draft={rowDraft}
+              setDraft={v => {
+                if (openKey !== entryKey) {
+                  setDraft({
+                    organisation: exp.organisation,
+                    role: exp.role,
+                    startDate: exp.startDate,
+                    endDate: exp.endDate,
+                    descriptions: exp.descriptions.join("\n"),
+                  });
+                  setOpenKey(entryKey);
+                }
+                setDraft(v);
+              }}
+              suggestions={suggestions}
+              suggestionsLoading={loading}
+              fieldErrors={fieldErrorsForEntry(validationErrors, "experience", idx)}
+            />
+          </CollapsibleEntry>
+        );
+      })}
 
       <div className="flex flex-wrap gap-2">
         <AddButton onClick={openNew} label="Add experience" />
@@ -360,11 +421,21 @@ function ProjectsEditor() {
   const experienceSkipped = useProfileBuilderStore(s => s.data.experienceSkipped);
   const projectsSkipped = useProfileBuilderStore(s => s.data.projectsSkipped);
   const validationErrors = useProfileBuilderStore(s => s.validationErrors);
+  const highlightedEntry = useProfileBuilderStore(s => s.highlightedEntry);
   const needsProject = experiences.length === 0 || experienceSkipped;
   const [openKey, setOpenKey] = useState<OpenKey>(null);
   const [draft, setDraft] = useState(emptyProject());
 
   const { suggestions, loading } = useProfileSuggestions("onboarding_project", draft.name);
+
+  const highlightKey =
+    highlightedEntry?.section === "projects" &&
+    highlightedEntry.index !== undefined &&
+    highlightedEntry.index >= 0 &&
+    highlightedEntry.index < projects.length
+      ? `proj-${highlightedEntry.index}`
+      : null;
+  const activeKey = openKey ?? highlightKey;
 
   useLiveDraftSync(openKey, draft);
 
@@ -393,27 +464,39 @@ function ProjectsEditor() {
           No formal projects yet? Ask Unibot for ideas — capstone work, coursework, hackathons, and personal builds all count.
         </p>
       ) : null}
-      {projects.map((proj, idx) => (
-        <CollapsibleEntry
-          key={`proj-${idx}`}
-          title={proj.name.trim() || "New project"}
-          subtitle={proj.descriptions[0]}
-          open={openKey === `proj-${idx}`}
-          onToggle={() => (openKey === `proj-${idx}` ? setOpenKey(null) : openEdit(idx))}
-          onRemove={() => {
-            setProjects(projects.filter((_, i) => i !== idx));
-            if (openKey === `proj-${idx}`) setOpenKey(null);
-          }}
-        >
-          <ProjectForm
-            draft={draft}
-            setDraft={setDraft}
-            suggestions={suggestions}
-            suggestionsLoading={loading}
-            fieldErrors={fieldErrorsForEntry(validationErrors, "projects", idx)}
-          />
-        </CollapsibleEntry>
-      ))}
+      {projects.map((proj, idx) => {
+        const entryKey = `proj-${idx}`;
+        const isOpen = activeKey === entryKey;
+        const rowDraft =
+          isOpen && openKey === entryKey ? draft : { name: proj.name, link: proj.link ?? "", descriptions: proj.descriptions.join("\n") };
+        return (
+          <CollapsibleEntry
+            key={entryKey}
+            title={proj.name.trim() || "New project"}
+            subtitle={proj.descriptions[0]}
+            open={isOpen}
+            onToggle={() => (isOpen ? setOpenKey(null) : openEdit(idx))}
+            onRemove={() => {
+              setProjects(projects.filter((_, i) => i !== idx));
+              if (openKey === entryKey) setOpenKey(null);
+            }}
+          >
+            <ProjectForm
+              draft={rowDraft}
+              setDraft={v => {
+                if (openKey !== entryKey) {
+                  setDraft({ name: proj.name, link: proj.link ?? "", descriptions: proj.descriptions.join("\n") });
+                  setOpenKey(entryKey);
+                }
+                setDraft(v);
+              }}
+              suggestions={suggestions}
+              suggestionsLoading={loading}
+              fieldErrors={fieldErrorsForEntry(validationErrors, "projects", idx)}
+            />
+          </CollapsibleEntry>
+        );
+      })}
 
       <div className="flex flex-wrap gap-2">
         <AddButton onClick={openNew} label="Add project" />
