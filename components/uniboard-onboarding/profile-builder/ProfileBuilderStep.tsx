@@ -7,7 +7,7 @@ import { saveOnboardingData } from "@/lib/actions/onboardingActions";
 import { ArrowLeft, Loader2 } from "lucide-react";
 import ProfileBuilderChatPanel from "./ProfileBuilderChatPanel";
 import ProfileBuilderSectionsPanel from "./ProfileBuilderSectionsPanel";
-import { isProfileBuilderComplete, profileBuilderValidationError } from "./profileBuilderEngine";
+import { isProfileBuilderComplete, profileBuilderValidationErrors } from "./profileBuilderEngine";
 import { useProfileBuilderStore } from "./useProfileBuilderStore";
 
 type ProfileBuilderStepProps = {
@@ -27,6 +27,10 @@ export default function ProfileBuilderStep({
 }: ProfileBuilderStepProps) {
   const data = useProfileBuilderStore(s => s.data);
   const reset = useProfileBuilderStore(s => s.reset);
+  const setValidationErrors = useProfileBuilderStore(s => s.setValidationErrors);
+  const clearValidationErrors = useProfileBuilderStore(s => s.clearValidationErrors);
+  const setActiveSection = useProfileBuilderStore(s => s.setActiveSection);
+  const setOpenSection = useProfileBuilderStore(s => s.setOpenSection);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
@@ -36,11 +40,16 @@ export default function ProfileBuilderStep({
   }, [reset]);
 
   const handleContinue = async () => {
-    const validationError = profileBuilderValidationError(data);
-    if (validationError) {
-      setError(validationError);
+    const errors = profileBuilderValidationErrors(data);
+    if (errors.length > 0) {
+      const first = errors[0];
+      setValidationErrors(errors);
+      setError(first.message);
+      setActiveSection(first.section);
+      setOpenSection(first.section, true);
       return;
     }
+
     if (!isProfileBuilderComplete(data)) {
       setError("Please complete all required sections.");
       return;
@@ -48,6 +57,7 @@ export default function ProfileBuilderStep({
 
     setBusy(true);
     setError(null);
+    clearValidationErrors();
     try {
       if (!skipSave) {
         await saveOnboardingData("educations", { educations: data.educations });

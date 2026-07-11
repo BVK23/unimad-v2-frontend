@@ -1,6 +1,7 @@
 "use server";
 
 import type { OnboardingEducation, OnboardingExperience, OnboardingProject } from "@/features/onboarding/types";
+import { authedFetch } from "@/lib/authed-fetch";
 import { cookies } from "next/headers";
 
 export type OnboardingSavedProfile = {
@@ -429,15 +430,8 @@ export const refineNicheDiscovery = async (
 };
 
 export const saveOnboardingData = async (type: OnboardingSaveType, data: Record<string, unknown>) => {
-  const accessToken = await getAccessToken();
-  if (!accessToken) throw new Error("Unauthorized");
-
-  const response = await fetch(`${BACKEND_URL}/api/onboarding/save-data`, {
+  const response = await authedFetch("/api/onboarding/save-data", {
     method: "POST",
-    headers: {
-      Authorization: `Bearer ${accessToken}`,
-      "Content-Type": "application/json",
-    },
     body: JSON.stringify({ type, ...data }),
   });
 

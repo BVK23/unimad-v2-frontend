@@ -123,13 +123,18 @@ export function CollapsibleEntry({ title, subtitle, open, onToggle, onRemove, ch
 export const inputClass =
   "w-full rounded-[10px] border border-[rgba(12,15,26,0.12)] bg-white px-3 py-2 text-sm text-[#0C0F1A] placeholder:text-[#A9B4C2] focus:border-[#346DE0] focus:outline-none focus:ring-2 focus:ring-[#346DE0]/15";
 
-export function Field({ label, children }: { label: string; children: React.ReactNode }) {
+export function Field({ label, children, error }: { label: string; children: React.ReactNode; error?: string }) {
   return (
     <label className="flex flex-col gap-1">
       <span className="text-[11px] font-medium uppercase tracking-wide text-[#A9B4C2]">{label}</span>
       {children}
+      {error ? <span className="text-[11px] text-red-600">{error}</span> : null}
     </label>
   );
+}
+
+export function fieldInputClass(hasError?: boolean) {
+  return `${inputClass}${hasError ? " border-red-400 focus:border-red-500 focus:ring-red-500/15" : ""}`;
 }
 
 export function formatDateRange(startDate: string, endDate: string): string {

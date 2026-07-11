@@ -1,4 +1,9 @@
 import type { OnboardingEducation, OnboardingExperience, OnboardingProject } from "@/features/onboarding/types";
+import {
+  formatProfileBuilderValidationError,
+  validateProfileBuilderData,
+  type ProfileBuilderValidationError,
+} from "./profileBuilderEntryValidation";
 import type { ChatEngineState, ProfileBuilderData, ProfileSection } from "./types";
 
 const delay = (ms: number) => new Promise<void>(resolve => setTimeout(resolve, ms));
@@ -339,11 +344,12 @@ export function isProfileBuilderComplete(data: ProfileBuilderData): boolean {
   return profileBuilderValidationError(data) === null;
 }
 
+export function profileBuilderValidationErrors(data: ProfileBuilderData): ProfileBuilderValidationError[] {
+  return validateProfileBuilderData(data);
+}
+
 export function profileBuilderValidationError(data: ProfileBuilderData): string | null {
-  if (data.educations.length < 1) return "Add at least one education entry.";
-  if (data.experiences.length < 1 && !data.experienceSkipped) return "Add experience or mark yourself as a fresher.";
-  const needsProject = data.experiences.length === 0 || data.experienceSkipped;
-  if (needsProject && data.projects.length < 1) return "Add at least one project or internship.";
-  if (data.skills.length < 3) return "Add at least 3 skills.";
-  return null;
+  const errors = validateProfileBuilderData(data);
+  if (errors.length === 0) return null;
+  return formatProfileBuilderValidationError(errors[0]);
 }

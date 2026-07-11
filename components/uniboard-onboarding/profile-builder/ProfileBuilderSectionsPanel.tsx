@@ -5,8 +5,9 @@ import MonthYearInput from "@/components/onboarding/shared/MonthYearInput";
 import type { OnboardingEducation, OnboardingExperience, OnboardingProject } from "@/features/onboarding/types";
 import { getSuggestions } from "@/lib/actions/onboardingActions";
 import { ChevronDown, Plus, X } from "lucide-react";
-import { CollapsibleEntry, Field, formatDateRange, inputClass } from "./CollapsibleEntry";
+import { CollapsibleEntry, Field, fieldInputClass, formatDateRange, inputClass } from "./CollapsibleEntry";
 import SuggestionPills from "./SuggestionPills";
+import { fieldErrorsForEntry } from "./profileBuilderEntryValidation";
 import type { ProfileSection } from "./types";
 import { useOnboardingSuggestionsStore } from "./useOnboardingSuggestionsStore";
 import { useProfileBuilderStore } from "./useProfileBuilderStore";
@@ -78,6 +79,22 @@ export default function ProfileBuilderSectionsPanel() {
   );
 }
 
+function SectionError({ message }: { message?: string }) {
+  if (!message) return null;
+  return (
+    <p className="rounded-lg bg-red-50 px-3 py-2 text-xs text-red-700" role="alert">
+      {message}
+    </p>
+  );
+}
+
+function sectionLevelError(
+  errors: ReturnType<typeof useProfileBuilderStore.getState>["validationErrors"],
+  section: ProfileSection
+): string | undefined {
+  return errors.find(e => e.section === section && e.index === undefined)?.message;
+}
+
 function sectionCount(data: ReturnType<typeof useProfileBuilderStore.getState>["data"], section: ProfileSection): number {
   if (section === "education") return data.educations.length;
   if (section === "experience") return data.experiences.length;
@@ -89,6 +106,7 @@ function sectionCount(data: ReturnType<typeof useProfileBuilderStore.getState>["
 function EducationEditor() {
   const educations = useProfileBuilderStore(s => s.data.educations);
   const setEducations = useProfileBuilderStore(s => s.setEducations);
+  const validationErrors = useProfileBuilderStore(s => s.validationErrors);
   const [openKey, setOpenKey] = useState<OpenKey>(null);
   const [draft, setDraft] = useState<OnboardingEducation>(emptyEducation());
 
@@ -116,6 +134,7 @@ function EducationEditor() {
 
   return (
     <EditorShell>
+      <SectionError message={sectionLevelError(validationErrors, "education")} />
       {educations.map((edu, idx) => (
         <CollapsibleEntry
           key={`edu-${idx}`}
@@ -127,7 +146,13 @@ function EducationEditor() {
           onToggle={() => (openKey === `edu-${idx}` ? setOpenKey(null) : openEdit(idx))}
           onRemove={() => remove(idx)}
         >
-          <EducationForm draft={draft} setDraft={setDraft} suggestions={suggestions} suggestionsLoading={loading} />
+          <EducationForm
+            draft={draft}
+            setDraft={setDraft}
+            suggestions={suggestions}
+            suggestionsLoading={loading}
+            fieldErrors={fieldErrorsForEntry(validationErrors, "education", idx)}
+          />
         </CollapsibleEntry>
       ))}
 
@@ -141,41 +166,43 @@ function EducationForm({
   setDraft,
   suggestions,
   suggestionsLoading,
+  fieldErrors,
 }: {
   draft: OnboardingEducation;
   setDraft: (v: OnboardingEducation) => void;
   suggestions: string[];
   suggestionsLoading: boolean;
+  fieldErrors: Record<string, string>;
 }) {
   return (
     <div className="flex flex-col gap-3">
-      <Field label="University">
+      <Field label="University" error={fieldErrors.institution}>
         <input
-          className={inputClass}
+          className={fieldInputClass(Boolean(fieldErrors.institution))}
           value={draft.institution}
           onChange={e => setDraft({ ...draft, institution: e.target.value })}
           placeholder="University name"
         />
       </Field>
-      <Field label="Course">
+      <Field label="Course" error={fieldErrors.course}>
         <input
-          className={inputClass}
+          className={fieldInputClass(Boolean(fieldErrors.course))}
           value={draft.course}
           onChange={e => setDraft({ ...draft, course: e.target.value })}
           placeholder="Degree or course"
         />
       </Field>
       <div className="grid grid-cols-2 gap-2">
-        <Field label="Start">
+        <Field label="Start" error={fieldErrors.startDate}>
           <MonthYearInput value={draft.startDate} onChange={v => setDraft({ ...draft, startDate: v })} placeholder="Start" />
         </Field>
-        <Field label="End">
+        <Field label="End" error={fieldErrors.endDate}>
           <MonthYearInput value={draft.endDate} onChange={v => setDraft({ ...draft, endDate: v })} placeholder="End" showPresentOption />
         </Field>
       </div>
-      <Field label="Coursework">
+      <Field label="Coursework" error={fieldErrors.courseWork}>
         <textarea
-          className={`${inputClass} min-h-[72px] resize-y`}
+          className={`${fieldInputClass(Boolean(fieldErrors.courseWork))} min-h-[72px] resize-y`}
           value={draft.courseWork}
           onChange={e => setDraft({ ...draft, courseWork: e.target.value })}
           placeholder="Key subjects or coursework"
@@ -198,6 +225,7 @@ function ExperienceEditor() {
   const setExperiences = useProfileBuilderStore(s => s.setExperiences);
   const markExperienceSkipped = useProfileBuilderStore(s => s.markExperienceSkipped);
   const experienceSkipped = useProfileBuilderStore(s => s.data.experienceSkipped);
+  const validationErrors = useProfileBuilderStore(s => s.validationErrors);
   const [openKey, setOpenKey] = useState<OpenKey>(null);
   const [draft, setDraft] = useState(emptyExperience());
 
@@ -227,6 +255,7 @@ function ExperienceEditor() {
 
   return (
     <EditorShell>
+      <SectionError message={sectionLevelError(validationErrors, "experience")} />
       {experienceSkipped ? <p className="text-xs text-[#4A5568]">Marked as fresher (no experience).</p> : null}
       {experiences.map((exp, idx) => (
         <CollapsibleEntry
@@ -240,7 +269,13 @@ function ExperienceEditor() {
             if (openKey === `exp-${idx}`) setOpenKey(null);
           }}
         >
-          <ExperienceForm draft={draft} setDraft={setDraft} suggestions={suggestions} suggestionsLoading={loading} />
+          <ExperienceForm
+            draft={draft}
+            setDraft={setDraft}
+            suggestions={suggestions}
+            suggestionsLoading={loading}
+            fieldErrors={fieldErrorsForEntry(validationErrors, "experience", idx)}
+          />
         </CollapsibleEntry>
       ))}
 
@@ -263,41 +298,43 @@ function ExperienceForm({
   setDraft,
   suggestions,
   suggestionsLoading,
+  fieldErrors,
 }: {
   draft: ReturnType<typeof emptyExperience>;
   setDraft: (v: ReturnType<typeof emptyExperience>) => void;
   suggestions: string[];
   suggestionsLoading: boolean;
+  fieldErrors: Record<string, string>;
 }) {
   return (
     <div className="flex flex-col gap-3">
-      <Field label="Company">
+      <Field label="Company" error={fieldErrors.organisation}>
         <input
-          className={inputClass}
+          className={fieldInputClass(Boolean(fieldErrors.organisation))}
           value={draft.organisation}
           onChange={e => setDraft({ ...draft, organisation: e.target.value })}
           placeholder="Company name"
         />
       </Field>
-      <Field label="Role">
+      <Field label="Role" error={fieldErrors.role}>
         <input
-          className={inputClass}
+          className={fieldInputClass(Boolean(fieldErrors.role))}
           value={draft.role}
           onChange={e => setDraft({ ...draft, role: e.target.value })}
           placeholder="Job title"
         />
       </Field>
       <div className="grid grid-cols-2 gap-2">
-        <Field label="Start">
+        <Field label="Start" error={fieldErrors.startDate}>
           <MonthYearInput value={draft.startDate} onChange={v => setDraft({ ...draft, startDate: v })} />
         </Field>
-        <Field label="End">
+        <Field label="End" error={fieldErrors.endDate}>
           <MonthYearInput value={draft.endDate} onChange={v => setDraft({ ...draft, endDate: v })} showPresentOption />
         </Field>
       </div>
-      <Field label="Description">
+      <Field label="Description" error={fieldErrors.descriptions}>
         <textarea
-          className={`${inputClass} min-h-[72px] resize-y`}
+          className={`${fieldInputClass(Boolean(fieldErrors.descriptions))} min-h-[72px] resize-y`}
           value={draft.descriptions}
           onChange={e => setDraft({ ...draft, descriptions: e.target.value })}
           placeholder="What you did (one point per line)"
@@ -322,6 +359,7 @@ function ProjectsEditor() {
   const experiences = useProfileBuilderStore(s => s.data.experiences);
   const experienceSkipped = useProfileBuilderStore(s => s.data.experienceSkipped);
   const projectsSkipped = useProfileBuilderStore(s => s.data.projectsSkipped);
+  const validationErrors = useProfileBuilderStore(s => s.validationErrors);
   const needsProject = experiences.length === 0 || experienceSkipped;
   const [openKey, setOpenKey] = useState<OpenKey>(null);
   const [draft, setDraft] = useState(emptyProject());
@@ -346,8 +384,14 @@ function ProjectsEditor() {
 
   return (
     <EditorShell>
+      <SectionError message={sectionLevelError(validationErrors, "projects")} />
       {projectsSkipped && !needsProject ? (
         <p className="text-xs text-[#4A5568]">Projects skipped. Add one anytime if you change your mind.</p>
+      ) : null}
+      {needsProject && projects.length === 0 ? (
+        <p className="text-xs text-[#4A5568]">
+          No formal projects yet? Ask Unibot for ideas — capstone work, coursework, hackathons, and personal builds all count.
+        </p>
       ) : null}
       {projects.map((proj, idx) => (
         <CollapsibleEntry
@@ -361,7 +405,13 @@ function ProjectsEditor() {
             if (openKey === `proj-${idx}`) setOpenKey(null);
           }}
         >
-          <ProjectForm draft={draft} setDraft={setDraft} suggestions={suggestions} suggestionsLoading={loading} />
+          <ProjectForm
+            draft={draft}
+            setDraft={setDraft}
+            suggestions={suggestions}
+            suggestionsLoading={loading}
+            fieldErrors={fieldErrorsForEntry(validationErrors, "projects", idx)}
+          />
         </CollapsibleEntry>
       ))}
 
@@ -388,33 +438,35 @@ function ProjectForm({
   setDraft,
   suggestions,
   suggestionsLoading,
+  fieldErrors,
 }: {
   draft: ReturnType<typeof emptyProject>;
   setDraft: (v: ReturnType<typeof emptyProject>) => void;
   suggestions: string[];
   suggestionsLoading: boolean;
+  fieldErrors: Record<string, string>;
 }) {
   return (
     <div className="flex flex-col gap-3">
-      <Field label="Project name">
+      <Field label="Project name" error={fieldErrors.name}>
         <input
-          className={inputClass}
+          className={fieldInputClass(Boolean(fieldErrors.name))}
           value={draft.name}
           onChange={e => setDraft({ ...draft, name: e.target.value })}
           placeholder="Project or internship"
         />
       </Field>
-      <Field label="Link (optional)">
+      <Field label="Link (optional)" error={fieldErrors.link}>
         <input
-          className={inputClass}
+          className={fieldInputClass(Boolean(fieldErrors.link))}
           value={draft.link}
           onChange={e => setDraft({ ...draft, link: e.target.value })}
           placeholder="https://…"
         />
       </Field>
-      <Field label="Description">
+      <Field label="Description" error={fieldErrors.descriptions}>
         <textarea
-          className={`${inputClass} min-h-[72px] resize-y`}
+          className={`${fieldInputClass(Boolean(fieldErrors.descriptions))} min-h-[72px] resize-y`}
           value={draft.descriptions}
           onChange={e => setDraft({ ...draft, descriptions: e.target.value })}
           placeholder="What you built or learned"
@@ -437,6 +489,7 @@ function SkillsEditor() {
   const setSkills = useProfileBuilderStore(s => s.setSkills);
   const educations = useProfileBuilderStore(s => s.data.educations);
   const experiences = useProfileBuilderStore(s => s.data.experiences);
+  const validationErrors = useProfileBuilderStore(s => s.validationErrors);
   const getCached = useOnboardingSuggestionsStore(s => s.getCached);
   const setCached = useOnboardingSuggestionsStore(s => s.setCached);
   const [manual, setManual] = useState("");
@@ -492,6 +545,7 @@ function SkillsEditor() {
 
   return (
     <EditorShell>
+      <SectionError message={sectionLevelError(validationErrors, "skills")} />
       <div className="flex flex-wrap gap-1.5">
         {skills.map(skill => (
           <span key={skill} className="inline-flex items-center gap-1 rounded-full bg-[#F0F6FE] px-2.5 py-1 text-xs text-[#346DE0]">

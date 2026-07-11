@@ -2,6 +2,7 @@
 
 import type { OnboardingEducation, OnboardingExperience, OnboardingProject } from "@/features/onboarding/types";
 import { create } from "zustand";
+import type { ProfileBuilderValidationError } from "./profileBuilderEntryValidation";
 import { EMPTY_PROFILE, type ChatEngineState, type ProfileBuilderData, type ProfileChatMessage, type ProfileSection } from "./types";
 
 type ProfileBuilderStore = {
@@ -11,10 +12,13 @@ type ProfileBuilderStore = {
   activeSection: ProfileSection;
   openSections: Record<ProfileSection, boolean>;
   isThinking: boolean;
+  validationErrors: ProfileBuilderValidationError[];
   setThinking: (v: boolean) => void;
   setActiveSection: (section: ProfileSection) => void;
   toggleSection: (section: ProfileSection) => void;
   setOpenSection: (section: ProfileSection, open: boolean) => void;
+  setValidationErrors: (errors: ProfileBuilderValidationError[]) => void;
+  clearValidationErrors: () => void;
   addMessage: (msg: Omit<ProfileChatMessage, "id" | "timestamp"> & { id?: string }) => void;
   setEngine: (patch: Partial<ChatEngineState>) => void;
   resetEngineDraft: (section: ProfileSection) => void;
@@ -42,6 +46,7 @@ export const useProfileBuilderStore = create<ProfileBuilderStore>((set, get) => 
   activeSection: "education",
   openSections: { education: true, experience: false, projects: false, skills: false },
   isThinking: false,
+  validationErrors: [],
   setThinking: isThinking => set({ isThinking }),
   setActiveSection: activeSection => set({ activeSection }),
   toggleSection: section =>
@@ -52,6 +57,8 @@ export const useProfileBuilderStore = create<ProfileBuilderStore>((set, get) => 
     set(state => ({
       openSections: { ...state.openSections, [section]: open },
     })),
+  setValidationErrors: validationErrors => set({ validationErrors }),
+  clearValidationErrors: () => set({ validationErrors: [] }),
   addMessage: msg =>
     set(state => ({
       messages: [
@@ -112,5 +119,6 @@ export const useProfileBuilderStore = create<ProfileBuilderStore>((set, get) => 
       activeSection: "education",
       openSections: { education: true, experience: false, projects: false, skills: false },
       isThinking: false,
+      validationErrors: [],
     }),
 }));
