@@ -4,6 +4,15 @@ import { COACH_ACT_AS_HEADER } from "@/constants/coach-act-as";
 import { authedFetch as libAuthedFetch, readCoachActAsSession } from "@/lib/authed-fetch";
 import { cookies } from "next/headers";
 import type { AtsScorePayload, CalculateAtsScoreResult, ResumeAtsCacheResult } from "../api/ats-types";
+import {
+  mapExtractResumeFailure,
+  mapGenerateResumeFailure,
+  mapResumeActionCatchError,
+  RESUME_FLOW_ERROR_CODES,
+  resumeFlowErrorMessage,
+  type ResumeFlowError,
+  type ResumeFlowErrorCode,
+} from "../utils/resume-flow-errors";
 
 // ---------------------------------------------------------------------------
 // Helpers
@@ -110,12 +119,17 @@ export interface ExtractedResumeData {
   projects?: unknown[];
 }
 
-export interface ExtractResumePreviewResult {
-  status: string;
+export interface ExtractResumePreviewSuccess {
+  ok: true;
+  status: "success";
   message?: string;
   extracted_sections?: string[];
   extracted_data?: ExtractedResumeData | { data?: ExtractedResumeData };
 }
+
+export type ExtractResumePreviewResult = ExtractResumePreviewSuccess | ({ ok: false } & ResumeFlowError);
+
+export type GenerateResumeResult = { ok: true; id: string } | ({ ok: false; duplicate?: DuplicateError } & ResumeFlowError);
 
 /** Response from POST /api/resume/extract-from-pdf/ (base resume PDF extraction). */
 export interface ExtractResumeToBaseResult {
@@ -139,30 +153,51 @@ export interface ExtractResumeToBaseResult {
  * On HTTP 409 (resume already exists for the application) the backend returns
  * `{ error, message, resume_id, application_id, duplicate: true }`.
  */
-export async function generateResume(jobData?: GenerateResumeParams): Promise<{ id: string } | { error: DuplicateError }> {
-  const res = await authedFetch("/api/resume/generate/", {
-    method: "POST",
-    body: JSON.stringify(jobData ?? {}),
-  });
+export async function generateResume(jobData?: GenerateResumeParams): Promise<GenerateResumeResult> {
+  try {
+    const res = await authedFetch("/api/resume/generate/", {
+      method: "POST",
+      body: JSON.stringify(jobData ?? {}),
+    });
 
-  const data = await res.json();
+    const bodyText = await res.text();
+    let data: Record<string, unknown> = {};
+    try {
+      data = bodyText ? (JSON.parse(bodyText) as Record<string, unknown>) : {};
+    } catch {
+      data = {};
+    }
 
-  if (res.status === 409) {
-    return { error: data as DuplicateError };
+    if (res.status === 409) {
+      const duplicate = data as unknown as DuplicateError;
+      return {
+        ok: false,
+        code: RESUME_FLOW_ERROR_CODES.RESUME_DUPLICATE,
+        message: resumeFlowErrorMessage(
+          RESUME_FLOW_ERROR_CODES.RESUME_DUPLICATE,
+          typeof duplicate.message === "string" ? duplicate.message : undefined
+        ),
+        duplicate,
+      };
+    }
+
+    if (!res.ok) {
+      return { ok: false, ...mapGenerateResumeFailure(res.status, data, bodyText) };
+    }
+
+    const id = data?.id != null ? String(data.id) : "";
+    if (!id) {
+      return {
+        ok: false,
+        code: RESUME_FLOW_ERROR_CODES.RESUME_GENERATE_NO_ID,
+        message: resumeFlowErrorMessage(RESUME_FLOW_ERROR_CODES.RESUME_GENERATE_NO_ID),
+      };
+    }
+
+    return { ok: true, id };
+  } catch (err) {
+    return { ok: false, ...mapResumeActionCatchError(err, "generate") };
   }
-
-  if (!res.ok) {
-    const message =
-      (typeof data?.error === "string" && data.error) || (typeof data?.message === "string" && data.message) || "Failed to generate resume";
-    throw new Error(message);
-  }
-
-  const id = data?.id != null ? String(data.id) : "";
-  if (!id) {
-    throw new Error("Resume was created but no ID was returned.");
-  }
-
-  return { id };
 }
 
 /**
@@ -173,18 +208,46 @@ export async function generateResume(jobData?: GenerateResumeParams): Promise<{ 
  * The caller must supply a FormData with a `resume` file field.
  */
 export async function extractResumePreview(formData: FormData): Promise<ExtractResumePreviewResult> {
-  const res = await authedFetchFormData("/api/extract-resume-data-preview/", {
-    method: "POST",
-    body: formData,
-  });
+  try {
+    const res = await authedFetchFormData("/api/extract-resume-data-preview/", {
+      method: "POST",
+      body: formData,
+    });
 
-  const data = (await res.json().catch(() => ({}))) as ExtractResumePreviewResult;
+    const bodyText = await res.text();
+    let data: Record<string, unknown> = {};
+    try {
+      data = bodyText ? (JSON.parse(bodyText) as Record<string, unknown>) : {};
+    } catch {
+      data = {};
+    }
 
-  if (!res.ok) {
-    throw new Error((data as any)?.error ?? data?.message ?? "Failed to extract resume");
+    if (!res.ok) {
+      return { ok: false, ...mapExtractResumeFailure(res.status, data, bodyText) };
+    }
+
+    if (data.status !== "success") {
+      const apiCode = typeof data.error_code === "string" ? (data.error_code as ResumeFlowErrorCode) : undefined;
+      return {
+        ok: false,
+        code: apiCode ?? RESUME_FLOW_ERROR_CODES.RESUME_EXTRACT_EMPTY,
+        message: resumeFlowErrorMessage(
+          apiCode ?? RESUME_FLOW_ERROR_CODES.RESUME_EXTRACT_EMPTY,
+          typeof data.message === "string" ? data.message : undefined
+        ),
+      };
+    }
+
+    return {
+      ok: true,
+      status: "success",
+      message: typeof data.message === "string" ? data.message : undefined,
+      extracted_sections: Array.isArray(data.extracted_sections) ? (data.extracted_sections as string[]) : undefined,
+      extracted_data: data.extracted_data as ExtractResumePreviewSuccess["extracted_data"],
+    };
+  } catch (err) {
+    return { ok: false, ...mapResumeActionCatchError(err, "extract") };
   }
-
-  return data;
 }
 
 /**

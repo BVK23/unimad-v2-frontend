@@ -2,6 +2,7 @@ import React, { useEffect, useMemo, useRef, useState } from "react";
 import JobUrlImportLoading from "@/components/jobs/JobUrlImportLoading";
 import { ResumeCardSkeletonStyles, ResumeCardsLoadingSkeletons } from "@/components/resume/ResumeCardSkeleton";
 import ResumeDashboardCard from "@/components/resume/ResumeDashboardCard";
+import ResumeFlowErrorAlert from "@/components/resume/ResumeFlowErrorAlert";
 import ResumeGenerationOverlay from "@/components/resume/ResumeGenerationOverlay";
 import { ModalPortalOverlay } from "@/components/ui/ModalPortalOverlay";
 import { OnboardingGateTooltip } from "@/components/ui/OnboardingGateTooltip";
@@ -18,6 +19,7 @@ import {
   setBaseResume,
 } from "@/features/resume/server-actions/resume-actions";
 import { downloadResumePdf } from "@/features/resume/utils/downloadResumePdf";
+import { RESUME_FLOW_ERROR_CODES, resumeFlowErrorMessage, type ResumeFlowError } from "@/features/resume/utils/resume-flow-errors";
 import { copyResumePublicLink, isResumePublished } from "@/features/resume/utils/resumePublish";
 import { buildResumeVersionMetadata } from "@/features/resume/utils/resumeVersionGroups";
 import { ResumeData } from "@/types";
@@ -73,10 +75,10 @@ const ResumeDashboard: React.FC<ResumeDashboardProps> = ({ onEditResume, onCreat
   const [jdText, setJdText] = useState("");
   const [uploadFile, setUploadFile] = useState<File | null>(null);
   const [isGenerating, setIsGenerating] = useState(false);
-  const [jdError, setJdError] = useState<string | null>(null);
+  const [jdError, setJdError] = useState<ResumeFlowError | null>(null);
   const [duplicateResumeId, setDuplicateResumeId] = useState<string | null>(null);
   const [isUploadingFromFile, setIsUploadingFromFile] = useState(false);
-  const [uploadError, setUploadError] = useState<string | null>(null);
+  const [uploadError, setUploadError] = useState<ResumeFlowError | null>(null);
   const [isUploadDragOver, setIsUploadDragOver] = useState(false);
   const [newlyDuplicatedResumeId, setNewlyDuplicatedResumeId] = useState<string | null>(null);
   const [duplicateToastMessage, setDuplicateToastMessage] = useState<string | null>(null);
@@ -158,19 +160,29 @@ const ResumeDashboard: React.FC<ResumeDashboardProps> = ({ onEditResume, onCreat
         jd: params.jd,
         ...(params.applicationId ? { application_id: params.applicationId } : {}),
       });
-      if ("error" in result) {
-        setJdError(result.error.message ?? "A resume for this application already exists.");
-        setDuplicateResumeId(result.error.resume_id ?? null);
+      if (!result.ok) {
+        if (result.code === RESUME_FLOW_ERROR_CODES.RESUME_DUPLICATE) {
+          setJdError({ code: result.code, message: result.message });
+          setDuplicateResumeId(result.duplicate?.resume_id ?? null);
+          return;
+        }
+        setJdError({ code: result.code, message: result.message });
         return;
       }
       if (!result.id) {
-        setJdError("Resume was created but no ID was returned. Please refresh and try again.");
+        setJdError({
+          code: RESUME_FLOW_ERROR_CODES.RESUME_GENERATE_NO_ID,
+          message: resumeFlowErrorMessage(RESUME_FLOW_ERROR_CODES.RESUME_GENERATE_NO_ID),
+        });
         return;
       }
       await queryClient.invalidateQueries({ queryKey: ["resumes"] });
       await navigateToGeneratedResume(String(result.id));
-    } catch (err) {
-      setJdError(err instanceof Error ? err.message : "Failed to generate resume. Please try again.");
+    } catch {
+      setJdError({
+        code: RESUME_FLOW_ERROR_CODES.RESUME_GENERATE_FAILED,
+        message: resumeFlowErrorMessage(RESUME_FLOW_ERROR_CODES.RESUME_GENERATE_FAILED),
+      });
     } finally {
       setIsGenerating(false);
     }
@@ -260,13 +272,19 @@ const ResumeDashboard: React.FC<ResumeDashboardProps> = ({ onEditResume, onCreat
     if (!file) return;
 
     if (file.size > MAX_RESUME_UPLOAD_BYTES) {
-      setUploadError("File is too large. Please upload a PDF up to 5MB.");
+      setUploadError({
+        code: RESUME_FLOW_ERROR_CODES.RESUME_UPLOAD_TOO_LARGE,
+        message: resumeFlowErrorMessage(RESUME_FLOW_ERROR_CODES.RESUME_UPLOAD_TOO_LARGE),
+      });
       setUploadFile(null);
       return;
     }
 
     if (!isResumePdfFile(file)) {
-      setUploadError("Only PDF files are supported right now.");
+      setUploadError({
+        code: RESUME_FLOW_ERROR_CODES.RESUME_UPLOAD_INVALID_TYPE,
+        message: resumeFlowErrorMessage(RESUME_FLOW_ERROR_CODES.RESUME_UPLOAD_INVALID_TYPE),
+      });
       setUploadFile(null);
       return;
     }
@@ -299,8 +317,8 @@ const ResumeDashboard: React.FC<ResumeDashboardProps> = ({ onEditResume, onCreat
       formData.append("resume", uploadFile);
       const preview = await extractResumePreview(formData);
 
-      if (preview.status !== "success") {
-        setUploadError(preview.message ?? "We couldn't extract data from your resume. Please try again.");
+      if (!preview.ok) {
+        setUploadError({ code: preview.code, message: preview.message });
         return;
       }
 
@@ -311,29 +329,48 @@ const ResumeDashboard: React.FC<ResumeDashboardProps> = ({ onEditResume, onCreat
           : (rawExtracted as Record<string, unknown> | undefined);
 
       if (!resumeData || !Object.keys(resumeData).length) {
-        setUploadError("We couldn't extract usable sections from that PDF. Try another file or create from scratch.");
+        setUploadError({
+          code: RESUME_FLOW_ERROR_CODES.RESUME_EXTRACT_NO_SECTIONS,
+          message: resumeFlowErrorMessage(RESUME_FLOW_ERROR_CODES.RESUME_EXTRACT_NO_SECTIONS),
+        });
         return;
       }
 
       const result = await generateResume({ resumeData });
-      if ("error" in result) {
-        setUploadError(result.error.message ?? "Failed to create resume from upload.");
+      if (!result.ok) {
+        setUploadError({ code: result.code, message: result.message });
         return;
       }
       if (!result.id) {
-        setUploadError("Resume was created but no ID was returned. Please refresh and try again.");
+        setUploadError({
+          code: RESUME_FLOW_ERROR_CODES.RESUME_GENERATE_NO_ID,
+          message: resumeFlowErrorMessage(RESUME_FLOW_ERROR_CODES.RESUME_GENERATE_NO_ID),
+        });
         return;
       }
 
       if (!hasBaseResume) {
-        await setBaseResume(String(result.id));
+        const baseResult = await setBaseResume(String(result.id)).catch(() => null);
+        if (baseResult === null) {
+          setUploadError({
+            code: RESUME_FLOW_ERROR_CODES.RESUME_GENERATE_FAILED,
+            message: "Your resume was created, but we couldn't set it as your base resume. Open it from the list below.",
+          });
+          resetUploadState();
+          setCreateModalState("closed");
+          await onCreateResume("upload", String(result.id));
+          return;
+        }
       }
 
       resetUploadState();
       setCreateModalState("closed");
       await onCreateResume("upload", String(result.id));
-    } catch (err) {
-      setUploadError(err instanceof Error ? err.message : "Failed to process your resume. Please try again.");
+    } catch {
+      setUploadError({
+        code: RESUME_FLOW_ERROR_CODES.RESUME_EXTRACT_FAILED,
+        message: resumeFlowErrorMessage(RESUME_FLOW_ERROR_CODES.RESUME_EXTRACT_FAILED),
+      });
     } finally {
       setIsUploadingFromFile(false);
     }
@@ -421,7 +458,10 @@ const ResumeDashboard: React.FC<ResumeDashboardProps> = ({ onEditResume, onCreat
     const role = jdRole.trim();
     const jd = jdText.trim();
     if (!company || !role || jd.length < 10) {
-      setJdError("Please fill company, role, and a job description (at least 10 characters).");
+      setJdError({
+        code: RESUME_FLOW_ERROR_CODES.RESUME_JD_INCOMPLETE,
+        message: resumeFlowErrorMessage(RESUME_FLOW_ERROR_CODES.RESUME_JD_INCOMPLETE),
+      });
       return;
     }
     await runTargetedResumeGeneration({ company, role, jd });
@@ -689,10 +729,11 @@ const ResumeDashboard: React.FC<ResumeDashboardProps> = ({ onEditResume, onCreat
                 <div className="mx-auto max-w-lg space-y-4">
                   {(jdError || importError) && (
                     <div className="space-y-2">
-                      <div className="flex items-start gap-2 rounded-lg border border-amber-200 bg-amber-50 p-3 text-sm text-amber-800">
-                        <AlertCircle size={18} className="mt-0.5 shrink-0" />
-                        <span>{jdError ?? importError}</span>
-                      </div>
+                      {jdError ? (
+                        <ResumeFlowErrorAlert message={jdError.message} code={jdError.code} />
+                      ) : (
+                        <ResumeFlowErrorAlert message={importError ?? ""} />
+                      )}
                       {duplicateResumeId && (
                         <button
                           type="button"
@@ -810,12 +851,7 @@ const ResumeDashboard: React.FC<ResumeDashboardProps> = ({ onEditResume, onCreat
               {/* 3. UPLOAD FORM */}
               {createModalState === "upload" && (
                 <div className="mx-auto max-w-lg space-y-6">
-                  {uploadError && (
-                    <div className="p-3 bg-amber-50 border border-amber-200 rounded-lg text-sm text-amber-800 flex items-start gap-2">
-                      <AlertCircle size={18} className="shrink-0 mt-0.5" />
-                      <span>{uploadError}</span>
-                    </div>
-                  )}
+                  {uploadError && <ResumeFlowErrorAlert message={uploadError.message} code={uploadError.code} />}
 
                   <div className="space-y-4">
                     <p className="text-sm text-slate-600 dark:text-slate-400">

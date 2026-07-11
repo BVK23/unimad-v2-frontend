@@ -47,13 +47,16 @@ async function generatePrepareTabAsset(
       jd,
     });
 
-    if ("error" in result) {
-      const existingId = result.error.resume_id;
+    if (!result.ok) {
+      const existingId = result.duplicate?.resume_id;
       if (existingId) {
         await applySyncedAsset(tab, String(existingId));
         return { status: "ready", error: null };
       }
-      throw new Error(result.error.message ?? "Resume already exists for this application");
+      return {
+        status: "error",
+        error: result.message,
+      };
     }
 
     await applySyncedAsset(tab, result.id);
