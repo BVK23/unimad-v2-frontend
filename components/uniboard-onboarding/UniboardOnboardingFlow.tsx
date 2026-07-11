@@ -3,7 +3,10 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import PhoneInput, { isValidPhoneNumber } from "react-phone-number-input";
 import "react-phone-number-input/style.css";
+import { useOnboardingGate } from "@/features/onboarding/context/OnboardingGateContext";
+import { resolveOnboardingEntryStep } from "@/features/onboarding/resolveOnboardingEntryStep";
 import { useOnboardingStore, type OnboardingAnswers } from "@/features/onboarding/useOnboardingStore";
+import { useProfileData } from "@/features/user-profile/hooks/use-profile-data";
 import { extractResume } from "@/lib/actions/onboardingActions";
 import { AnimatePresence, motion } from "framer-motion";
 import { useRouter } from "next/navigation";
@@ -70,14 +73,11 @@ function toggle(list: string[], id: string, max?: number): string[] {
   return [...list, id];
 }
 
-export default function UniboardOnboardingFlow({
-  initialMode = null,
-  testConfig = null,
-}: {
-  initialMode?: "niche" | "strengths" | "profile_setup" | null;
-  testConfig?: OnboardingTestConfig | null;
-}) {
+export default function UniboardOnboardingFlow({ testConfig = null }: { testConfig?: OnboardingTestConfig | null }) {
   const router = useRouter();
+  const { featureGates } = useOnboardingGate();
+  const { data: profileData, isFetched: profileFetched } = useProfileData();
+  const entryResolvedRef = useRef(false);
 
   const answers = useOnboardingStore(s => s.answers);
   const skipSave = useOnboardingStore(s => s.skipSave);
@@ -89,14 +89,7 @@ export default function UniboardOnboardingFlow({
   const initFlow = useOnboardingStore(s => s.initFlow);
   const replaceAnswers = useOnboardingStore(s => s.replaceAnswers);
 
-  const [stack, setStack] = useState<OnboardingStepKey[]>(() => {
-    if (testConfig) return [testConfig.initialStep];
-    if (initialMode === "niche") return ["niche"];
-    if (initialMode === "strengths") return ["strengths"];
-    // Minimal-onboarded users returning to finish resume + niche.
-    if (initialMode === "profile_setup") return ["resume"];
-    return ["welcome"];
-  });
+  const [stack, setStack] = useState<OnboardingStepKey[]>(() => (testConfig ? [testConfig.initialStep] : ["welcome"]));
   const [mockNiche, setMockNiche] = useState(() => testConfig?.mockNiche ?? false);
   const [direction, setDirection] = useState(1);
   const [error, setError] = useState<string | null>(null);
@@ -107,6 +100,15 @@ export default function UniboardOnboardingFlow({
     initFlow({ answers: testConfig ? { ...testConfig.answers } : { ...EMPTY }, skipSave: testConfig?.skipSave ?? false });
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
+
+  useEffect(() => {
+    if (testConfig || entryResolvedRef.current) return;
+    if (!profileFetched) return;
+
+    const entry = resolveOnboardingEntryStep(featureGates, profileData);
+    entryResolvedRef.current = true;
+    setStack([entry]);
+  }, [featureGates, profileData, profileFetched, testConfig]);
 
   const set = (patch: Partial<OnboardingAnswers>) => setAnswers(patch);
 
@@ -164,6 +166,10 @@ export default function UniboardOnboardingFlow({
   };
 
   const showBack = stack.length > 1 && current !== "done";
+
+  if (!testConfig && !profileFetched) {
+    return <OnboardingLoadingScreen messages={["Loading your onboarding…"]} />;
+  }
 
   if (current === "profile_builder") {
     return (

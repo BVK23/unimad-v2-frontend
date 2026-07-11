@@ -1,3 +1,8 @@
+import { ONBOARDING_ROUTE } from "./resolveOnboardingEntryStep";
+
+export type { OnboardingEntryStep } from "./resolveOnboardingEntryStep";
+export { ONBOARDING_ROUTE, hasResumeProfileProgress, resolveOnboardingEntryStep } from "./resolveOnboardingEntryStep";
+
 export type FeatureGates = {
   initial_onboarding_complete: boolean;
   profile_setup_complete: boolean;
@@ -79,11 +84,9 @@ export const ONBOARDING_PROMPT_COPY: Record<OnboardingPromptKind, { title: strin
   },
 };
 
-export function onboardingHref(kind: OnboardingPromptKind): string {
-  if (kind === "niche") return "/uniboard/onboarding?mode=niche";
-  if (kind === "strengths") return "/uniboard/onboarding?mode=strengths";
-  // Jump into resume/profile-builder step for users finishing after minimal entry.
-  return "/uniboard/onboarding?mode=profile_setup";
+/** All onboarding CTAs land on the route; the flow picks the correct step from gates + profile. */
+export function onboardingHref(_kind?: OnboardingPromptKind): string {
+  return ONBOARDING_ROUTE;
 }
 
 /** Soft “finish onboarding” CTA — field-based, not timestamp-based. */

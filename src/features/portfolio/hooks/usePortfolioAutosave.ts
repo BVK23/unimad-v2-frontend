@@ -5,11 +5,18 @@ import { DOCUMENT_SAVED_CONFIRMATION_MS } from "@/constants/documentAutosave";
 import { waitForPortfolioLayoutSettle } from "@/features/portfolio/layout/portfolioLayoutRemeasure";
 import { usePortfolioStore } from "@/features/portfolio/store/usePortfolioStore";
 import { getPortfolioContentSignature } from "@/features/portfolio/utils/getPortfolioContentSignature";
+import type { PortfolioData } from "@/types";
 import { useUpdatePortfolio } from "./useUpdatePortfolio";
 
 const AUTOSAVE_DELAY_MS = 5000;
 
-export function usePortfolioAutosave(portfolioId: string, options?: { enabled?: boolean }) {
+export function usePortfolioAutosave(
+  portfolioId: string,
+  options?: {
+    enabled?: boolean;
+    onPersisted?: (id: string, portfolio: PortfolioData) => void;
+  }
+) {
   const enabled = options?.enabled !== false && Boolean(portfolioId?.trim());
   const portfolio = usePortfolioStore(s => (enabled ? s.getPortfolioData(portfolioId) : undefined));
   const { mutateAsync: updatePortfolioMutation, isPending: isSavingRemote } = useUpdatePortfolio();
@@ -107,9 +114,12 @@ export function usePortfolioAutosave(portfolioId: string, options?: { enabled?: 
       setActiveSaveSource(source);
 
       try {
-        await updatePortfolioMutation(dataToSave);
+        const result = await updatePortfolioMutation(dataToSave);
         setLastSaveError(null);
         setLastAcknowledgedSnapshot(snapshotAtStart);
+        if (result.created) {
+          options?.onPersisted?.(result.id, result.portfolio);
+        }
         if (latestSnapshotRef.current === snapshotAtStart) {
           showSavedConfirmation();
         }
@@ -138,7 +148,7 @@ export function usePortfolioAutosave(portfolioId: string, options?: { enabled?: 
         }
       }
     },
-    [portfolioId, showSavedConfirmation, updatePortfolioMutation]
+    [options?.onPersisted, portfolioId, showSavedConfirmation, updatePortfolioMutation]
   );
 
   useEffect(() => {

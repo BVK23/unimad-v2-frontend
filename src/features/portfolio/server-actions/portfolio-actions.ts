@@ -100,6 +100,7 @@ export async function replacePortfolioTemplate(): Promise<{ assetData: Record<st
 
 export async function updatePortfolioContent(body: Record<string, unknown>): Promise<{
   message: string;
+  created?: boolean;
   portfolio: Record<string, unknown>;
 }> {
   const res = await authedFetch("/api/portfolio/update/", {

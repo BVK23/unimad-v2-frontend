@@ -8,6 +8,7 @@ import { OnboardingGateTooltip } from "@/components/ui/OnboardingGateTooltip";
 import { FINISH_ONBOARDING_CTA } from "@/constants/onboarding-tooltips";
 import { importJobFromUrl } from "@/features/jobs/server-actions/jobs-actions";
 import { useOnboardingGate } from "@/features/onboarding/context/OnboardingGateContext";
+import { ONBOARDING_ROUTE } from "@/features/onboarding/featureGates";
 import { resumesListQueryKey, useResumesList } from "@/features/resume/hooks/useResumesList";
 import {
   duplicateResume,
@@ -42,7 +43,7 @@ interface ResumeDashboardProps {
 const ResumeDashboard: React.FC<ResumeDashboardProps> = ({ onEditResume, onCreateResume }) => {
   const queryClient = useQueryClient();
   const router = useRouter();
-  const { featureGates, promptOnboarding } = useOnboardingGate();
+  const { featureGates } = useOnboardingGate();
   const { data: resumesList = [], isLoading, isError, error } = useResumesList();
   const resumes = Array.isArray(resumesList) ? resumesList : [];
 
@@ -126,7 +127,7 @@ const ResumeDashboard: React.FC<ResumeDashboardProps> = ({ onEditResume, onCreat
 
   const openTargetedResumeFlow = () => {
     if (!featureGates.resume_jd_create) {
-      promptOnboarding(featureGates.niche_complete ? "profile_setup" : "niche");
+      router.push(ONBOARDING_ROUTE);
       return;
     }
     resetJdState();
@@ -405,7 +406,7 @@ const ResumeDashboard: React.FC<ResumeDashboardProps> = ({ onEditResume, onCreat
     try {
       await downloadResumePdf(resume);
       if (!featureGates.niche_complete) {
-        router.push("/uniboard/onboarding?mode=niche");
+        router.push(ONBOARDING_ROUTE);
       }
     } catch (err) {
       setBaseStatusType("error");

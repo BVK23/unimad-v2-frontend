@@ -1,15 +1,22 @@
 "use client";
 
+import { useEffect } from "react";
 import UniboardOnboardingFlow from "@/components/uniboard-onboarding/UniboardOnboardingFlow";
 import { parseOnboardingTestConfig } from "@/components/uniboard-onboarding/testMode";
-import { useSearchParams } from "next/navigation";
+import { useRouter, useSearchParams } from "next/navigation";
 
-export default function UniboardOnboardingPageClient() {
+export default function OnboardingPageClient() {
+  const router = useRouter();
   const searchParams = useSearchParams();
-  const mode = searchParams?.get("mode");
-  const initialMode = mode === "niche" || mode === "strengths" || mode === "profile_setup" ? mode : null;
   const testConfig = parseOnboardingTestConfig(searchParams);
   const testKey = testConfig ? searchParams?.toString() : "prod";
 
-  return <UniboardOnboardingFlow key={testKey} initialMode={initialMode} testConfig={testConfig} />;
+  // Legacy deep-links (?mode=niche|profile_setup|strengths) — route computes the step now.
+  useEffect(() => {
+    if (testConfig) return;
+    if (!searchParams?.get("mode")) return;
+    router.replace("/uniboard/onboarding", { scroll: false });
+  }, [router, searchParams, testConfig]);
+
+  return <UniboardOnboardingFlow key={testKey} testConfig={testConfig} />;
 }

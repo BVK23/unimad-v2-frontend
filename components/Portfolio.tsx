@@ -5,7 +5,9 @@ import { EMPTY_PORTFOLIO_HIGHLIGHT_MAP } from "@/features/adk-chat/adkPortfolioH
 import { useAdkPortfolioReviewStore } from "@/features/adk-chat/stores/useAdkPortfolioReviewStore";
 import { mapFrontendPortfolioToBackend } from "@/features/portfolio/api/mappers";
 import { PORTFOLIO_MIN_SELECTION_CHARS } from "@/features/portfolio/config/selection-presets";
+import { isPersistedPortfolioId } from "@/features/portfolio/constants/portfolioDraft";
 import { getDefaultItemHeightPx, getDefaultSpanForContentType } from "@/features/portfolio/constants/portfolioLayout";
+import { portfolioQueryKey } from "@/features/portfolio/hooks/usePortfolio";
 import { usePortfolioAutosave } from "@/features/portfolio/hooks/usePortfolioAutosave";
 import { usePortfolioContentHeights } from "@/features/portfolio/hooks/usePortfolioContentHeights";
 import { usePortfolioGridMetrics } from "@/features/portfolio/hooks/usePortfolioGridMetrics";
@@ -131,6 +133,7 @@ interface PortfolioProps {
   initialData?: PortfolioData;
   onBack?: () => void;
   isReadOnly?: boolean;
+  onPersisted?: (id: string, portfolio: PortfolioData) => void;
 }
 
 interface PortfolioSnapshot {
@@ -281,7 +284,7 @@ const getMaxPrefixedNumericId = (ids: string[], prefix: string) => {
 
 const AVATAR_CROP_MAX_OUTPUT_PX = 512;
 
-const Portfolio: React.FC<PortfolioProps> = ({ portfolioId, initialData, onBack, isReadOnly = false }) => {
+const Portfolio: React.FC<PortfolioProps> = ({ portfolioId, initialData, onBack, isReadOnly = false, onPersisted }) => {
   const queryClient = useQueryClient();
   const updatePortfolio = usePortfolioStore(s => s.updatePortfolio);
   const portfolioFromStore = usePortfolioStore(s => s.getPortfolioData(portfolioId));
@@ -338,6 +341,7 @@ const Portfolio: React.FC<PortfolioProps> = ({ portfolioId, initialData, onBack,
   const { saveStatusLabel, runSave, hasPendingUnsavedChanges, isSavingRemote, savedConfirmationVisible, lastSaveError } =
     usePortfolioAutosave(portfolioId, {
       enabled: !isReadOnly,
+      onPersisted,
     });
 
   const [textSelection, setTextSelection] = useState<RichTextEditorSelectionInfo | null>(null);
@@ -699,8 +703,21 @@ const Portfolio: React.FC<PortfolioProps> = ({ portfolioId, initialData, onBack,
   const saveAndPublishPortfolio = async (slug: string, successToast: string): Promise<string | null> => {
     await runSave("manual");
 
-    const current = usePortfolioStore.getState().getPortfolioData(portfolioId) ?? portfolio;
-    const content = mapFrontendPortfolioToBackend({ ...current, id: portfolioId });
+    const persistedFromCache = queryClient.getQueryData<PortfolioData | null>(portfolioQueryKey);
+    const publishPortfolioId =
+      persistedFromCache?.id && isPersistedPortfolioId(persistedFromCache.id)
+        ? persistedFromCache.id
+        : isPersistedPortfolioId(portfolioId)
+          ? portfolioId
+          : null;
+
+    if (!publishPortfolioId) {
+      showToast("Save your portfolio before publishing.");
+      return null;
+    }
+
+    const current = usePortfolioStore.getState().getPortfolioData(publishPortfolioId) ?? persistedFromCache ?? portfolio;
+    const content = mapFrontendPortfolioToBackend({ ...current, id: publishPortfolioId });
     const result = await publishPortfolioAsset(content, slug);
 
     if (!result.ok) {
@@ -710,8 +727,8 @@ const Portfolio: React.FC<PortfolioProps> = ({ portfolioId, initialData, onBack,
 
     const publicUrl = buildPortfolioPublicUrl(result.slug);
     setPublishedUrl(publicUrl);
-    savePublishedUrl(portfolioId, publicUrl);
-    updatePortfolio(portfolioId, prev => ({ ...prev, slug: result.slug }));
+    savePublishedUrl(publishPortfolioId, publicUrl);
+    updatePortfolio(publishPortfolioId, prev => ({ ...prev, slug: result.slug }));
     showToast(successToast);
     setPublishShowPublished(true);
     return publicUrl;
