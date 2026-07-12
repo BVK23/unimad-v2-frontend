@@ -131,6 +131,7 @@ import {
   type ResumeOpenFullImproveDetail,
   type ResumeFullImprovePreset,
 } from "@/features/resume/api/resume-full-improve-presets";
+import { isResumeWholeDocumentJdImprovePrompt } from "@/features/resume/api/resume-jd-improve-detection";
 import { resumeByIdQueryKey } from "@/features/resume/hooks/useResume";
 import { useResumeStore } from "@/features/resume/store/useResumeStore";
 import { MODAL_OVERLAY_Z_CLASS } from "@/lib/ui/modal-overlay";
@@ -245,6 +246,7 @@ import {
   X,
   Check,
 } from "lucide-react";
+import Link from "next/link";
 import { usePathname, useRouter, useSearchParams } from "next/navigation";
 import type { AssetActionMeta, ChatMessage, ResumeData } from "../types";
 import Logo from "./Logo";
@@ -1046,6 +1048,21 @@ const ChatSidebar: React.FC<ChatSidebarProps> = ({ incomingRequest, onRequestHan
   const handleStreamFailure = useCallback(
     (err: unknown, ctx: { text: string; topicId?: string; botMsgId?: string }) => {
       cancelOptimisticUnibotActivity();
+      const aaStore = useApplicationAssetStudioStore.getState();
+      aaStore.setSelectionRefineLoading(false);
+      aaStore.clearRefineAnchor();
+      if (aaStore.regenerateAnotherInFlight) {
+        const baseline = aaStore.regenerateBaselineBody.trim();
+        if (baseline) {
+          aaStore.syncFromStudio({
+            draftPreview: baseline,
+            acceptedContent: baseline,
+            liveDocumentBody: baseline,
+            regenerateBaselineBody: "",
+          });
+        }
+        aaStore.setRegenerateAnotherInFlight(false);
+      }
       const formatted = formatUnibotStreamError(err, {
         scope: ctx.topicId ? "topic" : "main",
         topicId: ctx.topicId,
@@ -2696,7 +2713,8 @@ const ChatSidebar: React.FC<ChatSidebarProps> = ({ incomingRequest, onRequestHan
   const canSendMessage = Boolean(
     !coachActAsReadOnly && userId && sessionReady && !isAgentLoading && !isLoadingHistory && !isContentGenPublishing
   );
-  const canSend = canSendMessage && !streamError;
+  /** New messages may be sent after a stream error (clears error on send); agent-in-flight still blocks. */
+  const canSend = canSendMessage;
 
   const canUseHistory = Boolean(userId && !isBootstrappingSession && !strengthsFocusActive);
 
@@ -3169,10 +3187,31 @@ const ChatSidebar: React.FC<ChatSidebarProps> = ({ incomingRequest, onRequestHan
     [reviewMainSessionId, sessionId, refreshSessions]
   );
 
+  const sendResumePrepareImproveToMain = useCallback(
+    async (text: string, options?: { retryAssistantId?: string }) => {
+      if (!resumeFullImproveContext || !isResumePrepareImproveRoute) {
+        return false;
+      }
+      setImproveReplyTopicId(null);
+      clearStreamError();
+      await sendMainMessage(text, {
+        excludeFromTitleGeneration: true,
+        patchResumeId: resumeFullImproveContext.resumeId,
+        retryAssistantId: options?.retryAssistantId,
+      });
+      return true;
+    },
+    [resumeFullImproveContext, isResumePrepareImproveRoute, clearStreamError, sendMainMessage]
+  );
+
   const sendUserMessageToTopic = useCallback(
     async (topicId: string, text: string, actionMeta?: AssetActionMeta) => {
       const trimmed = text.trim();
       if (!trimmed || !canSend) return;
+      if (isResumeWholeDocumentJdImprovePrompt(trimmed)) {
+        const escalated = await sendResumePrepareImproveToMain(trimmed);
+        if (escalated) return;
+      }
       ensureOptimisticUnibotActivity();
       const outboundText = withPersistedActionLabel(trimmed, actionMeta?.presetLabel);
       const topic = messages.find(m => m.id === topicId && m.isTopic);
@@ -3269,6 +3308,7 @@ const ChatSidebar: React.FC<ChatSidebarProps> = ({ incomingRequest, onRequestHan
       reviewMainSessionId,
       sessionId,
       maybeGenerateMainSessionTitleFromThreadPrompt,
+      sendResumePrepareImproveToMain,
     ]
   );
 
@@ -3337,6 +3377,7 @@ const ChatSidebar: React.FC<ChatSidebarProps> = ({ incomingRequest, onRequestHan
       refreshSessions,
       runUserMessageRewind,
       sendUserMessageToTopic,
+      sendResumePrepareImproveToMain,
       sendMainMessage,
       setStreamError,
       router,
@@ -3592,6 +3633,7 @@ const ChatSidebar: React.FC<ChatSidebarProps> = ({ incomingRequest, onRequestHan
         contactName: d.contactName ?? "",
         draftPreview: d.content,
         acceptedContent: d.content,
+        liveDocumentBody: d.content,
       });
 
       if (d.autoSend && d.initialPrompt?.trim()) {
@@ -3795,7 +3837,6 @@ const ChatSidebar: React.FC<ChatSidebarProps> = ({ incomingRequest, onRequestHan
     async (overrideText?: string, options?: { afterRetry?: boolean }) => {
       const textToSend = (overrideText ?? input).trim();
       if (!textToSend || !canSendMessage) return;
-      if (!options?.afterRetry && streamError) return;
       clearStreamError();
 
       if (fullDocumentImproveContext && isStudioPrepareImproveRoute) {
@@ -3814,10 +3855,7 @@ const ChatSidebar: React.FC<ChatSidebarProps> = ({ incomingRequest, onRequestHan
 
       if (resumeFullImproveContext && isResumePrepareImproveRoute) {
         setInput("");
-        await sendMainMessage(textToSend, {
-          excludeFromTitleGeneration: true,
-          patchResumeId: resumeFullImproveContext.resumeId,
-        });
+        await sendResumePrepareImproveToMain(textToSend);
         return;
       }
 
@@ -3904,6 +3942,7 @@ const ChatSidebar: React.FC<ChatSidebarProps> = ({ incomingRequest, onRequestHan
       improveReplyTopicId,
       improveContextTopic,
       sendUserMessageToTopic,
+      sendResumePrepareImproveToMain,
       sendMainMessage,
       handleStreamFailure,
       handleContentGenPublishIntent,
@@ -3918,6 +3957,7 @@ const ChatSidebar: React.FC<ChatSidebarProps> = ({ incomingRequest, onRequestHan
       resumeFullImproveContext,
       isResumePrepareImproveRoute,
       isStudioPrepareImproveRoute,
+      sendResumePrepareImproveToMain,
       sendApplicationAssetRefinement,
     ]
   );
@@ -3932,6 +3972,15 @@ const ChatSidebar: React.FC<ChatSidebarProps> = ({ incomingRequest, onRequestHan
         setMessages(prev => resetAssistantTurnForRetryInTree(prev, pending.botMsgId!));
 
         if (pending.topicId) {
+          if (isResumeWholeDocumentJdImprovePrompt(pending.text)) {
+            const escalated = await sendResumePrepareImproveToMain(pending.text, {
+              retryAssistantId: pending.botMsgId,
+            });
+            if (escalated) {
+              pendingRetryRef.current = null;
+              return;
+            }
+          }
           const topic = messages.find(m => m.id === pending.topicId && m.isTopic);
           const subAdkId = topic?.subSessionAdkId;
           try {
@@ -3971,6 +4020,7 @@ const ChatSidebar: React.FC<ChatSidebarProps> = ({ incomingRequest, onRequestHan
     setMessages,
     sendTopicMessage,
     sendMainMessage,
+    sendResumePrepareImproveToMain,
     handleStreamFailure,
   ]);
 
@@ -4277,8 +4327,15 @@ const ChatSidebar: React.FC<ChatSidebarProps> = ({ incomingRequest, onRequestHan
 
   const handleTopicSend = async (topicId: string) => {
     const topicInput = topicInputs[topicId];
-    if (!topicInput?.trim() || !canSend) return;
+    if (!topicInput?.trim() || !canSendMessage) return;
+    const trimmed = topicInput.trim();
     setTopicInputs(prev => ({ ...prev, [topicId]: "" }));
+    clearStreamError();
+
+    if (isResumeWholeDocumentJdImprovePrompt(trimmed)) {
+      const escalated = await sendResumePrepareImproveToMain(trimmed);
+      if (escalated) return;
+    }
 
     const topic = messages.find(m => m.id === topicId && m.isTopic);
     if (topic?.topicKind === "content_gen") {
@@ -4500,7 +4557,9 @@ const ChatSidebar: React.FC<ChatSidebarProps> = ({ incomingRequest, onRequestHan
       style={{ width: sidebarWidth }}
     >
       <div className="sticky top-0 z-10 flex h-16 items-center justify-between border-b border-slate-100 bg-white/80 px-4 backdrop-blur-md dark:border-white/5 dark:bg-slate-950/80">
-        <Logo className="h-6 w-auto text-brand-600 dark:text-brand-400" />
+        <Link href="/" className="shrink-0 rounded-lg transition-opacity hover:opacity-80" aria-label="Unimad home">
+          <Logo className="h-6 w-auto text-brand-600 dark:text-brand-400" />
+        </Link>
         <button
           type="button"
           onClick={() => setIsCollapsed(true)}
@@ -5413,7 +5472,8 @@ const ChatSidebar: React.FC<ChatSidebarProps> = ({ incomingRequest, onRequestHan
           ) : null}
           {streamError ? (
             <p className="mb-2 rounded-lg border border-red-200/70 bg-red-50/80 px-2.5 py-2 text-[11px] leading-snug text-red-800 dark:border-red-900/40 dark:bg-red-950/25 dark:text-red-200">
-              Resolve the error above or tap <span className="font-medium">Try again</span> before sending a new message.
+              Something went wrong on the last message. Tap <span className="font-medium">Try again</span> to retry it, or send a new
+              message below.
             </p>
           ) : null}
           <textarea
@@ -5431,7 +5491,7 @@ const ChatSidebar: React.FC<ChatSidebarProps> = ({ incomingRequest, onRequestHan
             }}
             placeholder={
               streamError
-                ? "Fix the error above to continue…"
+                ? "Send a new message or tap Try again on the error above…"
                 : strengthsFocusActive
                   ? "Ask Unibot for different options or say what fits you…"
                   : fullDocumentImproveContext && isStudioPrepareImproveRoute

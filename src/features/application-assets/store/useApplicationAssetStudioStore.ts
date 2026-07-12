@@ -27,6 +27,10 @@ type ApplicationAssetStudioState = {
   contactName: string;
   draftPreview: string;
   acceptedContent: string;
+  /** Latest editor HTML from Studio — fallback when Zustand preview lags. */
+  liveDocumentBody: string;
+  /** Stashed before Generate Another clears preview; restored on failure. */
+  regenerateBaselineBody: string;
   selectedText: string;
   selectionRect: ApplicationAssetSelectionRect | null;
   /** Plain-text span the user sent to Unibot — briefly highlighted until refinement is handed off to chat. */
@@ -90,6 +94,8 @@ const initialState = {
   contactName: "",
   draftPreview: "",
   acceptedContent: "",
+  liveDocumentBody: "",
+  regenerateBaselineBody: "",
   selectedText: "",
   selectionRect: null as ApplicationAssetSelectionRect | null,
   refineAnchorText: "",

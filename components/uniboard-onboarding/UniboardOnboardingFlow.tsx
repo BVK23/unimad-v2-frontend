@@ -6,8 +6,10 @@ import "react-phone-number-input/style.css";
 import { useOnboardingGate } from "@/features/onboarding/context/OnboardingGateContext";
 import { resolveOnboardingEntryStep } from "@/features/onboarding/resolveOnboardingEntryStep";
 import { useOnboardingStore, type OnboardingAnswers } from "@/features/onboarding/useOnboardingStore";
+import { resumesListQueryKey } from "@/features/resume/hooks/useResumesList";
 import { useProfileData } from "@/features/user-profile/hooks/use-profile-data";
 import { extractResume } from "@/lib/actions/onboardingActions";
+import { useQueryClient } from "@tanstack/react-query";
 import { AnimatePresence, motion } from "framer-motion";
 import { useRouter } from "next/navigation";
 import NicheStep from "./NicheStep";
@@ -75,6 +77,7 @@ function toggle(list: string[], id: string, max?: number): string[] {
 
 export default function UniboardOnboardingFlow({ testConfig = null }: { testConfig?: OnboardingTestConfig | null }) {
   const router = useRouter();
+  const queryClient = useQueryClient();
   const { featureGates } = useOnboardingGate();
   const { data: profileData, isFetched: profileFetched } = useProfileData();
   const entryResolvedRef = useRef(false);
@@ -147,13 +150,15 @@ export default function UniboardOnboardingFlow({ testConfig = null }: { testConf
   };
 
   const enterApp = useCallback(() => {
+    void queryClient.invalidateQueries({ queryKey: resumesListQueryKey });
     router.push(ENTER_APP);
     router.refresh();
-  }, [router]);
+  }, [queryClient, router]);
 
   const finishAndEnter = (patch: Partial<OnboardingAnswers> = {}) => {
     syncPersonalization(patch);
     save("complete_minimal", {});
+    void queryClient.invalidateQueries({ queryKey: resumesListQueryKey });
     enterApp();
     void flush().catch(err => console.warn("[onboarding] background flush failed", err));
   };
@@ -324,6 +329,7 @@ export default function UniboardOnboardingFlow({ testConfig = null }: { testConf
                         console.info("[onboarding test] skip resume extract", file.name);
                       } else {
                         await extractResume(formData);
+                        void queryClient.invalidateQueries({ queryKey: resumesListQueryKey });
                       }
                       set({ resumeUploaded: true });
                       syncPersonalization({ resumeUploaded: true });

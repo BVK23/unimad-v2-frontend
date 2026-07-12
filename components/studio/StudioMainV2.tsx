@@ -926,6 +926,12 @@ const StudioMainV2: React.FC<StudioMainProps> = ({ initialContext, initialAssetI
       } else if (selectedTopic === "referral") {
         setCurrentReferralDraft(prev => (prev ? { ...prev, content } : prev));
       }
+      if (isDocumentTopic(selectedTopic)) {
+        useApplicationAssetStudioStore.getState().syncFromStudio({
+          liveDocumentBody: content,
+          draftPreview: content,
+        });
+      }
       markDocumentDirty();
     },
     [markDocumentDirty, selectedTopic]
@@ -1205,6 +1211,7 @@ const StudioMainV2: React.FC<StudioMainProps> = ({ initialContext, initialAssetI
       contactName: selectedTopic === "cold-email" ? managerName : selectedTopic === "referral" ? connectionName : "",
       draftPreview: previewBody,
       acceptedContent,
+      liveDocumentBody: previewBody,
     });
   }, [
     selectedTopic,
@@ -1937,6 +1944,7 @@ const StudioMainV2: React.FC<StudioMainProps> = ({ initialContext, initialAssetI
         contactName: detail.contactName ?? "",
         draftPreview: content,
         acceptedContent: content,
+        liveDocumentBody: content,
       });
 
       window.dispatchEvent(
@@ -2299,6 +2307,14 @@ const StudioMainV2: React.FC<StudioMainProps> = ({ initialContext, initialAssetI
     setDocumentGeneratingTopic(topic);
     setGeneratedContent("");
     setSelectedDocumentId(null);
+    const store = useApplicationAssetStudioStore.getState();
+    const baseline = store.acceptedContent.trim() || store.draftPreview.trim() || store.liveDocumentBody.trim();
+    store.syncFromStudio({
+      regenerateBaselineBody: baseline,
+      draftPreview: "",
+      acceptedContent: "",
+      liveDocumentBody: "",
+    });
     if (topic === "cover-letter") {
       setCurrentCoverLetterDraft(null);
     } else if (topic === "cold-email") {
@@ -2311,6 +2327,15 @@ const StudioMainV2: React.FC<StudioMainProps> = ({ initialContext, initialAssetI
   const beginRegenerateDocumentDraft = (topic: ApplicationAssetStudioTopic) => {
     setApplicationAssetDraftLoading(true);
     setDocumentGeneratingTopic(topic);
+    setGeneratedContent("");
+    const store = useApplicationAssetStudioStore.getState();
+    const baseline = store.acceptedContent.trim() || store.draftPreview.trim() || store.liveDocumentBody.trim();
+    store.syncFromStudio({
+      regenerateBaselineBody: baseline,
+      draftPreview: "",
+      acceptedContent: "",
+      liveDocumentBody: "",
+    });
   };
 
   const runApplicationAssetRegenerate = async (
@@ -3689,7 +3714,13 @@ const StudioMainV2: React.FC<StudioMainProps> = ({ initialContext, initialAssetI
     liveDocumentStreamActivity.activityLabel?.trim() || adkChat?.streamActivityLabel?.trim() || documentRefineLoadingLabel;
 
   const isDocumentGenerateAnotherBusy =
-    showGenerateAnotherCta && isDocumentTopic(selectedTopic) && (isApplicationAssetSubThreadBusy || hasApplicationAssetPendingRevision);
+    showGenerateAnotherCta &&
+    isDocumentTopic(selectedTopic) &&
+    (isApplicationAssetSubThreadBusy ||
+      hasApplicationAssetPendingRevision ||
+      generateCoverLetterMutation.isPending ||
+      generateColdEmailMutation.isPending ||
+      generateReferralMutation.isPending);
 
   const isNewApplicationAssetDisabled =
     isStudioPrimaryActionLoading ||

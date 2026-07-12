@@ -2,7 +2,7 @@
 
 import { useCallback, useEffect, useMemo, useRef, useState, useSyncExternalStore } from "react";
 import { syncSessionStateAction } from "@/features/adk-chat/actions";
-import { buildAdkApplicationAssetStateDelta } from "@/features/application-assets/api/adk-mappers";
+import { buildApplicationAssetStateDeltaFromStudio } from "@/features/application-assets/api/buildApplicationAssetStateDeltaFromStudio";
 import { useApplicationAssetStudioStore } from "@/features/application-assets/store/useApplicationAssetStudioStore";
 import { STUDIO_TOPIC_TO_API_TYPE, type ApplicationAssetStudioTopic } from "@/features/application-assets/types";
 import type { Application } from "@/features/application-tracker/types";
@@ -14,6 +14,10 @@ import { usePortfolioStore } from "@/features/portfolio/store/usePortfolioStore"
 import { applyMutatingToolSessionPull, syncContentGenDraftPreviewOnly } from "@/src/features/adk-chat/apply-mutating-tool-session-pull";
 import { deriveActiveScope, deriveScopeFromRegistryRow, type ContentScope } from "@/src/features/adk-chat/content-scope";
 import { resolveActiveResumeIdForPatch } from "@/src/features/adk-chat/resolve-active-resume-id";
+import {
+  mergePrepareApplicationIntoResumeStateDelta,
+  resolvePrepareApplicationForAdk,
+} from "@/src/features/adk-chat/resolve-prepare-application-for-adk";
 import { resolveAdkSessionOptionsForSessionId } from "@/src/features/adk-chat/resolve-sub-session-adk-app";
 import { noteAdkSessionSynced } from "@/src/features/adk-chat/rewind-state-divergence";
 import { noteSessionMutatingTool } from "@/src/features/adk-chat/session-mutating-tool-tracker";
@@ -291,6 +295,10 @@ export function useAdkStreamingManager({
       const allStorePortfolios = usePortfolioStore.getState().portfolioData;
       const warmResumeData = buildAdkResumeDataMap(allStoreResumes);
       const warmPortfolioData = buildAdkPortfolioDataMap(allStorePortfolios);
+      const applications = queryClient.getQueryData<Application[]>(["applications"]) ?? [];
+      const prepareApplication = resolvePrepareApplicationForAdk(searchParams, applications);
+      const mergeResumePrepareContext = (delta: Record<string, unknown>) =>
+        mergePrepareApplicationIntoResumeStateDelta(delta, prepareApplication);
 
       if (isLinkedInRoute) {
         const snapshot = linkedInSnapshot ?? queryClient.getQueryData<LinkedInAnalysisSnapshot | null>(linkedinAnalysisQueryKey);
@@ -317,19 +325,9 @@ export function useAdkStreamingManager({
           Boolean(t && documentTopics.includes(t as ApplicationAssetStudioTopic));
         if (isDocumentStudioTopic(studioTypeParam)) {
           const aa = useApplicationAssetStudioStore.getState();
-          const apiType = STUDIO_TOPIC_TO_API_TYPE[studioTypeParam];
           return {
-            stateDelta: buildAdkApplicationAssetStateDelta({
-              assetType: apiType,
-              assetId: aa.assetId,
-              applicationId: aa.applicationId,
-              role: aa.role,
-              company: aa.company,
-              jobDescription: aa.jobDescription,
-              contactName: aa.contactName,
-              draftPreview: aa.draftPreview,
-              acceptedBody: aa.acceptedContent,
-              regenerateDraft: aa.regenerateAnotherInFlight,
+            stateDelta: buildApplicationAssetStateDeltaFromStudio(aa, {
+              assetType: STUDIO_TOPIC_TO_API_TYPE[studioTypeParam],
             }),
             source: "application_asset_studio",
           };
@@ -348,7 +346,6 @@ export function useAdkStreamingManager({
       }
 
       if (isJobsRoute) {
-        const applications = queryClient.getQueryData<Application[]>(["applications"]) ?? [];
         const tab = (searchParams?.get("tab") || "discovery").toLowerCase();
         const activeContext = tab === "tracker" ? "application_tracker" : tab === "interview" ? "interview_prep" : "jobs";
         return {
@@ -398,13 +395,13 @@ export function useAdkStreamingManager({
 
       if (isResumeRoute && !activeResumeId) {
         return {
-          stateDelta: {
+          stateDelta: mergeResumePrepareContext({
             active_context: "resume",
             current_resume: null,
             resume_data: warmResumeData,
             portfolio_data: warmPortfolioData,
             current_portfolio: null,
-          },
+          }),
           source: "list_zustand",
         };
       }
@@ -424,12 +421,12 @@ export function useAdkStreamingManager({
           };
           const base = buildAdkResumeStateDelta({ ...sourceResume, id: activeResumeId });
           return {
-            stateDelta: {
+            stateDelta: mergeResumePrepareContext({
               ...base,
               resume_data: buildAdkResumeDataMap(mergedResumes),
               portfolio_data: warmPortfolioData,
               current_portfolio: null,
-            },
+            }),
             source: storeResume ? "zustand" : "react_query",
           };
         }
@@ -438,24 +435,24 @@ export function useAdkStreamingManager({
         if (warmOnly) {
           const mergedResumes = { ...allStoreResumes, [activeResumeId]: { ...warmOnly, id: activeResumeId } };
           return {
-            stateDelta: {
+            stateDelta: mergeResumePrepareContext({
               ...buildAdkResumeStateDelta({ ...warmOnly, id: activeResumeId }),
               resume_data: buildAdkResumeDataMap(mergedResumes),
               portfolio_data: warmPortfolioData,
               current_portfolio: null,
-            },
+            }),
             source: "zustand",
           };
         }
 
         return {
-          stateDelta: {
+          stateDelta: mergeResumePrepareContext({
             active_context: "resume",
             current_resume: activeResumeId,
             resume_data: warmResumeData,
             portfolio_data: warmPortfolioData,
             current_portfolio: null,
-          },
+          }),
           source: "resume_id_only",
         };
       }
@@ -476,6 +473,11 @@ export function useAdkStreamingManager({
 
   const getStateDeltaForScope = useCallback(
     (scope: ContentScope): { stateDelta: Record<string, unknown>; source: AdkStateSyncSource } => {
+      const applications = queryClient.getQueryData<Application[]>(["applications"]) ?? [];
+      const prepareApplication = resolvePrepareApplicationForAdk(searchParams, applications);
+      const mergeResumePrepareContext = (delta: Record<string, unknown>) =>
+        mergePrepareApplicationIntoResumeStateDelta(delta, prepareApplication);
+
       if (scope.domain === "resume") {
         const allStoreResumes = useResumeStore.getState().resumeData;
         const warmPortfolioData = buildAdkPortfolioDataMap(usePortfolioStore.getState().portfolioData);
@@ -489,24 +491,24 @@ export function useAdkStreamingManager({
         const resolvedResume = sourceResume ?? queryResume;
         if (resolvedResume && scopedResumeId) {
           return {
-            stateDelta: {
+            stateDelta: mergeResumePrepareContext({
               ...buildAdkResumeStateDelta({ ...resolvedResume, id: scopedResumeId }),
               resume_data: buildAdkResumeDataMap({ ...allStoreResumes, [scopedResumeId]: resolvedResume }),
               portfolio_data: warmPortfolioData,
               current_portfolio: null,
-            },
+            }),
             source: sourceResume ? "zustand" : "react_query",
           };
         }
         if (scopedResumeId) {
           return {
-            stateDelta: {
+            stateDelta: mergeResumePrepareContext({
               active_context: "resume",
               current_resume: scopedResumeId,
               resume_data: buildAdkResumeDataMap(allStoreResumes),
               portfolio_data: warmPortfolioData,
               current_portfolio: null,
-            },
+            }),
             source: "resume_id_only",
           };
         }
@@ -535,17 +537,8 @@ export function useAdkStreamingManager({
         const typePart = scope.contentKey.split(":")[1];
         const scopedType = typePart === "coverletter" || typePart === "coldemail" || typePart === "referral" ? typePart : aa.assetType;
         return {
-          stateDelta: buildAdkApplicationAssetStateDelta({
+          stateDelta: buildApplicationAssetStateDeltaFromStudio(aa, {
             assetType: scopedType ?? aa.assetType ?? undefined,
-            assetId: aa.assetId,
-            applicationId: aa.applicationId,
-            role: aa.role,
-            company: aa.company,
-            jobDescription: aa.jobDescription,
-            contactName: aa.contactName,
-            draftPreview: aa.draftPreview,
-            acceptedBody: aa.acceptedContent,
-            regenerateDraft: aa.regenerateAnotherInFlight,
           }),
           source: "application_asset_studio",
         };

@@ -132,6 +132,7 @@ function ResumeEditorById({
 function ResumePageContent({ initialResumeId, initialIsNewDraft = false }: ResumePageClientProps) {
   const pathname = usePathname() ?? "";
   const searchParams = useSearchParams();
+  const parsed = parseResumePrepareSearchParams(searchParams);
   const queryClient = useQueryClient();
   const improveDispatchedRef = useRef(false);
   const { resumeId, isNewDraft } = useResumeUrlState({
@@ -163,7 +164,10 @@ function ResumePageContent({ initialResumeId, initialIsNewDraft = false }: Resum
   /* eslint-enable react-hooks/set-state-in-effect */
 
   useEffect(() => {
-    const parsed = parseResumePrepareSearchParams(searchParams);
+    void queryClient.refetchQueries({ queryKey: resumesListQueryKey });
+  }, [queryClient]);
+
+  useEffect(() => {
     if (!parsed.improve || !parsed.resumeId) {
       improveDispatchedRef.current = false;
       return;
@@ -259,9 +263,10 @@ function ResumePageContent({ initialResumeId, initialIsNewDraft = false }: Resum
         resumeId={NEW_RESUME_DRAFT_ID}
         initialData={NEW_DRAFT_INITIAL_DATA}
         onBack={handleBackToLanding}
-        onSave={data => {
+        onSave={async data => {
           if (data.id) {
             queryClient.setQueryData(resumeByIdQueryKey(String(data.id)), data);
+            await queryClient.refetchQueries({ queryKey: resumesListQueryKey, exact: true });
             openResume(String(data.id));
           }
         }}

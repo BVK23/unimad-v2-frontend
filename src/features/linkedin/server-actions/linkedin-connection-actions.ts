@@ -3,11 +3,19 @@
 import { extractConnectionMessageFromBotResponse } from "@/features/linkedin/api/extractConnectionMessage";
 import { authedFetch } from "@/lib/authed-fetch";
 
-function buildConnectUserMessage(name: string, designation: string): string {
-  return `Recipient name: ${name}
+function buildConnectUserMessage(name: string, designation: string, regenerate: boolean): string {
+  const base = `Recipient name: ${name}
 Their designation / role: ${designation}
 
 Do not ask me for more details. I want you to generate a connection request message for LinkedIn for this person.`;
+
+  if (regenerate) {
+    return `${base}
+
+Please generate a different variation of the connection message. Keep the entire message under 280 characters. Address the recipient by name.`;
+  }
+
+  return base;
 }
 
 export type GenerateLinkedInConnectionResult = {
@@ -29,7 +37,7 @@ export async function generateLinkedInConnectionRequest(params: {
     throw new Error("Name and designation are required");
   }
 
-  const userMessage = params.regenerate ? "Regenerate connection message" : buildConnectUserMessage(name, designation);
+  const userMessage = buildConnectUserMessage(name, designation, Boolean(params.regenerate));
 
   const res = await authedFetch("/api/unibot-api/", {
     method: "POST",

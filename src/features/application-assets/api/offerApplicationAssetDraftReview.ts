@@ -169,7 +169,15 @@ export const offerApplicationAssetDraftReview = (params: OfferApplicationAssetDr
 
   const onStudio = Boolean(params.pathname?.startsWith("/uniboard/studio"));
   const shouldSyncStudioPreview = params.forceStudioPreview || (onStudio && params.syncStudioPreview !== false);
-  const preserveStudioPreviewUntilAccept = studio.regenerateAnotherInFlight;
+  const wasRegenerateAnother = studio.regenerateAnotherInFlight;
+
+  if (wasRegenerateAnother) {
+    useApplicationAssetStudioStore.getState().setRegenerateAnotherInFlight(false);
+    useApplicationAssetStudioStore.getState().syncFromStudio({
+      draftPreview: proposedDraft,
+      regenerateBaselineBody: "",
+    });
+  }
 
   useAdkApplicationAssetReviewStore.getState().beginReview({
     assistantMessageId: params.assistantMessageId,
@@ -189,7 +197,7 @@ export const offerApplicationAssetDraftReview = (params: OfferApplicationAssetDr
     presetLabel: refineCtx?.presetLabel,
   });
 
-  if (shouldSyncStudioPreview && !preserveStudioPreviewUntilAccept) {
+  if (shouldSyncStudioPreview && !wasRegenerateAnother) {
     const previewAssetId = isDifferentJobContext(baselineRole, baselineCompany, role, company) ? null : baselineAssetId;
     pushStudioContext({
       assetType,

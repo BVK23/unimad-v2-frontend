@@ -1,5 +1,5 @@
 import type { LucideIcon } from "lucide-react";
-import { Crosshair, ListChecks } from "lucide-react";
+import { Crosshair, ListChecks, Sparkles } from "lucide-react";
 
 export type ResumeFullImprovePreset = {
   id: string;
@@ -11,11 +11,18 @@ export type ResumeFullImprovePreset = {
 /** Shown in main Unibot chat when improving a resume (no sub-thread — section is ambiguous). */
 export const RESUME_FULL_IMPROVE_PRESETS: ResumeFullImprovePreset[] = [
   {
+    id: "optimise-for-jd",
+    label: "Optimise for JD",
+    icon: Sparkles,
+    instruction:
+      "Optimise my current resume to match the job description in session. Call read_resolved_job_listing_for_resume first. Add relevant JD keywords into summary, experience bullets, and skills without keyword stuffing. Rewrite bullets to be outcome-based and ATS-friendly. Delegate to specialist agents section by section — do not create a new resume row.",
+  },
+  {
     id: "tailor-to-role",
     label: "Tailor to role",
     icon: Crosshair,
     instruction:
-      "Review my resume for this job application and strengthen how my experience aligns with the target role. Use resume tools to read context, then update the most relevant sections.",
+      "Tailor my resume for this job application. Call read_resolved_job_listing_for_resume first. If application_id is in session, call generate_resume_for_job_description with application_id, role, and company. Otherwise use the job description from session. Do not ask me to paste the JD if it is already in session.",
   },
   {
     id: "stronger-bullets",

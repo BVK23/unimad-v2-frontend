@@ -196,17 +196,8 @@ const LinkedInDashboard: React.FC<LinkedInDashboardProps> = ({ onImprove, onNavi
   }, []);
 
   const openConnectionGenerateMore = () => {
-    if (!generatedConnectionRequest.trim() || isUnibotBusy) return;
-    onImprove({
-      type: "improve",
-      improveType: "linkedin",
-      feature: "linkedin",
-      featureId: LINKEDIN_ADK_PROFILE_KEY,
-      section: "connection",
-      topicTitle: "LinkedIn · Connection request",
-      requestKey: Date.now(),
-      text: buildLinkedInImproveMessage("connection"),
-    });
+    if (!connectionRecipientName.trim() || !connectionRecipientDesignation.trim() || isGeneratingConnection) return;
+    void generateConnectionRequest();
   };
 
   const goToStudio = () => {
@@ -581,10 +572,10 @@ const LinkedInDashboard: React.FC<LinkedInDashboardProps> = ({ onImprove, onNavi
                   <button
                     type="button"
                     onClick={openConnectionGenerateMore}
-                    disabled={isUnibotBusy}
+                    disabled={isGeneratingConnection || !connectionRecipientName.trim() || !connectionRecipientDesignation.trim()}
                     className={`mt-2 ${TEXT_LINK_PLAIN_CLASS} disabled:pointer-events-none disabled:opacity-50`}
                   >
-                    {isUnibotBusy ? "Generating…" : "Generate more"}
+                    {isGeneratingConnection ? "Generating…" : "Generate more"}
                   </button>
                 </>
               ) : null}
