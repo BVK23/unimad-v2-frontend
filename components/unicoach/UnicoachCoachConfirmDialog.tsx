@@ -64,7 +64,7 @@ export const UnicoachCoachConfirmDialog: React.FC<UnicoachCoachConfirmDialogProp
         <h2 id="coach-confirm-title" className="text-lg font-medium text-slate-900 dark:text-white">
           {title}
         </h2>
-        <p className="mt-2 text-sm text-slate-600 dark:text-slate-400">{description}</p>
+        <p className="mt-2 text-sm text-slate-600 dark:text-slate-400 whitespace-pre-line">{description}</p>
         <div className="mt-6 flex flex-col-reverse gap-2 sm:flex-row sm:justify-end">
           <button
             type="button"

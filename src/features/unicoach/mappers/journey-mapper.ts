@@ -163,7 +163,7 @@ export function deriveCoachKanbanColumn(
 }
 
 /** Call-4 star sits before 100%; remaining track fills only when the student is offered. */
-export const PROGRAM_PROGRESS_CALL4_ANCHOR = 80;
+export const PROGRAM_PROGRESS_CALL4_ANCHOR = 90;
 
 const NON_PROGRESS_TASK_KEYS = new Set(["follow_the_system"]);
 

@@ -13,7 +13,15 @@ export type CoachStudentEntitlement = {
   total_paid_gbp?: number;
 };
 
-export type CoachMoveGate = "payment" | "offer_confirm" | "refund_details" | "backward_confirm" | "skip_confirm" | "blocked" | null;
+export type CoachMoveGate =
+  | "payment"
+  | "offer_confirm"
+  | "refund_details"
+  | "backward_confirm"
+  | "skip_confirm"
+  | "same_day_confirm"
+  | "blocked"
+  | null;
 
 export type CoachMoveEvaluation = {
   allowed: boolean;
@@ -28,6 +36,44 @@ function mountainIndex(stage: string): number {
   if (stage in MOUNTAIN_INDEX) return MOUNTAIN_INDEX[stage];
   if (stage === "offered" || stage === "refunded") return MOUNTAIN_GRAPH_ORDER.length;
   return 0;
+}
+
+function callDone(calls: Record<string, unknown> | null | undefined, key: string): boolean {
+  if (!calls) return false;
+  const bucket = (calls[key] ?? {}) as Record<string, unknown>;
+  if (key === "call_1") return Boolean(bucket.call_completed || bucket.completed);
+  return Boolean(bucket.completed);
+}
+
+function parseCallDate(raw: unknown): Date | null {
+  if (typeof raw !== "string" || !raw) return null;
+  const d = new Date(raw);
+  return Number.isNaN(d.getTime()) ? null : d;
+}
+
+function callCompletedToday(calls: Record<string, unknown> | null | undefined, fromStage: string): boolean {
+  if (!calls || !["call_1", "call_2", "call_3", "call_4"].includes(fromStage)) return false;
+  const bucket = (calls[fromStage] ?? {}) as Record<string, unknown>;
+  const stamp = bucket.call_completed_at ?? bucket.completed_at;
+  const dt = parseCallDate(stamp);
+  if (!dt) return false;
+  const now = new Date();
+  return dt.getFullYear() === now.getFullYear() && dt.getMonth() === now.getMonth() && dt.getDate() === now.getDate();
+}
+
+function moveSkipsUnmarkedCall(fromStage: string, toStage: string, calls: Record<string, unknown> | null | undefined): boolean {
+  if (!["call_2", "call_3", "call_4", "completed", "interviewing", "offered"].includes(toStage)) return false;
+
+  if (["call_4", "completed", "interviewing", "offered"].includes(toStage)) {
+    if (callDone(calls, "call_2") && !callDone(calls, "call_3")) return true;
+    if (callDone(calls, "call_1") && !callDone(calls, "call_2") && (fromStage === "call_1" || fromStage === "not_started")) {
+      return mountainIndex(toStage) - mountainIndex(fromStage) > 1;
+    }
+  }
+  if (toStage === "call_3" && callDone(calls, "call_1") && !callDone(calls, "call_2")) {
+    return mountainIndex(toStage) - mountainIndex(fromStage) > 1;
+  }
+  return false;
 }
 
 export function entitlementFromAccess(
@@ -109,8 +155,10 @@ export function evaluateCoachPipelineMove(params: {
   confirmOffer?: boolean;
   confirmBackward?: boolean;
   confirmSkip?: boolean;
+  confirmSameDay?: boolean;
   refundedAt?: string | null;
   paymentJustRecorded?: boolean;
+  callsData?: Record<string, unknown> | null;
 }): CoachMoveEvaluation {
   const {
     fromStage,
@@ -119,8 +167,10 @@ export function evaluateCoachPipelineMove(params: {
     confirmOffer = false,
     confirmBackward = false,
     confirmSkip = false,
+    confirmSameDay = false,
     refundedAt = null,
     paymentJustRecorded = false,
+    callsData = null,
   } = params;
 
   if (!(COACH_PIPELINE_ORDER as readonly string[]).includes(toStage)) {
@@ -159,7 +209,31 @@ export function evaluateCoachPipelineMove(params: {
     return { allowed: true, gate: null, message: "" };
   }
 
-  if (paymentJustRecorded) return { allowed: true, gate: null, message: "" };
+  const forwardConfirms = (): CoachMoveEvaluation | null => {
+    const skips = toIdx - fromIdx > 1 || moveSkipsUnmarkedCall(fromStage, toStage, callsData);
+    if (skips && !confirmSkip) {
+      return {
+        allowed: false,
+        gate: "skip_confirm",
+        message: "You are skipping one or more stages (a call in between is not marked complete). Continue?",
+      };
+    }
+    if (toIdx > fromIdx && !confirmSameDay && callCompletedToday(callsData, fromStage)) {
+      return {
+        allowed: false,
+        gate: "same_day_confirm",
+        message:
+          "You already marked a call complete for this student today. Are you sure you want to move them forward again on the same day?",
+      };
+    }
+    return null;
+  };
+
+  if (paymentJustRecorded) {
+    const confirm = forwardConfirms();
+    if (confirm) return confirm;
+    return { allowed: true, gate: null, message: "" };
+  }
 
   if (kind === "full" || kind === "legacy_full") {
     if (toIdx < fromIdx && !confirmBackward) {
@@ -169,13 +243,8 @@ export function evaluateCoachPipelineMove(params: {
         message: "Moving a student back may change their module access and clear later milestones. Continue?",
       };
     }
-    if (toIdx - fromIdx > 1 && !confirmSkip) {
-      return {
-        allowed: false,
-        gate: "skip_confirm",
-        message: "You are skipping one or more stages. Continue?",
-      };
-    }
+    const confirm = forwardConfirms();
+    if (confirm) return confirm;
     return { allowed: true, gate: null, message: "" };
   }
 
@@ -213,13 +282,8 @@ export function evaluateCoachPipelineMove(params: {
     };
   }
 
-  if (toIdx - fromIdx > 1 && !confirmSkip) {
-    return {
-      allowed: false,
-      gate: "skip_confirm",
-      message: "You are skipping one or more stages. Continue?",
-    };
-  }
+  const confirm = forwardConfirms();
+  if (confirm) return confirm;
 
   return { allowed: true, gate: null, message: "" };
 }

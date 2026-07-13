@@ -122,7 +122,13 @@ export async function postJourneyChecklist(payload: {
   task_id: string;
   completed: boolean;
   user_id?: string | null;
-}): Promise<{ journey_checklist: Record<string, unknown>; ux_stage: string }> {
+}): Promise<{
+  journey_checklist: Record<string, unknown>;
+  ux_stage: string;
+  max_unlocked_stage?: string;
+  journey_flags?: Record<string, unknown>;
+  booking_url_for_stage?: string | null;
+}> {
   const body: Record<string, unknown> = {
     stage_id: payload.stage_id,
     task_id: payload.task_id,
@@ -139,7 +145,13 @@ export async function postJourneyChecklist(payload: {
   if (!res.ok) {
     throw new Error((data as { error?: string })?.error ?? "Failed to update checklist");
   }
-  return data as { journey_checklist: Record<string, unknown>; ux_stage: string };
+  return data as {
+    journey_checklist: Record<string, unknown>;
+    ux_stage: string;
+    max_unlocked_stage?: string;
+    journey_flags?: Record<string, unknown>;
+    booking_url_for_stage?: string | null;
+  };
 }
 
 export async function postExecutionDaily(payload: {
@@ -305,6 +317,7 @@ export async function updateUnicoachStudentCalls(payload: {
   confirmOffer?: boolean;
   confirmBackward?: boolean;
   confirmSkip?: boolean;
+  confirmSameDay?: boolean;
   refundedAt?: string | null;
   paymentJustRecorded?: boolean;
 }): Promise<{
@@ -326,6 +339,7 @@ export async function updateUnicoachStudentCalls(payload: {
   if (payload.confirmOffer) body.confirm_offer = true;
   if (payload.confirmBackward) body.confirm_backward = true;
   if (payload.confirmSkip) body.confirm_skip = true;
+  if (payload.confirmSameDay) body.confirm_same_day = true;
   if (payload.refundedAt) body.refunded_at = payload.refundedAt;
   if (payload.paymentJustRecorded) body.payment_just_recorded = true;
 

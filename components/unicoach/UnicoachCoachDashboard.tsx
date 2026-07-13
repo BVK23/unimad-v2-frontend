@@ -155,6 +155,7 @@ export const UnicoachCoachDashboard: React.FC<UnicoachCoachDashboardProps> = ({ 
     (pending.gate === "offer_confirm" ||
       pending.gate === "backward_confirm" ||
       pending.gate === "skip_confirm" ||
+      pending.gate === "same_day_confirm" ||
       pending.gate === "refund_details");
 
   return (
@@ -264,7 +265,7 @@ export const UnicoachCoachDashboard: React.FC<UnicoachCoachDashboardProps> = ({ 
       <UnicoachCoachConfirmDialog
         open={Boolean(showSimpleConfirm)}
         title={moveFlow.gateTitle}
-        description={pending?.message ?? ""}
+        description={moveFlow.gateDescription}
         confirmLabel="Yes, continue"
         cancelLabel="Cancel"
         onConfirm={() => void moveFlow.confirmPendingSimple()}

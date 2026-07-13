@@ -42,11 +42,19 @@ function resolveEntitlement(student: AssignedStudent | undefined, fallback?: Coa
 
 export function useCoachPipelineMoveFlow(options?: {
   getStudent?: (userId: number) => AssignedStudent | undefined;
+  getCallsData?: (userId: number) => Record<string, unknown> | null | undefined;
   onAfterSuccess?: (result: { userId: number; targetStage: string; celebrateOffer?: boolean }) => void;
 }) {
   const updateCallsMutation = useUpdateUnicoachStudentCallsMutation();
   const [stageOverrides, setStageOverrides] = useState<Record<number, CoachPipelineStage>>({});
   const [pendingGate, setPendingGate] = useState<PendingCoachGate | null>(null);
+  const [ackFlags, setAckFlags] = useState<{
+    confirmOffer?: boolean;
+    confirmBackward?: boolean;
+    confirmSkip?: boolean;
+    confirmSameDay?: boolean;
+    refundedAt?: string;
+  }>({});
   const [refundDate, setRefundDate] = useState(() => new Date().toISOString().slice(0, 10));
   const [moveError, setMoveError] = useState<string | null>(null);
   const [paymentRecording, setPaymentRecording] = useState(false);
@@ -62,6 +70,7 @@ export function useCoachPipelineMoveFlow(options?: {
   const revertPending = useCallback(() => {
     if (pendingGate) clearOverride(pendingGate.userId);
     setPendingGate(null);
+    setAckFlags({});
     setMoveError(null);
   }, [clearOverride, pendingGate]);
 
@@ -73,6 +82,7 @@ export function useCoachPipelineMoveFlow(options?: {
         confirmOffer?: boolean;
         confirmBackward?: boolean;
         confirmSkip?: boolean;
+        confirmSameDay?: boolean;
         refundedAt?: string;
         paymentJustRecorded?: boolean;
       } = {}
@@ -85,11 +95,13 @@ export function useCoachPipelineMoveFlow(options?: {
           confirmOffer: flags.confirmOffer,
           confirmBackward: flags.confirmBackward,
           confirmSkip: flags.confirmSkip,
+          confirmSameDay: flags.confirmSameDay,
           refundedAt: flags.refundedAt,
           paymentJustRecorded: flags.paymentJustRecorded,
         });
         clearOverride(userId);
         setPendingGate(null);
+        setAckFlags({});
         if (result.celebrate_offer) fireCoachCelebrateConfetti();
         options?.onAfterSuccess?.({
           userId,
@@ -101,19 +113,20 @@ export function useCoachPipelineMoveFlow(options?: {
         const e = err as Error & { gate?: string; status?: number };
         if (e.status === 409 && e.gate) {
           const student = options?.getStudent?.(userId);
-          setPendingGate({
+          setPendingGate(prev => ({
             userId,
             studentName: student?.name,
-            from: "not_started",
+            from: prev?.userId === userId ? prev.from : "not_started",
             to: targetStage,
             gate: e.gate as Exclude<CoachMoveGate, null>,
             message: e.message,
             entitlement: resolveEntitlement(student),
-          });
+          }));
           return null;
         }
         clearOverride(userId);
         setPendingGate(null);
+        setAckFlags({});
         setMoveError(e.message || "Could not update student stage.");
         throw err;
       }
@@ -125,6 +138,7 @@ export function useCoachPipelineMoveFlow(options?: {
     (userId: number, targetStage: CoachPipelineStage, fromStage: CoachPipelineStage) => {
       if (fromStage === targetStage) return;
       setMoveError(null);
+      setAckFlags({});
       setStageOverrides(prev => ({ ...prev, [userId]: targetStage }));
 
       const student = options?.getStudent?.(userId);
@@ -133,6 +147,7 @@ export function useCoachPipelineMoveFlow(options?: {
         fromStage,
         toStage: targetStage,
         entitlement,
+        callsData: options?.getCallsData?.(userId) ?? null,
       });
 
       if (evaluation.allowed) {
@@ -161,15 +176,11 @@ export function useCoachPipelineMoveFlow(options?: {
 
   const confirmPendingSimple = useCallback(async () => {
     if (!pendingGate) return;
-    const flags: {
-      confirmOffer?: boolean;
-      confirmBackward?: boolean;
-      confirmSkip?: boolean;
-      refundedAt?: string;
-    } = {};
+    const flags = { ...ackFlags };
     if (pendingGate.gate === "offer_confirm") flags.confirmOffer = true;
     if (pendingGate.gate === "backward_confirm") flags.confirmBackward = true;
     if (pendingGate.gate === "skip_confirm") flags.confirmSkip = true;
+    if (pendingGate.gate === "same_day_confirm") flags.confirmSameDay = true;
     if (pendingGate.gate === "refund_details") {
       if (!refundDate) {
         setMoveError("Enter the refund date.");
@@ -177,8 +188,9 @@ export function useCoachPipelineMoveFlow(options?: {
       }
       flags.refundedAt = refundDate;
     }
+    setAckFlags(flags);
     await commitMove(pendingGate.userId, pendingGate.to, flags).catch(() => undefined);
-  }, [commitMove, pendingGate, refundDate]);
+  }, [ackFlags, commitMove, pendingGate, refundDate]);
 
   const submitPaymentThenMove = useCallback(
     async (payload: RecordPaymentPayload) => {
@@ -218,6 +230,32 @@ export function useCoachPipelineMoveFlow(options?: {
     }
   }, []);
 
+  const gateTitle = pendingGate
+    ? pendingGate.gate === "payment"
+      ? "Record payment to continue"
+      : pendingGate.gate === "offer_confirm"
+        ? "Mark as Offered?"
+        : pendingGate.gate === "refund_details"
+          ? "Record refund"
+          : pendingGate.gate === "backward_confirm"
+            ? `Move student back to ${COACH_PIPELINE_LABELS[pendingGate.to]}?`
+            : pendingGate.gate === "same_day_confirm"
+              ? `Move to ${COACH_PIPELINE_LABELS[pendingGate.to]} on the same day?`
+              : pendingGate.gate === "skip_confirm"
+                ? `Skip ahead to ${COACH_PIPELINE_LABELS[pendingGate.to]}?`
+                : `Move to ${COACH_PIPELINE_LABELS[pendingGate.to]}?`
+    : "";
+
+  const gateDescription = pendingGate
+    ? [
+        `Intended stage: ${COACH_PIPELINE_LABELS[pendingGate.to]}`,
+        pendingGate.from !== pendingGate.to ? `Moving from: ${COACH_PIPELINE_LABELS[pendingGate.from]}` : null,
+        pendingGate.message,
+      ]
+        .filter(Boolean)
+        .join("\n\n")
+    : "";
+
   return {
     stageOverrides,
     pendingGate,
@@ -233,16 +271,7 @@ export function useCoachPipelineMoveFlow(options?: {
     recordPaymentStandalone,
     clearOverride,
     pipelinePending: updateCallsMutation.isPending || paymentRecording,
-    gateTitle: pendingGate
-      ? pendingGate.gate === "payment"
-        ? "Record payment to continue"
-        : pendingGate.gate === "offer_confirm"
-          ? "Mark as Offered?"
-          : pendingGate.gate === "refund_details"
-            ? "Record refund"
-            : pendingGate.gate === "backward_confirm"
-              ? "Move student back?"
-              : `Move to ${COACH_PIPELINE_LABELS[pendingGate.to]}?`
-      : "",
+    gateTitle,
+    gateDescription,
   };
 }

@@ -71,11 +71,14 @@ function CoachAvatarStack({
 
   const mainSize = size;
   const behindSize = Math.round(size * 0.82);
-  const peekOffset = behind.length > 0 ? Math.min(behind.length, 2) * Math.round(behindSize * 0.38) : 0;
-  const containerWidth = mainSize + peekOffset;
+  const overlap = Math.round(behindSize * 0.38);
+  /** Furthest-behind first so left → right reads as stack into the front coach. */
+  const peekBehind = behind.slice(0, 2).reverse();
+  const peekCount = peekBehind.length;
+  const containerWidth = mainSize + peekCount * overlap;
 
   return (
-    <div className={`group/stack relative shrink-0 ${hoverReveal ? "" : ""}`} style={{ width: containerWidth, height: mainSize }}>
+    <div className="group/stack relative shrink-0" style={{ width: containerWidth, height: mainSize }}>
       {hoverReveal && behind.length > 0 ? (
         <div className="pointer-events-none absolute bottom-full left-1/2 z-20 mb-2 flex -translate-x-1/2 flex-col-reverse items-center gap-1.5 opacity-0 transition-opacity duration-200 group-hover/stack:opacity-100">
           {behind.map(coach => (
@@ -91,30 +94,32 @@ function CoachAvatarStack({
         </div>
       ) : null}
 
-      {behind.length > 0 ? (
-        <div className="absolute inset-0">
-          {behind.slice(0, 2).map((coach, index) => (
-            <span
-              key={coach.id}
-              className="absolute overflow-hidden rounded-full border-2 border-white shadow-sm dark:border-slate-700"
-              style={{
-                width: behindSize,
-                height: behindSize,
-                left: -(index + 1) * Math.round(behindSize * 0.38),
-                top: (mainSize - behindSize) / 2,
-                zIndex: behind.length - index,
-              }}
-              title={coach.name}
-            >
-              <ChatAvatar chip={coach} size={behindSize} />
-            </span>
-          ))}
-        </div>
-      ) : null}
+      {peekBehind.map((coach, index) => (
+        <span
+          key={coach.id}
+          className="absolute overflow-hidden rounded-full border-2 border-white shadow-sm dark:border-slate-700"
+          style={{
+            width: behindSize,
+            height: behindSize,
+            left: index * overlap,
+            top: (mainSize - behindSize) / 2,
+            zIndex: index + 1,
+          }}
+          title={coach.name}
+        >
+          <ChatAvatar chip={coach} size={behindSize} />
+        </span>
+      ))}
 
       <span
-        className="relative z-10 block overflow-hidden rounded-full border-2 border-white shadow-md dark:border-slate-700"
-        style={{ width: mainSize, height: mainSize, marginLeft: peekOffset }}
+        className="absolute overflow-hidden rounded-full border-2 border-white shadow-md dark:border-slate-700"
+        style={{
+          width: mainSize,
+          height: mainSize,
+          left: peekCount * overlap,
+          top: 0,
+          zIndex: peekCount + 1,
+        }}
         title={main.name}
       >
         <ChatAvatar chip={main} size={mainSize} />

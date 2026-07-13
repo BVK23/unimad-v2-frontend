@@ -143,6 +143,9 @@ export const useJourneyChecklistMutation = (targetUserId?: string | null) => {
           ...old,
           journey_checklist: data.journey_checklist as JourneyChecklist,
           ux_stage: data.ux_stage,
+          ...(data.max_unlocked_stage != null ? { max_unlocked_stage: data.max_unlocked_stage } : {}),
+          ...(data.journey_flags != null ? { journey_flags: data.journey_flags as JourneyState["journey_flags"] } : {}),
+          ...(data.booking_url_for_stage !== undefined ? { booking_url_for_stage: data.booking_url_for_stage } : {}),
         };
       });
     },

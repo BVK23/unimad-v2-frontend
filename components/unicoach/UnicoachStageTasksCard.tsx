@@ -35,6 +35,8 @@ type UnicoachStageTasksCardProps = {
   showInterviewConfirmCta?: boolean;
   onConfirmInterview?: () => void;
   stageGateReason?: string | null;
+  /** Shown when viewing a module that is not the student's current working stage. */
+  referenceStageHint?: string | null;
 };
 
 export const UnicoachStageTasksCard = ({
@@ -68,16 +70,18 @@ export const UnicoachStageTasksCard = ({
   showInterviewConfirmCta = false,
   onConfirmInterview,
   stageGateReason,
+  referenceStageHint,
 }: UnicoachStageTasksCardProps) => {
   const canEditChecklist = !isCoachView && activeStage.id === serverUx;
+  const isReferenceChecklist = !isCoachView && activeStage.id !== serverUx;
   const showStageActions = isCoachView || activeStage.id === serverUx || showBookingCta || showBookingBlock;
   const metaByLabel = new Map((tasksMeta ?? []).map(m => [m.label, m]));
 
   const studentBookingHint =
-    activeStage.id === "call-1"
-      ? "Complete tasks and your Discovery call to unlock LinkedIn branding."
-      : activeStage.id === "call-2"
-        ? "Complete tasks to book Application Strategy."
+    activeStage.id === "call-2"
+      ? "Book your LinkedIn branding call, then work through the checklist."
+      : activeStage.id === "call-3"
+        ? "Book your Application Strategy call, then work through the checklist."
         : activeStage.id === "call-4"
           ? "Confirm your interview, then book your prep call."
           : null;
@@ -91,51 +95,49 @@ export const UnicoachStageTasksCard = ({
           : "One-time milestones for this module."}
       </p>
 
-      {!isCoachView && activeStage.id !== serverUx ? (
-        <p className="text-xs text-slate-500 dark:text-slate-400 mt-2">
-          Open your current stage ({serverUx.replace(/-/g, " ")}) to update checklist items.
-        </p>
+      {isReferenceChecklist && referenceStageHint ? (
+        <p className="text-xs text-slate-500 dark:text-slate-400 mt-2">{referenceStageHint}</p>
       ) : null}
 
-      {activeStage.id === serverUx || isCoachView || showBookingCta || showBookingBlock ? (
-        <div className="mt-4 space-y-3">
-          {activeStage.tasks.map(task => {
-            const taskId = `${activeStage.id}:${task}`;
-            const checked = completedTaskIds.includes(taskId);
-            const meta = metaByLabel.get(task);
-            const editable = canEditChecklist && (meta?.editable ?? true);
-            const disabledReason = meta?.disabled_reason;
-            const rowHint = !editable && disabledReason && !stageGateReason ? disabledReason : undefined;
-            return (
-              <div
-                key={task}
-                className={`flex items-start gap-3 text-sm rounded-xl px-1 py-0.5 ${editable ? "cursor-pointer" : "opacity-90"}`}
-                title={rowHint}
+      <div className="mt-4 space-y-3">
+        {activeStage.tasks.map(task => {
+          const taskId = `${activeStage.id}:${task}`;
+          const checked = completedTaskIds.includes(taskId);
+          const meta = metaByLabel.get(task);
+          const editable = canEditChecklist && (meta?.editable ?? true);
+          const disabledReason = meta?.disabled_reason;
+          const rowHint = !editable && disabledReason && !stageGateReason && !isReferenceChecklist ? disabledReason : undefined;
+          return (
+            <div
+              key={task}
+              className={`flex items-start gap-3 text-sm rounded-xl px-1 py-0.5 ${editable ? "cursor-pointer" : "opacity-90"}`}
+              title={rowHint}
+            >
+              <input
+                type="checkbox"
+                checked={checked}
+                disabled={!editable}
+                readOnly={isCoachView || isReferenceChecklist}
+                onChange={() => onToggleTask(activeStage.id, task)}
+                className="h-4 w-4 min-h-4 min-w-4 shrink-0 rounded border-slate-300 text-brand-600 focus:ring-brand-500 mt-0.5 disabled:opacity-50"
+              />
+              <span
+                className={`leading-5 ${
+                  checked ? "text-slate-500 dark:text-slate-500 line-through" : "text-slate-700 dark:text-slate-300"
+                }`}
               >
-                <input
-                  type="checkbox"
-                  checked={checked}
-                  disabled={!editable}
-                  readOnly={isCoachView}
-                  onChange={() => onToggleTask(activeStage.id, task)}
-                  className="h-4 w-4 min-h-4 min-w-4 shrink-0 rounded border-slate-300 text-brand-600 focus:ring-brand-500 mt-0.5 disabled:opacity-50"
-                />
-                <span
-                  className={`leading-5 ${checked ? "text-slate-500 dark:text-slate-500 line-through" : "text-slate-700 dark:text-slate-300"}`}
-                >
-                  {task}
-                  {rowHint && !isCoachView ? (
-                    <span className="mt-0.5 block text-[10px] text-slate-400 dark:text-slate-500">{rowHint}</span>
-                  ) : null}
-                </span>
-              </div>
-            );
-          })}
-          {!isCoachView && stageGateReason ? (
-            <p className="text-center text-[11px] text-slate-500 dark:text-slate-400 pt-1">{stageGateReason}</p>
-          ) : null}
-        </div>
-      ) : null}
+                {task}
+                {rowHint && !isCoachView ? (
+                  <span className="mt-0.5 block text-[10px] text-slate-400 dark:text-slate-500">{rowHint}</span>
+                ) : null}
+              </span>
+            </div>
+          );
+        })}
+        {!isCoachView && !isReferenceChecklist && stageGateReason ? (
+          <p className="text-center text-[11px] text-slate-500 dark:text-slate-400 pt-1">{stageGateReason}</p>
+        ) : null}
+      </div>
 
       {showStageActions ? (
         <div className="mt-3 space-y-2">

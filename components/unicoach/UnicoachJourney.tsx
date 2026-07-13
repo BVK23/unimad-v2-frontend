@@ -135,6 +135,7 @@ const UnicoachJourney: React.FC = () => {
         plan_ids: journey.subscription_summary?.plan_ids ?? [],
       };
     },
+    getCallsData: () => (journey?.calls as Record<string, unknown> | undefined) ?? null,
   });
 
   const [activeStageId, setActiveStageId] = useState(STAGES[0].id);
@@ -341,7 +342,9 @@ const UnicoachJourney: React.FC = () => {
       return;
     }
 
-    const url = journey?.booking_url_for_stage;
+    const url =
+      journey?.booking_url_for_stage ||
+      (bookingKey && journey?.booking_links ? journey.booking_links[bookingKey] || journey.booking_links.default : null);
     if (url) window.open(url, "_blank", "noopener,noreferrer");
     else if (!isCoachView && activeStage.showBookingCta) {
       setProductPickerMode("upgrade");
@@ -395,25 +398,25 @@ const UnicoachJourney: React.FC = () => {
 
   const bookingStageId = journeyFlags?.booking_stage_id ?? null;
   const bookingStage = useMemo(() => (bookingStageId ? STAGES.find(s => s.id === bookingStageId) : undefined), [bookingStageId]);
-  const bookingStageIndex = STAGES.findIndex(s => s.id === bookingStageId);
-  const activeStageIndex = STAGES.findIndex(s => s.id === activeStage.id);
-  const serverUxIndex = STAGES.findIndex(s => s.id === serverUx);
-  const bookingAppliesToActiveStage = Boolean(
-    bookingStageId &&
-    (activeStage.id === bookingStageId ||
-      activeStage.id === serverUx ||
-      (bookingStageIndex >= 0 && activeStageIndex >= bookingStageIndex && serverUxIndex >= bookingStageIndex))
-  );
+  // Only show book / blocked-book UI on the module that owns the booking CTA.
+  // Paid unlock can open later modules in the sidebar without making their CTAs active yet.
+  const bookingAppliesToActiveStage = Boolean(bookingStageId && activeStage.id === bookingStageId);
 
   const callsRaw = useMemo(() => (journey?.calls ?? {}) as Record<string, unknown>, [journey?.calls]);
   const activeStageTasksComplete = stageChecklistComplete(checklist, activeStage.id);
   const coachSettableMilestone = useMemo(() => deriveCoachSettableMilestone(callsRaw), [callsRaw]);
 
+  const bookingKey = journeyFlags?.booking_key ?? null;
+  const resolvedBookingUrl =
+    journey?.booking_url_for_stage ||
+    (bookingKey && journey?.booking_links ? journey.booking_links[bookingKey] || journey.booking_links.default : null) ||
+    null;
+
   const showBookingCta = Boolean(
     !isCoachView &&
     journeyFlags?.show_booking &&
     bookingAppliesToActiveStage &&
-    (journey?.booking_url_for_stage ||
+    (resolvedBookingUrl ||
       journey?.unicoach_access_level === "vsl_discovery" ||
       journeyFlags?.booking_block_reason === "complete_remaining_payment" ||
       journeyFlags?.booking_block_reason === "continue_program_payment")
@@ -421,10 +424,8 @@ const UnicoachJourney: React.FC = () => {
 
   const showContinueProgramCta = Boolean(
     !isCoachView &&
-    ((activeStage.id === "call-2" &&
-      (journey?.unicoach_access_level === "partial" || journey?.unicoach_access_level === "module") &&
-      Boolean((callsRaw.call_2 as Record<string, unknown> | undefined)?.completed)) ||
-      journeyFlags?.booking_block_reason === "complete_remaining_payment" ||
+    bookingAppliesToActiveStage &&
+    (journeyFlags?.booking_block_reason === "complete_remaining_payment" ||
       journeyFlags?.booking_block_reason === "continue_program_payment")
   );
 
@@ -457,6 +458,21 @@ const UnicoachJourney: React.FC = () => {
     serverUx === "call-4" &&
     Boolean(journeyFlags?.interview_confirm_enabled ?? journeyFlags?.prepare_for_interview_enabled);
 
+  const referenceStageHint = useMemo(() => {
+    if (isCoachView || activeStage.id === serverUx) return null;
+    const stage = STAGES.find(s => s.id === serverUx);
+    const stageLabel = stage?.title ?? serverUx.replace(/-/g, " ");
+    const currentChecklistDone = stageChecklistComplete(checklist, serverUx);
+    const currentCallDone = stageMilestoneComplete(serverUx, callsRaw);
+    if (currentChecklistDone && !currentCallDone) {
+      return `Open your current stage (${stageLabel}) and finish your call with your coach.`;
+    }
+    if (!currentChecklistDone) {
+      return `Open your current stage (${stageLabel}) and finish all checklist items.`;
+    }
+    return `Open your current stage (${stageLabel}) to continue.`;
+  }, [activeStage.id, callsRaw, checklist, isCoachView, serverUx]);
+
   const showAdvanceCta = false;
 
   const advanceEnabled = Boolean(journeyFlags?.prepare_for_interview_enabled && isActiveStageFullyComplete);
@@ -482,7 +498,8 @@ const UnicoachJourney: React.FC = () => {
       case "call-3":
         return Boolean(c2.completed) && !c3.completed;
       case "call-4":
-        return Boolean(c3.completed) && !c4.completed;
+        // Allow marking Interview complete even if Application was skipped — skip confirm handles that.
+        return Boolean(c2.completed) && !c4.completed;
       default:
         return false;
     }
@@ -977,6 +994,7 @@ const UnicoachJourney: React.FC = () => {
                   showInterviewConfirmCta={showInterviewConfirmCta}
                   onConfirmInterview={() => setInterviewConfirmOpen(true)}
                   stageGateReason={activeStageDef?.stage_gate_reason}
+                  referenceStageHint={referenceStageHint}
                 />
               </div>
               {showCoachCompactLayout && showExecutionPanel ? (
@@ -1075,10 +1093,11 @@ const UnicoachJourney: React.FC = () => {
           (coachMoveFlow.pendingGate.gate === "offer_confirm" ||
             coachMoveFlow.pendingGate.gate === "backward_confirm" ||
             coachMoveFlow.pendingGate.gate === "skip_confirm" ||
+            coachMoveFlow.pendingGate.gate === "same_day_confirm" ||
             coachMoveFlow.pendingGate.gate === "refund_details")
         )}
         title={coachMoveFlow.gateTitle}
-        description={coachMoveFlow.pendingGate?.message ?? ""}
+        description={coachMoveFlow.gateDescription}
         confirmLabel="Yes, continue"
         cancelLabel="Cancel"
         onConfirm={() => void coachMoveFlow.confirmPendingSimple()}

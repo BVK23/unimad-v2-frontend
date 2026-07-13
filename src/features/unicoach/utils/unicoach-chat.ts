@@ -108,57 +108,95 @@ export function prepareChatMessages(
   });
 }
 
+/** Production primary coach — front of the student chat FAB until another coach messages. */
+export const PRIMARY_COACH_EMAIL = "sharath150697@gmail.com";
+
+function coachChipFromProfile(id: number, coach: { name?: string | null; profile_picture?: string | null } | undefined): CoachAvatarChip {
+  return {
+    id,
+    name: coach?.name || "Coach",
+    picture: coach?.profile_picture ?? null,
+  };
+}
+
+function primaryCoachId(profile: UnicoachProfileInfo | undefined, chatPeers: JourneyChatPeers | undefined): number | null {
+  if (profile?.coaches) {
+    for (const [id, coach] of Object.entries(profile.coaches)) {
+      const email = coach.email?.trim().toLowerCase();
+      if (email === PRIMARY_COACH_EMAIL) {
+        const numericId = Number(id);
+        if (Number.isFinite(numericId)) return numericId;
+      }
+    }
+  }
+  return chatPeers?.coach?.id ?? null;
+}
+
+/** Assigned coaches for the FAB. Primary coach (Sharath, else journey chat peer) first. */
 export function listDefaultCoaches(profile: UnicoachProfileInfo | undefined, chatPeers: JourneyChatPeers | undefined): CoachAvatarChip[] {
   const chips: CoachAvatarChip[] = [];
   const seen = new Set<number>();
+  const preferredId = primaryCoachId(profile, chatPeers);
 
-  if (chatPeers?.coach?.id) {
-    seen.add(chatPeers.coach.id);
-    chips.push({
-      id: chatPeers.coach.id,
-      name: chatPeers.coach.name || "Coach",
-      picture: chatPeers.coach.profile_picture ?? null,
-    });
+  const push = (id: number, coach?: { name?: string | null; profile_picture?: string | null }) => {
+    if (!Number.isFinite(id) || seen.has(id)) return;
+    seen.add(id);
+    chips.push(coachChipFromProfile(id, coach));
+  };
+
+  if (preferredId != null) {
+    const fromProfile = profile?.coaches?.[String(preferredId)];
+    const fromPeer = chatPeers?.coach?.id === preferredId ? chatPeers.coach : null;
+    push(preferredId, fromProfile ?? fromPeer ?? undefined);
   }
 
   if (profile?.coaches) {
     for (const [id, coach] of Object.entries(profile.coaches)) {
-      const numericId = Number(id);
-      if (!Number.isFinite(numericId) || seen.has(numericId)) continue;
-      seen.add(numericId);
-      chips.push({
-        id: numericId,
-        name: coach.name || "Coach",
-        picture: coach.profile_picture ?? null,
-      });
+      push(Number(id), coach);
     }
+  }
+
+  if (chatPeers?.coach?.id) {
+    push(chatPeers.coach.id, chatPeers.coach);
   }
 
   return chips;
 }
 
-/** Coaches who have sent messages, most-recent sender first. Falls back to assigned coaches when empty. */
+/**
+ * Student chat FAB avatars: all assigned coaches in one stack.
+ * Front = most recent coach messenger; otherwise primary coach (Sharath) first.
+ */
 export function coachAvatarsForFab(
   rows: UnicoachCommentRow[],
   studentPeerId: number | null | undefined,
   profile: UnicoachProfileInfo | undefined,
   chatPeers: JourneyChatPeers | undefined
 ): CoachAvatarChip[] {
+  const assigned = listDefaultCoaches(profile, chatPeers);
   const newestFirst = [...rows].sort((a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime());
 
-  const ordered: CoachAvatarChip[] = [];
+  const byRecency: CoachAvatarChip[] = [];
   const seen = new Set<number>();
 
   for (const row of newestFirst) {
     if (studentPeerId != null && row.sender_id === studentPeerId) continue;
     if (seen.has(row.sender_id)) continue;
-    seen.add(row.sender_id);
     const sender = resolveChatSender(row.sender_id, studentPeerId, profile, chatPeers);
-    ordered.push({ id: sender.id, name: sender.name, picture: sender.picture });
+    if (sender.role !== "coach") continue;
+    seen.add(row.sender_id);
+    byRecency.push({ id: sender.id, name: sender.name, picture: sender.picture });
   }
 
-  if (ordered.length > 0) return ordered;
-  return listDefaultCoaches(profile, chatPeers);
+  if (byRecency.length === 0) return assigned;
+
+  const ordered = [...byRecency];
+  for (const coach of assigned) {
+    if (seen.has(coach.id)) continue;
+    seen.add(coach.id);
+    ordered.push(coach);
+  }
+  return ordered;
 }
 
 export function dicebearFallback(seed: string): string {
