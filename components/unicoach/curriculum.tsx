@@ -118,7 +118,7 @@ Outcome-based: Enhanced chatbot accuracy by 30% through customising 50 unique pr
 6. No fancy design — super simple format highlighting achievements.`,
       },
     ],
-    nextActionLabel: "Book your 2nd",
+    nextActionLabel: "Book your 2nd call",
     showBookingCta: true,
   },
   {

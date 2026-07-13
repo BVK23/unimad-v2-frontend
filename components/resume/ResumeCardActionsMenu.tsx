@@ -4,7 +4,7 @@ import React, { useLayoutEffect, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 
 const MENU_WIDTH_PX = 192;
-const MENU_ESTIMATED_HEIGHT_PX = 280;
+const MENU_ESTIMATED_HEIGHT_PX = 320;
 const VIEWPORT_PADDING_PX = 8;
 const ANCHOR_GAP_PX = 8;
 

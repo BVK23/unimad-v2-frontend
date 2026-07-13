@@ -5,7 +5,7 @@ import { syncSessionStateAction } from "@/features/adk-chat/actions";
 import { buildApplicationAssetStateDeltaFromStudio } from "@/features/application-assets/api/buildApplicationAssetStateDeltaFromStudio";
 import { useApplicationAssetStudioStore } from "@/features/application-assets/store/useApplicationAssetStudioStore";
 import { STUDIO_TOPIC_TO_API_TYPE, type ApplicationAssetStudioTopic } from "@/features/application-assets/types";
-import type { Application } from "@/features/application-tracker/types";
+import { getApplicationsFromQueryClient } from "@/features/application-tracker/hooks/useApplications";
 import { buildAdkContentGenStateDelta } from "@/features/content-lab/api/adk-mappers";
 import { useContentGenStudioStore } from "@/features/content-lab/store/useContentGenStudioStore";
 import { buildAdkPortfolioDataMap, buildAdkPortfolioStateDelta, mapAdkPortfolioDataMapToFrontend } from "@/features/portfolio/api/mappers";
@@ -295,7 +295,7 @@ export function useAdkStreamingManager({
       const allStorePortfolios = usePortfolioStore.getState().portfolioData;
       const warmResumeData = buildAdkResumeDataMap(allStoreResumes);
       const warmPortfolioData = buildAdkPortfolioDataMap(allStorePortfolios);
-      const applications = queryClient.getQueryData<Application[]>(["applications"]) ?? [];
+      const applications = getApplicationsFromQueryClient(queryClient);
       const prepareApplication = resolvePrepareApplicationForAdk(searchParams, applications);
       const mergeResumePrepareContext = (delta: Record<string, unknown>) =>
         mergePrepareApplicationIntoResumeStateDelta(delta, prepareApplication);
@@ -473,7 +473,7 @@ export function useAdkStreamingManager({
 
   const getStateDeltaForScope = useCallback(
     (scope: ContentScope): { stateDelta: Record<string, unknown>; source: AdkStateSyncSource } => {
-      const applications = queryClient.getQueryData<Application[]>(["applications"]) ?? [];
+      const applications = getApplicationsFromQueryClient(queryClient);
       const prepareApplication = resolvePrepareApplicationForAdk(searchParams, applications);
       const mergeResumePrepareContext = (delta: Record<string, unknown>) =>
         mergePrepareApplicationIntoResumeStateDelta(delta, prepareApplication);

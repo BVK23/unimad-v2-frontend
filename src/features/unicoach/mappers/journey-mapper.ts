@@ -40,6 +40,31 @@ export const checklistToCompletedCompositeIds = (
   return out;
 };
 
+export const applyOptimisticChecklistTaskUpdate = (
+  checklist: JourneyChecklist | null | undefined,
+  stageId: string,
+  taskId: string,
+  completed: boolean
+): JourneyChecklist => {
+  const base =
+    checklist && typeof checklist === "object" ? ({ ...checklist } as JourneyChecklist) : ({ schema_version: 3 } as JourneyChecklist);
+  const tasksRoot = {
+    ...((base.tasks as Record<string, JourneyChecklistBucket> | undefined) ?? {}),
+  };
+  const bucket = { ...(tasksRoot[stageId] ?? {}) };
+  bucket[taskId] = {
+    completed,
+    completed_at: completed ? new Date().toISOString() : null,
+    source: "student",
+  };
+  tasksRoot[stageId] = bucket;
+  return {
+    ...base,
+    schema_version: base.schema_version ?? 3,
+    tasks: tasksRoot,
+  };
+};
+
 export const compositeIdToServerPayload = (
   stageId: string,
   taskLabel: string,
@@ -135,4 +160,80 @@ export function deriveCoachKanbanColumn(
   _checklist?: JourneyChecklist | null | undefined
 ): UnicoachCoachStageKey {
   return deriveCoachSettableMilestone(calls);
+}
+
+/** Call-4 star sits before 100%; remaining track fills only when the student is offered. */
+export const PROGRAM_PROGRESS_CALL4_ANCHOR = 80;
+
+const NON_PROGRESS_TASK_KEYS = new Set(["follow_the_system"]);
+
+export function countableStageTaskKeys(stageId: string): readonly string[] {
+  return (STAGE_TASK_KEYS[stageId] ?? []).filter(k => !NON_PROGRESS_TASK_KEYS.has(k));
+}
+
+export function programProgressFromChecklist(
+  stages: CurriculumStage[],
+  checklist: JourneyChecklist | null | undefined,
+  calls: Record<string, unknown> | null | undefined
+): {
+  percent: number;
+  callMilestonePercents: [number, number, number, number];
+  countableTotal: number;
+  countableDone: number;
+  isOffered: boolean;
+} {
+  const isOffered = Boolean(calls && (calls as { offered?: unknown }).offered);
+  let countableTotal = 0;
+  let countableDone = 0;
+  const cumThrough: number[] = [];
+
+  for (const stage of stages) {
+    const keys = countableStageTaskKeys(stage.id);
+    const bucket = stageTaskBucket(checklist, stage.id);
+    for (const key of keys) {
+      countableTotal += 1;
+      const entry = bucket?.[key];
+      if (entry && typeof entry === "object" && entry.completed) countableDone += 1;
+    }
+    cumThrough.push(countableTotal);
+  }
+
+  const anchor = PROGRAM_PROGRESS_CALL4_ANCHOR;
+  const callMilestonePercents = (
+    countableTotal === 0 ? [20, 40, 60, anchor] : cumThrough.map(c => Math.round((c / countableTotal) * anchor))
+  ) as [number, number, number, number];
+
+  const taskShare = countableTotal === 0 ? 0 : (countableDone / countableTotal) * anchor;
+  const percent = isOffered ? 100 : Math.min(anchor, Math.round(taskShare));
+
+  return { percent, callMilestonePercents, countableTotal, countableDone, isOffered };
+}
+
+/** Stage the student should be working after N calls are complete. */
+export function stageAfterCompletedCalls(completedCalls: number, stages: CurriculumStage[]): string | null {
+  if (completedCalls <= 0) return stages[0]?.id ?? null;
+  if (completedCalls >= stages.length) return stages[stages.length - 1]?.id ?? null;
+  return stages[completedCalls]?.id ?? null;
+}
+
+export function stageHasAnyCompletedTask(checklist: JourneyChecklist | null | undefined, stageId: string): boolean {
+  const keys = STAGE_TASK_KEYS[stageId];
+  if (!keys?.length) return false;
+  const bucket = stageTaskBucket(checklist, stageId);
+  if (!bucket) return false;
+  return keys.some(k => {
+    if (NON_PROGRESS_TASK_KEYS.has(k)) return false;
+    const e = bucket[k];
+    return e && typeof e === "object" && Boolean(e.completed);
+  });
+}
+
+export function latestCompletedCallStamp(calls: Record<string, unknown> | null | undefined, completedCalls: number): string {
+  if (!calls || completedCalls < 1) return "";
+  const key = `call_${completedCalls}`;
+  const c = (calls[key] ?? {}) as Record<string, unknown>;
+  if (completedCalls === 1) {
+    return String(c.call_completed_at || c.completed_at || "done");
+  }
+  return String(c.completed_at || "done");
 }

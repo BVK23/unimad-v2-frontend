@@ -168,7 +168,7 @@ export default function PortfolioPageClient() {
             <div className="w-full max-w-md rounded-2xl border border-slate-200 bg-white p-6 shadow-xl dark:border-slate-800 dark:bg-slate-900">
               <h2 className="text-lg font-semibold text-slate-900 dark:text-white">Generate your portfolio?</h2>
               <p className="mt-2 text-sm leading-relaxed text-slate-600 dark:text-slate-300">
-                You&apos;ve finished onboarding — want Unibot to generate a personalised portfolio draft for you?
+                You&apos;ve finished onboarding. Want Unibot to generate a personalised portfolio draft for you?
               </p>
               <div className="mt-5 flex flex-col gap-2 sm:flex-row">
                 <button

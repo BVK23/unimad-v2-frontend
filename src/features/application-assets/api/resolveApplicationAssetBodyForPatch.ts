@@ -18,10 +18,11 @@ export const resolveApplicationAssetBodyForPatch = (studio: StudioSnapshot): App
   const reviewCard = useAdkApplicationAssetReviewStore.getState().getActiveCard();
   const proposedFromReview = reviewCard?.proposedDraft?.trim() ?? "";
 
+  /** One body for ADK: what Studio is showing (live edits win). */
+  const live = studio.liveDocumentBody?.trim();
   const draft = studio.draftPreview?.trim();
   const accepted = studio.acceptedContent?.trim();
-  const live = studio.liveDocumentBody?.trim();
-  const baseline = draft || accepted || live || proposedFromReview;
+  const baseline = live || draft || accepted || proposedFromReview;
 
   if (studio.regenerateAnotherInFlight) {
     // Generate Another bootstrap: empty body only until a draft exists in review or store.

@@ -1,6 +1,7 @@
 "use client";
 
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import { applyOptimisticChecklistTaskUpdate } from "../mappers/journey-mapper";
 import {
   addUnicoachComment,
   deleteUnicoachComment,
@@ -14,7 +15,7 @@ import {
   postUnicoachInit,
   updateUnicoachStudentCalls,
 } from "../server-actions/unicoach-actions";
-import type { JourneyState, UnicoachInitResponse, UnicoachProfileInfo } from "../types";
+import type { JourneyChecklist, JourneyState, UnicoachInitResponse, UnicoachProfileInfo } from "../types";
 import { parseCoachData } from "../types";
 
 export const qk = {
@@ -95,6 +96,7 @@ export const useUpdateUnicoachStudentCallsMutation = () => {
       void qc.invalidateQueries({
         queryKey: qk.journey(normalizeTargetId(String(variables.userId))),
       });
+      void qc.invalidateQueries({ queryKey: qk.init });
     },
   });
 };
@@ -102,14 +104,47 @@ export const useUpdateUnicoachStudentCallsMutation = () => {
 export const useJourneyChecklistMutation = (targetUserId?: string | null) => {
   const qc = useQueryClient();
   const tid = normalizeTargetId(targetUserId);
+  const journeyKey = qk.journey(tid);
+
   return useMutation({
     mutationFn: (payload: { stage_id: string; task_id: string; completed: boolean }) =>
       postJourneyChecklist({
         ...payload,
         user_id: tid ?? undefined,
       }),
-    onSuccess: () => {
-      void qc.invalidateQueries({ queryKey: qk.journey(tid) });
+    onMutate: async payload => {
+      await qc.cancelQueries({ queryKey: journeyKey });
+      const previousJourney = qc.getQueryData<JourneyState>(journeyKey);
+
+      if (previousJourney) {
+        const nextChecklist = applyOptimisticChecklistTaskUpdate(
+          previousJourney.journey_checklist,
+          payload.stage_id,
+          payload.task_id,
+          payload.completed
+        );
+        qc.setQueryData<JourneyState>(journeyKey, {
+          ...previousJourney,
+          journey_checklist: nextChecklist,
+        });
+      }
+
+      return { previousJourney };
+    },
+    onError: (_err, _payload, context) => {
+      if (context?.previousJourney) {
+        qc.setQueryData(journeyKey, context.previousJourney);
+      }
+    },
+    onSuccess: data => {
+      qc.setQueryData<JourneyState>(journeyKey, old => {
+        if (!old) return old;
+        return {
+          ...old,
+          journey_checklist: data.journey_checklist as JourneyChecklist,
+          ux_stage: data.ux_stage,
+        };
+      });
     },
   });
 };

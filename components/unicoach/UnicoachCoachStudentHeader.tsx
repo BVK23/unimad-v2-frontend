@@ -60,32 +60,54 @@ function formatPaidAmount(summary: UnicoachSubscriptionSummary): string {
   return `${symbol}${summary.total_paid_gbp.toLocaleString("en-GB", { minimumFractionDigits: 0, maximumFractionDigits: 2 })}`;
 }
 
-function CoachSubscriptionPanel({ summary }: { summary: UnicoachSubscriptionSummary | null | undefined }) {
-  if (!summary) return null;
+function CoachSubscriptionPanel({
+  summary,
+  canRecordPayment,
+  onRecordPayment,
+}: {
+  summary: UnicoachSubscriptionSummary | null | undefined;
+  canRecordPayment?: boolean;
+  onRecordPayment?: () => void;
+}) {
+  if (!summary && !canRecordPayment) return null;
 
-  const showModules = summary.modules.length > 0;
-  const showPurchases = summary.purchases.length > 1 || (summary.access_level === "module" && summary.purchases.length > 0);
+  const showModules = Boolean(summary?.modules?.length);
+  const showPurchases = Boolean(
+    summary && (summary.purchases.length > 1 || (summary.access_level === "module" && summary.purchases.length > 0))
+  );
+  const needsMorePayment =
+    canRecordPayment &&
+    (!summary || summary.access_level === "vsl_discovery" || summary.access_level === "partial" || summary.access_level === "module");
 
   return (
     <aside className="w-full shrink-0 rounded-lg border border-slate-200 bg-slate-50/80 px-3 py-2.5 dark:border-slate-700 dark:bg-slate-900/40 lg:w-[13.5rem] lg:text-right">
       <p className="text-[10px] font-medium uppercase tracking-wide text-slate-400 dark:text-slate-500">Subscription</p>
-      <p className="mt-1 text-xs font-semibold text-slate-900 dark:text-white">{summary.program_label}</p>
+      <p className="mt-1 text-xs font-semibold text-slate-900 dark:text-white">{summary?.program_label ?? "Discovery"}</p>
       {showModules ? (
         <ul className="mt-1.5 space-y-0.5 text-[11px] text-slate-600 dark:text-slate-400">
-          {summary.modules.map(m => (
+          {summary!.modules.map(m => (
             <li key={m}>{m}</li>
           ))}
         </ul>
       ) : null}
       {showPurchases ? (
         <ul className="mt-1.5 space-y-0.5 text-[11px] text-slate-500 dark:text-slate-400">
-          {summary.purchases.map(p => (
+          {summary!.purchases.map(p => (
             <li key={p}>{p}</li>
           ))}
         </ul>
       ) : null}
       <p className="mt-2 text-[10px] text-slate-400 dark:text-slate-500">Paid</p>
-      <p className="text-sm font-semibold text-slate-900 dark:text-white">{formatPaidAmount(summary)}</p>
+      <p className="text-sm font-semibold text-slate-900 dark:text-white">{summary ? formatPaidAmount(summary) : "£0"}</p>
+      {needsMorePayment && onRecordPayment ? (
+        <button
+          type="button"
+          onClick={onRecordPayment}
+          className="mt-2 w-full rounded-lg border border-brand-200 bg-white px-2 py-1.5 text-[11px] font-medium text-brand-700 hover:bg-brand-50 dark:border-brand-800 dark:bg-brand-950/40 dark:text-brand-200 dark:hover:bg-brand-950/70"
+        >
+          Record payment
+        </button>
+      ) : null}
     </aside>
   );
 }
@@ -174,6 +196,7 @@ export type UnicoachCoachStudentHeaderProps = {
   pipelinePending: boolean;
   onOpenProfile: () => void;
   openingProfile: boolean;
+  onRecordPayment?: () => void;
 };
 
 export function UnicoachCoachStudentHeader({
@@ -188,6 +211,7 @@ export function UnicoachCoachStudentHeader({
   pipelinePending,
   onOpenProfile,
   openingProfile,
+  onRecordPayment,
 }: UnicoachCoachStudentHeaderProps) {
   const queryClient = useQueryClient();
   const [saveStatus, setSaveStatus] = useState<"idle" | "saving" | "saved" | "error">("idle");
@@ -287,14 +311,14 @@ export function UnicoachCoachStudentHeader({
 
         {/* UIUX: stats + actions in one horizontal row, aligned to top-right */}
         <div className="flex w-full max-w-full shrink-0 items-stretch gap-2 sm:w-auto sm:flex-nowrap sm:justify-end">
-          <div className="grid min-h-0 flex-1 auto-rows-fr grid-cols-2 gap-2 self-stretch sm:w-[200px] sm:max-w-[220px] sm:flex-none">
-            <div className="flex h-full min-h-0 flex-col justify-center rounded-lg border border-slate-200 px-2 py-2 dark:border-slate-700 sm:px-2.5">
-              <p className="text-[10px] text-slate-500 dark:text-slate-400">Progress</p>
-              <p className="text-sm font-semibold leading-tight text-slate-900 dark:text-white sm:text-base">{completionPercent}%</p>
+          <div className="grid min-h-0 flex-1 grid-cols-2 gap-3 self-stretch sm:w-auto sm:flex-none">
+            <div className="rounded-xl border border-slate-200 px-4 py-3 dark:border-slate-700">
+              <p className="text-xs text-slate-500 dark:text-slate-400">Program Progress</p>
+              <p className="text-lg font-medium text-slate-900 dark:text-white">{completionPercent}%</p>
             </div>
-            <div className="flex h-full min-h-0 flex-col justify-center rounded-lg border border-slate-200 px-2 py-2 dark:border-slate-700 sm:px-2.5">
-              <p className="text-[10px] text-slate-500 dark:text-slate-400">Coaching sessions</p>
-              <p className="text-sm font-semibold leading-tight text-slate-900 dark:text-white sm:text-base">{completedCalls}/4</p>
+            <div className="rounded-xl border border-slate-200 px-4 py-3 dark:border-slate-700">
+              <p className="text-xs text-slate-500 dark:text-slate-400">Calls Completed</p>
+              <p className="text-lg font-medium text-slate-900 dark:text-white">{completedCalls}/4</p>
             </div>
           </div>
           <div className="flex w-full min-w-0 shrink-0 flex-col justify-start gap-1.5 sm:w-auto sm:min-w-[10.75rem]">
@@ -333,8 +357,8 @@ export function UnicoachCoachStudentHeader({
       </div>
 
       <div className="mt-4 sm:mt-5">
-        <div className="relative flex h-6 w-full items-center sm:h-7">
-          <div className="absolute inset-x-0 top-1/2 h-1 -translate-y-1/2 overflow-hidden rounded-full bg-slate-100 dark:bg-slate-800 sm:h-1.5">
+        <div className="relative flex h-10 w-full items-center">
+          <div className="absolute inset-x-0 top-1/2 h-2 -translate-y-1/2 overflow-hidden rounded-full bg-slate-100 dark:bg-slate-800">
             <div
               className="h-full rounded-full bg-brand-600 transition-all duration-300 dark:bg-brand-500"
               style={{ width: `${completionPercent}%` }}
@@ -344,17 +368,30 @@ export function UnicoachCoachStudentHeader({
             const done = completedCalls >= call;
             const left = callMilestonePercents[i];
             return (
-              <div key={call} className="absolute top-1/2 z-10 -translate-x-1/2 -translate-y-1/2" style={{ left: `${left}%` }}>
+              <div
+                key={call}
+                className="absolute top-1/2 z-10 -translate-x-1/2 -translate-y-1/2"
+                style={{ left: `${left}%` }}
+                title={
+                  call === 4
+                    ? done
+                      ? "Call 4 complete — progress to 100% when the student lands a role"
+                      : "Call 4 milestone"
+                    : done
+                      ? `Call ${call} complete`
+                      : `Call ${call} milestone`
+                }
+              >
                 <div
-                  className={`flex h-5 w-5 items-center justify-center rounded-full border shadow-sm ring-2 ring-white dark:ring-slate-900 sm:h-6 sm:w-6 ${
+                  className={`flex h-8 w-8 items-center justify-center rounded-full border shadow-sm ring-2 ring-white dark:ring-[#111] ${
                     done
-                      ? "border-amber-300/90 bg-gradient-to-br from-amber-200 via-yellow-100 to-amber-300 dark:border-amber-400/50"
+                      ? "border-amber-300/90 bg-gradient-to-br from-amber-200 via-yellow-100 to-amber-300 dark:border-amber-400/50 dark:from-amber-400/90 dark:via-yellow-300/80 dark:to-amber-500/90"
                       : "border-slate-200 bg-white dark:border-slate-600 dark:bg-slate-800"
                   }`}
                 >
                   <Star
-                    size={12}
-                    className={done ? "text-amber-800 dark:text-amber-100" : "text-slate-300"}
+                    size={15}
+                    className={done ? "text-amber-800 dark:text-amber-100" : "text-slate-300 dark:text-slate-500"}
                     fill={done ? "currentColor" : "none"}
                     strokeWidth={done ? 0 : 1.75}
                   />
@@ -362,6 +399,32 @@ export function UnicoachCoachStudentHeader({
               </div>
             );
           })}
+        </div>
+        <div className="mt-3 flex flex-wrap items-center gap-2 text-xs text-slate-500 dark:text-slate-400">
+          {[1, 2, 3, 4].map(call => {
+            const done = call <= completedCalls;
+            return (
+              <div
+                key={call}
+                className={`rounded-full border px-2.5 py-1 ${
+                  done
+                    ? "border-emerald-200 bg-emerald-50 text-emerald-700 dark:border-emerald-900/50 dark:bg-emerald-950/40 dark:text-emerald-300"
+                    : "border-slate-200 bg-slate-100 dark:border-slate-700 dark:bg-slate-800"
+                }`}
+              >
+                Call {call}
+              </div>
+            );
+          })}
+          <div
+            className={`rounded-full border px-2.5 py-1 ${
+              Boolean((journey.calls as { offered?: unknown } | undefined)?.offered)
+                ? "border-emerald-200 bg-emerald-50 text-emerald-700 dark:border-emerald-900/50 dark:bg-emerald-950/40 dark:text-emerald-300"
+                : "border-slate-200 bg-slate-100 dark:border-slate-700 dark:bg-slate-800"
+            }`}
+          >
+            Landed role
+          </div>
         </div>
       </div>
 
@@ -449,7 +512,11 @@ export function UnicoachCoachStudentHeader({
             </div>
           </dl>
         </div>
-        <CoachSubscriptionPanel summary={journey.subscription_summary} />
+        <CoachSubscriptionPanel
+          summary={journey.subscription_summary}
+          canRecordPayment={Boolean(onRecordPayment)}
+          onRecordPayment={onRecordPayment}
+        />
       </div>
     </>
   );

@@ -17,7 +17,7 @@ const VALUE_BULLETS = [
 
 export const UnicoachSubscriptionPage = ({ onPaymentSuccess }: UnicoachSubscriptionPageProps) => {
   return (
-    <div className="flex-1 bg-slate-50 dark:bg-[#0a0a0a] h-full overflow-y-auto">
+    <div className="scrollbar-on-hover flex-1 bg-slate-50 dark:bg-[#0a0a0a] h-full overflow-y-auto">
       <Script src="https://checkout.razorpay.com/v1/checkout.js" strategy="lazyOnload" />
       <div className="max-w-7xl mx-auto p-6 lg:p-8 space-y-6">
         <section className="bg-white dark:bg-[#111] rounded-2xl border border-slate-200 dark:border-slate-800 p-5 lg:p-6 shadow-sm">

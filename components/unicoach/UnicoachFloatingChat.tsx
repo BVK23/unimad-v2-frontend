@@ -399,7 +399,7 @@ export const UnicoachFloatingChat: React.FC<UnicoachFloatingChatProps> = ({
             </button>
           </div>
 
-          <div ref={scrollRef} className="min-h-0 flex-1 overflow-y-auto px-3 py-2">
+          <div ref={scrollRef} className="scrollbar-on-hover min-h-0 flex-1 overflow-y-auto px-3 py-2">
             {preparedMessages.map(msg => {
               const alignEnd = (isCoachView && msg.sender.role === "coach") || (!isCoachView && msg.sender.role === "student");
               return (

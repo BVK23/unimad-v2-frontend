@@ -177,6 +177,15 @@ const ResumePDFPreviewInner: React.FC<ResumePDFPreviewProps> = ({
         exitingSlotClearTimerRef.current = setTimeout(() => {
           setExitingSlot(null);
           exitingSlotClearTimerRef.current = null;
+          // Release the now-hidden previous slot once the crossfade is done. It
+          // is only opacity-0 (still laid out), so its stale page stack would
+          // otherwise keep inflating the scroll container's height — leaving a
+          // phantom blank page when switching to a shorter template. Guard
+          // against rapid switches that may have already repurposed this slot
+          // for a new render (as the visible slot or the current render target).
+          if (visibleSlotRef.current !== previousVisible && renderingTargetRef.current?.slot !== previousVisible) {
+            setSlotUrl(previousVisible, null);
+          }
         }, 180);
       }
 
@@ -187,7 +196,7 @@ const ResumePDFPreviewInner: React.FC<ResumePDFPreviewProps> = ({
         setIsInitialLoading(false);
       }
     },
-    [isInitialLoading]
+    [isInitialLoading, setSlotUrl]
   );
 
   const handleSlotError = useCallback(

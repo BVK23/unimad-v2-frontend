@@ -18,6 +18,8 @@ export type ResolvedJobListingForResume = {
   company: string;
   role: string;
   has_description: boolean;
+  /** Present when JD text is available — ADK tools should prefer this over asking the user. */
+  description?: string;
   source: "application_tracker" | "job_board";
 };
 
@@ -39,7 +41,7 @@ export const resolvePrepareApplicationForAdk = (
   const applicationId = fromCache?.application_id?.trim() || (fromCache ? "" : jobId);
   const role = fromCache?.role?.trim() || prepareSession?.role?.trim() || "";
   const company = fromCache?.company?.trim() || prepareSession?.company?.trim() || "";
-  const jobDescription = fromCache?.job_description?.trim() || "";
+  const jobDescription = fromCache?.job_description?.trim() || prepareSession?.jobDescription?.trim() || "";
   const linkedJobId = fromCache?.job_id?.trim() || null;
 
   if (!applicationId && !role && !company && !jobDescription) {
@@ -65,6 +67,8 @@ export const buildResolvedJobListingForResume = (ctx: PrepareApplicationAdkConte
     company: ctx.company,
     role: ctx.role,
     has_description: Boolean(jd),
+    // Include JD text so ADK tools can use it without a separate session key lookup.
+    ...(jd ? { description: jd.slice(0, 12000) } : {}),
     source: "application_tracker",
   };
 };

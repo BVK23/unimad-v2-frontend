@@ -11,10 +11,14 @@ export type ApplicationAssetAdkStateDeltaPayload = {
   application_company?: string;
   application_jd?: string;
   application_contact_name?: string;
+  /**
+   * Single current document body for ADK (what the user sees in Studio).
+   * Key name is legacy (`draft_preview`); tools read this as `body`.
+   */
   application_asset_draft_preview?: string;
-  application_asset_accepted_body?: string;
   application_asset_current_date?: string;
   studio_headless?: boolean;
+  /** Only for studio headless generate — not needed for Unibot improve chat. */
   application_asset_profile_snapshot?: ApplicationAssetProfileSnapshot;
   application_asset_data?: Record<
     string,
@@ -27,7 +31,6 @@ export type ApplicationAssetAdkStateDeltaPayload = {
       job_description?: string;
       contact_name?: string;
       body?: string;
-      accepted_body?: string;
     }
   >;
   current_application_asset?: string;
@@ -41,13 +44,26 @@ export type BuildApplicationAssetStateDeltaInput = {
   company?: string;
   jobDescription?: string;
   contactName?: string;
+  /** Current Studio document (live edits). One body for ADK — not draft vs accepted. */
   draftPreview?: string;
-  acceptedBody?: string;
   studioHeadless?: boolean;
   profileSnapshot?: ApplicationAssetProfileSnapshot;
-  /** Generate Another: agent should treat as first draft (empty session body, accepted kept for UI). */
+  /** Generate Another: clear session body so agent writes a fresh draft. */
   regenerateDraft?: boolean;
 };
+
+/**
+ * Contact names are only valid for cold email (hiring manager) and referral (connection).
+ * Cover letters always PATCH `contact_name: ""` so a leftover personal name cannot
+ * leak into cover-letter session state. Never invent names in prompts — only use
+ * values from Zustand that were patched into the session.
+ */
+function contactNameForAssetType(assetType: ApplicationAssetApiType | undefined, contactName: string | undefined): string {
+  if (assetType === "coldemail" || assetType === "referral") {
+    return contactName?.trim() ?? "";
+  }
+  return "";
+}
 
 export const buildAdkApplicationAssetStateDelta = (
   input: BuildApplicationAssetStateDeltaInput = {}
@@ -59,9 +75,9 @@ export const buildAdkApplicationAssetStateDelta = (
 
   if (input.studioHeadless) {
     delta.studio_headless = true;
-  }
-  if (input.profileSnapshot) {
-    delta.application_asset_profile_snapshot = input.profileSnapshot;
+    if (input.profileSnapshot) {
+      delta.application_asset_profile_snapshot = input.profileSnapshot;
+    }
   }
 
   if (input.assetType) {
@@ -73,59 +89,43 @@ export const buildAdkApplicationAssetStateDelta = (
   if (input.applicationId) {
     delta.application_id = input.applicationId;
   }
-  const role = input.role?.trim();
-  if (role) {
+
+  const role = input.role?.trim() ?? "";
+  const company = input.company?.trim() ?? "";
+  const jd = input.jobDescription?.trim() ?? "";
+  const contact = contactNameForAssetType(input.assetType, input.contactName);
+
+  /**
+   * Always write context keys (including empty strings) when we have an asset type.
+   * Omitting empty keys left stale ADK session values (wrong company / leftover contact name).
+   */
+  if (input.assetType || input.assetId || input.studioHeadless || role || company || jd) {
     delta.application_role = role;
-  }
-  const company = input.company?.trim();
-  if (company) {
     delta.application_company = company;
-  }
-  const jd = input.jobDescription?.trim();
-  if (jd) {
     delta.application_jd = jd.slice(0, 12000);
-  }
-  const contact = input.contactName?.trim();
-  if (contact) {
     delta.application_contact_name = contact;
   }
-  const draft = input.draftPreview?.trim();
-  const accepted = input.acceptedBody?.trim();
-  /** Agent tools read `body`; PATCH must not send accepted-only without body or improve sees an empty draft. */
-  const sessionBody = input.regenerateDraft ? "" : ((draft || accepted)?.slice(0, 8000) ?? "");
+
+  /** One document body: whatever Studio is showing (live edits included). */
+  const sessionBody = input.regenerateDraft ? "" : (input.draftPreview?.trim().slice(0, 8000) ?? "");
+
+  const activeRow = {
+    asset_type: input.assetType ?? "",
+    asset_id: input.assetId ?? "",
+    application_id: input.applicationId ?? "",
+    role,
+    company,
+    job_description: jd.slice(0, 12000),
+    contact_name: contact,
+    body: sessionBody,
+  };
+
+  if (input.assetType || input.assetId || input.studioHeadless || sessionBody) {
+    delta.current_application_asset = "active";
+    delta.application_asset_data = { active: activeRow };
+  }
   if (sessionBody) {
     delta.application_asset_draft_preview = sessionBody;
-    delta.current_application_asset = "active";
-    delta.application_asset_data = {
-      active: {
-        asset_type: input.assetType ?? "",
-        asset_id: input.assetId ?? "",
-        application_id: input.applicationId ?? "",
-        role: role ?? "",
-        company: company ?? "",
-        job_description: jd ?? "",
-        contact_name: contact ?? "",
-        body: sessionBody,
-        accepted_body: accepted?.slice(0, 8000) ?? "",
-      },
-    };
-  } else if (input.assetType || input.assetId || input.studioHeadless) {
-    delta.current_application_asset = "active";
-    delta.application_asset_data = {
-      active: {
-        asset_type: input.assetType ?? "",
-        asset_id: input.assetId ?? "",
-        application_id: input.applicationId ?? "",
-        role: role ?? "",
-        company: company ?? "",
-        job_description: jd ?? "",
-        contact_name: contact ?? "",
-        accepted_body: accepted?.slice(0, 8000) ?? "",
-      },
-    };
-  }
-  if (accepted) {
-    delta.application_asset_accepted_body = accepted.slice(0, 8000);
   }
 
   return delta;

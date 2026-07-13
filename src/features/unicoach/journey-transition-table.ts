@@ -14,7 +14,10 @@
  * `ux_stage` from `calls_data` + checklist; checklist rows are not auto-cleared (may look stale;
  * students can toggle checklist to match reality).
  *
- * Partial access: `unicoach_access_level === "partial"` clamps UX to at most `post-call-1`
+ * Partial access: `unicoach_access_level === "partial"` unlocks through LinkedIn (`call-2`);
+ * Application / Interview stay locked until remaining payment.
+ * Module access unlocks only purchased modules.
+ * `vsl_discovery` stays on Discovery until payment.
  * (mirrors legacy tab locks). Advance API rejects later stages.
  */
 export const JOURNEY_TRANSITION_TABLE_VERSION = 1;

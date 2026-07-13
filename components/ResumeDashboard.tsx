@@ -10,7 +10,9 @@ import { FINISH_ONBOARDING_CTA } from "@/constants/onboarding-tooltips";
 import { importJobFromUrl } from "@/features/jobs/server-actions/jobs-actions";
 import { useOnboardingGate } from "@/features/onboarding/context/OnboardingGateContext";
 import { ONBOARDING_ROUTE } from "@/features/onboarding/featureGates";
+import { mapBackendResumeToFrontend } from "@/features/resume/api/mappers";
 import { resumesListQueryKey, useResumesList } from "@/features/resume/hooks/useResumesList";
+import { useUpdateResume } from "@/features/resume/hooks/useUpdateResume";
 import {
   duplicateResume,
   deleteResume,
@@ -46,6 +48,7 @@ const ResumeDashboard: React.FC<ResumeDashboardProps> = ({ onEditResume, onCreat
   const queryClient = useQueryClient();
   const router = useRouter();
   const { featureGates } = useOnboardingGate();
+  const { mutateAsync: updateResumeMutation } = useUpdateResume();
   const { data: resumesList = [], isLoading, isError, error } = useResumesList();
   const resumes = Array.isArray(resumesList) ? resumesList : [];
 
@@ -61,6 +64,13 @@ const ResumeDashboard: React.FC<ResumeDashboardProps> = ({ onEditResume, onCreat
     id: string;
     title: string;
   } | null>(null);
+  const [pendingRenameResume, setPendingRenameResume] = useState<{
+    id: string;
+    title: string;
+  } | null>(null);
+  const [renameInput, setRenameInput] = useState("");
+  const [renameError, setRenameError] = useState<string | null>(null);
+  const [renamingId, setRenamingId] = useState<string | null>(null);
   const [settingBaseId, setSettingBaseId] = useState<string | null>(null);
   const [baseStatusMessage, setBaseStatusMessage] = useState<string | null>(null);
   const [baseStatusType, setBaseStatusType] = useState<"success" | "error" | null>(null);
@@ -199,12 +209,29 @@ const ResumeDashboard: React.FC<ResumeDashboardProps> = ({ onEditResume, onCreat
         return;
       }
 
-      await queryClient.refetchQueries({ queryKey: resumesListQueryKey, exact: true });
+      // Seed the list cache directly from the create response. This is the
+      // authoritative committed row, so the new card renders instantly without a
+      // follow-up GET that could return a stale list (read-after-write race
+      // behind cloud proxies). We intentionally do NOT force a refetch here — the
+      // list self-heals on the next natural refetch once the backend is
+      // consistent, which is never inside the race window.
+      const createdResume = result.resume ? mapBackendResumeToFrontend(result.resume) : null;
+
+      if (createdResume) {
+        queryClient.setQueryData<ResumeData[]>(resumesListQueryKey, previous =>
+          previous ? [createdResume, ...previous.filter(item => item.id !== createdResume.id)] : [createdResume]
+        );
+      } else {
+        // Backward-compat: older backend that returns only `{ id }`.
+        await queryClient.refetchQueries({ queryKey: resumesListQueryKey, exact: true });
+      }
 
       setNewlyDuplicatedResumeId(result.id);
 
       const duplicatedTitle =
-        queryClient.getQueryData<ResumeData[]>(resumesListQueryKey)?.find(item => item.id === result.id)?.title ?? "Resume";
+        createdResume?.title ??
+        queryClient.getQueryData<ResumeData[]>(resumesListQueryKey)?.find(item => item.id === result.id)?.title ??
+        "Resume";
       setDuplicateToastMessage(`Duplicated as "${duplicatedTitle}"`);
     } finally {
       setDuplicatingId(null);
@@ -382,6 +409,50 @@ const ResumeDashboard: React.FC<ResumeDashboardProps> = ({ onEditResume, onCreat
     const resumeToDelete = resumes.find(resume => resume.id === id);
     if (!resumeToDelete) return;
     setPendingDeleteResume({ id, title: resumeToDelete.title });
+  };
+
+  const handleRename = (e: React.MouseEvent, resume: ResumeData) => {
+    e.stopPropagation();
+    closeActionsMenu();
+    setRenameError(null);
+    setRenameInput(resume.title);
+    setPendingRenameResume({ id: resume.id, title: resume.title });
+  };
+
+  const handleConfirmRename = async () => {
+    if (!pendingRenameResume) return;
+    const trimmed = renameInput.trim();
+    if (!trimmed) {
+      setRenameError("Enter a resume name.");
+      return;
+    }
+    if (trimmed === pendingRenameResume.title.trim()) {
+      setPendingRenameResume(null);
+      setRenameError(null);
+      return;
+    }
+
+    const resumeToRename = resumes.find(resume => resume.id === pendingRenameResume.id);
+    if (!resumeToRename) {
+      setRenameError("Resume not found. Refresh and try again.");
+      return;
+    }
+
+    setRenamingId(pendingRenameResume.id);
+    setRenameError(null);
+    try {
+      await updateResumeMutation({
+        resumeId: pendingRenameResume.id,
+        data: { ...resumeToRename, title: trimmed, lastModified: new Date() },
+      });
+      setPendingRenameResume(null);
+      setBaseStatusType("success");
+      setBaseStatusMessage("Resume renamed");
+    } catch (err) {
+      setRenameError(err instanceof Error ? err.message : "Failed to rename resume");
+    } finally {
+      setRenamingId(null);
+    }
   };
 
   const handleConfirmDeleteResume = async () => {
@@ -574,6 +645,7 @@ const ResumeDashboard: React.FC<ResumeDashboardProps> = ({ onEditResume, onCreat
                 newlyDuplicatedResumeId={newlyDuplicatedResumeId}
                 setCardRef={handleSetCardRef}
                 onEditResume={onEditResume}
+                onRename={handleRename}
                 onToggleMenu={handleToggleMenu}
                 onCloseMenu={closeActionsMenu}
                 onDuplicate={handleDuplicate}
@@ -932,6 +1004,81 @@ const ResumeDashboard: React.FC<ResumeDashboardProps> = ({ onEditResume, onCreat
 
             <div className="shrink-0 border-t border-slate-100 bg-slate-50 p-4 text-center text-xs text-slate-400 dark:border-slate-800 dark:bg-slate-900/50">
               Unimad AI helps you beat the ATS and get hired faster.
+            </div>
+          </div>
+        </ModalPortalOverlay>
+      )}
+
+      {pendingRenameResume && (
+        <ModalPortalOverlay
+          className="flex items-center justify-center bg-black/50 backdrop-blur-sm p-4 animate-in fade-in duration-200"
+          onClick={e => {
+            e.stopPropagation();
+            if (renamingId) return;
+            setPendingRenameResume(null);
+            setRenameError(null);
+          }}
+        >
+          <div
+            className="bg-white rounded-2xl w-full max-w-md shadow-2xl overflow-hidden border border-slate-100"
+            onClick={e => e.stopPropagation()}
+            role="dialog"
+            aria-labelledby="rename-resume-title"
+            aria-modal="true"
+          >
+            <div className="p-6 border-b border-slate-100">
+              <h3 id="rename-resume-title" className="text-lg font-medium text-slate-900">
+                Rename resume
+              </h3>
+              <p className="text-sm text-slate-500 mt-1">Update how this resume appears on your dashboard.</p>
+              <label className="block mt-4">
+                <span className="sr-only">Resume name</span>
+                <input
+                  type="text"
+                  value={renameInput}
+                  onChange={e => {
+                    setRenameInput(e.target.value);
+                    if (renameError) setRenameError(null);
+                  }}
+                  onKeyDown={e => {
+                    if (e.key === "Enter") {
+                      e.preventDefault();
+                      void handleConfirmRename();
+                    }
+                    if (e.key === "Escape" && !renamingId) {
+                      setPendingRenameResume(null);
+                      setRenameError(null);
+                    }
+                  }}
+                  autoFocus
+                  disabled={Boolean(renamingId)}
+                  className="w-full px-3 py-2.5 rounded-lg border border-slate-200 text-slate-900 text-sm outline-none focus:border-brand-500 focus:ring-2 focus:ring-brand-100 disabled:opacity-50"
+                  placeholder="Untitled Resume"
+                />
+              </label>
+              {renameError ? <p className="mt-2 text-sm text-red-600">{renameError}</p> : null}
+            </div>
+            <div className="p-4 bg-slate-50 flex items-center justify-end gap-3">
+              <button
+                type="button"
+                onClick={() => {
+                  setPendingRenameResume(null);
+                  setRenameError(null);
+                }}
+                disabled={Boolean(renamingId)}
+                className="px-4 py-2 text-sm rounded-lg border border-slate-200 bg-white text-slate-600 hover:bg-slate-50 transition-colors disabled:opacity-50"
+              >
+                Cancel
+              </button>
+              <button
+                type="button"
+                onClick={() => void handleConfirmRename()}
+                disabled={Boolean(renamingId)}
+                className="px-4 py-2 text-sm rounded-lg bg-brand-600 text-white hover:bg-brand-700 transition-colors disabled:opacity-50 flex items-center gap-2"
+              >
+                {renamingId ? <Loader2 size={14} className="animate-spin" /> : null}
+                Save
+              </button>
             </div>
           </div>
         </ModalPortalOverlay>

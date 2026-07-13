@@ -437,6 +437,7 @@ const PrepareApplicationModal: React.FC<PrepareApplicationModalProps> = ({
       tab: type,
       company: job.company,
       role: job.role,
+      jobDescription: job.description?.trim() || "",
       logo: job.logo,
       navigate: prepareNavigate,
     });
@@ -603,6 +604,7 @@ const PrepareApplicationModal: React.FC<PrepareApplicationModalProps> = ({
               tab: "resume",
               company: job.company,
               role: job.role,
+              jobDescription: job.description?.trim() || "",
               logo: job.logo,
               navigate: prepareNavigate,
             });

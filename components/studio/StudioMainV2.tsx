@@ -639,8 +639,10 @@ const StudioMainV2: React.FC<StudioMainProps> = ({ initialContext, initialAssetI
     if (!prepareReturn) return;
     if (prepareReturn.role) setRole(prepareReturn.role);
     if (prepareReturn.company) setCompany(prepareReturn.company);
-    if (prepareApplication?.job_description?.trim()) {
-      setJobDescription(prepareApplication.job_description);
+    const jdFromApplication = prepareApplication?.job_description?.trim() || "";
+    const jdFromPrepareSession = prepareReturn.jobDescription?.trim() || "";
+    if (jdFromApplication || jdFromPrepareSession) {
+      setJobDescription(jdFromApplication || jdFromPrepareSession);
     }
   }, [prepareApplication?.job_description, prepareReturn]);
 
@@ -1205,9 +1207,11 @@ const StudioMainV2: React.FC<StudioMainProps> = ({ initialContext, initialAssetI
     useApplicationAssetStudioStore.getState().syncFromStudio({
       assetType: apiType,
       assetId,
+      applicationId: prepareApplicationId,
       role,
       company,
       jobDescription: jobDescription,
+      // Cover letter never carries a personal recipient — clear stale referral/cold-email names.
       contactName: selectedTopic === "cold-email" ? managerName : selectedTopic === "referral" ? connectionName : "",
       draftPreview: previewBody,
       acceptedContent,
@@ -1224,6 +1228,7 @@ const StudioMainV2: React.FC<StudioMainProps> = ({ initialContext, initialAssetI
     currentCoverLetterDraft,
     currentColdEmailDraft,
     currentReferralDraft,
+    prepareApplicationId,
   ]);
 
   useEffect(() => {
@@ -1937,11 +1942,11 @@ const StudioMainV2: React.FC<StudioMainProps> = ({ initialContext, initialAssetI
       useApplicationAssetStudioStore.getState().syncFromStudio({
         assetType: detail.assetType,
         assetId: detail.assetId,
-        applicationId: detail.applicationId ?? null,
+        applicationId: detail.applicationId ?? prepareApplicationId ?? null,
         role: roleLabel,
         company: companyLabel,
         jobDescription: jd,
-        contactName: detail.contactName ?? "",
+        contactName: detail.assetType === "coverletter" ? "" : (detail.contactName ?? ""),
         draftPreview: content,
         acceptedContent: content,
         liveDocumentBody: content,
@@ -1959,7 +1964,7 @@ const StudioMainV2: React.FC<StudioMainProps> = ({ initialContext, initialAssetI
         })
       );
     },
-    [company, initialContext, jobDescription, role]
+    [company, initialContext, jobDescription, prepareApplicationId, role]
   );
 
   useEffect(() => {
@@ -1986,10 +1991,10 @@ const StudioMainV2: React.FC<StudioMainProps> = ({ initialContext, initialAssetI
           dispatchOpenImproveForAsset({
             assetType: "coverletter",
             assetId: String(asset.id),
-            applicationId: initialContext?.jobId,
+            applicationId: prepareApplicationId ?? undefined,
             role: asset.role ?? "",
             company: asset.company ?? "",
-            jobDescription: jobDescriptionFromAsset(asset),
+            jobDescription: jobDescriptionFromAsset(asset) || jobDescription || prepareReturn?.jobDescription || "",
             content: asset.content ?? "",
           });
           return;
@@ -2004,10 +2009,10 @@ const StudioMainV2: React.FC<StudioMainProps> = ({ initialContext, initialAssetI
           dispatchOpenImproveForAsset({
             assetType: "coldemail",
             assetId: String(asset.id),
-            applicationId: initialContext?.jobId,
+            applicationId: prepareApplicationId ?? undefined,
             role: asset.role ?? "",
             company: asset.company ?? "",
-            jobDescription: jobDescriptionFromAsset(asset),
+            jobDescription: jobDescriptionFromAsset(asset) || jobDescription || prepareReturn?.jobDescription || "",
             contactName: contact,
             content: asset.content ?? "",
           });
@@ -2023,7 +2028,7 @@ const StudioMainV2: React.FC<StudioMainProps> = ({ initialContext, initialAssetI
           dispatchOpenImproveForAsset({
             assetType: "referral",
             assetId: String(asset.id),
-            applicationId: initialContext?.jobId,
+            applicationId: prepareApplicationId ?? undefined,
             role: asset.role ?? "",
             company: asset.company ?? "",
             jobDescription: "",

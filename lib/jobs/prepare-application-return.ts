@@ -8,6 +8,8 @@ export type PrepareApplicationReturnSession = {
   tab: PrepareApplicationTab;
   company: string;
   role: string;
+  /** Full JD when leaving Prepare → Resume/Studio so ADK PATCH is not role/company-only. */
+  jobDescription?: string;
   logo?: string | null;
   navigate: PrepareNavigateTarget;
 };
@@ -32,6 +34,7 @@ export function getPrepareReturnSession(): PrepareApplicationReturnSession | nul
     if (!parsed?.jobId || !isPrepareTab(parsed.tab)) return null;
     return {
       ...parsed,
+      jobDescription: typeof parsed.jobDescription === "string" ? parsed.jobDescription : "",
       navigate: parsed.navigate === "jobs" || parsed.navigate === "tracker" ? parsed.navigate : "tracker",
     };
   } catch {

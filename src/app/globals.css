@@ -24,26 +24,26 @@
     scrollbar-color: var(--scrollbar-thumb) transparent;
   }
 
-  html:not(.masterclass-page) *:not(.no-scrollbar):not(.hide-scrollbar) {
+  html:not(.masterclass-page) *:not(.no-scrollbar):not(.hide-scrollbar):not(.scrollbar-on-hover) {
     scrollbar-width: thin;
     scrollbar-color: var(--scrollbar-thumb) transparent;
   }
 
-  html:not(.masterclass-page) *:not(.no-scrollbar):not(.hide-scrollbar)::-webkit-scrollbar {
+  html:not(.masterclass-page) *:not(.no-scrollbar):not(.hide-scrollbar):not(.scrollbar-on-hover)::-webkit-scrollbar {
     width: var(--scrollbar-size);
     height: var(--scrollbar-size);
   }
 
-  html:not(.masterclass-page) *:not(.no-scrollbar):not(.hide-scrollbar)::-webkit-scrollbar-track {
+  html:not(.masterclass-page) *:not(.no-scrollbar):not(.hide-scrollbar):not(.scrollbar-on-hover)::-webkit-scrollbar-track {
     background: transparent;
   }
 
-  html:not(.masterclass-page) *:not(.no-scrollbar):not(.hide-scrollbar)::-webkit-scrollbar-thumb {
+  html:not(.masterclass-page) *:not(.no-scrollbar):not(.hide-scrollbar):not(.scrollbar-on-hover)::-webkit-scrollbar-thumb {
     background-color: var(--scrollbar-thumb);
     border-radius: 9999px;
   }
 
-  html:not(.masterclass-page) *:not(.no-scrollbar):not(.hide-scrollbar)::-webkit-scrollbar-thumb:hover {
+  html:not(.masterclass-page) *:not(.no-scrollbar):not(.hide-scrollbar):not(.scrollbar-on-hover)::-webkit-scrollbar-thumb:hover {
     background-color: var(--scrollbar-thumb-hover);
   }
 }
@@ -1191,4 +1191,64 @@ html.masterclass-page *::-webkit-scrollbar-thumb {
   .masterclass-logo-grid__logo {
     height: calc(var(--logo-scale, 1) * 3rem);
   }
+}
+
+.unicoach-discovery-form .masterclass-onboarding-modal {
+  background-color: #fff;
+  box-shadow: 0 24px 48px rgba(15, 23, 42, 0.12);
+}
+
+.unicoach-discovery-form .masterclass-onboarding-label {
+  color: rgb(100 116 139);
+}
+
+.unicoach-discovery-form .masterclass-onboarding-input {
+  border-color: rgb(226 232 240);
+  background-color: rgb(248 250 252);
+  color: rgb(15 23 42);
+}
+
+.unicoach-discovery-form .masterclass-onboarding-input::placeholder {
+  color: rgb(148 163 184);
+}
+
+.unicoach-discovery-form .masterclass-onboarding-input:focus {
+  border-color: rgb(59 130 246);
+  background-color: #fff;
+}
+
+.unicoach-discovery-form .masterclass-onboarding-select {
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='12' viewBox='0 0 24 24' fill='none' stroke='%23475569' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='m6 9 6 6 6-6'/%3E%3C/svg%3E");
+}
+
+.unicoach-discovery-form .masterclass-onboarding-select option {
+  background-color: #fff;
+  color: rgb(15 23 42);
+}
+
+.unicoach-discovery-form .masterclass-onboarding-option {
+  border-color: rgb(226 232 240);
+  background-color: rgb(248 250 252);
+}
+
+.unicoach-discovery-form .masterclass-onboarding-option:hover {
+  border-color: rgb(203 213 225);
+  background-color: #fff;
+}
+
+.unicoach-discovery-form .masterclass-onboarding-option:has(:checked) {
+  border-color: rgb(59 130 246);
+  background-color: rgb(239 246 255);
+}
+
+.unicoach-discovery-form .masterclass-onboarding-option__label {
+  color: rgb(51 65 85);
+}
+
+.unicoach-discovery-form .masterclass-onboarding-progress {
+  background-color: rgb(226 232 240);
+}
+
+.unicoach-discovery-form .masterclass-onboarding-progress__fill {
+  background: linear-gradient(90deg, #2563eb 0%, #346de0 100%);
 }

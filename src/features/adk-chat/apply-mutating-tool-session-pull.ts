@@ -238,7 +238,13 @@ function applyApplicationAssetState(state: Record<string, unknown>, ctx: Mutatin
   const role = typeof state.application_role === "string" ? state.application_role : studio.role;
   const company = typeof state.application_company === "string" ? state.application_company : studio.company;
   const jobDescription = typeof state.application_jd === "string" ? state.application_jd : studio.jobDescription;
-  const contactName = typeof state.application_contact_name === "string" ? state.application_contact_name : studio.contactName;
+  // Cover letters must not inherit personal names from session (stale referral/cold-email contact).
+  const contactName =
+    assetType === "coverletter"
+      ? ""
+      : typeof state.application_contact_name === "string"
+        ? state.application_contact_name
+        : studio.contactName;
   const reviewSessionId = resolveReviewSessionId(ctx.sessionId);
 
   const offered = offerApplicationAssetDraftReview({

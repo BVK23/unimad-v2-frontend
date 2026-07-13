@@ -38,7 +38,7 @@ function PostDetailModal({ post, onClose }: { post: UnicoachLinkedInPost; onClos
             <X size={18} />
           </button>
         </div>
-        <div className="flex-1 overflow-y-auto px-4 py-4 space-y-4">
+        <div className="scrollbar-on-hover flex-1 overflow-y-auto px-4 py-4 space-y-4">
           <div className="rounded-xl border-l-4 border-brand-500 bg-brand-50 p-3 dark:bg-brand-950/30">
             <p className="text-sm text-slate-700 dark:text-slate-300">{post.explanation}</p>
           </div>
@@ -97,7 +97,7 @@ function UnicoachLinkedInPostsModalContent({ onClose }: { onClose: () => void })
               <X size={18} />
             </button>
           </div>
-          <div className="flex-1 overflow-y-auto p-4">
+          <div className="scrollbar-on-hover flex-1 overflow-y-auto p-4">
             <div className="grid gap-2 sm:grid-cols-2">
               {UNICOACH_LINKEDIN_POSTS.map(post => (
                 <button

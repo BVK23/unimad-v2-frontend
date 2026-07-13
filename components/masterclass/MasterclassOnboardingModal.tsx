@@ -200,7 +200,16 @@ function OptionRow({ name, type, label, checked, onChange }) {
   );
 }
 
-export function MasterclassOnboardingModal({ open, intent = "booking", initialStep = "details", initialLead = null, onClose, onSubmit }) {
+export function MasterclassOnboardingModal({
+  open,
+  intent = "booking",
+  initialStep = "details",
+  initialLead = null,
+  theme = "dark",
+  skipContactStep = false,
+  onClose,
+  onSubmit,
+}) {
   const [bookingStep, setBookingStep] = useState(initialStep);
   const [questionIndex, setQuestionIndex] = useState(0);
   const [name, setName] = useState(initialLead?.name || "");
@@ -368,6 +377,7 @@ export function MasterclassOnboardingModal({ open, intent = "booking", initialSt
       setQuestionIndex(prev => prev - 1);
       return;
     }
+    if (skipContactStep) return;
     setBookingStep("details");
   };
 
@@ -388,16 +398,18 @@ export function MasterclassOnboardingModal({ open, intent = "booking", initialSt
 
   const otherValue = currentQuestion?.otherField && showOtherInput ? discovery[currentQuestion.otherField] || "" : "";
 
+  const isLight = theme === "light";
+
   return (
     <div
-      className="fixed inset-0 z-[100] flex items-end justify-center p-0 sm:items-center sm:p-6"
+      className={`fixed inset-0 ${isLight ? "z-[210]" : "z-[100]"} flex items-end justify-center p-0 sm:items-center sm:p-6 ${isLight ? "unicoach-discovery-form" : ""}`}
       role="dialog"
       aria-modal="true"
       aria-labelledby="masterclass-onboarding-title"
     >
       <button
         type="button"
-        className="absolute inset-0 bg-[#0a0f18]/75 backdrop-blur-sm"
+        className={`absolute inset-0 backdrop-blur-sm ${isLight ? "bg-slate-900/40" : "bg-[#0a0f18]/75"}`}
         aria-hidden
         tabIndex={-1}
         onClick={isSubmitting ? undefined : onClose}
@@ -406,21 +418,31 @@ export function MasterclassOnboardingModal({ open, intent = "booking", initialSt
       <button
         type="button"
         onClick={isSubmitting ? undefined : onClose}
-        className="fixed right-3 top-[max(0.75rem,env(safe-area-inset-top))] z-[101] p-1.5 text-[#eaeaea]/40 transition-colors hover:text-[#eaeaea]/70 sm:right-5 sm:top-5"
+        className={`fixed right-3 top-[max(0.75rem,env(safe-area-inset-top))] z-[101] p-1.5 transition-colors sm:right-5 sm:top-5 ${
+          isLight ? "text-slate-400 hover:text-slate-600" : "text-[#eaeaea]/40 hover:text-[#eaeaea]/70"
+        }`}
         aria-label="Close"
       >
         <X size={16} strokeWidth={2} />
       </button>
 
-      <div className="masterclass-onboarding-modal relative z-10 max-h-[min(92dvh,720px)] w-full max-w-[440px] overflow-y-auto rounded-t-[18px] sm:rounded-[14px]">
+      <div
+        className={`masterclass-onboarding-modal relative z-10 max-h-[min(92dvh,720px)] w-full max-w-[440px] overflow-y-auto rounded-t-[18px] sm:rounded-[14px] ${
+          isLight ? "border border-slate-200 bg-white shadow-xl" : ""
+        }`}
+      >
         {isSubmitting ? (
           <div
-            className="absolute inset-0 z-20 flex flex-col items-center justify-center gap-3 rounded-[inherit] bg-[#0a0f18]/90 backdrop-blur-sm"
+            className={`absolute inset-0 z-20 flex flex-col items-center justify-center gap-3 rounded-[inherit] backdrop-blur-sm ${
+              isLight ? "bg-white/90" : "bg-[#0a0f18]/90"
+            }`}
             role="status"
             aria-live="polite"
           >
-            <div className="h-9 w-9 animate-spin rounded-full border-2 border-white/20 border-t-[#346de0]" />
-            <p className="text-[13px] tracking-[-0.26px] text-[#eaeaea]/75">Saving your details…</p>
+            <div
+              className={`h-9 w-9 animate-spin rounded-full border-2 ${isLight ? "border-slate-200 border-t-brand-600" : "border-white/20 border-t-[#346de0]"}`}
+            />
+            <p className={`text-[13px] tracking-[-0.26px] ${isLight ? "text-slate-500" : "text-[#eaeaea]/75"}`}>Saving your details…</p>
           </div>
         ) : null}
 
@@ -429,14 +451,22 @@ export function MasterclassOnboardingModal({ open, intent = "booking", initialSt
             <>
               <div className="mb-5 space-y-2">
                 <div className="flex items-center justify-between gap-3">
-                  <button
-                    type="button"
-                    onClick={handleQuestionBack}
-                    className="text-[12px] font-medium tracking-[-0.24px] text-[#eaeaea]/50 transition-colors hover:text-[#eaeaea]/75"
-                  >
-                    ← Back
-                  </button>
-                  <span className="text-[11px] font-medium tracking-[-0.22px] text-[#eaeaea]/50">{progressPercent}%</span>
+                  {skipContactStep && questionIndex === 0 ? (
+                    <span aria-hidden className="inline-block w-12" />
+                  ) : (
+                    <button
+                      type="button"
+                      onClick={handleQuestionBack}
+                      className={`text-[12px] font-medium tracking-[-0.24px] transition-colors ${
+                        isLight ? "text-slate-400 hover:text-slate-600" : "text-[#eaeaea]/50 hover:text-[#eaeaea]/75"
+                      }`}
+                    >
+                      ← Back
+                    </button>
+                  )}
+                  <span className={`text-[11px] font-medium tracking-[-0.22px] ${isLight ? "text-slate-400" : "text-[#eaeaea]/50"}`}>
+                    {progressPercent}%
+                  </span>
                 </div>
                 <div
                   className="masterclass-onboarding-progress"
@@ -451,7 +481,9 @@ export function MasterclassOnboardingModal({ open, intent = "booking", initialSt
 
               <h2
                 id="masterclass-onboarding-title"
-                className="mb-4 text-[18px] font-medium leading-[1.25] tracking-[-0.36px] text-[#eaeaea] sm:text-[20px]"
+                className={`mb-4 text-[18px] font-medium leading-[1.25] tracking-[-0.36px] sm:text-[20px] ${
+                  isLight ? "text-slate-900" : "text-[#eaeaea]"
+                }`}
               >
                 {currentQuestion.title}
               </h2>
@@ -516,7 +548,7 @@ export function MasterclassOnboardingModal({ open, intent = "booking", initialSt
                 <button
                   type="submit"
                   disabled={isSubmitting}
-                  className="masterclass-blue-btn masterclass-blue-btn--modal disabled:opacity-60"
+                  className={`${isLight ? "w-full rounded-xl bg-brand-600 py-3 text-sm font-medium text-white hover:bg-brand-700 disabled:opacity-60" : "masterclass-blue-btn masterclass-blue-btn--modal disabled:opacity-60"}`}
                 >
                   <span className="relative z-10 px-2">
                     {questionIndex < totalQuestions - 1
@@ -530,11 +562,15 @@ export function MasterclassOnboardingModal({ open, intent = "booking", initialSt
             <>
               <h2
                 id="masterclass-onboarding-title"
-                className="text-[22px] font-medium leading-[1.2] tracking-[-0.44px] text-[#eaeaea] sm:text-[24px]"
+                className={`text-[22px] font-medium leading-[1.2] tracking-[-0.44px] sm:text-[24px] ${
+                  isLight ? "text-slate-900" : "text-[#eaeaea]"
+                }`}
               >
                 {copy.title}
               </h2>
-              <p className="mt-2 text-[13px] leading-normal tracking-[-0.26px] text-[#eaeaea]/65">{copy.description}</p>
+              <p className={`mt-2 text-[13px] leading-normal tracking-[-0.26px] ${isLight ? "text-slate-500" : "text-[#eaeaea]/65"}`}>
+                {copy.description}
+              </p>
 
               <form className="mt-6 space-y-4" onSubmit={handleDetailsSubmit} noValidate>
                 <div className="space-y-1.5">

@@ -88,6 +88,28 @@ export async function submitMasterclassLead(payload: MasterclassLeadPayload): Pr
   return parseResponse(response, "Unable to save your details.");
 }
 
+export async function fetchAuthenticatedMasterclassLead(): Promise<MasterclassLeadResult & { found?: boolean }> {
+  if (!BACKEND_URL) {
+    throw new Error("Backend URL is not configured.");
+  }
+
+  const cookieStore = await cookies();
+  const accessTokenCookie = cookieStore.get("_ut");
+  if (!accessTokenCookie?.value) {
+    throw new Error("Please sign in to continue.");
+  }
+
+  const response = await fetch(`${BACKEND_URL}/api/crm/masterclass-leads/`, {
+    method: "GET",
+    headers: {
+      Authorization: `Bearer ${accessTokenCookie.value}`,
+    },
+    cache: "no-store",
+  });
+
+  return parseResponse(response, "Unable to load your details.");
+}
+
 export async function fetchMasterclassLead(uid: string): Promise<MasterclassLeadResult> {
   if (!BACKEND_URL) {
     throw new Error("Backend URL is not configured.");
@@ -122,4 +144,35 @@ export async function expressDiscoveryBooking(uid: string) {
 
 export async function unlockMasterclassWatch(uid: string) {
   return masterclassLinkAction(uid, "unlock_watch");
+}
+
+export async function submitAuthenticatedDiscoveryLead(payload: {
+  discovery: MasterclassDiscoveryPayload;
+  uid?: string;
+}): Promise<MasterclassLeadResult> {
+  if (!BACKEND_URL) {
+    throw new Error("Backend URL is not configured.");
+  }
+
+  const cookieStore = await cookies();
+  const accessTokenCookie = cookieStore.get("_ut");
+  if (!accessTokenCookie?.value) {
+    throw new Error("Please sign in to continue.");
+  }
+
+  const response = await fetch(`${BACKEND_URL}/api/crm/masterclass-leads/`, {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+      Authorization: `Bearer ${accessTokenCookie.value}`,
+    },
+    body: JSON.stringify({
+      source: "discovery_vsl",
+      stage: "complete",
+      discovery: payload.discovery,
+      uid: payload.uid,
+    }),
+  });
+
+  return parseResponse(response, "Unable to save your details.");
 }

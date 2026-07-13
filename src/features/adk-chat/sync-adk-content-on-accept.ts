@@ -30,7 +30,6 @@ export async function syncAdkContentStateOnAccept(userId: string, sessionId: str
         jobDescription: p.jobDescription,
         contactName: p.contactName,
         draftPreview: p.content,
-        acceptedBody: p.content,
       })
     );
     return;

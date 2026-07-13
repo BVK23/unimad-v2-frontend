@@ -373,7 +373,11 @@ export default function UniboardShell({
             {showOnboardingModal && <OnboardingModal onComplete={() => setShowOnboardingModal(false)} />}
 
             {showUnicoachPricing ? (
-              <UnicoachPricingModal onClose={() => setShowUnicoachPricing(false)} onPaymentSuccess={handleUnicoachPaymentSuccess} />
+              <UnicoachPricingModal
+                open={showUnicoachPricing}
+                onClose={() => setShowUnicoachPricing(false)}
+                onPaymentSuccess={handleUnicoachPaymentSuccess}
+              />
             ) : null}
 
             <UniboardOnboardingGate userData={userData} />

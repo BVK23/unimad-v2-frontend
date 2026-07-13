@@ -10,6 +10,7 @@ import type {
   UnicoachProfileInfo,
   UnicoachStudentMeta,
   UnicoachStudentsByStage,
+  UnicoachSubscriptionSummary,
 } from "../types";
 
 function getBackendUrl(): string {
@@ -301,11 +302,20 @@ export async function updateUnicoachStudentCalls(payload: {
   userId: number;
   targetStage?: string;
   enableCallNumber?: number | null;
+  confirmOffer?: boolean;
+  confirmBackward?: boolean;
+  confirmSkip?: boolean;
+  refundedAt?: string | null;
+  paymentJustRecorded?: boolean;
 }): Promise<{
   message?: string;
   calls_data?: Record<string, unknown>;
   ux_stage?: string;
   max_unlocked_stage?: string;
+  celebrate_offer?: boolean;
+  gate?: string;
+  entitlement?: Record<string, unknown>;
+  error?: string;
 }> {
   const body: Record<string, unknown> = { user_id: payload.userId };
   if (payload.enableCallNumber != null) {
@@ -313,15 +323,76 @@ export async function updateUnicoachStudentCalls(payload: {
   } else if (payload.targetStage != null) {
     body.target_stage = payload.targetStage;
   }
+  if (payload.confirmOffer) body.confirm_offer = true;
+  if (payload.confirmBackward) body.confirm_backward = true;
+  if (payload.confirmSkip) body.confirm_skip = true;
+  if (payload.refundedAt) body.refunded_at = payload.refundedAt;
+  if (payload.paymentJustRecorded) body.payment_just_recorded = true;
+
   const res = await authedFetch("/api/unicoach/update-student-calls/", {
     method: "POST",
     body: JSON.stringify(body),
   });
-  const data = await res.json().catch(() => ({}));
+  const data = (await res.json().catch(() => ({}))) as {
+    message?: string;
+    calls_data?: Record<string, unknown>;
+    ux_stage?: string;
+    max_unlocked_stage?: string;
+    celebrate_offer?: boolean;
+    gate?: string;
+    entitlement?: Record<string, unknown>;
+    error?: string;
+  };
   if (!res.ok) {
-    throw new Error((data as { error?: string })?.error ?? "Failed to update student calls");
+    const err = new Error(data.error ?? "Failed to update student calls") as Error & {
+      gate?: string;
+      entitlement?: Record<string, unknown>;
+      status?: number;
+    };
+    err.gate = data.gate;
+    err.entitlement = data.entitlement;
+    err.status = res.status;
+    throw err;
   }
   return data;
+}
+
+export async function recordUnicoachManualPayment(payload: {
+  userId: number;
+  planId: string;
+  amountGbp: number;
+  paidAt: string;
+  note?: string;
+}): Promise<{
+  success?: boolean;
+  subscription_id?: string;
+  plan_id?: string;
+  amount?: number;
+  subscription_summary?: UnicoachSubscriptionSummary;
+  celebrate_payment?: boolean;
+}> {
+  const res = await authedFetch("/api/unicoach/record-manual-payment/", {
+    method: "POST",
+    body: JSON.stringify({
+      user_id: payload.userId,
+      plan_id: payload.planId,
+      amount_gbp: payload.amountGbp,
+      paid_at: payload.paidAt,
+      note: payload.note,
+    }),
+  });
+  const data = await res.json().catch(() => ({}));
+  if (!res.ok) {
+    throw new Error((data as { error?: string })?.error ?? "Failed to record payment");
+  }
+  return data as {
+    success?: boolean;
+    subscription_id?: string;
+    plan_id?: string;
+    amount?: number;
+    subscription_summary?: UnicoachSubscriptionSummary;
+    celebrate_payment?: boolean;
+  };
 }
 
 export async function switchUnicoachUser(userEmail: string): Promise<void> {

@@ -1,7 +1,7 @@
 "use client";
 
-import { btnOutline } from "@/constants/ui/button-classes";
 import { useSubscriptionData } from "@/features/user-profile/hooks/use-profile-data";
+import type { BillingHistoryRow, CurrentSubscription } from "@/features/user-profile/types";
 import Link from "next/link";
 
 function formatDate(value?: string | null): string {
@@ -11,6 +11,40 @@ function formatDate(value?: string | null): string {
   return d.toLocaleDateString(undefined, { year: "numeric", month: "short", day: "numeric" });
 }
 
+function addDaysIso(startIso: string, days: number): string {
+  const d = new Date(startIso);
+  if (Number.isNaN(d.getTime())) return "";
+  d.setUTCDate(d.getUTCDate() + days);
+  return d.toISOString();
+}
+
+function isPartialUnicoachPlan(planId?: string | null, plan?: string | null): boolean {
+  const id = (planId || "").toLowerCase();
+  const label = (plan || "").toLowerCase();
+  return id.includes("partial") || label.includes("partial") || label.includes("1/2") || label.includes("2/2");
+}
+
+function isFullUnicoachPlan(planId?: string | null, plan?: string | null, purchases?: string[]): boolean {
+  const id = (planId || "").toLowerCase();
+  if (id === "unicoach_program" || id.includes("partial_2")) return true;
+  if (purchases?.some(p => /full/i.test(p))) return true;
+  const label = (plan || "").toLowerCase();
+  return label.includes("full");
+}
+
+function billingEndDisplay(row: BillingHistoryRow): string {
+  const planId = (row as BillingHistoryRow & { plan_id?: string }).plan_id;
+  if (isPartialUnicoachPlan(planId, row.plan)) {
+    const end = row.end_date || (row.start_date ? addDaysIso(row.start_date, 30) : "");
+    return formatDate(end);
+  }
+  // Full Unicoach / lifetime-style — never-ending in the UI
+  if ((row.plan || "").toLowerCase().includes("unicoach") || (planId || "").startsWith("unicoach")) {
+    return "—";
+  }
+  return formatDate(row.end_date);
+}
+
 function SubscriptionStatusCopy({
   status,
   plan,
@@ -18,6 +52,7 @@ function SubscriptionStatusCopy({
   endingAt,
   endedAt,
   lastAction,
+  isDiscovery,
 }: {
   status?: string | null;
   plan?: string | null;
@@ -25,9 +60,20 @@ function SubscriptionStatusCopy({
   endingAt?: string | null;
   endedAt?: string | null;
   lastAction?: string | null;
+  isDiscovery?: boolean;
 }) {
   if (!status) {
     return <p className="text-sm text-slate-500 dark:text-slate-400">You don&apos;t have an active subscription yet.</p>;
+  }
+  if (isDiscovery) {
+    return (
+      <div className="space-y-1 text-sm text-slate-600 dark:text-slate-300">
+        <p>
+          You&apos;re on <span className="font-semibold text-brand-600 dark:text-brand-400">Unicoach — Free discovery</span>
+        </p>
+        <p className="text-xs text-slate-500">Complete discovery, then upgrade to unlock the full programme.</p>
+      </div>
+    );
   }
   if (status === "active" || status === "payment_verified") {
     return (
@@ -64,13 +110,32 @@ function SubscriptionStatusCopy({
   );
 }
 
+function planBannerTitle(current?: CurrentSubscription | null): string {
+  if (!current) return "Free";
+  if (current.is_discovery || current.plan_id === "vsl_discovery") return "Unicoach";
+  if (
+    current.plan?.toLowerCase().includes("unicoach") ||
+    (current.plan_id ?? "").startsWith("unicoach") ||
+    current.plan_id === "vsl_discovery"
+  ) {
+    return "Unicoach";
+  }
+  return current.plan ?? "Free";
+}
+
 export function UserSubscriptionPanel() {
   const { data, isLoading, isError } = useSubscriptionData();
-  const current = data?.current_subscription;
+  const current = data?.current_subscription as (CurrentSubscription & { is_discovery?: boolean }) | null | undefined;
   const history = data?.billing_history ?? [];
-  const isUnicoach = current?.plan?.toLowerCase().includes("unicoach") || (current?.plan_id ?? "").startsWith("unicoach");
+  const isDiscovery = Boolean(current?.is_discovery || current?.plan_id === "vsl_discovery");
+  const isUnicoach = isDiscovery || current?.plan?.toLowerCase().includes("unicoach") || (current?.plan_id ?? "").startsWith("unicoach");
   const unicoachPurchases = current?.unicoach_purchases ?? [];
   const unicoachModules = current?.unicoach_modules ?? [];
+  const subscribedLabel = isDiscovery
+    ? "Free discovery"
+    : isFullUnicoachPlan(current?.plan_id, current?.plan, unicoachPurchases)
+      ? "Full program"
+      : (current?.plan ?? "Unicoach");
 
   return (
     <div className="space-y-6">
@@ -85,25 +150,33 @@ export function UserSubscriptionPanel() {
             <div className="flex flex-wrap items-center justify-between gap-3 rounded-xl bg-brand-600 px-4 py-4 text-white">
               <div>
                 <p className="text-[10px] uppercase tracking-wide opacity-80">Plan</p>
-                <p className="text-lg font-semibold">{isUnicoach ? "Unicoach" : (current?.plan ?? "Free")}</p>
+                <p className="text-lg font-semibold">{planBannerTitle(current)}</p>
               </div>
               {isUnicoach ? (
-                <Link href="/uniboard/unicoach" className={`${btnOutline} !border-white/40 !text-white hover:!bg-white/10`}>
+                <Link
+                  href="/uniboard/unicoach"
+                  className="inline-flex items-center justify-center gap-2 rounded-xl border border-white/50 bg-transparent px-5 py-2.5 text-xs font-medium text-white transition-all hover:bg-white/10 active:scale-95"
+                >
                   Go to Unicoach
                 </Link>
               ) : (
-                <button type="button" className={`${btnOutline} !border-white/40 !text-white hover:!bg-white/10`} disabled>
+                <button
+                  type="button"
+                  className="inline-flex items-center justify-center gap-2 rounded-xl border border-white/50 bg-transparent px-5 py-2.5 text-xs font-medium text-white opacity-60"
+                  disabled
+                >
                   Subscribe (coming soon)
                 </button>
               )}
             </div>
             <SubscriptionStatusCopy
               status={current?.status}
-              plan={current?.plan}
+              plan={subscribedLabel}
               nextBilling={current?.next_billing_date}
               endingAt={current?.ending_at}
               endedAt={current?.ended_at}
               lastAction={current?.last_action ?? undefined}
+              isDiscovery={isDiscovery}
             />
             {isUnicoach && (unicoachPurchases.length > 0 || unicoachModules.length > 0) ? (
               <div className="rounded-xl border border-slate-100 bg-slate-50 px-4 py-3 dark:border-slate-800 dark:bg-slate-900/50">
@@ -156,7 +229,7 @@ export function UserSubscriptionPanel() {
                 history.map((row, i) => (
                   <tr key={`${row.start_date}-${i}`} className="border-b border-slate-50 dark:border-slate-800/80">
                     <td className="py-2.5 pr-4 text-slate-700 dark:text-slate-200">{formatDate(row.start_date)}</td>
-                    <td className="py-2.5 pr-4 text-slate-700 dark:text-slate-200">{formatDate(row.end_date)}</td>
+                    <td className="py-2.5 pr-4 text-slate-700 dark:text-slate-200">{billingEndDisplay(row)}</td>
                     <td className="py-2.5 pr-4 text-slate-700 dark:text-slate-200">{row.plan}</td>
                     <td className="py-2.5 text-slate-700 dark:text-slate-200">
                       {row.plan?.includes("Unicoach") ? "£" : "$"}

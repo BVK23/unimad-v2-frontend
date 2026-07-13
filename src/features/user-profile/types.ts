@@ -94,13 +94,6 @@ export type MediaItem = {
   id?: number;
 };
 
-export type BillingHistoryRow = {
-  start_date: string;
-  end_date: string;
-  plan: string;
-  amount: number;
-};
-
 export type CurrentSubscription = {
   status?: string | null;
   plan?: string | null;
@@ -114,6 +107,15 @@ export type CurrentSubscription = {
   ended_at?: string | null;
   last_action?: string | null;
   payment_verification_expired?: boolean;
+  is_discovery?: boolean;
+};
+
+export type BillingHistoryRow = {
+  start_date: string;
+  end_date: string;
+  plan: string;
+  amount: number;
+  plan_id?: string;
 };
 
 export type SubscriptionData = {

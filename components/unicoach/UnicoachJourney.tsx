@@ -1,10 +1,11 @@
 "use client";
 
 import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { openUnicoachPricing } from "@/components/UnicoachPricingModal";
 import { ComingSoonBadge } from "@/components/ui/ComingSoonBadge";
 import { VPD_FEATURE_ENABLED } from "@/constants/feature-flags";
+import type { CoachPipelineStage } from "@/constants/unicoach-coach-pipeline";
 import { COACH_MILESTONE_BY_UX_STAGE } from "@/constants/unicoach-journey-coach";
+import { useCoachPipelineMoveFlow } from "@/features/unicoach/hooks/use-coach-pipeline-move-flow";
 import {
   useJourneyAdvanceMutation,
   useJourneyChecklistMutation,
@@ -12,7 +13,6 @@ import {
   useUnicoachInit,
   useUnicoachJourneyState,
   useUnicoachProfileInfo,
-  useUpdateUnicoachStudentCallsMutation,
 } from "@/features/unicoach/hooks/use-uniboard-unicoach";
 import {
   checklistToCompletedCompositeIds,
@@ -20,25 +20,36 @@ import {
   compositeIdToServerPayload,
   deriveCoachSettableMilestone,
   isStageCompleteForSidebar,
+  latestCompletedCallStamp,
   maxUnlockedStageIndex,
+  programProgressFromChecklist,
+  stageAfterCompletedCalls,
   stageChecklistComplete,
+  stageHasAnyCompletedTask,
+  stageMilestoneComplete,
 } from "@/features/unicoach/mappers/journey-mapper";
 import type { JourneyChecklist } from "@/features/unicoach/types";
+import { useProfileData } from "@/features/user-profile/hooks/use-profile-data";
 import { startCoachActAsSession } from "@/lib/authed-fetch";
 import { useQueryClient } from "@tanstack/react-query";
 import confetti from "canvas-confetti";
 import { CheckCircle2, ChevronDown, ChevronUp, Circle, Lock, PlayCircle, Sparkles, Star, ChevronLeft } from "lucide-react";
 import Link from "next/link";
 import { useRouter, useSearchParams } from "next/navigation";
+import Script from "next/script";
+import { UnicoachCoachConfirmDialog } from "./UnicoachCoachConfirmDialog";
 import { UnicoachCoachDashboard } from "./UnicoachCoachDashboard";
+import { UnicoachCoachRecordPaymentModal } from "./UnicoachCoachRecordPaymentModal";
 import { UnicoachCoachStudentHeader } from "./UnicoachCoachStudentHeader";
 import { UnicoachExecutionPanel } from "./UnicoachExecutionPanel";
 import { UnicoachFloatingChat } from "./UnicoachFloatingChat";
 import { UnicoachPartialPaymentCta } from "./UnicoachPartialPaymentCta";
+import { UnicoachProductPricingPickerModal } from "./UnicoachProductPricingPickerModal";
 import { UnicoachStageTasksCard } from "./UnicoachStageTasksCard";
 import { UnicoachUpgradeGate } from "./UnicoachUpgradeGate";
 import { UNICOACH_STAGES, videoUrlToEmbedSrc, type ContentTab, type UnicoachCurriculumStage } from "./curriculum";
 import { UnicoachStage3ResourcesPanel } from "./stage-content/UnicoachStage3Panel";
+import { startUnicoachRazorpayPayment } from "./unicoach-razorpay-checkout";
 
 const STAGES = UNICOACH_STAGES;
 
@@ -75,6 +86,7 @@ const UnicoachJourney: React.FC = () => {
   const searchParams = useSearchParams();
   const initQuery = useUnicoachInit();
   const init = initQuery.data;
+  const { data: liveProfile } = useProfileData();
 
   const isCoachAccount = Boolean(init?.coach_data);
   const isSubscribedStudent = init?.subscribed === true;
@@ -105,9 +117,25 @@ const UnicoachJourney: React.FC = () => {
 
   const checklistMutation = useJourneyChecklistMutation(journeyUserId);
   const advanceMutation = useJourneyAdvanceMutation(journeyUserId);
-  const coachCallsMutation = useUpdateUnicoachStudentCallsMutation();
+  const [productPickerOpen, setProductPickerOpen] = useState(false);
+  const [productPickerMode, setProductPickerMode] = useState<"upgrade" | "remaining">("upgrade");
+  const [remainingPhase, setRemainingPhase] = useState("");
+  const [standalonePaymentOpen, setStandalonePaymentOpen] = useState(false);
 
   const isCoachView = Boolean(coachTargetUserId);
+
+  const coachMoveFlow = useCoachPipelineMoveFlow({
+    getStudent: () => {
+      if (!coachTargetUserId || !journey) return undefined;
+      return {
+        id: Number(coachTargetUserId),
+        name: journey.journey_target_profile?.name ?? "Student",
+        email: journey.journey_target_profile?.email ?? "",
+        program_access_level: journey.unicoach_access_level,
+        plan_ids: journey.subscription_summary?.plan_ids ?? [],
+      };
+    },
+  });
 
   const [activeStageId, setActiveStageId] = useState(STAGES[0].id);
   const [interviewConfirmOpen, setInterviewConfirmOpen] = useState(false);
@@ -153,48 +181,83 @@ const UnicoachJourney: React.FC = () => {
   const activeStageDef = journey?.stage_definitions?.[activeStage.id];
   const tasksMeta = activeStageDef?.tasks_meta;
 
-  const totalTaskCount = STAGES.reduce((t, s) => t + s.tasks.length, 0);
-  const completionPercent = totalTaskCount === 0 ? 0 : Math.round((completedTaskIds.length / totalTaskCount) * 100);
-
   const completedCalls = callsCompletedCount((journey?.calls ?? null) as Record<string, unknown> | null);
 
-  const callMilestonePercents = useMemo(() => {
-    if (totalTaskCount === 0) return [25, 50, 75, 100] as [number, number, number, number];
-    const cumThroughStage = (stageIndex: number) => STAGES.slice(0, stageIndex + 1).reduce((n, s) => n + s.tasks.length, 0);
-    const clamp = (x: number) => Math.min(100, Math.max(0, x));
-    return STAGES.map((_, i) => clamp((cumThroughStage(i) / totalTaskCount) * 100)) as [number, number, number, number];
-  }, [totalTaskCount]);
+  const {
+    percent: completionPercent,
+    callMilestonePercents,
+    isOffered,
+  } = useMemo(
+    () => programProgressFromChecklist(STAGES, checklist, (journey?.calls ?? null) as Record<string, unknown> | null),
+    [checklist, journey?.calls]
+  );
 
   const allProgramTasksDone = useMemo(() => STAGES.every(s => stageChecklistComplete(checklist, s.id)), [checklist]);
 
+  const confettiSeededRef = useRef(false);
   const prevCompletedCallsRef = useRef(completedCalls);
   const prevAllProgramDoneRef = useRef(allProgramTasksDone);
   const prevStageCompleteRef = useRef<Record<string, boolean>>({});
 
-  useEffect(() => {
-    if (completedCalls > prevCompletedCallsRef.current) {
-      confetti({ particleCount: 130, spread: 72, origin: { y: 0.32 }, ticks: 220, scalar: 0.95 });
-      confetti({ particleCount: 40, spread: 100, origin: { y: 0.28 }, angle: 120, shapes: ["star"], scalar: 0.85 });
-    }
-    prevCompletedCallsRef.current = completedCalls;
-  }, [completedCalls]);
+  const fireProgressConfetti = useCallback(() => {
+    confetti({ particleCount: 120, spread: 70, origin: { y: 0.35 }, ticks: 200, scalar: 0.92 });
+    confetti({ particleCount: 35, spread: 95, origin: { y: 0.3 }, angle: 110, shapes: ["star"], scalar: 0.8 });
+  }, []);
 
   useEffect(() => {
-    const prev = prevStageCompleteRef.current;
+    if (isCoachView || !journey) return;
+
+    const seedStageMap = () => {
+      const map: Record<string, boolean> = {};
+      for (const stage of STAGES) {
+        map[stage.id] = stageChecklistComplete(checklist, stage.id);
+      }
+      prevStageCompleteRef.current = map;
+      prevCompletedCallsRef.current = completedCalls;
+      prevAllProgramDoneRef.current = allProgramTasksDone;
+    };
+
+    if (!confettiSeededRef.current) {
+      confettiSeededRef.current = true;
+      seedStageMap();
+
+      // One-time: call just finished, new module checklist untouched → celebrate (not on every refresh).
+      if (completedCalls > 0 && typeof window !== "undefined") {
+        const workStageId = stageAfterCompletedCalls(completedCalls, STAGES);
+        const stamp = latestCompletedCallStamp(journey.calls as Record<string, unknown>, completedCalls);
+        const profileKey = String(journey.journey_target_profile?.id ?? journey.viewer_profile_id ?? "self");
+        const storageKey = `unicoach_confetti_call_${profileKey}_${completedCalls}_${stamp}`;
+        if (workStageId && !stageHasAnyCompletedTask(checklist, workStageId) && !window.sessionStorage.getItem(storageKey)) {
+          window.sessionStorage.setItem(storageKey, "1");
+          fireProgressConfetti();
+        }
+      }
+      return;
+    }
+
+    if (completedCalls > prevCompletedCallsRef.current) {
+      fireProgressConfetti();
+      if (typeof window !== "undefined") {
+        const stamp = latestCompletedCallStamp(journey.calls as Record<string, unknown>, completedCalls);
+        const profileKey = String(journey.journey_target_profile?.id ?? journey.viewer_profile_id ?? "self");
+        window.sessionStorage.setItem(`unicoach_confetti_call_${profileKey}_${completedCalls}_${stamp}`, "1");
+      }
+    }
+    prevCompletedCallsRef.current = completedCalls;
+
+    const prev = { ...prevStageCompleteRef.current };
     for (const stage of STAGES) {
       const done = stageChecklistComplete(checklist, stage.id);
       const was = prev[stage.id] ?? false;
+      // Only when the full stage checklist flips to complete (not on each task click).
       if (done && !was) {
-        confetti({ particleCount: 120, spread: 70, origin: { y: 0.35 }, ticks: 200, scalar: 0.92 });
-        confetti({ particleCount: 35, spread: 95, origin: { y: 0.3 }, angle: 110, shapes: ["star"], scalar: 0.8 });
+        fireProgressConfetti();
       }
       prev[stage.id] = done;
     }
     prevStageCompleteRef.current = prev;
-  }, [checklist]);
 
-  useEffect(() => {
-    if (allProgramTasksDone && !prevAllProgramDoneRef.current) {
+    if (isOffered && allProgramTasksDone && !prevAllProgramDoneRef.current) {
       confetti({
         particleCount: 160,
         spread: 85,
@@ -202,35 +265,22 @@ const UnicoachJourney: React.FC = () => {
         ticks: 280,
         colors: ["#2563eb", "#eab308", "#22c55e", "#f8fafc"],
       });
-      confetti({
-        particleCount: 45,
-        spread: 100,
-        origin: { y: 0.38 },
-        angle: 90,
-        shapes: ["star"],
-        scalar: 0.75,
-        colors: ["#eab308", "#fbbf24"],
-      });
     }
-    prevAllProgramDoneRef.current = allProgramTasksDone;
-  }, [allProgramTasksDone]);
+    prevAllProgramDoneRef.current = allProgramTasksDone || isOffered;
+  }, [allProgramTasksDone, checklist, completedCalls, fireProgressConfetti, isCoachView, isOffered, journey]);
 
   const isActiveStageFullyComplete = stageChecklistComplete(checklist, activeStage.id);
 
-  const handleToggleTask = async (stageId: string, taskLabel: string) => {
+  const handleToggleTask = (stageId: string, taskLabel: string) => {
     if (stageId !== serverUx) return;
     const payload = compositeIdToServerPayload(stageId, taskLabel, STAGES);
     if (!payload) return;
     const taskId = `${stageId}:${taskLabel}`;
     const checked = completedTaskIds.includes(taskId);
-    try {
-      await checklistMutation.mutateAsync({
-        ...payload,
-        completed: !checked,
-      });
-    } catch {
-      /* mutation surfaces via isError if needed */
-    }
+    checklistMutation.mutate({
+      ...payload,
+      completed: !checked,
+    });
   };
 
   const showFloatingChat = Boolean(shouldLoadJourney && commentSection && journey);
@@ -264,13 +314,63 @@ const UnicoachJourney: React.FC = () => {
   };
 
   const handleOpenBooking = () => {
-    if (!isCoachView && activeStage.id === "call-1" && journey?.unicoach_access_level === "partial") {
-      openUnicoachPricing();
+    const access = journey?.unicoach_access_level;
+    const bookingKey = journeyFlags?.booking_key;
+
+    // Discovery-only: Book Call 2 opens product pricing (not Calendly).
+    if (!isCoachView && access === "vsl_discovery" && bookingKey === "call_2") {
+      setProductPickerMode("upgrade");
+      setProductPickerOpen(true);
       return;
     }
+
+    // Partial still on Call 1 CTA path used to open pricing — keep Calendly for call_2 booking.
+    if (!isCoachView && access === "partial" && bookingKey === "call_3") {
+      setProductPickerMode("remaining");
+      setProductPickerOpen(true);
+      return;
+    }
+
+    if (
+      !isCoachView &&
+      access === "module" &&
+      (bookingKey === "call_3" || journeyFlags?.booking_block_reason === "continue_program_payment")
+    ) {
+      setProductPickerMode("upgrade");
+      setProductPickerOpen(true);
+      return;
+    }
+
     const url = journey?.booking_url_for_stage;
     if (url) window.open(url, "_blank", "noopener,noreferrer");
-    else if (!isCoachView && activeStage.showBookingCta) openUnicoachPricing();
+    else if (!isCoachView && activeStage.showBookingCta) {
+      setProductPickerMode("upgrade");
+      setProductPickerOpen(true);
+    }
+  };
+
+  const handleContinueProgram = () => {
+    if (journey?.unicoach_access_level === "partial") {
+      setProductPickerMode("remaining");
+    } else {
+      setProductPickerMode("upgrade");
+    }
+    setProductPickerOpen(true);
+  };
+
+  const handlePayRemainingFromPicker = async () => {
+    const result = await startUnicoachRazorpayPayment({
+      kind: "remaining",
+      discountCode: null,
+      discountApplied: false,
+      onPhase: setRemainingPhase,
+    });
+    setRemainingPhase("");
+    if (result.ok) {
+      setProductPickerOpen(false);
+      void queryClient.invalidateQueries({ queryKey: ["unicoach", "init"] });
+      void queryClient.invalidateQueries({ queryKey: ["unicoach", "journey-state"] });
+    }
   };
 
   const handleConfirmInterview = async () => {
@@ -305,12 +405,50 @@ const UnicoachJourney: React.FC = () => {
       (bookingStageIndex >= 0 && activeStageIndex >= bookingStageIndex && serverUxIndex >= bookingStageIndex))
   );
 
+  const callsRaw = useMemo(() => (journey?.calls ?? {}) as Record<string, unknown>, [journey?.calls]);
+  const activeStageTasksComplete = stageChecklistComplete(checklist, activeStage.id);
+  const coachSettableMilestone = useMemo(() => deriveCoachSettableMilestone(callsRaw), [callsRaw]);
+
   const showBookingCta = Boolean(
-    !isCoachView && journeyFlags?.show_booking && journey?.booking_url_for_stage && bookingAppliesToActiveStage
+    !isCoachView &&
+    journeyFlags?.show_booking &&
+    bookingAppliesToActiveStage &&
+    (journey?.booking_url_for_stage ||
+      journey?.unicoach_access_level === "vsl_discovery" ||
+      journeyFlags?.booking_block_reason === "complete_remaining_payment" ||
+      journeyFlags?.booking_block_reason === "continue_program_payment")
   );
 
+  const showContinueProgramCta = Boolean(
+    !isCoachView &&
+    ((activeStage.id === "call-2" &&
+      (journey?.unicoach_access_level === "partial" || journey?.unicoach_access_level === "module") &&
+      Boolean((callsRaw.call_2 as Record<string, unknown> | undefined)?.completed)) ||
+      journeyFlags?.booking_block_reason === "complete_remaining_payment" ||
+      journeyFlags?.booking_block_reason === "continue_program_payment")
+  );
+
+  const effectiveShowBookingCta = showBookingCta || showContinueProgramCta;
+  const bookingActionLabel = showContinueProgramCta
+    ? "Continue program"
+    : journey?.unicoach_access_level === "vsl_discovery" && journeyFlags?.booking_key === "call_2"
+      ? "Continue program"
+      : (bookingStage?.nextActionLabel ?? activeStage.nextActionLabel ?? "Book next call");
+
+  const hideBookingHint =
+    Boolean(activeStageTasksComplete) &&
+    (Boolean((callsRaw.call_1 as Record<string, unknown> | undefined)?.call_completed) ||
+      Boolean((callsRaw.call_1 as Record<string, unknown> | undefined)?.completed) ||
+      stageMilestoneComplete(activeStage.id, callsRaw));
+
   const showBookingBlock = Boolean(
-    !isCoachView && !journeyFlags?.show_booking && journeyFlags?.booking_block_reason && bookingAppliesToActiveStage
+    !isCoachView &&
+    !showContinueProgramCta &&
+    !journeyFlags?.show_booking &&
+    journeyFlags?.booking_block_reason &&
+    bookingAppliesToActiveStage &&
+    journeyFlags.booking_block_reason !== "complete_remaining_payment" &&
+    journeyFlags.booking_block_reason !== "continue_program_payment"
   );
 
   const showInterviewConfirmCta =
@@ -329,20 +467,16 @@ const UnicoachJourney: React.FC = () => {
       : null;
 
   const coachMilestone = COACH_MILESTONE_BY_UX_STAGE[activeStage.id] ?? null;
-  const callsRaw = (journey?.calls ?? {}) as Record<string, unknown>;
-  const c1 = (callsRaw.call_1 ?? {}) as Record<string, unknown>;
-  const c2 = (callsRaw.call_2 ?? {}) as Record<string, unknown>;
-  const c3 = (callsRaw.call_3 ?? {}) as Record<string, unknown>;
-  const c4 = (callsRaw.call_4 ?? {}) as Record<string, unknown>;
-  const activeStageTasksComplete = stageChecklistComplete(checklist, activeStage.id);
 
   const coachMilestoneEnabled = useMemo(() => {
     if (!isCoachView || !coachMilestone) return false;
-    const tasksOk = coachMilestone.skipTaskGate || activeStageTasksComplete;
-    if (!tasksOk) return false;
+    const c1 = (callsRaw.call_1 ?? {}) as Record<string, unknown>;
+    const c2 = (callsRaw.call_2 ?? {}) as Record<string, unknown>;
+    const c3 = (callsRaw.call_3 ?? {}) as Record<string, unknown>;
+    const c4 = (callsRaw.call_4 ?? {}) as Record<string, unknown>;
     switch (activeStage.id) {
       case "call-1":
-        return !c1.call_completed;
+        return !c1.call_completed && !c1.completed;
       case "call-2":
         return Boolean(c1.call_completed || c1.completed) && !c2.completed;
       case "call-3":
@@ -352,44 +486,39 @@ const UnicoachJourney: React.FC = () => {
       default:
         return false;
     }
-  }, [isCoachView, coachMilestone, activeStage.id, activeStageTasksComplete, c1, c2, c3, c4]);
+  }, [isCoachView, coachMilestone, activeStage.id, callsRaw]);
 
-  const handleCoachMilestone = useCallback(async () => {
-    if (!coachTargetUserId || !coachMilestone) return;
-    try {
-      const result = await coachCallsMutation.mutateAsync({
-        userId: Number(coachTargetUserId),
-        targetStage: coachMilestone.targetStage,
-      });
-      if (result?.ux_stage) {
-        setActiveStageId(result.ux_stage);
-        setActiveTab("overview");
-      }
-    } catch {
-      /* ignore */
+  const coachMilestoneAlreadyDone = useMemo(() => {
+    if (!isCoachView || !coachMilestone) return false;
+    return stageMilestoneComplete(activeStage.id, callsRaw);
+  }, [isCoachView, coachMilestone, activeStage.id, callsRaw]);
+
+  const coachMilestoneDisplay = useMemo(() => {
+    if (!coachMilestone) return null;
+    if (coachMilestoneAlreadyDone) {
+      return {
+        ...coachMilestone,
+        label: `${coachMilestone.label.replace(/^Mark /, "").replace(/ complete$/, "")} completed`,
+        helperText: "This call milestone is already recorded for the student.",
+      };
     }
-  }, [coachTargetUserId, coachMilestone, coachCallsMutation]);
+    return coachMilestone;
+  }, [coachMilestone, coachMilestoneAlreadyDone]);
+
+  const handleCoachMilestone = useCallback(() => {
+    if (!coachTargetUserId || !coachMilestone) return;
+    coachMoveFlow.requestMove(Number(coachTargetUserId), coachMilestone.targetStage as CoachPipelineStage, coachSettableMilestone);
+  }, [coachTargetUserId, coachMilestone, coachMoveFlow, coachSettableMilestone]);
 
   const handleCoachMilestoneDropdownChange = useCallback(
-    async (targetStage: string) => {
+    (targetStage: string) => {
       if (!coachTargetUserId) return;
-      try {
-        const result = await coachCallsMutation.mutateAsync({
-          userId: Number(coachTargetUserId),
-          targetStage,
-        });
-        if (result?.ux_stage) {
-          setActiveStageId(result.ux_stage);
-          setActiveTab("overview");
-        }
-      } catch {
-        /* ignore */
-      }
+      const from = coachSettableMilestone;
+      coachMoveFlow.requestMove(Number(coachTargetUserId), targetStage as CoachPipelineStage, from);
     },
-    [coachTargetUserId, coachCallsMutation]
+    [coachTargetUserId, coachMoveFlow, coachSettableMilestone]
   );
 
-  const coachSettableMilestone = useMemo(() => deriveCoachSettableMilestone(callsRaw), [callsRaw]);
   const showCoachCompactLayout = isCoachView && !coachExpandedStudentView;
 
   const showExecutionPanel = activeStage.hasDashboard && (activeStage.id === "call-2" || activeStage.id === "call-3");
@@ -439,7 +568,13 @@ const UnicoachJourney: React.FC = () => {
   }
 
   if (!isCoachAccount && !isSubscribedStudent) {
-    return <UnicoachUpgradeGate onPaymentSuccess={handleSubscribeSuccess} />;
+    return (
+      <UnicoachUpgradeGate
+        onEnrollmentComplete={handleSubscribeSuccess}
+        userName={liveProfile?.name ?? undefined}
+        userEmail={liveProfile?.email ?? undefined}
+      />
+    );
   }
 
   if (journeyQuery.isLoading) {
@@ -463,7 +598,7 @@ const UnicoachJourney: React.FC = () => {
 
   return (
     <>
-      <div className="flex-1 bg-slate-50 dark:bg-[#0a0a0a] h-full overflow-y-auto">
+      <div className="scrollbar-on-hover flex-1 bg-slate-50 dark:bg-[#0a0a0a] h-full overflow-y-auto">
         <div className={`max-w-7xl mx-auto p-6 lg:p-8 space-y-6 ${showFloatingChat ? "pb-28" : ""}`}>
           {coachTargetUserId ? (
             <div className="flex items-center gap-2">
@@ -494,10 +629,11 @@ const UnicoachJourney: React.FC = () => {
                 completedCalls={completedCalls}
                 callMilestonePercents={callMilestonePercents}
                 coachSettableMilestone={coachSettableMilestone}
-                onPipelineChange={v => void handleCoachMilestoneDropdownChange(v)}
-                pipelinePending={coachCallsMutation.isPending}
+                onPipelineChange={v => handleCoachMilestoneDropdownChange(v)}
+                pipelinePending={coachMoveFlow.pipelinePending}
                 onOpenProfile={() => void handleOpenStudentProfile()}
                 openingProfile={switchingProfile}
+                onRecordPayment={() => setStandalonePaymentOpen(true)}
               />
             ) : (
               <div className="flex flex-col gap-4 lg:flex-row lg:items-end lg:justify-between">
@@ -538,9 +674,13 @@ const UnicoachJourney: React.FC = () => {
                           className="absolute top-1/2 z-10 -translate-x-1/2 -translate-y-1/2"
                           style={{ left: `${left}%` }}
                           title={
-                            done
-                              ? `Call ${call} prep milestone complete`
-                              : `Call ${call} prep milestone — finish tasks up to here on the journey`
+                            call === 4
+                              ? done
+                                ? "Call 4 complete — remaining progress unlocks when you land a role"
+                                : "Call 4 prep milestone"
+                              : done
+                                ? `Call ${call} prep milestone complete`
+                                : `Call ${call} prep milestone — finish tasks up to here on the journey`
                           }
                         >
                           <div
@@ -562,7 +702,7 @@ const UnicoachJourney: React.FC = () => {
                     })}
                   </div>
                 </div>
-                <div className="mt-3 flex items-center gap-2 text-xs text-slate-500 dark:text-slate-400">
+                <div className="mt-3 flex flex-wrap items-center gap-2 text-xs text-slate-500 dark:text-slate-400">
                   {[1, 2, 3, 4].map(call => {
                     const done = call <= completedCalls;
                     return (
@@ -578,6 +718,16 @@ const UnicoachJourney: React.FC = () => {
                       </div>
                     );
                   })}
+                  <div
+                    className={`px-2.5 py-1 rounded-full border ${
+                      isOffered
+                        ? "bg-emerald-50 border-emerald-200 text-emerald-700 dark:bg-emerald-950/40 dark:border-emerald-900/50 dark:text-emerald-300"
+                        : "bg-slate-100 border-slate-200 text-slate-500 dark:bg-slate-800 dark:border-slate-700"
+                    }`}
+                    title="Program progress reaches 100% when you land a role"
+                  >
+                    Landed role
+                  </div>
                 </div>
               </>
             ) : null}
@@ -610,7 +760,7 @@ const UnicoachJourney: React.FC = () => {
                         {status === "complete" ? (
                           <CheckCircle2 size={16} className="text-emerald-600 dark:text-emerald-400" />
                         ) : lockedForStudent ? (
-                          <span title="Locked for student">
+                          <span title={isCoachView ? "Locked for student — you can still open this module" : "Locked"}>
                             <Lock size={16} className="text-slate-400" aria-hidden />
                           </span>
                         ) : (
@@ -801,25 +951,25 @@ const UnicoachJourney: React.FC = () => {
                   serverUx={serverUx}
                   completedTaskIds={completedTaskIds}
                   tasksMeta={tasksMeta}
-                  checklistMutationPending={checklistMutation.isPending}
                   onToggleTask={handleToggleTask}
-                  showBookingCta={showBookingCta}
+                  showBookingCta={effectiveShowBookingCta}
                   showBookingBlock={showBookingBlock}
                   showAdvanceCta={showAdvanceCta}
                   advanceLabel={activeStage.nextActionLabel}
-                  bookingActionLabel={bookingStage?.nextActionLabel ?? activeStage.nextActionLabel}
+                  bookingActionLabel={bookingActionLabel}
+                  hideBookingHint={hideBookingHint}
                   bookingBlockReason={journeyFlags?.booking_block_reason}
                   advanceBlockReason={advanceBlockReason}
                   isActiveStageFullyComplete={showAdvanceCta ? advanceEnabled : isActiveStageFullyComplete}
                   advancePending={advanceMutation.isPending}
-                  onOpenBooking={handleOpenBooking}
+                  onOpenBooking={showContinueProgramCta ? handleContinueProgram : handleOpenBooking}
                   onAdvance={() => void handleAdvance()}
                   advanceError={advanceError}
                   journeyFlags={journeyFlags}
                   isCoachView={isCoachView}
-                  coachMilestone={coachMilestone}
+                  coachMilestone={coachMilestoneDisplay}
                   coachMilestoneEnabled={coachMilestoneEnabled}
-                  coachMilestonePending={coachCallsMutation.isPending}
+                  coachMilestonePending={coachMoveFlow.pipelinePending}
                   onCoachMilestone={() => void handleCoachMilestone()}
                   showStudentAwaitingCoach={false}
                   showPostCall3StudentCta={false}
@@ -901,6 +1051,72 @@ const UnicoachJourney: React.FC = () => {
         init={init}
         journeyTargetProfile={journey?.journey_target_profile}
         comments={commentsData?.comments ?? []}
+      />
+
+      <UnicoachProductPricingPickerModal
+        open={productPickerOpen}
+        onClose={() => setProductPickerOpen(false)}
+        title={productPickerMode === "remaining" ? "Complete your payment" : "Choose your next Unicoach module"}
+        subtitle={
+          productPickerMode === "remaining"
+            ? "Pay the remaining installment to unlock Application Strategy and Interview Prep."
+            : "Pick a single module or the full system. Coupons on Full System can enable partial installments."
+        }
+        remainingPartialOnly={productPickerMode === "remaining"}
+        onRemainingPartial={() => void handlePayRemainingFromPicker()}
+        remainingPending={Boolean(remainingPhase)}
+      />
+
+      <Script src="https://checkout.razorpay.com/v1/checkout.js" strategy="lazyOnload" />
+
+      <UnicoachCoachConfirmDialog
+        open={Boolean(
+          coachMoveFlow.pendingGate &&
+          (coachMoveFlow.pendingGate.gate === "offer_confirm" ||
+            coachMoveFlow.pendingGate.gate === "backward_confirm" ||
+            coachMoveFlow.pendingGate.gate === "skip_confirm" ||
+            coachMoveFlow.pendingGate.gate === "refund_details")
+        )}
+        title={coachMoveFlow.gateTitle}
+        description={coachMoveFlow.pendingGate?.message ?? ""}
+        confirmLabel="Yes, continue"
+        cancelLabel="Cancel"
+        onConfirm={() => void coachMoveFlow.confirmPendingSimple()}
+        onCancel={coachMoveFlow.revertPending}
+      />
+
+      {coachMoveFlow.pendingGate?.gate === "refund_details" ? (
+        <div className="fixed bottom-6 left-1/2 z-[230] w-full max-w-sm -translate-x-1/2 rounded-xl border border-slate-200 bg-white p-3 shadow-lg dark:border-slate-700 dark:bg-slate-900">
+          <label className="block text-xs font-medium text-slate-500">
+            Refund date
+            <input
+              type="date"
+              value={coachMoveFlow.refundDate}
+              onChange={e => coachMoveFlow.setRefundDate(e.target.value)}
+              className="mt-1 w-full rounded-lg border border-slate-200 px-2 py-1.5 text-sm dark:border-slate-600 dark:bg-slate-950"
+            />
+          </label>
+        </div>
+      ) : null}
+
+      <UnicoachCoachRecordPaymentModal
+        open={coachMoveFlow.pendingGate?.gate === "payment" || standalonePaymentOpen}
+        studentName={journey?.journey_target_profile?.name}
+        defaultPlanId={journey?.unicoach_access_level === "partial" ? "unicoach_partial_2_of_2" : "unicoach_program"}
+        defaultAmount={journey?.unicoach_access_level === "partial" ? 84 : 199}
+        onClose={() => {
+          if (standalonePaymentOpen) setStandalonePaymentOpen(false);
+          else coachMoveFlow.revertPending();
+        }}
+        onSubmit={async payload => {
+          if (standalonePaymentOpen && coachTargetUserId) {
+            await coachMoveFlow.recordPaymentStandalone(Number(coachTargetUserId), payload);
+            setStandalonePaymentOpen(false);
+            void queryClient.invalidateQueries({ queryKey: ["unicoach", "journey-state"] });
+            return;
+          }
+          await coachMoveFlow.submitPaymentThenMove(payload);
+        }}
       />
 
       <style jsx>{`

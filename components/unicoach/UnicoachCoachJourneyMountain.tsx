@@ -17,7 +17,6 @@ import { resolveProfilePicture } from "@/features/unicoach/utils/profile-picture
 import type { DragEndEvent, DragStartEvent } from "@dnd-kit/core";
 import { DndContext, DragOverlay, PointerSensor, pointerWithin, useDraggable, useDroppable, useSensor, useSensors } from "@dnd-kit/core";
 import { User } from "lucide-react";
-import { UnicoachCoachConfirmDialog } from "./UnicoachCoachConfirmDialog";
 
 // ─── Chart geometry (single coordinate system — viewBox 0 0 W H) ─────────────
 
@@ -209,15 +208,6 @@ function StudentAvatar({
 
 // ─── Main component ──────────────────────────────────────────────────────────
 
-type PendingMove = {
-  userId: number;
-  from: CoachPipelineStage;
-  to: CoachPipelineStage;
-  title: string;
-  description: string;
-  execute: () => void;
-};
-
 type Props = {
   students: CoachMountainStudent[];
   onMove: (userId: number, targetStage: CoachPipelineStage) => void;
@@ -232,7 +222,6 @@ export function UnicoachCoachJourneyMountain({ students, onMove, onOpenStudent, 
   const peaksRef = useRef<Peak[]>([]);
   const [dragging, setDragging] = useState<CoachMountainStudent | null>(null);
   const [overDropId, setOverDropId] = useState<string | null>(null);
-  const [pendingMove, setPendingMove] = useState<PendingMove | null>(null);
 
   const stageCounts = useMemo(() => {
     const counts: Record<string, number> = {};
@@ -273,33 +262,9 @@ export function UnicoachCoachJourneyMountain({ students, onMove, onOpenStudent, 
 
   const requestMove = useCallback(
     (userId: number, to: CoachPipelineStage, from: CoachPipelineStage) => {
-      const fromIdx = ALL_STAGES.indexOf(mountainStageForPipeline(from) as (typeof ALL_STAGES)[number]);
-      const toIdx = ALL_STAGES.indexOf(mountainStageForPipeline(to) as (typeof ALL_STAGES)[number]);
-      const run = () => onMove(userId, to);
-
-      if (toIdx < fromIdx) {
-        setPendingMove({
-          userId,
-          from,
-          to,
-          title: "Move to earlier stage?",
-          description: "This updates the student's pipeline position and may clear later milestones.",
-          execute: run,
-        });
-        return;
-      }
-      if (toIdx - fromIdx > 1) {
-        setPendingMove({
-          userId,
-          from,
-          to,
-          title: "Skip ahead?",
-          description: `Move this student to ${COACH_PIPELINE_LABELS[to]}?`,
-          execute: run,
-        });
-        return;
-      }
-      run();
+      if (from === to) return;
+      // Optimistic + gate modals are owned by the parent move flow.
+      onMove(userId, to);
     },
     [onMove]
   );
@@ -481,21 +446,6 @@ export function UnicoachCoachJourneyMountain({ students, onMove, onOpenStudent, 
 
   return (
     <>
-      <UnicoachCoachConfirmDialog
-        open={Boolean(pendingMove)}
-        title={pendingMove?.title ?? ""}
-        description={pendingMove?.description ?? ""}
-        confirmLabel="Yes, continue"
-        cancelLabel="Cancel"
-        onConfirm={() => {
-          pendingMove?.execute();
-          setPendingMove(null);
-        }}
-        onCancel={() => {
-          setPendingMove(null);
-        }}
-      />
-
       <section className="rounded-2xl border border-slate-200 bg-white p-3 shadow-sm dark:border-slate-800 dark:bg-slate-900 sm:p-4">
         {demoBanner ? <div className="mb-3">{demoBanner}</div> : null}
         <div className="mb-3 flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">

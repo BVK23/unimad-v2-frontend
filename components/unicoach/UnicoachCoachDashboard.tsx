@@ -3,7 +3,8 @@
 import React, { useCallback, useMemo, useState } from "react";
 import { buildMountainDemoStudents, isMountainDemoUserId } from "@/constants/unicoach-coach-mountain-demo";
 import { COACH_PIPELINE_LABELS, COACH_PIPELINE_ORDER, type CoachPipelineStage } from "@/constants/unicoach-coach-pipeline";
-import { useUnicoachStudentsByStage, useUpdateUnicoachStudentCallsMutation } from "@/features/unicoach/hooks/use-uniboard-unicoach";
+import { useCoachPipelineMoveFlow } from "@/features/unicoach/hooks/use-coach-pipeline-move-flow";
+import { useUnicoachStudentsByStage } from "@/features/unicoach/hooks/use-uniboard-unicoach";
 import { fetchUserDataForPaymentPrefill } from "@/features/unicoach/server-actions/unicoach-actions";
 import type { AssignedStudent, UnicoachInitResponse } from "@/features/unicoach/types";
 import { parseCoachData } from "@/features/unicoach/types";
@@ -11,7 +12,9 @@ import { clearCoachActAsSession } from "@/lib/authed-fetch";
 import { useQuery } from "@tanstack/react-query";
 import Image from "next/image";
 import { useRouter, useSearchParams } from "next/navigation";
+import { UnicoachCoachConfirmDialog } from "./UnicoachCoachConfirmDialog";
 import { type CoachMountainStudent, UnicoachCoachJourneyMountain } from "./UnicoachCoachJourneyMountain";
+import { UnicoachCoachRecordPaymentModal } from "./UnicoachCoachRecordPaymentModal";
 import { UnicoachCoachStudentCards } from "./UnicoachCoachStudentCards";
 
 export type UnicoachCoachDashboardProps = {
@@ -35,9 +38,7 @@ export const UnicoachCoachDashboard: React.FC<UnicoachCoachDashboardProps> = ({ 
   const mountainDemoMode = searchParams.get("mountain_demo") === "1";
   const [isSwitchingCoach, setIsSwitchingCoach] = useState(false);
   const [searchQuery, setSearchQuery] = useState("");
-  const [stageOverrides, setStageOverrides] = useState<Record<number, CoachPipelineStage>>({});
   const [demoStageOverrides, setDemoStageOverrides] = useState<Record<number, CoachPipelineStage>>({});
-  const [moveError, setMoveError] = useState<string | null>(null);
 
   const coach = useMemo(() => parseCoachData(init), [init]);
   const { data: sessionPrefill } = useQuery({
@@ -54,10 +55,22 @@ export const UnicoachCoachDashboard: React.FC<UnicoachCoachDashboardProps> = ({ 
     error: stagesLoadError,
     refetch: refetchStages,
   } = useUnicoachStudentsByStage(Boolean(init.coach_data));
-  const updateCallsMutation = useUpdateUnicoachStudentCallsMutation();
   const stages = useMemo(() => stagesData ?? {}, [stagesData]);
   const stagesErrorMessage =
     stagesLoadError instanceof Error ? stagesLoadError.message : stagesLoadFailed ? "Could not load student roster by stage." : null;
+
+  const rosterById = useMemo(() => {
+    const map = new Map<number, AssignedStudent>();
+    for (const u of coach?.assigned_users ?? []) map.set(u.id, u);
+    for (const list of Object.values(stages)) {
+      for (const u of list) map.set(u.id, { ...map.get(u.id), ...u });
+    }
+    return map;
+  }, [coach?.assigned_users, stages]);
+
+  const moveFlow = useCoachPipelineMoveFlow({
+    getStudent: userId => rosterById.get(userId),
+  });
 
   const handleOpenJourney = (user: AssignedStudent) => {
     const params = new URLSearchParams();
@@ -77,21 +90,12 @@ export const UnicoachCoachDashboard: React.FC<UnicoachCoachDashboardProps> = ({ 
     }
   };
 
-  const rosterById = useMemo(() => {
-    const map = new Map<number, AssignedStudent>();
-    for (const u of coach?.assigned_users ?? []) map.set(u.id, u);
-    for (const list of Object.values(stages)) {
-      for (const u of list) map.set(u.id, { ...map.get(u.id), ...u });
-    }
-    return map;
-  }, [coach?.assigned_users, stages]);
-
   const filteredStudents = useMemo((): CoachMountainStudent[] => {
     const q = searchQuery.trim().toLowerCase();
     let list = Array.from(rosterById.values());
     if (q) {
       list = list.filter(u => {
-        const stage = stageOverrides[u.id] ?? stageKeyForUser(stages, u.id);
+        const stage = moveFlow.stageOverrides[u.id] ?? stageKeyForUser(stages, u.id);
         const label = (COACH_PIPELINE_LABELS[stage] ?? stage).toLowerCase();
         const phone = (u.phone_number || "").toLowerCase();
         return (
@@ -101,9 +105,9 @@ export const UnicoachCoachDashboard: React.FC<UnicoachCoachDashboardProps> = ({ 
     }
     return list.map(u => ({
       ...u,
-      pipelineStage: stageOverrides[u.id] ?? stageKeyForUser(stages, u.id),
+      pipelineStage: moveFlow.stageOverrides[u.id] ?? stageKeyForUser(stages, u.id),
     }));
-  }, [rosterById, searchQuery, stages, stageOverrides]);
+  }, [moveFlow.stageOverrides, rosterById, searchQuery, stages]);
 
   const mountainDemoStudents = useMemo((): CoachMountainStudent[] => {
     return buildMountainDemoStudents().map(s => ({
@@ -116,34 +120,14 @@ export const UnicoachCoachDashboard: React.FC<UnicoachCoachDashboardProps> = ({ 
 
   const handlePipelineMove = useCallback(
     (userId: number, targetStage: CoachPipelineStage) => {
-      setMoveError(null);
       if (isMountainDemoUserId(userId)) {
         setDemoStageOverrides(prev => ({ ...prev, [userId]: targetStage }));
         return;
       }
-      setStageOverrides(prev => ({ ...prev, [userId]: targetStage }));
-      updateCallsMutation.mutate(
-        { userId, targetStage },
-        {
-          onSuccess: () => {
-            setStageOverrides(prev => {
-              const next = { ...prev };
-              delete next[userId];
-              return next;
-            });
-          },
-          onError: (err: Error) => {
-            setStageOverrides(prev => {
-              const next = { ...prev };
-              delete next[userId];
-              return next;
-            });
-            setMoveError(err.message || "Could not update student stage. Try again.");
-          },
-        }
-      );
+      const from = moveFlow.stageOverrides[userId] ?? stageKeyForUser(stages, userId);
+      moveFlow.requestMove(userId, targetStage, from);
     },
-    [updateCallsMutation]
+    [moveFlow, stages]
   );
 
   const totalCoachUnread = useMemo(() => {
@@ -165,9 +149,16 @@ export const UnicoachCoachDashboard: React.FC<UnicoachCoachDashboardProps> = ({ 
   }
 
   const coachFirstName = coach.coach_name.split(" ")[0] || coach.coach_name;
+  const pending = moveFlow.pendingGate;
+  const showSimpleConfirm =
+    pending &&
+    (pending.gate === "offer_confirm" ||
+      pending.gate === "backward_confirm" ||
+      pending.gate === "skip_confirm" ||
+      pending.gate === "refund_details");
 
   return (
-    <div className="flex-1 bg-slate-50 dark:bg-[#0a0a0a] h-full overflow-y-auto">
+    <div className="scrollbar-on-hover flex-1 bg-slate-50 dark:bg-[#0a0a0a] h-full overflow-y-auto">
       <div className="max-w-7xl mx-auto p-6 lg:p-8 space-y-6">
         <section className="bg-white dark:bg-[#111] rounded-2xl border border-slate-200 dark:border-slate-800 p-5 lg:p-6 shadow-sm">
           <div className="flex flex-col gap-4 lg:flex-row lg:items-center lg:justify-between">
@@ -216,10 +207,6 @@ export const UnicoachCoachDashboard: React.FC<UnicoachCoachDashboardProps> = ({ 
           >
             <p className="font-medium">Coach roster failed to load</p>
             <p className="mt-1 text-red-700 dark:text-red-300">{stagesErrorMessage}</p>
-            <p className="mt-2 text-xs text-red-600/90 dark:text-red-400/90">
-              The mountain graph uses init data only. Stage grouping comes from{" "}
-              <code className="font-mono">/api/unicoach/students-by-stage/</code>.
-            </p>
             <button
               type="button"
               onClick={() => void refetchStages()}
@@ -244,16 +231,16 @@ export const UnicoachCoachDashboard: React.FC<UnicoachCoachDashboardProps> = ({ 
               demoBanner={
                 mountainDemoMode ? (
                   <div className="rounded-xl border border-amber-200 bg-amber-50 px-3 py-2 text-xs text-amber-900 dark:border-amber-800/50 dark:bg-amber-950/30 dark:text-amber-200">
-                    <strong>Demo mode</strong> — 10 test users on the graph (3 at Not started, 2 at Discovery, rest spread across stages).
-                    Drag moves are local only. Remove <code className="font-mono">?mountain_demo=1</code> from the URL for real students.
+                    <strong>Demo mode</strong> — drag moves are local only. Remove <code className="font-mono">?mountain_demo=1</code> for
+                    real students.
                   </div>
                 ) : null
               }
             />
 
-            {moveError ? (
+            {moveFlow.moveError ? (
               <p className="rounded-xl border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-700 dark:border-red-900/50 dark:bg-red-950/30 dark:text-red-300">
-                {moveError}
+                {moveFlow.moveError}
               </p>
             ) : null}
 
@@ -273,6 +260,39 @@ export const UnicoachCoachDashboard: React.FC<UnicoachCoachDashboardProps> = ({ 
           </>
         )}
       </div>
+
+      <UnicoachCoachConfirmDialog
+        open={Boolean(showSimpleConfirm)}
+        title={moveFlow.gateTitle}
+        description={pending?.message ?? ""}
+        confirmLabel="Yes, continue"
+        cancelLabel="Cancel"
+        onConfirm={() => void moveFlow.confirmPendingSimple()}
+        onCancel={moveFlow.revertPending}
+      />
+
+      {pending?.gate === "refund_details" ? (
+        <div className="fixed bottom-6 left-1/2 z-[230] w-full max-w-sm -translate-x-1/2 rounded-xl border border-slate-200 bg-white p-3 shadow-lg dark:border-slate-700 dark:bg-slate-900">
+          <label className="block text-xs font-medium text-slate-500">
+            Refund date
+            <input
+              type="date"
+              value={moveFlow.refundDate}
+              onChange={e => moveFlow.setRefundDate(e.target.value)}
+              className="mt-1 w-full rounded-lg border border-slate-200 px-2 py-1.5 text-sm dark:border-slate-600 dark:bg-slate-950"
+            />
+          </label>
+        </div>
+      ) : null}
+
+      <UnicoachCoachRecordPaymentModal
+        open={pending?.gate === "payment"}
+        studentName={pending?.studentName}
+        defaultPlanId={pending?.entitlement.kind === "partial" ? "unicoach_partial_2_of_2" : "unicoach_program"}
+        defaultAmount={pending?.entitlement.kind === "partial" ? 84 : 199}
+        onClose={moveFlow.revertPending}
+        onSubmit={payload => moveFlow.submitPaymentThenMove(payload)}
+      />
     </div>
   );
 };

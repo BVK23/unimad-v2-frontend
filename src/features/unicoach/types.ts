@@ -152,6 +152,7 @@ export type AssignedStudent = {
   program_label?: string | null;
   program_chosen?: string | null;
   program_access_level?: string | null;
+  plan_ids?: string[];
   linkedin_profile_picture?: string | null;
   unimad_profile_picture?: string | null;
   google_profile_picture?: string | null;

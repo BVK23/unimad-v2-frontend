@@ -391,9 +391,14 @@ export async function updateResumeContent(
  *
  * POST `/api/resume/duplicate/`
  *
- * Returns `{ id: string }` on success.
+ * Returns `{ id, resume }` on success, where `resume` is the full backend DTO of
+ * the newly-created resume. The client seeds its list cache directly from this
+ * response instead of refetching, which avoids read-after-write races behind
+ * cloud proxies (a follow-up GET can return a list that omits the new row).
  */
-export async function duplicateResume(resumeId: string): Promise<{ id: string } | { error: string; error_code?: string }> {
+export async function duplicateResume(
+  resumeId: string
+): Promise<{ id: string; resume?: Record<string, unknown> } | { error: string; error_code?: string }> {
   const res = await authedFetch("/api/resume/duplicate/", {
     method: "POST",
     body: JSON.stringify({ id: resumeId }),
@@ -408,7 +413,7 @@ export async function duplicateResume(resumeId: string): Promise<{ id: string } 
     };
   }
 
-  return data as { id: string };
+  return data as { id: string; resume?: Record<string, unknown> };
 }
 
 /**

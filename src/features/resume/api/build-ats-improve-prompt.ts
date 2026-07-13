@@ -38,6 +38,12 @@ export const buildAtsImproveAgentMessage = (input: AtsImprovePromptInput): strin
 
   const scorePart = input.sectionRow.scoreLabel ? ` — score ${input.sectionRow.scoreLabel}` : "";
 
+  const jdOverlay =
+    input.atsVm.scoringMode === "jd_blended"
+      ? `
+JD match mode: do not alter personal information or unrelated resume sections. Prioritise exact keywords and tool names from the ATS analysis and section-specific improvements above.`
+      : "";
+
   return `${base}
 
 You are improving the ${input.sectionLabel} section based on an ATS score report.
@@ -52,6 +58,7 @@ Section-specific improvements:
 ${improvementBlock}
 
 Use resume tools to read current content and apply targeted edits. Do not rewrite unrelated sections.
+Preserve existing dates, role titles, metrics, and specific tool or technology names unless the ATS analysis explicitly asks to change them.${jdOverlay}
 
 Follow-up turns: if the user declines optional additions, says no further changes, or is done with this section, acknowledge briefly in one sentence and stop — do not re-ask the same question or treat their reply as out of scope.`;
 };

@@ -7,7 +7,6 @@ import { MasterclassFaqSection } from "@/components/masterclass/MasterclassFaqSe
 import { MasterclassOnboardingModal } from "@/components/masterclass/MasterclassOnboardingModal";
 import { MasterclassPlacementsSection } from "@/components/masterclass/MasterclassPlacementsSection";
 import { MasterclassStoriesSection } from "@/components/masterclass/MasterclassStoriesSection";
-import { UnicoachPlanPaymentModal } from "@/components/unicoach/UnicoachPlanPaymentModal";
 import { UnimadLogo } from "@/components/unimad-logo";
 import {
   MASTERCLASS_LEAD_SESSION_KEY,
@@ -21,6 +20,7 @@ import {
   MASTERCLASS_WHATSAPP_URL,
 } from "@/constants/masterclass";
 import { PRICING_CARD_PLAN_BY_TITLE, type UnicoachProductPlanId } from "@/constants/unicoach-plans";
+import { launchUnicoachRazorpayCheckout } from "@/features/unicoach/lib/launch-unicoach-razorpay-checkout";
 import { useAuthStatus } from "@/hooks/useAuthStatus";
 import {
   enrollAuthenticatedMasterclassMember,
@@ -304,6 +304,10 @@ function PricingCard({
   freeRibbon = false,
   compact = false,
   onButtonClick,
+  couponCode,
+  onCouponChange,
+  checkoutPending = false,
+  checkoutPhase = "",
 }) {
   const discountPercent = featured && originalPrice ? getDiscountPercent(originalPrice, price) : 0;
 
@@ -315,7 +319,7 @@ function PricingCard({
     .filter(Boolean)
     .join(" ");
 
-  const heightClasses = compact ? "h-[360px] sm:h-[382px]" : "h-[384px] sm:h-[408px]";
+  const heightClasses = compact ? "h-[360px] sm:h-[382px]" : featured ? "h-[420px] sm:h-[444px]" : "h-[384px] sm:h-[408px]";
 
   return (
     <div
@@ -355,8 +359,18 @@ function PricingCard({
             </div>
 
             <div className="px-5 pb-5">
+              {featured && typeof onCouponChange === "function" ? (
+                <input
+                  type="text"
+                  value={couponCode || ""}
+                  disabled={checkoutPending}
+                  onChange={e => onCouponChange(e.target.value.toUpperCase())}
+                  placeholder="Coupon code (optional)"
+                  className="mb-3 w-full rounded-full border border-slate-200 bg-white px-3 py-2 text-center text-[12px] text-slate-800 placeholder:text-slate-400"
+                />
+              ) : null}
               <PricingCardActions
-                buttonLabel={buttonLabel}
+                buttonLabel={checkoutPending && featured ? checkoutPhase || "Opening…" : buttonLabel}
                 buttonVariant={buttonVariant}
                 buttonSubtext={buttonSubtext}
                 compact={compact}
@@ -503,7 +517,16 @@ function MobilePricingSleekCta({ buttonLabel, buttonVariant, onAction }) {
   );
 }
 
-function MobilePricingAccordionItem({ card, expanded, onToggle, onAction }) {
+function MobilePricingAccordionItem({
+  card,
+  expanded,
+  onToggle,
+  onAction,
+  couponCode,
+  onCouponChange,
+  checkoutPending = false,
+  checkoutPhase = "",
+}) {
   const discountPercent = card.featured && card.originalPrice ? getDiscountPercent(card.originalPrice, card.price) : 0;
 
   const cardModifierClasses = [
@@ -543,7 +566,11 @@ function MobilePricingAccordionItem({ card, expanded, onToggle, onAction }) {
         </div>
 
         <div className="flex h-8 items-center justify-end">
-          <MobilePricingSleekCta buttonLabel={card.buttonLabel} buttonVariant={card.buttonVariant} onAction={onAction} />
+          <MobilePricingSleekCta
+            buttonLabel={checkoutPending && card.featured ? checkoutPhase || "Opening…" : card.buttonLabel}
+            buttonVariant={card.buttonVariant}
+            onAction={onAction}
+          />
         </div>
       </div>
 
@@ -551,6 +578,16 @@ function MobilePricingAccordionItem({ card, expanded, onToggle, onAction }) {
         <div className="border-t border-slate-100 py-3 pl-2 pr-3 sm:pl-2.5 sm:pr-4">
           {!card.compact && card.buttonSubtext ? (
             <PricingCardButtonSubtext subtext={card.buttonSubtext} className="!mt-0 mb-3 text-right" />
+          ) : null}
+          {card.featured && typeof onCouponChange === "function" ? (
+            <input
+              type="text"
+              value={couponCode || ""}
+              disabled={checkoutPending}
+              onChange={e => onCouponChange(e.target.value.toUpperCase())}
+              placeholder="Coupon code (optional)"
+              className="mb-3 w-full rounded-full border border-slate-200 bg-white px-3 py-2 text-center text-[12px] text-slate-800 placeholder:text-slate-400"
+            />
           ) : null}
           <ul className="space-y-2.5 text-[13px] leading-[1.35] tracking-[-0.26px] text-slate-600">
             {card.features.map(feature => (
@@ -568,7 +605,7 @@ function MobilePricingAccordionItem({ card, expanded, onToggle, onAction }) {
   );
 }
 
-function MobilePricingSection({ cards, onCardAction }) {
+function MobilePricingSection({ cards, onCardAction, couponCode, onCouponChange, checkoutPending = false, checkoutPhase = "" }) {
   const [expandedPlans, setExpandedPlans] = useState(new Set());
 
   const togglePlan = title => {
@@ -589,6 +626,10 @@ function MobilePricingSection({ cards, onCardAction }) {
           expanded={expandedPlans.has(card.title)}
           onToggle={() => togglePlan(card.title)}
           onAction={() => onCardAction(card)}
+          couponCode={card.featured ? couponCode : undefined}
+          onCouponChange={card.featured ? onCouponChange : undefined}
+          checkoutPending={checkoutPending}
+          checkoutPhase={checkoutPhase}
         />
       ))}
       <p className="pt-1 text-center text-[11px] font-medium tracking-[-0.2px] text-slate-400">Tap the arrow to see what&apos;s included</p>
@@ -691,8 +732,10 @@ export default function MasterclassLandingPage({ variant = "ads" }) {
   const [onboardingInitialLead, setOnboardingInitialLead] = useState(null);
   const [videoUnlocked, setVideoUnlocked] = useState(false);
   const [shouldAutoplayVideo, setShouldAutoplayVideo] = useState(false);
-  const [paymentModalOpen, setPaymentModalOpen] = useState(false);
-  const [paymentPlanId, setPaymentPlanId] = useState<UnicoachProductPlanId>("unicoach_program");
+  const [checkoutPending, setCheckoutPending] = useState(false);
+  const [checkoutPhase, setCheckoutPhase] = useState("");
+  const [fullSystemCoupon, setFullSystemCoupon] = useState("");
+  const [checkoutError, setCheckoutError] = useState("");
   const [deepLinkProcessing, setDeepLinkProcessing] = useState(false);
   const [showUnlockHint, setShowUnlockHint] = useState(false);
   const [bookingCooldown, setBookingCooldown] = useState(false);
@@ -1025,9 +1068,26 @@ export default function MasterclassLandingPage({ variant = "ads" }) {
     );
   };
 
-  const handleSignUp = (planId: UnicoachProductPlanId = "unicoach_program") => {
-    setPaymentPlanId(planId);
-    setPaymentModalOpen(true);
+  const handleSignUp = async (planId: UnicoachProductPlanId = "unicoach_program") => {
+    if (checkoutPending) return;
+    setCheckoutError("");
+    setCheckoutPending(true);
+    const result = await launchUnicoachRazorpayCheckout({
+      isAuthenticated: Boolean(isAuthenticated),
+      planId,
+      discountCode: planId === "unicoach_program" ? fullSystemCoupon : null,
+      onPhase: setCheckoutPhase,
+    });
+    setCheckoutPending(false);
+    setCheckoutPhase("");
+    if (result.ok) {
+      if (result.redirectTo) router.push(result.redirectTo);
+      return;
+    }
+    if (!result.cancelled && result.message) {
+      setCheckoutError(result.message);
+      notifyError(result.message);
+    }
   };
 
   const handleCardAction = card => {
@@ -1036,7 +1096,7 @@ export default function MasterclassLandingPage({ variant = "ads" }) {
       openBookingModal();
       return;
     }
-    handleSignUp(mapped);
+    void handleSignUp(mapped);
   };
 
   return (
@@ -1128,19 +1188,38 @@ export default function MasterclassLandingPage({ variant = "ads" }) {
                       </p>
                     </div>
 
-                    <MobilePricingSection cards={PRICING_CARDS} onCardAction={handleCardAction} />
+                    <MobilePricingSection
+                      cards={PRICING_CARDS}
+                      onCardAction={handleCardAction}
+                      couponCode={fullSystemCoupon}
+                      onCouponChange={setFullSystemCoupon}
+                      checkoutPending={checkoutPending}
+                      checkoutPhase={checkoutPhase}
+                    />
 
                     <div className="hidden md:block">
                       <div className="masterclass-pricing-scroll -mx-4 overflow-x-auto overflow-y-visible px-4 sm:-mx-10 sm:px-10 lg:mx-0 lg:overflow-visible lg:px-0">
                         <div className="flex w-max items-stretch gap-3 pb-2 sm:gap-4 lg:w-full lg:max-w-[1260px] lg:gap-3">
                           {PRICING_CARDS.map(card => (
-                            <PricingCard key={card.title} {...card} onButtonClick={() => handleCardAction(card)} />
+                            <PricingCard
+                              key={card.title}
+                              {...card}
+                              onButtonClick={() => handleCardAction(card)}
+                              couponCode={card.featured ? fullSystemCoupon : undefined}
+                              onCouponChange={card.featured ? setFullSystemCoupon : undefined}
+                              checkoutPending={checkoutPending}
+                              checkoutPhase={checkoutPhase}
+                            />
                           ))}
                         </div>
                       </div>
-                      <p className="mt-3 text-center text-[11px] font-medium tracking-[-0.2px] text-slate-400 lg:hidden">
-                        Swipe to explore all plans
-                      </p>
+                      {checkoutError ? (
+                        <p className="mt-3 text-center text-[12px] text-red-600">{checkoutError}</p>
+                      ) : (
+                        <p className="mt-3 text-center text-[11px] font-medium tracking-[-0.2px] text-slate-400 lg:hidden">
+                          Swipe to explore all plans
+                        </p>
+                      )}
                     </div>
                   </section>
 
@@ -1187,6 +1266,7 @@ export default function MasterclassLandingPage({ variant = "ads" }) {
       </div>
 
       <Script src="https://assets.calendly.com/assets/external/widget.js" strategy="lazyOnload" />
+      <Script src="https://checkout.razorpay.com/v1/checkout.js" strategy="lazyOnload" />
 
       <MasterclassOnboardingModal
         open={onboardingOpen}
@@ -1197,7 +1277,12 @@ export default function MasterclassLandingPage({ variant = "ads" }) {
         onSubmit={handleLeadSubmit}
       />
 
-      <UnicoachPlanPaymentModal open={paymentModalOpen} onClose={() => setPaymentModalOpen(false)} planId={paymentPlanId} />
+      {checkoutPending ? (
+        <div className="fixed inset-0 z-[190] flex flex-col items-center justify-center gap-3 bg-[#0a0a0a]/70 backdrop-blur-sm">
+          <div className="h-10 w-10 animate-spin rounded-full border-2 border-white/20 border-t-[#346de0]" />
+          <p className="text-sm text-[#eaeaea]/70">{checkoutPhase || "Opening payment…"}</p>
+        </div>
+      ) : null}
     </div>
   );
 }

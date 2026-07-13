@@ -7,7 +7,7 @@ import ResumeThumbnail from "@/components/resume/ResumeThumbnail";
 import { isResumePublished } from "@/features/resume/utils/resumePublish";
 import type { ResumeVersionMetadata } from "@/features/resume/utils/resumeVersionGroups";
 import type { ResumeData } from "@/types";
-import { Check, Clock, Copy, Download, Edit, Link, Loader2, MoreVertical, Trash2 } from "lucide-react";
+import { Check, Clock, Copy, Download, Edit, Link, Loader2, MoreVertical, PenLine, Trash2 } from "lucide-react";
 
 interface ResumeDashboardCardProps {
   resume: ResumeData;
@@ -22,6 +22,7 @@ interface ResumeDashboardCardProps {
   downloadingId: string | null;
   setCardRef: (id: string, element: HTMLDivElement | null) => void;
   onEditResume: (resume: ResumeData) => void;
+  onRename: (e: React.MouseEvent, resume: ResumeData) => void;
   onToggleMenu: (e: React.MouseEvent<HTMLButtonElement>, resumeId: string) => void;
   onCloseMenu: () => void;
   onDuplicate: (e: React.MouseEvent, resume: ResumeData) => void;
@@ -44,6 +45,7 @@ const ResumeDashboardCard: React.FC<ResumeDashboardCardProps> = ({
   downloadingId,
   setCardRef,
   onEditResume,
+  onRename,
   onToggleMenu,
   onCloseMenu,
   onDuplicate,
@@ -107,6 +109,16 @@ const ResumeDashboardCard: React.FC<ResumeDashboardCardProps> = ({
                 className="w-full text-left px-4 py-2 text-sm text-slate-700 hover:bg-slate-50 hover:text-brand-600 flex items-center gap-2.5 transition-colors"
               >
                 <Edit size={14} /> Edit
+              </button>
+              <button
+                type="button"
+                onClick={e => {
+                  e.stopPropagation();
+                  onRename(e, resume);
+                }}
+                className="w-full text-left px-4 py-2 text-sm text-slate-700 hover:bg-slate-50 hover:text-brand-600 flex items-center gap-2.5 transition-colors"
+              >
+                <PenLine size={14} /> Rename
               </button>
               {!resume.isBase && (
                 <button

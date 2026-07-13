@@ -113,11 +113,20 @@ export async function applyAdkSessionStateToStores(
         }
         return typeof state.application_asset_draft_preview === "string" ? state.application_asset_draft_preview : "";
       })();
-      const acceptedContent = typeof state.application_asset_accepted_body === "string" ? state.application_asset_accepted_body : "";
+      const acceptedContent =
+        typeof state.application_asset_accepted_body === "string" && state.application_asset_accepted_body.trim()
+          ? state.application_asset_accepted_body
+          : draftPreview;
       const role = typeof state.application_role === "string" ? state.application_role : studio.role;
       const company = typeof state.application_company === "string" ? state.application_company : studio.company;
       const jobDescription = typeof state.application_jd === "string" ? state.application_jd : studio.jobDescription;
-      const contactName = typeof state.application_contact_name === "string" ? state.application_contact_name : studio.contactName;
+      const resolvedAssetType = assetType ?? studio.assetType;
+      const contactName =
+        resolvedAssetType === "coverletter"
+          ? ""
+          : typeof state.application_contact_name === "string"
+            ? state.application_contact_name
+            : studio.contactName;
       const assetIdRaw = state.application_asset_id;
       const assetId = typeof assetIdRaw === "string" && assetIdRaw.trim() ? assetIdRaw.trim() : studio.assetId;
       const nextFingerprint = `${assetType ?? ""}:${role}:${company}:${draftPreview}:${acceptedContent}`;

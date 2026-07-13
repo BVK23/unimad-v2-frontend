@@ -12,8 +12,6 @@ export const buildApplicationAssetStateDeltaFromStudio = (
   overrides: Partial<BuildApplicationAssetStateDeltaInput> = {}
 ) => {
   const { sessionBody, regenerateDraft } = resolveApplicationAssetBodyForPatch(studio);
-  const draftPreview = sessionBody || studio.draftPreview;
-  const acceptedBody = studio.acceptedContent;
 
   return buildAdkApplicationAssetStateDelta({
     assetType: overrides.assetType ?? studio.assetType ?? undefined,
@@ -23,8 +21,7 @@ export const buildApplicationAssetStateDeltaFromStudio = (
     company: overrides.company ?? studio.company,
     jobDescription: overrides.jobDescription ?? studio.jobDescription,
     contactName: overrides.contactName ?? studio.contactName,
-    draftPreview: overrides.draftPreview ?? draftPreview,
-    acceptedBody: overrides.acceptedBody ?? acceptedBody,
+    draftPreview: overrides.draftPreview ?? sessionBody,
     studioHeadless: overrides.studioHeadless,
     profileSnapshot: overrides.profileSnapshot,
     regenerateDraft: overrides.regenerateDraft ?? regenerateDraft,

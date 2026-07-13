@@ -862,12 +862,6 @@ const ResumeEditor: React.FC<ResumeEditorProps> = ({
     resetAtsMutation();
   }, [resumeId, resetAtsMutation]);
 
-  useEffect(() => {
-    if (!isPersistedResumeId(resumeId)) return;
-    const session = loadResumeAtsSession(resumeId);
-    setFixAllUsed(session.fixAllUsed);
-  }, [resumeId]);
-
   const cachedAtsVm = useMemo(() => {
     if (atsCache?.ok && atsCache.ats_score) {
       return mapAtsScoreToViewModel(atsCache.ats_score);
@@ -882,6 +876,15 @@ const ResumeEditor: React.FC<ResumeEditorProps> = ({
   const atsScoredAt = atsMutationVm?.scored_at ?? (atsCache?.ok ? atsCache.scored_at : null);
   const atsScoreStale = atsMutationVm?.score_stale ?? (atsCache?.ok ? atsCache.score_stale : false);
   const atsResumeUpdatedAt = atsMutationVm?.resume_updated_at ?? (atsCache?.ok ? atsCache.resume_updated_at : null);
+
+  useEffect(() => {
+    if (!resumeId?.trim()) return;
+    const session = loadResumeAtsSession(resumeId, {
+      currentScoredAt: atsScoredAt,
+      currentResumeUpdatedAt: atsResumeUpdatedAt ?? null,
+    });
+    setFixAllUsed(session.fixAllUsed);
+  }, [resumeId, atsScoredAt, atsResumeUpdatedAt]);
 
   useEffect(() => {
     if (!showAtsModal || !isPersistedResumeId(resumeId)) return;
@@ -909,7 +912,12 @@ const ResumeEditor: React.FC<ResumeEditorProps> = ({
   const handleFixWithUnibot = () => {
     if (fixAllUsed || !canAtsFix || atsFixPlan.length === 0) return;
     setFixAllUsed(true);
-    saveResumeAtsSession(resumeId, { recalcAttemptsUsed: atsCalcCount, fixAllUsed: true });
+    saveResumeAtsSession(resumeId, {
+      recalcAttemptsUsed: atsCalcCount,
+      fixAllUsed: true,
+      fixUsedAtScoredAt: atsScoredAt ?? null,
+      fixUsedAtResumeUpdatedAt: atsResumeUpdatedAt ?? null,
+    });
     setRecalcError(null);
     window.dispatchEvent(
       new CustomEvent("open-unibot", {
@@ -2937,6 +2945,7 @@ const ResumeEditor: React.FC<ResumeEditorProps> = ({
                                 value={cert.date || ""}
                                 max={new Date().toISOString().slice(0, 7)}
                                 onChange={val => updateCertification(cert.id, "date", val)}
+                                align="right"
                                 className="border-slate-200 dark:border-slate-600"
                               />
                             </div>

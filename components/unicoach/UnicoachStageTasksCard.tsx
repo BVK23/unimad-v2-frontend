@@ -9,11 +9,11 @@ type UnicoachStageTasksCardProps = {
   serverUx: string;
   completedTaskIds: string[];
   tasksMeta?: StageTaskMeta[];
-  checklistMutationPending: boolean;
   onToggleTask: (stageId: string, taskLabel: string) => void;
   showBookingCta: boolean;
   showBookingBlock?: boolean;
   bookingActionLabel?: string;
+  hideBookingHint?: boolean;
   showAdvanceCta: boolean;
   advanceLabel: string;
   bookingBlockReason?: string | null;
@@ -42,11 +42,11 @@ export const UnicoachStageTasksCard = ({
   serverUx,
   completedTaskIds,
   tasksMeta,
-  checklistMutationPending,
   onToggleTask,
   showBookingCta,
   showBookingBlock = false,
   bookingActionLabel,
+  hideBookingHint = false,
   showAdvanceCta,
   advanceLabel,
   bookingBlockReason,
@@ -69,7 +69,7 @@ export const UnicoachStageTasksCard = ({
   onConfirmInterview,
   stageGateReason,
 }: UnicoachStageTasksCardProps) => {
-  const canEditChecklist = !isCoachView && activeStage.id === serverUx && !checklistMutationPending;
+  const canEditChecklist = !isCoachView && activeStage.id === serverUx;
   const showStageActions = isCoachView || activeStage.id === serverUx || showBookingCta || showBookingBlock;
   const metaByLabel = new Map((tasksMeta ?? []).map(m => [m.label, m]));
 
@@ -195,7 +195,7 @@ export const UnicoachStageTasksCard = ({
             </button>
           ) : null}
 
-          {!isCoachView && showBookingCta && studentBookingHint ? (
+          {!isCoachView && showBookingCta && studentBookingHint && !hideBookingHint ? (
             <p className="text-[11px] text-slate-500 dark:text-slate-400 text-center">{studentBookingHint}</p>
           ) : null}
 
