@@ -57,6 +57,46 @@ export const resolvePrepareApplicationForAdk = (
   };
 };
 
+export type ResumeApplicationLink = {
+  applicationId?: string | null;
+  jobId?: string | null;
+};
+
+/**
+ * JD-linked resume → ADK session context from resume.applicationId / jobId + applications cache.
+ * Used on every resume PATCH (not only Prepare Application URL).
+ */
+export const resolveResumeLinkedApplicationForAdk = (
+  resume: ResumeApplicationLink | null | undefined,
+  applications: Application[] = []
+): PrepareApplicationAdkContext | null => {
+  const applicationId = resume?.applicationId?.trim() || "";
+  const resumeJobId = resume?.jobId?.trim() || "";
+  if (!applicationId && !resumeJobId) return null;
+
+  const fromCache =
+    applications.find(app => applicationId && String(app.application_id) === applicationId) ||
+    applications.find(app => resumeJobId && String(app.job_id ?? "") === resumeJobId) ||
+    undefined;
+
+  return {
+    applicationId: fromCache?.application_id?.trim() || applicationId,
+    role: fromCache?.role?.trim() || "",
+    company: fromCache?.company?.trim() || "",
+    jobDescription: fromCache?.job_description?.trim() || "",
+    jobId: fromCache?.job_id?.trim() || resumeJobId || null,
+  };
+};
+
+/** Prefer Prepare Application URL context; else active resume's linked application. */
+export const resolveApplicationContextForResumePatch = (
+  searchParams: { get(name: string): string | null } | null | undefined,
+  applications: Application[],
+  resume?: ResumeApplicationLink | null
+): PrepareApplicationAdkContext | null => {
+  return resolvePrepareApplicationForAdk(searchParams, applications) ?? resolveResumeLinkedApplicationForAdk(resume, applications);
+};
+
 export const buildResolvedJobListingForResume = (ctx: PrepareApplicationAdkContext): ResolvedJobListingForResume => {
   const jd = ctx.jobDescription.trim();
   return {
@@ -88,6 +128,7 @@ export const mergePrepareApplicationIntoResumeStateDelta = (
     application_jd: jd,
     resolved_job_board_listing: buildResolvedJobListingForResume(ctx),
   };
+  // Always set job_id key when known; omit when null so we don't clear unrelated sessions.
   if (ctx.jobId) {
     merged.job_id = ctx.jobId;
   }

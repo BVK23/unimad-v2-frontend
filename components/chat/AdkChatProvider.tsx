@@ -112,8 +112,12 @@ export interface AdkChatContextValue {
   streamActivityLabel: string | null;
   messages: ChatMessage[];
   setMessages: React.Dispatch<React.SetStateAction<ChatMessage[]>>;
-  sendMainMessage: (text: string, options?: SendMainMessageOptions) => Promise<{ assistantId: string }>;
-  sendTopicMessage: (prompt: string, assistantMessageId: string, options?: { sessionIdOverride?: string }) => Promise<void>;
+  sendMainMessage: (text: string, options?: SendMainMessageOptions) => Promise<{ assistantId: string; hadAssistantText: boolean }>;
+  sendTopicMessage: (
+    prompt: string,
+    assistantMessageId: string,
+    options?: { sessionIdOverride?: string }
+  ) => Promise<{ hadAssistantText: boolean }>;
   refreshSessions: () => Promise<void>;
   handleSessionSwitch: (newSessionId: string) => void;
   handleCreateNewSession: (options?: { kind?: "main" | "sub"; parentSessionId?: string }) => Promise<void>;
@@ -278,6 +282,9 @@ export function AdkChatProvider({ userId, children }: { userId: string; children
     useAdkApplicationAssetReviewStore.getState().clearAllReviews();
   }, [sessionId, userId]);
 
+  // Load chat history when the ADK session (or user) changes — NOT when only the open
+  // resume id changes. Re-running this on activeResumeId wiped the UI and re-applied
+  // rewind filters, which looked like "messages disappeared" when opening a resume.
   useEffect(() => {
     if (!userId || !sessionId) return;
 
@@ -347,14 +354,6 @@ export function AdkChatProvider({ userId, children }: { userId: string; children
             if (pathname.startsWith("/uniboard/studio")) {
               void applyAdkSessionStateToStores(userId, mainSessionIdForLoad, pathname, queryClient);
             }
-            if (pathname.startsWith("/uniboard/resume")) {
-              void reconcileResumeAdkSessionsOnRefresh({
-                userId,
-                mainSessionId: mainSessionIdForLoad,
-                resumeId: activeResumeId,
-                queryClient,
-              });
-            }
           }
 
           if (!cancelled) {
@@ -371,10 +370,25 @@ export function AdkChatProvider({ userId, children }: { userId: string; children
     return () => {
       cancelled = true;
     };
-  }, [activeResumeId, deriveCurrentActiveScope, userId, sessionId, refreshSessions, pathname, queryClient]);
+  }, [deriveCurrentActiveScope, userId, sessionId, refreshSessions, pathname, queryClient]);
+
+  // Align Accept/Discard drafts when the open resume changes — do not reload chat history.
+  useEffect(() => {
+    if (!userId || !sessionId || !pathname.startsWith("/uniboard/resume")) return;
+    void reconcileResumeAdkSessionsOnRefresh({
+      userId,
+      mainSessionId: sessionId,
+      resumeId: activeResumeId,
+      queryClient,
+    });
+  }, [activeResumeId, userId, sessionId, pathname, queryClient]);
 
   const sendMainMessageNow = useCallback(
-    async (text: string, activeSessionId: string, options?: SendMainMessageOptions): Promise<{ assistantId: string }> => {
+    async (
+      text: string,
+      activeSessionId: string,
+      options?: SendMainMessageOptions
+    ): Promise<{ assistantId: string; hadAssistantText: boolean }> => {
       if (!userId || !activeSessionId) {
         throw new Error("Session not ready");
       }
@@ -414,7 +428,7 @@ export function AdkChatProvider({ userId, children }: { userId: string; children
         if (!hadAssistantText) {
           queueMicrotask(() => markIncompleteAssistantTurn(assistantId));
         }
-        return { assistantId };
+        return { assistantId, hadAssistantText };
       } catch (error) {
         const wrapped = error instanceof Error ? error : new Error(String(error));
         Object.defineProperty(wrapped, "assistantMessageId", { value: assistantId, enumerable: true });
@@ -425,7 +439,7 @@ export function AdkChatProvider({ userId, children }: { userId: string; children
   );
 
   const sendMainMessage = useCallback(
-    async (text: string, options?: SendMainMessageOptions): Promise<{ assistantId: string }> => {
+    async (text: string, options?: SendMainMessageOptions): Promise<{ assistantId: string; hadAssistantText: boolean }> => {
       const targetId = options?.targetSessionId?.trim() || sessionId;
       if (!userId || !targetId) {
         throw new Error("Session not ready");
@@ -438,7 +452,7 @@ export function AdkChatProvider({ userId, children }: { userId: string; children
           excludeFromTitleGeneration: options?.excludeFromTitleGeneration,
         };
         handleSessionSwitch(targetId);
-        return { assistantId: "" };
+        return { assistantId: "", hadAssistantText: false };
       }
 
       return sendMainMessageNow(text, targetId, options);
@@ -459,7 +473,11 @@ export function AdkChatProvider({ userId, children }: { userId: string; children
   }, [sessionId, isLoadingHistory, isBootstrappingSession, sendMainMessageNow]);
 
   const sendTopicMessage = useCallback(
-    async (prompt: string, assistantMessageId: string, options?: { sessionIdOverride?: string }): Promise<void> => {
+    async (
+      prompt: string,
+      assistantMessageId: string,
+      options?: { sessionIdOverride?: string }
+    ): Promise<{ hadAssistantText: boolean }> => {
       if (!userId || !sessionId) {
         throw new Error("Session not ready");
       }
@@ -472,6 +490,7 @@ export function AdkChatProvider({ userId, children }: { userId: string; children
         if (!hadAssistantText) {
           markIncompleteAssistantTurn(assistantMessageId);
         }
+        return { hadAssistantText };
       } catch (error) {
         const wrapped = error instanceof Error ? error : new Error(String(error));
         Object.defineProperty(wrapped, "assistantMessageId", { value: assistantMessageId, enumerable: true });

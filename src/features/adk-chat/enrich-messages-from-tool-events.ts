@@ -66,10 +66,8 @@ function mergeToolEnrichment(current: ToolEnrichment, name: string, response: Re
   const next = { ...current };
   const key = toSnakeToolKey(name);
 
-  if (key === "suggest_unimad_navigation") {
-    const navigation = parseUnimadNavigationFromToolResponse(response);
-    if (navigation) next.unimadNavigation = navigation;
-  }
+  const navigation = parseUnimadNavigationFromToolResponse(response);
+  if (navigation) next.unimadNavigation = navigation;
 
   if (key === "fetch_recommended_jobs" || key === "search_jobs_for_user") {
     const jobCards = parseJobCardsFromToolResponse(response);

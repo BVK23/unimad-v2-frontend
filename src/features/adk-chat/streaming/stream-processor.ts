@@ -13,7 +13,7 @@
 import { createDebugLog } from "@/src/lib/adk/run-sse-common";
 import { parseJobCardsFromToolResponse } from "../parse-unimad-job-cards";
 import { parseLinkedInSuggestionsFromToolResponse } from "../parse-unimad-linkedin-suggestions";
-import { parseUnimadNavigationFromToolResponse } from "../parse-unimad-navigation";
+import { coerceToolResponseRecord, parseUnimadNavigationFromToolResponse } from "../parse-unimad-navigation";
 import type { AgentMessage, ProcessedEvent } from "../types";
 import { traceAdkActivity } from "./activity-trace";
 import { extractDataFromSSE } from "./sse-parser";
@@ -220,10 +220,24 @@ function processFunctionResponse(
     }
   }
 
-  if (toSnakeToolKey(functionResponse.name) === "suggest_unimad_navigation") {
+  // Navigation chip: suggest_unimad_navigation, or any tool embedding ui.navigation
+  // (e.g. generate_resume_for_job_description / tailor_resume_for_job on ok|duplicate).
+  {
     const navigation = parseUnimadNavigationFromToolResponse(functionResponse.response);
     if (navigation) {
       callbacks.onNavigationSuggestion?.(aiMessageId, navigation);
+    }
+  }
+
+  // Django-created assets: invalidate React Query lists so landing pages update in place.
+  {
+    const tool = toSnakeToolKey(functionResponse.name);
+    if (tool === "generate_resume_for_job_description" || tool === "tailor_resume_for_job" || tool === "tailor_resume_for_role") {
+      const normalized = coerceToolResponseRecord(functionResponse.response);
+      const status = typeof normalized?.status === "string" ? normalized.status.toLowerCase() : "";
+      if (status === "ok" || status === "duplicate") {
+        callbacks.onAssetCreated?.({ kind: "resume", toolName: tool });
+      }
     }
   }
 

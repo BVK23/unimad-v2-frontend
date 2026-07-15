@@ -96,6 +96,12 @@ export interface StreamProcessingCallbacks {
   onWebsiteCountUpdate: (count: number) => void;
   /** After a tool mutates ADK session state, frontend can refresh Zustand from GET session. */
   onMutatingToolResponse?: (toolName: string, aiMessageId: string) => void;
+  /**
+   * A tool created (or resolved duplicate of) a resume/portfolio/etc. asset in Django.
+   * Frontend should invalidate the relevant React Query list so the landing page updates
+   * without a full page reload when the user is already on that feature.
+   */
+  onAssetCreated?: (payload: { kind: "resume" | "portfolio" | "studio" | "linkedin"; toolName: string }) => void;
   /** `suggest_unimad_navigation` completed — show Go to page button on the assistant message. */
   onNavigationSuggestion?: (aiMessageId: string, navigation: { path: string; label: string }) => void;
   /** Job board tool completed — show compact job cards on the assistant message. */

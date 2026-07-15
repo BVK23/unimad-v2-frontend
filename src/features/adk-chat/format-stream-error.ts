@@ -6,7 +6,11 @@ export type FormattedUnibotStreamError = {
   retryable: boolean;
 };
 
-export const RATE_LIMIT_RETRY_COOLDOWN_SEC = 15;
+/** Wait before offering Try again after rate-limit / busy errors. */
+export const RATE_LIMIT_RETRY_COOLDOWN_SEC = 30;
+
+/** Wait before offering Try again after generic stream / team failures. */
+export const GENERIC_RETRY_COOLDOWN_SEC = 30;
 
 /** Shown in the sidebar — keep short and non-technical. */
 export const RATE_LIMIT_USER_MESSAGE = "Unibot's servers are busy right now. Wait a moment, then try again.";

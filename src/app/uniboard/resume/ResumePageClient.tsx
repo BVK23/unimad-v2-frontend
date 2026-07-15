@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useRef, useState, type ReactNode } from "react";
+import { Suspense, useEffect, useRef, useState, type ReactNode } from "react";
 import ResumeDashboard from "@/components/ResumeDashboard";
 import ResumeEditor from "@/components/ResumeEditor";
 import { ModalPortalOverlay } from "@/components/ui/ModalPortalOverlay";
@@ -293,5 +293,15 @@ function ResumePageContent({ initialResumeId, initialIsNewDraft = false }: Resum
 }
 
 export default function ResumePageClient({ initialResumeId, initialIsNewDraft }: ResumePageClientProps) {
-  return <ResumePageContent initialResumeId={initialResumeId} initialIsNewDraft={initialIsNewDraft} />;
+  return (
+    <Suspense
+      fallback={
+        <div className="flex min-h-[50vh] flex-1 items-center justify-center" aria-busy="true" aria-label="Loading resume">
+          <Loader2 size={32} className="animate-spin text-brand-600" />
+        </div>
+      }
+    >
+      <ResumePageContent initialResumeId={initialResumeId} initialIsNewDraft={initialIsNewDraft} />
+    </Suspense>
+  );
 }

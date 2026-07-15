@@ -20,7 +20,15 @@ export interface UseAdkStreamingReturn {
     onMessageUpdate: (message: AgentMessage) => void,
     onEventUpdate: (messageId: string, event: ProcessedEvent) => void,
     onWebsiteCountUpdate: (count: number) => void,
-    streamExtras?: Pick<StreamProcessingCallbacks, "onMutatingToolResponse" | "onStreamActivityHint">
+    streamExtras?: Pick<
+      StreamProcessingCallbacks,
+      | "onMutatingToolResponse"
+      | "onStreamActivityHint"
+      | "onNavigationSuggestion"
+      | "onJobCardsSuggestion"
+      | "onLinkedInSuggestions"
+      | "onAssetCreated"
+    >
   ) => Promise<boolean>;
   getEventTitle: (agentName: string) => string;
 }
@@ -53,7 +61,15 @@ export function useAdkStreaming(retryFn: <T>(fn: () => Promise<T>) => Promise<T>
       onMessageUpdate: (message: AgentMessage) => void,
       onEventUpdate: (messageId: string, event: ProcessedEvent) => void,
       onWebsiteCountUpdate: (count: number) => void,
-      streamExtras?: Pick<StreamProcessingCallbacks, "onMutatingToolResponse" | "onStreamActivityHint">
+      streamExtras?: Pick<
+        StreamProcessingCallbacks,
+        | "onMutatingToolResponse"
+        | "onStreamActivityHint"
+        | "onNavigationSuggestion"
+        | "onJobCardsSuggestion"
+        | "onLinkedInSuggestions"
+        | "onAssetCreated"
+      >
     ): Promise<boolean> => {
       if (!connectionManager.current) {
         throw new Error("Connection manager not initialized");

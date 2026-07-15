@@ -27,6 +27,7 @@ export function resolveSubAgentTarget(row: Pick<UnibotAdkSessionRow, "feature" |
   }
 
   if (feature === "resume") {
+    if (section === "ats") return "ats_agent";
     if (section === "summary") return "summary_agent";
     if (section === "education") return "education_agent";
     if (section === "experience") return "experience_agent";

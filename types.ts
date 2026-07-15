@@ -287,6 +287,10 @@ export interface ResumeData {
   templateId: ResumeTemplateId;
   /** Marks this resume as the user's base resume for PDF extraction flows. At most one per user. */
   isBase?: boolean;
+  /** Linked tracker application when this resume was created for a JD. */
+  applicationId?: string | null;
+  /** Job Board id when the linked application came from a board listing. */
+  jobId?: string | null;
   /** Public URL segment when backend provides a slug */
   slug?: string;
   /** ISO timestamp when resume was last published (`published_at` from API). */

@@ -21,6 +21,19 @@ export function shouldMergeSimilarAiMessages(earlier: string, later: string): bo
   return false;
 }
 
+/** Meta wrap-up after a real answer (keep the earlier, longer analysis). */
+const META_COMPLETION_RE = /^(i('ve| have) (completed|provided|finished)|as there are no|there('s| is) nothing further|summary\s*:)/i;
+
+/** Specialist already acted after proposing / asking (keep the later result). */
+const ACTION_DONE_RE =
+  /\b(i('ve| have) (updated|replaced|removed|added|changed)|successfully (updated|removed|replaced|added)|your skills are now|all projects have been)\b/i;
+
+function looksLikeClarifyingAsk(text: string): boolean {
+  const t = text.trim();
+  if (/\?\s*$/.test(t)) return true;
+  return /\b(does this sound|would you like|which (one|section|entry)|please (tell|confirm|provide)|or would you prefer)\b/i.test(t);
+}
+
 function mergeTimelineActivities(
   base: TimelineActivity[] | undefined,
   extra: TimelineActivity[] | undefined
@@ -29,25 +42,68 @@ function mergeTimelineActivities(
   return merged.length > 0 ? merged : undefined;
 }
 
+function sameAgent(a: AgentMessage, b: AgentMessage): boolean {
+  const aa = (a.agent ?? "").trim().toLowerCase();
+  const bb = (b.agent ?? "").trim().toLowerCase();
+  return Boolean(aa && bb && aa === bb);
+}
+
+/**
+ * Within one user turn, same-author specialist text before/after tools often becomes
+ * two ADK events. Live stream overwrites one bubble; history must pick one.
+ * Returns the bubble to keep, or null to keep both distinct.
+ */
+export function preferCollapsedAiMessage<T extends AgentMessage>(earlier: T, later: T): T | null {
+  const a = earlier.content.trim();
+  const b = later.content.trim();
+  if (!a || !b) {
+    return {
+      ...later,
+      timelineActivities: mergeTimelineActivities(earlier.timelineActivities, later.timelineActivities),
+    };
+  }
+
+  if (shouldMergeSimilarAiMessages(a, b)) {
+    return {
+      ...later,
+      timelineActivities: mergeTimelineActivities(earlier.timelineActivities, later.timelineActivities),
+    };
+  }
+
+  if (!sameAgent(earlier, later)) {
+    return null;
+  }
+
+  const activities = mergeTimelineActivities(earlier.timelineActivities, later.timelineActivities);
+
+  // Proposal / clarifier then tool result → keep the result (live UX).
+  if (looksLikeClarifyingAsk(a) && (ACTION_DONE_RE.test(b) || !looksLikeClarifyingAsk(b))) {
+    return { ...later, timelineActivities: activities };
+  }
+
+  // Long analysis then short "I've completed…" status → keep the analysis.
+  if (META_COMPLETION_RE.test(b) && a.length > b.length * 1.25) {
+    return { ...earlier, timelineActivities: activities };
+  }
+
+  // Same specialist, same turn (tool loop / rephrase) → keep latest.
+  return { ...later, timelineActivities: activities };
+}
+
 function collapseAiRun<T extends AgentMessage>(run: T[]): T[] {
   if (run.length <= 1) return run;
 
   const out: T[] = [];
   let current = run[0];
-  let pendingActivities = current.timelineActivities;
 
   for (let i = 1; i < run.length; i++) {
     const next = run[i];
-    if (shouldMergeSimilarAiMessages(current.content, next.content)) {
-      pendingActivities = mergeTimelineActivities(pendingActivities, next.timelineActivities);
-      current = {
-        ...next,
-        timelineActivities: pendingActivities,
-      };
+    const preferred = preferCollapsedAiMessage(current, next);
+    if (preferred) {
+      current = preferred;
     } else {
       out.push(current);
       current = next;
-      pendingActivities = next.timelineActivities;
     }
   }
 
@@ -58,7 +114,7 @@ function collapseAiRun<T extends AgentMessage>(run: T[]): T[] {
 /**
  * Merges consecutive AI messages between human turns when their text looks like
  * repeated narration from the same agent invocation. Distinct multi-bubble replies
- * (e.g. coordinator handoff + specialist answer) are preserved.
+ * from different authors (e.g. coordinator handoff + specialist answer) are preserved.
  */
 export function collapseSimilarConsecutiveAiMessages<T extends AgentMessage>(messages: T[]): T[] {
   if (messages.length < 2) return messages;

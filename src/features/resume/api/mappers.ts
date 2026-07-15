@@ -157,6 +157,11 @@ export function mapBackendResumeToFrontend(dto: Record<string, unknown>): Resume
   const duplicatedFrom =
     typeof duplicatedFromRaw === "string" && duplicatedFromRaw.trim().length > 0 ? duplicatedFromRaw.trim() : undefined;
 
+  const applicationIdRaw = dto.application_id ?? dto.applicationId;
+  const applicationId = applicationIdRaw != null && String(applicationIdRaw).trim().length > 0 ? String(applicationIdRaw).trim() : null;
+  const jobIdRaw = dto.job_id ?? dto.jobId;
+  const jobId = jobIdRaw != null && String(jobIdRaw).trim().length > 0 ? String(jobIdRaw).trim() : null;
+
   return {
     // Identity / metadata
     id: String(dto.resume_id ?? dto.id ?? ""),
@@ -164,6 +169,8 @@ export function mapBackendResumeToFrontend(dto: Record<string, unknown>): Resume
     templateId: templateBackendToFrontend(dto.template as string | undefined),
     lastModified: new Date((dto.updated_at as string) ?? (dto.created_at as string) ?? Date.now()),
     isBase: readIsBaseResumeFlag(dto),
+    applicationId,
+    jobId,
     ...(slug ? { slug } : {}),
     ...(publishedAt ? { publishedAt: String(publishedAt) } : {}),
     ...(duplicatedFrom ? { duplicatedFrom } : {}),

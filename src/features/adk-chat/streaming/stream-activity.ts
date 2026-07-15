@@ -17,7 +17,9 @@ export const MUTATING_RESUME_TOOL_NAMES = new Set<string>([
   "update_bullet",
   "remove_bullet",
   "add_skill",
+  "update_skill",
   "remove_skill",
+  "replace_skills",
   "add_project",
   "update_project",
   "remove_project",
@@ -309,6 +311,8 @@ export function labelForAgent(author: string): string {
       return "Building your profile…";
     case "resume_agent":
       return "Coordinating your resume…";
+    case "ats_agent":
+      return "Reviewing your ATS score…";
     case "linkedin_agent":
       return "Coordinating your LinkedIn profile…";
     case "portfolio_agent":
@@ -475,6 +479,20 @@ export function labelForToolCall(name: string, args?: Record<string, unknown>): 
     case "fetch_linkedin_profile_skills":
     case "fetch_base_resume_skills":
       return "Loading your skills…";
+    case "fetch_base_resume":
+      return "Loading your base resume…";
+    case "fetch_application_job_context":
+    case "read_resolved_job_listing_for_resume":
+      return "Loading the job description…";
+    case "fetch_resume_ats_score":
+      return "Checking your ATS score…";
+    case "ats_agent":
+      return "Reviewing your ATS score…";
+    case "tailor_resume_for_role":
+      return "Building a resume for your target role…";
+    case "tailor_resume_for_job":
+    case "generate_resume_for_job_description":
+      return "Tailoring your resume for this job…";
     case "get_experiences":
       return "Reviewing your experience…";
     case "get_experience_by_id":
@@ -518,7 +536,9 @@ export function labelForToolCall(name: string, args?: Record<string, unknown>): 
     case "remove_bullet":
       return "Refreshing your experience…";
     case "add_skill":
+    case "update_skill":
     case "remove_skill":
+    case "replace_skills":
       return "Refreshing your skills…";
     case "add_project":
     case "update_project":
@@ -620,7 +640,9 @@ export function labelForMutatingToolResponse(name: string): string {
     case "remove_bullet":
       return "Experience updated — refreshing your view…";
     case "add_skill":
+    case "update_skill":
     case "remove_skill":
+    case "replace_skills":
       return "Skills updated — refreshing your view…";
     case "add_project":
     case "update_project":
@@ -678,7 +700,9 @@ export function completionMessageForMutatingTool(name: string): string | null {
     case "remove_bullet":
       return "I've updated your experience section. Review the highlighted changes in the editor.";
     case "add_skill":
+    case "update_skill":
     case "remove_skill":
+    case "replace_skills":
       return "I've updated your skills section. Review the highlighted changes in the editor.";
     case "add_project":
     case "update_project":

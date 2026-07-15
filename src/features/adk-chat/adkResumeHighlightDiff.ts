@@ -57,8 +57,15 @@ function shallowCertSig(c: ResumeData["certifications"][number]): string {
 }
 
 function skillsSig(skills: ResumeData["skills"]): string {
+  // Include category label — replace_skills often regroups by renaming category while keeping ids.
   return JSON.stringify(
-    skills.map(s => ({ id: s.id, name: s.name, categoryId: s.categoryId, hidden: (s as { hidden?: boolean }).hidden }))
+    skills.map(s => ({
+      id: s.id,
+      name: s.name,
+      category: s.category ?? "",
+      categoryId: s.categoryId ?? "",
+      hidden: (s as { hidden?: boolean }).hidden,
+    }))
   );
 }
 

@@ -2009,8 +2009,10 @@ const ChatSidebar: React.FC<ChatSidebarProps> = ({ incomingRequest, onRequestHan
           );
         });
         try {
-          await sendTopicMessage(agentText, botMsgId, { sessionIdOverride: subAdkSessionId });
-          pendingRetryRef.current = null;
+          const { hadAssistantText } = await sendTopicMessage(agentText, botMsgId, { sessionIdOverride: subAdkSessionId });
+          if (hadAssistantText) {
+            pendingRetryRef.current = null;
+          }
         } catch (err) {
           handleStreamFailure(err, { text: agentText, topicId, botMsgId });
         }
@@ -2053,8 +2055,10 @@ const ChatSidebar: React.FC<ChatSidebarProps> = ({ incomingRequest, onRequestHan
       }
       pendingRetryRef.current = { text: agentText, topicId, botMsgId };
       try {
-        await sendTopicMessage(agentText, botMsgId, { sessionIdOverride: subAdkSessionId });
-        pendingRetryRef.current = null;
+        const { hadAssistantText } = await sendTopicMessage(agentText, botMsgId, { sessionIdOverride: subAdkSessionId });
+        if (hadAssistantText) {
+          pendingRetryRef.current = null;
+        }
       } catch (err) {
         handleStreamFailure(err, { text: agentText, topicId, botMsgId });
       }
@@ -2334,8 +2338,14 @@ const ChatSidebar: React.FC<ChatSidebarProps> = ({ incomingRequest, onRequestHan
             shouldStickToBottomRef.current = true;
             pendingRetryRef.current = { text: agentText, topicId, botMsgId };
             const subAdkId = topicRow?.subSessionAdkId;
-            await sendTopicMessage(agentText, botMsgId, subAdkId ? { sessionIdOverride: subAdkId } : undefined);
-            pendingRetryRef.current = null;
+            const { hadAssistantText } = await sendTopicMessage(
+              agentText,
+              botMsgId,
+              subAdkId ? { sessionIdOverride: subAdkId } : undefined
+            );
+            if (hadAssistantText) {
+              pendingRetryRef.current = null;
+            }
           } catch (err) {
             handleStreamFailure(err, { text: agentText, topicId: existingPickerId });
           }
@@ -2401,8 +2411,14 @@ const ChatSidebar: React.FC<ChatSidebarProps> = ({ incomingRequest, onRequestHan
             shouldStickToBottomRef.current = true;
             pendingRetryRef.current = { text: agentText, topicId, botMsgId };
             const subAdkId = topicRow?.subSessionAdkId;
-            await sendTopicMessage(agentText, botMsgId, subAdkId ? { sessionIdOverride: subAdkId } : undefined);
-            pendingRetryRef.current = null;
+            const { hadAssistantText } = await sendTopicMessage(
+              agentText,
+              botMsgId,
+              subAdkId ? { sessionIdOverride: subAdkId } : undefined
+            );
+            if (hadAssistantText) {
+              pendingRetryRef.current = null;
+            }
           } catch (err) {
             handleStreamFailure(err, { text: agentText, topicId: existingPickerId });
           }
@@ -2470,8 +2486,10 @@ const ChatSidebar: React.FC<ChatSidebarProps> = ({ incomingRequest, onRequestHan
             );
           }
           pendingRetryRef.current = { text: agentText, topicId: stableTopicId, botMsgId };
-          await sendTopicMessage(agentText, botMsgId, subAdkId ? { sessionIdOverride: subAdkId } : undefined);
-          pendingRetryRef.current = null;
+          const { hadAssistantText } = await sendTopicMessage(agentText, botMsgId, subAdkId ? { sessionIdOverride: subAdkId } : undefined);
+          if (hadAssistantText) {
+            pendingRetryRef.current = null;
+          }
         } catch (err) {
           handleStreamFailure(err, { text: agentText, topicId, botMsgId });
         }
@@ -3287,8 +3305,10 @@ const ChatSidebar: React.FC<ChatSidebarProps> = ({ incomingRequest, onRequestHan
       );
       pendingRetryRef.current = { text: outboundText, topicId: effectiveTopicId, botMsgId };
       try {
-        await sendTopicMessage(outboundText, botMsgId, subAdkId ? { sessionIdOverride: subAdkId } : undefined);
-        pendingRetryRef.current = null;
+        const { hadAssistantText } = await sendTopicMessage(outboundText, botMsgId, subAdkId ? { sessionIdOverride: subAdkId } : undefined);
+        if (hadAssistantText) {
+          pendingRetryRef.current = null;
+        }
         maybeGenerateMainSessionTitleFromThreadPrompt(outboundText);
         if (userId && subAdkId) {
           void syncTopicUserInvocationIdsFromAdk(userId, subAdkId, effectiveTopicId, setMessages);
@@ -3391,18 +3411,20 @@ const ChatSidebar: React.FC<ChatSidebarProps> = ({ incomingRequest, onRequestHan
 
       if (isEditing && editingUserMessage) {
         return (
-          <UnibotEditableUserBubble
-            value={editingUserMessage.draftText}
-            disabled={isRewinding || isAgentLoading}
-            onChange={draftText => setEditingUserMessage(prev => (prev ? { ...prev, draftText } : prev))}
-            onSubmit={() => void handleSubmitEditedUserMessage()}
-            onCancel={() => setEditingUserMessage(null)}
-          />
+          <div className="flex w-full min-w-0 flex-col items-stretch gap-0.5">
+            <UnibotEditableUserBubble
+              value={editingUserMessage.draftText}
+              disabled={isRewinding || isAgentLoading}
+              onChange={draftText => setEditingUserMessage(prev => (prev ? { ...prev, draftText } : prev))}
+              onSubmit={() => void handleSubmitEditedUserMessage()}
+              onCancel={() => setEditingUserMessage(null)}
+            />
+          </div>
         );
       }
 
       return (
-        <div className="flex flex-col items-end gap-0.5">
+        <div className="flex min-w-0 flex-col items-end gap-0.5 self-end">
           <div className={bubbleClassName}>
             <span className="whitespace-pre-wrap">{displayText}</span>
           </div>
@@ -3531,8 +3553,10 @@ const ChatSidebar: React.FC<ChatSidebarProps> = ({ incomingRequest, onRequestHan
           };
           return insertTopicInMainThread(prev, newTopic);
         });
-        await sendTopicMessage(outboundText, botMsgId, { sessionIdOverride: subAdkId });
-        pendingRetryRef.current = null;
+        const { hadAssistantText } = await sendTopicMessage(outboundText, botMsgId, { sessionIdOverride: subAdkId });
+        if (hadAssistantText) {
+          pendingRetryRef.current = null;
+        }
         maybeGenerateMainSessionTitleFromThreadPrompt(outboundText);
       } catch (err) {
         useApplicationAssetStudioStore.getState().setSelectionRefineLoading(false);
@@ -3917,12 +3941,15 @@ const ChatSidebar: React.FC<ChatSidebarProps> = ({ incomingRequest, onRequestHan
       setInput("");
       const mainId = currentMainSessionId ?? sessionId;
       let assistantMsgId: string | undefined;
+      pendingRetryRef.current = { text: textToSend };
       try {
-        const { assistantId } = await sendMainMessage(textToSend);
+        const { assistantId, hadAssistantText } = await sendMainMessage(textToSend);
         assistantMsgId = assistantId || undefined;
         pendingRetryRef.current = { text: textToSend, botMsgId: assistantMsgId };
-        pendingRetryRef.current = null;
-        if (!isHandoffPromptForTitle(textToSend)) {
+        if (hadAssistantText) {
+          pendingRetryRef.current = null;
+        }
+        if (hadAssistantText && !isHandoffPromptForTitle(textToSend)) {
           markMainSessionHasUserPrompt(userId, mainId);
           void generateMainSessionTitleIfNeeded(mainId, textToSend, refreshSessions, userId);
         }
@@ -3964,7 +3991,9 @@ const ChatSidebar: React.FC<ChatSidebarProps> = ({ incomingRequest, onRequestHan
 
   const retryFailedStream = useCallback(() => {
     const pending = pendingRetryRef.current;
-    if (!pending || !userId || !sessionReady || isAgentLoading || isLoadingHistory) return;
+    if (!pending?.text?.trim() || !userId || !sessionReady || isLoadingHistory) return;
+    // Error UI can show while submit pacing/loading is briefly stuck — still allow retry.
+    if (isAgentLoading && !streamError) return;
     clearStreamError();
 
     const runRetry = async () => {
@@ -3984,8 +4013,14 @@ const ChatSidebar: React.FC<ChatSidebarProps> = ({ incomingRequest, onRequestHan
           const topic = messages.find(m => m.id === pending.topicId && m.isTopic);
           const subAdkId = topic?.subSessionAdkId;
           try {
-            await sendTopicMessage(pending.text, pending.botMsgId, subAdkId ? { sessionIdOverride: subAdkId } : undefined);
-            pendingRetryRef.current = null;
+            const { hadAssistantText } = await sendTopicMessage(
+              pending.text,
+              pending.botMsgId,
+              subAdkId ? { sessionIdOverride: subAdkId } : undefined
+            );
+            if (hadAssistantText) {
+              pendingRetryRef.current = null;
+            }
           } catch (err) {
             handleStreamFailure(err, { text: pending.text, topicId: pending.topicId, botMsgId: pending.botMsgId });
           }
@@ -3993,8 +4028,10 @@ const ChatSidebar: React.FC<ChatSidebarProps> = ({ incomingRequest, onRequestHan
         }
 
         try {
-          await sendMainMessage(pending.text, { retryAssistantId: pending.botMsgId });
-          pendingRetryRef.current = null;
+          const { hadAssistantText } = await sendMainMessage(pending.text, { retryAssistantId: pending.botMsgId });
+          if (hadAssistantText) {
+            pendingRetryRef.current = null;
+          }
         } catch (err) {
           const fromErr =
             err && typeof err === "object" && "assistantMessageId" in err
@@ -4014,6 +4051,7 @@ const ChatSidebar: React.FC<ChatSidebarProps> = ({ incomingRequest, onRequestHan
     sessionReady,
     isAgentLoading,
     isLoadingHistory,
+    streamError,
     clearStreamError,
     handleSend,
     messages,
@@ -4161,8 +4199,10 @@ const ChatSidebar: React.FC<ChatSidebarProps> = ({ incomingRequest, onRequestHan
       pendingRetryRef.current = { text: text.trim(), topicId, botMsgId };
       try {
         const subAdkId = topicCard?.subSessionAdkId?.trim();
-        await sendTopicMessage(text.trim(), botMsgId, subAdkId ? { sessionIdOverride: subAdkId } : undefined);
-        pendingRetryRef.current = null;
+        const { hadAssistantText } = await sendTopicMessage(text.trim(), botMsgId, subAdkId ? { sessionIdOverride: subAdkId } : undefined);
+        if (hadAssistantText) {
+          pendingRetryRef.current = null;
+        }
       } catch (err) {
         handleStreamFailure(err, { text: text.trim(), topicId, botMsgId });
       }
@@ -4796,7 +4836,7 @@ const ChatSidebar: React.FC<ChatSidebarProps> = ({ incomingRequest, onRequestHan
                                       </div>
                                     ) : showModelBubble || showUserBubble ? (
                                       subMsg.role === "user" && showUserBubble ? (
-                                        <div className="flex max-w-full flex-col items-end">
+                                        <div className="flex w-full max-w-full flex-col items-end">
                                           {renderEditableUserMessage(
                                             subMsg,
                                             msg.subSessionAdkId ?? sessionId,
@@ -5108,7 +5148,7 @@ const ChatSidebar: React.FC<ChatSidebarProps> = ({ incomingRequest, onRequestHan
                   {msg.isError ? (
                     <UnibotErrorBubble message={msg} onRetry={retryFailedStream} />
                   ) : msg.role === "user" && msg.text ? (
-                    <div className="flex max-w-[90%] flex-col items-end">
+                    <div className="flex w-full max-w-[90%] flex-col items-end">
                       {renderEditableUserMessage(
                         msg,
                         sessionId,
@@ -5472,8 +5512,8 @@ const ChatSidebar: React.FC<ChatSidebarProps> = ({ incomingRequest, onRequestHan
           ) : null}
           {streamError ? (
             <p className="mb-2 rounded-lg border border-red-200/70 bg-red-50/80 px-2.5 py-2 text-[11px] leading-snug text-red-800 dark:border-red-900/40 dark:bg-red-950/25 dark:text-red-200">
-              Something went wrong on the last message. Tap <span className="font-medium">Try again</span> to retry it, or send a new
-              message below.
+              Something went wrong on the last message. Wait for <span className="font-medium">Try again</span> above, or send a new message
+              below.
             </p>
           ) : null}
           <textarea

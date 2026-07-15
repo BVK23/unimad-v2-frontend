@@ -1,6 +1,8 @@
 "use client";
 
 import type React from "react";
+import { useLayoutEffect, useRef } from "react";
+import { growTextareaToFit } from "@/utils/textarea-autosize";
 import { Pencil, Trash2 } from "lucide-react";
 
 type UnibotUserMessageToolbarProps = {
@@ -62,12 +64,34 @@ export function UnibotEditableUserBubble({
   onSubmit,
   onCancel,
 }: UnibotEditableUserBubbleProps): React.JSX.Element {
+  const textareaRef = useRef<HTMLTextAreaElement>(null);
+
+  useLayoutEffect(() => {
+    const el = textareaRef.current;
+    if (!el) return;
+    growTextareaToFit(el);
+  }, [value]);
+
+  useLayoutEffect(() => {
+    const el = textareaRef.current;
+    if (!el) return;
+    growTextareaToFit(el);
+    el.focus();
+    const len = el.value.length;
+    el.setSelectionRange(len, len);
+  }, []);
+
   return (
-    <div className="flex w-full max-w-full flex-col items-end gap-1">
+    <div className="flex w-full min-w-0 flex-col items-stretch gap-1">
       <textarea
+        ref={textareaRef}
         value={value}
         disabled={disabled}
-        onChange={e => onChange(e.target.value)}
+        rows={1}
+        onChange={e => {
+          onChange(e.target.value);
+          growTextareaToFit(e.target);
+        }}
         onKeyDown={e => {
           if (e.key === "Escape") {
             e.preventDefault();
@@ -81,11 +105,10 @@ export function UnibotEditableUserBubble({
             }
           }
         }}
-        rows={3}
-        className="w-full min-w-[200px] max-w-full resize-y rounded-2xl rounded-tr-sm border border-brand-300 bg-white px-3 py-2 text-[13px] leading-relaxed text-slate-800 outline-none ring-brand-500/30 focus:ring-2 dark:border-brand-600 dark:bg-[#1a1a1a] dark:text-slate-100"
+        className="box-border w-full min-w-0 resize-none overflow-hidden rounded-2xl rounded-tr-sm border border-brand-300 bg-white px-4 py-3 text-[13px] leading-relaxed text-slate-900 outline-none ring-brand-500/30 focus:ring-2 dark:border-brand-600 dark:bg-[#1a1a1a] dark:text-slate-100"
         aria-label="Edit message"
       />
-      <div className="flex items-center gap-2 text-[11px] text-slate-400">
+      <div className="flex items-center justify-end gap-2 text-[11px] text-slate-400">
         <span>Enter to resend</span>
         <button
           type="button"

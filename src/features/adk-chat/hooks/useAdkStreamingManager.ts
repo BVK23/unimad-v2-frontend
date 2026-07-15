@@ -16,7 +16,7 @@ import { deriveActiveScope, deriveScopeFromRegistryRow, type ContentScope } from
 import { resolveActiveResumeIdForPatch } from "@/src/features/adk-chat/resolve-active-resume-id";
 import {
   mergePrepareApplicationIntoResumeStateDelta,
-  resolvePrepareApplicationForAdk,
+  resolveApplicationContextForResumePatch,
 } from "@/src/features/adk-chat/resolve-prepare-application-for-adk";
 import { resolveAdkSessionOptionsForSessionId } from "@/src/features/adk-chat/resolve-sub-session-adk-app";
 import { noteAdkSessionSynced } from "@/src/features/adk-chat/rewind-state-divergence";
@@ -296,9 +296,10 @@ export function useAdkStreamingManager({
       const warmResumeData = buildAdkResumeDataMap(allStoreResumes);
       const warmPortfolioData = buildAdkPortfolioDataMap(allStorePortfolios);
       const applications = getApplicationsFromQueryClient(queryClient);
-      const prepareApplication = resolvePrepareApplicationForAdk(searchParams, applications);
-      const mergeResumePrepareContext = (delta: Record<string, unknown>) =>
-        mergePrepareApplicationIntoResumeStateDelta(delta, prepareApplication);
+      const mergeResumeApplicationContext = (
+        delta: Record<string, unknown>,
+        resume?: { applicationId?: string | null; jobId?: string | null } | null
+      ) => mergePrepareApplicationIntoResumeStateDelta(delta, resolveApplicationContextForResumePatch(searchParams, applications, resume));
 
       if (isLinkedInRoute) {
         const snapshot = linkedInSnapshot ?? queryClient.getQueryData<LinkedInAnalysisSnapshot | null>(linkedinAnalysisQueryKey);
@@ -395,7 +396,7 @@ export function useAdkStreamingManager({
 
       if (isResumeRoute && !activeResumeId) {
         return {
-          stateDelta: mergeResumePrepareContext({
+          stateDelta: mergeResumeApplicationContext({
             active_context: "resume",
             current_resume: null,
             resume_data: warmResumeData,
@@ -421,12 +422,15 @@ export function useAdkStreamingManager({
           };
           const base = buildAdkResumeStateDelta({ ...sourceResume, id: activeResumeId });
           return {
-            stateDelta: mergeResumePrepareContext({
-              ...base,
-              resume_data: buildAdkResumeDataMap(mergedResumes),
-              portfolio_data: warmPortfolioData,
-              current_portfolio: null,
-            }),
+            stateDelta: mergeResumeApplicationContext(
+              {
+                ...base,
+                resume_data: buildAdkResumeDataMap(mergedResumes),
+                portfolio_data: warmPortfolioData,
+                current_portfolio: null,
+              },
+              sourceResume
+            ),
             source: storeResume ? "zustand" : "react_query",
           };
         }
@@ -435,18 +439,21 @@ export function useAdkStreamingManager({
         if (warmOnly) {
           const mergedResumes = { ...allStoreResumes, [activeResumeId]: { ...warmOnly, id: activeResumeId } };
           return {
-            stateDelta: mergeResumePrepareContext({
-              ...buildAdkResumeStateDelta({ ...warmOnly, id: activeResumeId }),
-              resume_data: buildAdkResumeDataMap(mergedResumes),
-              portfolio_data: warmPortfolioData,
-              current_portfolio: null,
-            }),
+            stateDelta: mergeResumeApplicationContext(
+              {
+                ...buildAdkResumeStateDelta({ ...warmOnly, id: activeResumeId }),
+                resume_data: buildAdkResumeDataMap(mergedResumes),
+                portfolio_data: warmPortfolioData,
+                current_portfolio: null,
+              },
+              warmOnly
+            ),
             source: "zustand",
           };
         }
 
         return {
-          stateDelta: mergeResumePrepareContext({
+          stateDelta: mergeResumeApplicationContext({
             active_context: "resume",
             current_resume: activeResumeId,
             resume_data: warmResumeData,
@@ -474,9 +481,10 @@ export function useAdkStreamingManager({
   const getStateDeltaForScope = useCallback(
     (scope: ContentScope): { stateDelta: Record<string, unknown>; source: AdkStateSyncSource } => {
       const applications = getApplicationsFromQueryClient(queryClient);
-      const prepareApplication = resolvePrepareApplicationForAdk(searchParams, applications);
-      const mergeResumePrepareContext = (delta: Record<string, unknown>) =>
-        mergePrepareApplicationIntoResumeStateDelta(delta, prepareApplication);
+      const mergeResumeApplicationContext = (
+        delta: Record<string, unknown>,
+        resume?: { applicationId?: string | null; jobId?: string | null } | null
+      ) => mergePrepareApplicationIntoResumeStateDelta(delta, resolveApplicationContextForResumePatch(searchParams, applications, resume));
 
       if (scope.domain === "resume") {
         const allStoreResumes = useResumeStore.getState().resumeData;
@@ -488,21 +496,27 @@ export function useAdkStreamingManager({
         }
         const sourceResume = scopedResumeId ? useResumeStore.getState().getResumeData(scopedResumeId) : undefined;
         const queryResume = scopedResumeId ? queryClient.getQueryData<ResumeData>(resumeByIdQueryKey(scopedResumeId)) : undefined;
-        const resolvedResume = sourceResume ?? queryResume;
+        const listResume = scopedResumeId
+          ? queryClient.getQueryData<ResumeData[]>(resumesListQueryKey)?.find(r => String(r.id) === String(scopedResumeId))
+          : undefined;
+        const resolvedResume = sourceResume ?? queryResume ?? listResume;
         if (resolvedResume && scopedResumeId) {
           return {
-            stateDelta: mergeResumePrepareContext({
-              ...buildAdkResumeStateDelta({ ...resolvedResume, id: scopedResumeId }),
-              resume_data: buildAdkResumeDataMap({ ...allStoreResumes, [scopedResumeId]: resolvedResume }),
-              portfolio_data: warmPortfolioData,
-              current_portfolio: null,
-            }),
+            stateDelta: mergeResumeApplicationContext(
+              {
+                ...buildAdkResumeStateDelta({ ...resolvedResume, id: scopedResumeId }),
+                resume_data: buildAdkResumeDataMap({ ...allStoreResumes, [scopedResumeId]: resolvedResume }),
+                portfolio_data: warmPortfolioData,
+                current_portfolio: null,
+              },
+              resolvedResume
+            ),
             source: sourceResume ? "zustand" : "react_query",
           };
         }
         if (scopedResumeId) {
           return {
-            stateDelta: mergeResumePrepareContext({
+            stateDelta: mergeResumeApplicationContext({
               active_context: "resume",
               current_resume: scopedResumeId,
               resume_data: buildAdkResumeDataMap(allStoreResumes),
@@ -578,7 +592,8 @@ export function useAdkStreamingManager({
     async (
       targetSessionId: string,
       scopeOverride?: ContentScope | null,
-      resumeIdOverride?: string | null
+      resumeIdOverride?: string | null,
+      outboundUserText?: string | null
     ): Promise<{ success: boolean; effectiveAppName?: string; error?: string }> => {
       if (!userId || !targetSessionId) {
         return { success: false, error: "userId and sessionId are required" };
@@ -759,6 +774,13 @@ export function useAdkStreamingManager({
         streamHadSidebarContentRef.current = true;
         onLinkedInSuggestions?.(assistantId, payload);
       },
+      onAssetCreated: ({ kind }: { kind: "resume" | "portfolio" | "studio" | "linkedin" }) => {
+        // React Query: active observers (e.g. resume landing) refetch immediately;
+        // inactive routes stay stale until the next visit — no full page reload.
+        if (kind === "resume") {
+          void queryClient.invalidateQueries({ queryKey: resumesListQueryKey });
+        }
+      },
     }),
     [
       noteMutatingToolDuringStream,
@@ -839,7 +861,7 @@ export function useAdkStreamingManager({
           const sessionRow = options?.sessionIdOverride ? getRegistryRow(targetSessionId) : undefined;
           const scopeOverride = sessionRow ? deriveScopeFromRegistryRow(sessionRow) : null;
           captureResumeBaselineBeforeMutatingPull(scopeOverride);
-          const patchResult = await patchSessionContextBeforeSend(targetSessionId, scopeOverride, options?.patchResumeId);
+          const patchResult = await patchSessionContextBeforeSend(targetSessionId, scopeOverride, options?.patchResumeId, message.trim());
           if (!patchResult.success) {
             throw new Error(patchResult.error ?? "Could not sync your editor context with Unibot.");
           }

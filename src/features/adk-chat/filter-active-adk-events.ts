@@ -28,32 +28,39 @@ export function isRewindMarkerEvent(event: RawAdkEvent): boolean {
 
 /**
  * Returns events that remain visible after the latest rewind marker.
- * Rewound invocations (and everything after them) are excluded from the transcript.
+ *
+ * ADK rewind appends a marker and then continues the session as a new branch.
+ * Visible transcript =
+ *   events before the rewound invocation
+ *   + events after the rewind marker (the continued branch)
+ *
+ * Does NOT mutate Postgres — display filter only.
  */
 export function filterActiveAdkEvents(events: AdkEvent[]): AdkEvent[] {
   if (events.length === 0) return [];
 
   const rawEvents = events as RawAdkEvent[];
 
+  let latestRewindMarkerIndex = -1;
   let latestRewindBeforeId: string | null = null;
   for (let i = rawEvents.length - 1; i >= 0; i--) {
     const rewindId = getRewindBeforeInvocationId(rawEvents[i]);
     if (rewindId) {
+      latestRewindMarkerIndex = i;
       latestRewindBeforeId = rewindId;
       break;
     }
   }
 
-  const withoutMarkers = rawEvents.filter(event => !isRewindMarkerEvent(event));
-
-  if (!latestRewindBeforeId) {
-    return withoutMarkers;
+  if (!latestRewindBeforeId || latestRewindMarkerIndex < 0) {
+    return rawEvents.filter(event => !isRewindMarkerEvent(event));
   }
 
-  const cutoffIndex = withoutMarkers.findIndex(event => getEventInvocationId(event) === latestRewindBeforeId);
-  if (cutoffIndex === -1) {
-    return withoutMarkers;
-  }
+  const beforeMarker = rawEvents.slice(0, latestRewindMarkerIndex).filter(event => !isRewindMarkerEvent(event));
+  const afterMarker = rawEvents.slice(latestRewindMarkerIndex + 1).filter(event => !isRewindMarkerEvent(event));
 
-  return withoutMarkers.slice(0, cutoffIndex);
+  const cutoffIndex = beforeMarker.findIndex(event => getEventInvocationId(event) === latestRewindBeforeId);
+  const prefix = cutoffIndex === -1 ? beforeMarker : beforeMarker.slice(0, cutoffIndex);
+
+  return [...prefix, ...afterMarker];
 }
