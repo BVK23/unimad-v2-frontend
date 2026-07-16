@@ -215,10 +215,9 @@ export class AdkSessionService {
 
   /**
    * Deletes a specific session by ID.
+   * Tries primary app, then optional fallback (legacy sub-sessions stored under unibot).
    */
   static async deleteSession(userId: string, sessionId: string, options?: AdkSessionServiceOptions): Promise<void> {
-    const appName = resolveAdkAppName(options?.appName);
-
     if (shouldUseAgentEngine()) {
       const endpoint = getEndpointForPath(`/${sessionId}`, "sessions");
       try {
@@ -240,15 +239,25 @@ export class AdkSessionService {
       return;
     }
 
-    const endpoint = getEndpointForPath(`/apps/${appName}/users/${userId}/sessions/${sessionId}`);
-    try {
+    const primaryApp = resolveAdkAppName(options?.appName);
+    const fallback = options?.fallbackAppName?.trim();
+
+    const attemptDelete = async (appName: string): Promise<Response> => {
+      const endpoint = getEndpointForPath(`/apps/${appName}/users/${userId}/sessions/${sessionId}`);
       const authHeaders = await getAuthHeaders();
-      const response = await fetch(endpoint, {
+      return fetch(endpoint, {
         method: "DELETE",
         headers: {
           ...authHeaders,
         },
       });
+    };
+
+    try {
+      let response = await attemptDelete(primaryApp);
+      if (response.status === 404 && fallback && fallback !== primaryApp) {
+        response = await attemptDelete(fallback);
+      }
 
       if (!response.ok && response.status !== 404) {
         throw new Error(`Failed to delete session: ${response.statusText}`);

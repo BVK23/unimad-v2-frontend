@@ -5,7 +5,7 @@ import type { ApplicationAssetApiType } from "@/features/application-assets/type
 import type { ContentGenFunnel } from "@/features/content-lab/api/adk-mappers";
 import { useContentGenStudioStore } from "@/features/content-lab/store/useContentGenStudioStore";
 import { mapAdkPortfolioDataMapToFrontend } from "@/features/portfolio/api/mappers";
-import { portfolioQueryKey } from "@/features/portfolio/hooks/usePortfolio";
+import { setLivePortfolioQueryData } from "@/features/portfolio/hooks/usePortfolio";
 import { usePortfolioStore } from "@/features/portfolio/store/usePortfolioStore";
 import { extractLinkedInSessionProfileFromAdkState, mapLinkedInSessionProfileToSnapshot } from "@/src/features/linkedin/api/adk-mappers";
 import { linkedinAnalysisQueryKey } from "@/src/features/linkedin/hooks/useLinkedInAnalysis";
@@ -90,9 +90,11 @@ export async function applyAdkSessionStateToStores(
     const currentPortfolioIdRaw = state.current_portfolio;
     const currentPortfolioId =
       typeof currentPortfolioIdRaw === "string" && currentPortfolioIdRaw.trim().length > 0 ? currentPortfolioIdRaw.trim() : null;
-    usePortfolioStore.setState({ portfolioData: nextPortfolios });
+    usePortfolioStore.setState(prev => ({
+      portfolioData: { ...prev.portfolioData, ...nextPortfolios },
+    }));
     if (currentPortfolioId && nextPortfolios[currentPortfolioId]) {
-      queryClient.setQueryData(portfolioQueryKey, nextPortfolios[currentPortfolioId]);
+      setLivePortfolioQueryData(queryClient, nextPortfolios[currentPortfolioId]);
     }
     applied = true;
   }

@@ -83,6 +83,11 @@ import { deleteReferral, fetchReferralById, updateReferral } from "@/features/re
 import type { ReferralAsset } from "@/features/referral/types";
 import { useProfileData } from "@/features/user-profile/hooks/use-profile-data";
 import { resolveLinkedInPostAuthorDisplay } from "@/features/user-profile/utils/resolve-linkedin-post-author";
+import { useVpdAutosave, useVpdHistory, VPD_LIST_QUERY_KEY } from "@/features/vpd/hooks";
+import { deleteVpd, fetchVpdContent, generateVpd } from "@/features/vpd/server-actions/vpd-actions";
+import { isGenerateVpdDuplicate, type GenerateVpdParams } from "@/features/vpd/types";
+import { isPersistedVpdId } from "@/features/vpd/utils/isPersistedVpdId";
+import { mapVpdApiToListItem, mapVpdApiToStudioProject } from "@/features/vpd/utils/mapVpdApiToStudioProject";
 import { useDocumentAutosave } from "@/hooks/useDocumentAutosave";
 import { useResizablePanelWidth } from "@/hooks/useResizablePanelWidth";
 import {
@@ -143,7 +148,7 @@ import {
   sortApplicationAssetsByRecency,
 } from "./studioDocumentMappers";
 import { getTopicDescription, getTopicMeta, TOPIC_GROUPS } from "./studioTopicConfig";
-import { MOCK_VPDS, buildVpdProjectFromDraft, createDefaultVpdProject, type VpdListItem } from "./vpdStudioHelpers";
+import { MOCK_VPD_TEMPLATES, createDefaultVpdProject, type VpdListItem } from "./vpdStudioHelpers";
 
 interface StudioMainProps {
   initialContext?: GeneratorContext | null;
@@ -489,8 +494,9 @@ const StudioMainV2: React.FC<StudioMainProps> = ({ initialContext, initialAssetI
 
   // VPD Specific State
   const [vpdProject, setVpdProject] = useState<PortfolioItem>(createDefaultVpdProject());
-  const [savedVpds, setSavedVpds] = useState<VpdListItem[]>(MOCK_VPDS);
+  const [vpdSlug, setVpdSlug] = useState<string | null>(null);
   const [vpdLibraryTab, setVpdLibraryTab] = useState<"recents" | "templates">("recents");
+  const [isOpeningVpd, setIsOpeningVpd] = useState(false);
 
   // Document library state
   const [selectedDocumentId, setSelectedDocumentId] = useState<string | number | null>(null);
@@ -526,6 +532,11 @@ const StudioMainV2: React.FC<StudioMainProps> = ({ initialContext, initialAssetI
   const [coverLetterFormError, setCoverLetterFormError] = useState<string | null>(null);
   const [coldEmailFormError, setColdEmailFormError] = useState<string | null>(null);
   const [referralFormError, setReferralFormError] = useState<string | null>(null);
+  const [vpdFormError, setVpdFormError] = useState<string | null>(null);
+  const [vpdDuplicateModal, setVpdDuplicateModal] = useState<{
+    existingVpdId: string;
+    params: GenerateVpdParams;
+  } | null>(null);
   const [coverLetterDuplicateModal, setCoverLetterDuplicateModal] = useState<{
     existingAssetId: string | number;
     params: { role: string; company: string; job_description: string };
@@ -555,6 +566,31 @@ const StudioMainV2: React.FC<StudioMainProps> = ({ initialContext, initialAssetI
   const { data: coverLetterHistory = [] } = useCoverLetterHistory();
   const { data: coldEmailHistory = [] } = useColdEmailHistory();
   const { data: referralHistory = [] } = useReferralHistory();
+  const {
+    data: vpdLanding,
+    isLoading: isVpdHistoryLoading,
+    isError: isVpdHistoryError,
+    refetch: refetchVpdHistory,
+  } = useVpdHistory(!isVpdFeatureLocked);
+
+  const recentVpds = useMemo(() => (vpdLanding?.userVpds ?? []).map(mapVpdApiToListItem), [vpdLanding?.userVpds]);
+  const libraryVpds = useMemo(() => [...recentVpds, ...MOCK_VPD_TEMPLATES], [recentVpds]);
+
+  const handleVpdPersisted = useCallback(() => {
+    void queryClient.invalidateQueries({ queryKey: VPD_LIST_QUERY_KEY });
+  }, [queryClient]);
+
+  const {
+    saveStatusLabel: vpdSaveStatusLabel,
+    runSave: runVpdSave,
+    hasPendingUnsavedChanges: vpdHasPendingUnsavedChanges,
+    isSavingRemote: vpdIsSaving,
+    savedConfirmationVisible: vpdSavedConfirmationVisible,
+    lastSaveError: vpdLastSaveError,
+  } = useVpdAutosave(vpdProject, {
+    enabled: !isVpdFeatureLocked && isPersistedVpdId(vpdProject.id),
+    onPersisted: handleVpdPersisted,
+  });
 
   const refreshLinkedinAssets = useCallback(async () => {
     try {
@@ -854,6 +890,53 @@ const StudioMainV2: React.FC<StudioMainProps> = ({ initialContext, initialAssetI
 
   updateStudioUrlRef.current = updateStudioUrl;
 
+  const applyVpdProject = useCallback(
+    (project: PortfolioItem, options?: { updateUrl?: boolean; slug?: string | null }) => {
+      setVpdProject(project);
+      if (options && "slug" in options) {
+        setVpdSlug(options.slug?.trim() ? options.slug.trim() : null);
+      }
+      setGeneratedContent(project.title || "Value Proposition Document");
+      if (options?.updateUrl !== false) {
+        updateStudioUrl({ type: "vpd", id: String(project.id) });
+      }
+    },
+    [updateStudioUrl]
+  );
+
+  const applyVpdDraftToForm = useCallback(
+    (asset: { id?: string | number; role?: string; company?: string; job_description?: string } | null) => {
+      if (!asset) return;
+      setRole(asset.role ?? "");
+      setCompany(asset.company ?? "");
+      setJobDescription(asset.job_description ?? "");
+      if (asset.id != null) {
+        setSelectedDocumentId(asset.id);
+      }
+    },
+    []
+  );
+
+  const openVpdById = useCallback(
+    async (vpdId: string) => {
+      if (isVpdFeatureLocked || !vpdId) return;
+      setIsOpeningVpd(true);
+      setVpdFormError(null);
+      try {
+        const data = await fetchVpdContent(vpdId);
+        applyVpdDraftToForm(data);
+        applyVpdProject(mapVpdApiToStudioProject(data), {
+          slug: typeof data.slug === "string" && data.slug.trim() ? data.slug.trim() : null,
+        });
+      } catch (err) {
+        setVpdFormError(sanitizeUserFacingError(err instanceof Error ? err.message : "Failed to load VPD", "Failed to load VPD."));
+      } finally {
+        setIsOpeningVpd(false);
+      }
+    },
+    [applyVpdDraftToForm, applyVpdProject]
+  );
+
   const canAutosaveDocument =
     !hasApplicationAssetPendingRevision &&
     ((selectedTopic === "cover-letter" && Boolean(currentCoverLetterDraft?.id)) ||
@@ -1083,15 +1166,23 @@ const StudioMainV2: React.FC<StudioMainProps> = ({ initialContext, initialAssetI
 
   const handleSelectVpd = (vpd: VpdListItem) => {
     if (isVpdFeatureLocked) return;
-    setVpdProject({ ...vpd.project, id: String(vpd.id), title: vpd.title });
-    setGeneratedContent(vpd.project.detailedBlocks?.[0]?.content?.toString() || "");
+    // Templates are local starters — open immediately without fetching.
+    if (vpd.isTemplate) {
+      applyVpdProject({ ...vpd.project, id: String(vpd.id), title: vpd.title }, { updateUrl: false, slug: null });
+      setShowVpdEditor(true);
+      return;
+    }
+    // Optimistic preview from landing payload, then refresh from content API.
+    applyVpdDraftToForm(vpd);
+    applyVpdProject({ ...vpd.project, id: String(vpd.id), title: vpd.title }, { slug: vpd.slug ?? null });
+    void openVpdById(String(vpd.id));
   };
 
   const handleCreateNewVpd = () => {
     if (isVpdFeatureLocked) return;
     const fresh = createDefaultVpdProject();
-    setVpdProject(fresh);
-    setGeneratedContent("");
+    applyVpdProject(fresh, { updateUrl: false, slug: null });
+    updateStudioUrl({ type: "vpd" });
     setShowVpdEditor(true);
   };
 
@@ -1769,6 +1860,7 @@ const StudioMainV2: React.FC<StudioMainProps> = ({ initialContext, initialAssetI
         return;
       }
       setSelectedTopic("vpd");
+      setVpdSlug(null);
       setVpdProject({
         ...createDefaultVpdProject(),
         title: roleLabel && companyLabel ? `${roleLabel} @ ${companyLabel}` : "Value Proposition Document",
@@ -2063,6 +2155,18 @@ const StudioMainV2: React.FC<StudioMainProps> = ({ initialContext, initialAssetI
           }
           return;
         }
+        if (urlType === "vpd") {
+          if (isVpdFeatureLocked) {
+            throw new Error("VPD is not available");
+          }
+          setSelectedTopic("vpd");
+          const data = await fetchVpdContent(String(urlId));
+          applyVpdProject(mapVpdApiToStudioProject(data), {
+            updateUrl: false,
+            slug: typeof data.slug === "string" && data.slug.trim() ? data.slug.trim() : null,
+          });
+          return;
+        }
       } catch {
         hydratedAssetKeyRef.current = `failed:${hydrateKey}`;
         const params = new URLSearchParams(searchParams?.toString() ?? "");
@@ -2075,14 +2179,19 @@ const StudioMainV2: React.FC<StudioMainProps> = ({ initialContext, initialAssetI
     };
     hydrate();
   }, [
+    applyVpdProject,
     clearLinkedinPendingMedia,
     company,
+    connectionName,
     dispatchOpenImproveForAsset,
     initialAssetId,
     initialContext?.description,
     initialContext?.recipientName,
+    jobDescription,
     managerName,
     pathname,
+    prepareApplicationId,
+    prepareReturn?.jobDescription,
     router,
     searchParams,
     selectedTopic,
@@ -2485,27 +2594,54 @@ const StudioMainV2: React.FC<StudioMainProps> = ({ initialContext, initialAssetI
 
     if (selectedTopic === "vpd") {
       if (isVpdFeatureLocked) return;
-      setIsGenerating(true);
-      setTimeout(() => {
-        const content = generateMockContent();
-        setGeneratedContent(content);
-        const nextProject = buildVpdProjectFromDraft(role, company, content);
-        setVpdProject(nextProject);
-        setSavedVpds(prev => {
-          const exists = prev.some(v => v.title === nextProject.title);
-          if (exists) return prev;
-          return [
-            {
-              id: nextProject.id,
-              title: nextProject.title || "Value Proposition Document",
-              date: "Just now",
-              project: nextProject,
-            },
-            ...prev,
-          ];
-        });
-        setIsGenerating(false);
-      }, 1500);
+      setVpdFormError(null);
+      const trimmedRole = role.trim();
+      const trimmedCompany = company.trim();
+      const trimmedJd = jobDescription.trim();
+      if (!prepareApplicationId && (!trimmedRole || !trimmedCompany || !trimmedJd)) {
+        setVpdFormError("Please fill Role, Company and Job Description.");
+        return;
+      }
+      const params: GenerateVpdParams = {
+        schemaVersion: 2,
+        ...(prepareApplicationId
+          ? { application_id: prepareApplicationId }
+          : {
+              role: trimmedRole,
+              company: trimmedCompany,
+              jobDescription: trimmedJd,
+            }),
+      };
+      void (async () => {
+        setIsGenerating(true);
+        try {
+          const result = await generateVpd(params);
+          if (isGenerateVpdDuplicate(result)) {
+            setVpdDuplicateModal({
+              existingVpdId: result.existing_vpd_id,
+              params,
+            });
+            return;
+          }
+          const project = mapVpdApiToStudioProject({
+            ...result.vpdData,
+            id: result.id,
+          });
+          applyVpdProject(project, {
+            slug: typeof result.vpdData?.slug === "string" && result.vpdData.slug.trim() ? result.vpdData.slug.trim() : null,
+          });
+          void queryClient.invalidateQueries({ queryKey: VPD_LIST_QUERY_KEY });
+        } catch (err) {
+          setVpdFormError(
+            sanitizeUserFacingError(
+              err instanceof Error ? err.message : "Failed to generate VPD",
+              "Failed to generate VPD. Please try again."
+            )
+          );
+        } finally {
+          setIsGenerating(false);
+        }
+      })();
       return;
     }
   };
@@ -3019,8 +3155,8 @@ const StudioMainV2: React.FC<StudioMainProps> = ({ initialContext, initialAssetI
   );
 
   const renderVpdSavedCards = () => {
-    const recents = savedVpds.filter(v => !v.isTemplate);
-    const templates = savedVpds.filter(v => v.isTemplate);
+    const recents = recentVpds;
+    const templates = MOCK_VPD_TEMPLATES;
     const activeList = vpdLibraryTab === "recents" ? recents : templates;
 
     return (
@@ -3036,7 +3172,7 @@ const StudioMainV2: React.FC<StudioMainProps> = ({ initialContext, initialAssetI
                   : "text-slate-500 hover:text-slate-700 dark:text-slate-400 dark:hover:text-slate-200"
               }`}
             >
-              Recents
+              Recents{recents.length > 0 ? ` (${recents.length})` : ""}
             </button>
             <button
               type="button"
@@ -3059,7 +3195,22 @@ const StudioMainV2: React.FC<StudioMainProps> = ({ initialContext, initialAssetI
           </button>
         </div>
 
-        {activeList.length > 0 ? (
+        {vpdLibraryTab === "recents" && isVpdHistoryLoading ? (
+          <p className="rounded-xl border border-dashed border-slate-200 px-4 py-6 text-center text-xs text-slate-400 dark:border-slate-700">
+            Loading your VPDs…
+          </p>
+        ) : vpdLibraryTab === "recents" && isVpdHistoryError ? (
+          <div className="rounded-xl border border-dashed border-slate-200 px-4 py-6 text-center dark:border-slate-700">
+            <p className="text-xs text-slate-500">Couldn’t load recent VPDs.</p>
+            <button
+              type="button"
+              onClick={() => void refetchVpdHistory()}
+              className="mt-2 text-xs font-medium text-brand-600 hover:underline dark:text-brand-400"
+            >
+              Retry
+            </button>
+          </div>
+        ) : activeList.length > 0 ? (
           <div className="grid grid-cols-3 gap-2.5">
             {activeList.slice(0, 6).map(vpd => (
               <VpdLibraryCard key={vpd.id} vpd={vpd} onClick={() => handleSelectVpd(vpd)} />
@@ -3401,6 +3552,11 @@ const StudioMainV2: React.FC<StudioMainProps> = ({ initialContext, initialAssetI
             {referralFormError}
           </p>
         )}
+        {selectedTopic === "vpd" && vpdFormError && (
+          <p className="text-sm text-red-600 dark:text-red-400" role="alert">
+            {vpdFormError}
+          </p>
+        )}
 
         {selectedTopic === "linkedin-post" && linkedinGenerateError ? (
           <p className="text-sm text-red-600 dark:text-red-400" role="alert">
@@ -3701,7 +3857,9 @@ const StudioMainV2: React.FC<StudioMainProps> = ({ initialContext, initialAssetI
   const topicHasGeneratedDraft = documentHasGeneratedAsset;
 
   const isStudioPrimaryActionLoading =
-    selectedTopic === "linkedin-post" ? isGenerating : isDocumentPreviewLoading || (selectedTopic === "vpd" && isGenerating);
+    selectedTopic === "linkedin-post"
+      ? isGenerating
+      : isDocumentPreviewLoading || (selectedTopic === "vpd" && (isGenerating || isOpeningVpd));
 
   const linkedinGeneratingLabel =
     selectedTopic === "linkedin-post" && isDocumentAdkLoading ? "Improving your draft" : "Generating your draft";
@@ -3831,10 +3989,34 @@ const StudioMainV2: React.FC<StudioMainProps> = ({ initialContext, initialAssetI
             <div className="flex min-h-0 flex-1 items-start justify-center overflow-y-auto p-8 scrollbar-on-hover">
               {isVpdTopic ? (
                 <div className="flex h-full min-h-[min(70vh,640px)] w-full max-w-3xl flex-col">
+                  <div className="mb-2 flex shrink-0 items-center justify-end gap-2">
+                    <DocumentSaveStatusBar
+                      hasPendingUnsavedChanges={vpdHasPendingUnsavedChanges}
+                      isSaving={vpdIsSaving}
+                      savedConfirmationVisible={vpdSavedConfirmationVisible}
+                      onSaveNow={() => void runVpdSave("manual")}
+                      saveNowLabel="Save Now"
+                      savingLabel={vpdIsSaving ? "Saving..." : "Autosaving..."}
+                      visible={Boolean(vpdSaveStatusLabel) && (vpdHasPendingUnsavedChanges || vpdIsSaving || vpdSavedConfirmationVisible)}
+                      variant="studio"
+                    />
+                  </div>
+                  {vpdLastSaveError ? (
+                    <p className="mb-2 shrink-0 text-xs text-red-600 dark:text-red-400" role="alert">
+                      Could not save VPD: {vpdLastSaveError.message}
+                    </p>
+                  ) : null}
                   <VpdPreview
                     project={vpdProject}
                     onOpenEditor={isVpdFeatureLocked ? undefined : () => setShowVpdEditor(true)}
                     variant="panel"
+                    slug={vpdSlug}
+                    onSlugChange={setVpdSlug}
+                    onBeforePublish={async () => {
+                      if (vpdHasPendingUnsavedChanges) {
+                        await runVpdSave("manual");
+                      }
+                    }}
                   />
                 </div>
               ) : (
@@ -4136,7 +4318,7 @@ const StudioMainV2: React.FC<StudioMainProps> = ({ initialContext, initialAssetI
 
       {showAllVPDsModal && (
         <AllVPDsModal
-          vpds={savedVpds}
+          vpds={libraryVpds}
           initialTab={vpdLibraryTab}
           onClose={() => setShowAllVPDsModal(false)}
           onVPClick={vpd => {
@@ -4161,7 +4343,106 @@ const StudioMainV2: React.FC<StudioMainProps> = ({ initialContext, initialAssetI
       )}
 
       {showVpdEditor && !isVpdFeatureLocked && (
-        <VpdEditorWindow project={vpdProject} onClose={() => setShowVpdEditor(false)} onUpdateProject={updated => setVpdProject(updated)} />
+        <VpdEditorWindow
+          project={vpdProject}
+          onClose={() => setShowVpdEditor(false)}
+          onUpdateProject={updated => setVpdProject(updated)}
+          hasPendingUnsavedChanges={vpdHasPendingUnsavedChanges}
+          isSaving={vpdIsSaving}
+          savedConfirmationVisible={vpdSavedConfirmationVisible}
+          onSaveNow={() => void runVpdSave("manual")}
+          showSaveStatus={Boolean(vpdSaveStatusLabel)}
+          saveErrorMessage={vpdLastSaveError?.message ?? null}
+          slug={vpdSlug}
+          onSlugChange={setVpdSlug}
+          onBeforePublish={async () => {
+            if (vpdHasPendingUnsavedChanges) {
+              await runVpdSave("manual");
+            }
+          }}
+        />
+      )}
+
+      {vpdDuplicateModal && (
+        <ModalPortalOverlay
+          className="flex items-center justify-center bg-black/60 p-4 backdrop-blur-sm"
+          role="dialog"
+          aria-label="VPD already exists"
+        >
+          <div className="w-full max-w-md rounded-2xl border border-slate-200 bg-white p-6 shadow-2xl dark:border-slate-800 dark:bg-slate-900">
+            <h2 className="mb-2 text-lg font-semibold text-slate-900 dark:text-white">VPD Already Exists</h2>
+            <p className="mb-6 text-sm text-slate-600 dark:text-slate-400">
+              A Value Prop Doc for this role and company already exists. You can use it or create a new one to replace it.
+            </p>
+            <div className="flex justify-end gap-3">
+              <button
+                type="button"
+                onClick={async () => {
+                  if (!vpdDuplicateModal) return;
+                  setIsGenerating(true);
+                  try {
+                    const data = await fetchVpdContent(vpdDuplicateModal.existingVpdId);
+                    applyVpdProject(mapVpdApiToStudioProject(data), {
+                      slug: typeof data.slug === "string" && data.slug.trim() ? data.slug.trim() : null,
+                    });
+                    void queryClient.invalidateQueries({ queryKey: VPD_LIST_QUERY_KEY });
+                  } catch (err) {
+                    setVpdFormError(
+                      sanitizeUserFacingError(err instanceof Error ? err.message : "Failed to load VPD", "Failed to load existing VPD.")
+                    );
+                  } finally {
+                    setIsGenerating(false);
+                    setVpdDuplicateModal(null);
+                  }
+                }}
+                className="rounded-lg bg-brand-600 px-4 py-2 text-sm font-medium text-white hover:bg-brand-700"
+              >
+                Use existing
+              </button>
+              <button
+                type="button"
+                onClick={async () => {
+                  if (!vpdDuplicateModal) return;
+                  const { existingVpdId, params } = vpdDuplicateModal;
+                  setVpdDuplicateModal(null);
+                  setIsGenerating(true);
+                  setVpdFormError(null);
+                  try {
+                    await deleteVpd(existingVpdId);
+                    const result = await generateVpd(params);
+                    if (isGenerateVpdDuplicate(result)) {
+                      setVpdFormError("Could not replace the existing VPD. Please try again.");
+                      return;
+                    }
+                    applyVpdProject(
+                      mapVpdApiToStudioProject({
+                        ...result.vpdData,
+                        id: result.id,
+                      }),
+                      {
+                        slug: typeof result.vpdData?.slug === "string" && result.vpdData.slug.trim() ? result.vpdData.slug.trim() : null,
+                      }
+                    );
+                    void queryClient.invalidateQueries({ queryKey: VPD_LIST_QUERY_KEY });
+                  } catch (err) {
+                    setVpdFormError(
+                      sanitizeUserFacingError(
+                        err instanceof Error ? err.message : "Failed to regenerate VPD",
+                        "Failed to create a new VPD. Please try again."
+                      )
+                    );
+                  } finally {
+                    setIsGenerating(false);
+                  }
+                }}
+                disabled={isGenerating}
+                className="rounded-lg bg-slate-100 px-4 py-2 text-sm font-medium text-slate-700 hover:bg-slate-200 disabled:opacity-50 dark:bg-slate-800 dark:text-slate-200"
+              >
+                Create new anyway
+              </button>
+            </div>
+          </div>
+        </ModalPortalOverlay>
       )}
 
       {coverLetterDuplicateModal && (

@@ -1,13 +1,14 @@
 "use client";
 import React, { useState, useRef, useEffect, useLayoutEffect, useCallback } from "react";
 import { DocumentSaveStatusBar } from "@/components/application-assets/DocumentSaveStatusBar";
+import { useCoachActAsSession } from "@/contexts/CoachActAsContext";
 import { EMPTY_PORTFOLIO_HIGHLIGHT_MAP } from "@/features/adk-chat/adkPortfolioHighlightDiff";
 import { useAdkPortfolioReviewStore } from "@/features/adk-chat/stores/useAdkPortfolioReviewStore";
 import { mapFrontendPortfolioToBackend } from "@/features/portfolio/api/mappers";
 import { PORTFOLIO_MIN_SELECTION_CHARS } from "@/features/portfolio/config/selection-presets";
 import { isPersistedPortfolioId } from "@/features/portfolio/constants/portfolioDraft";
 import { getDefaultItemHeightPx, getDefaultSpanForContentType } from "@/features/portfolio/constants/portfolioLayout";
-import { portfolioQueryKey } from "@/features/portfolio/hooks/usePortfolio";
+import { portfolioQueryKey, portfolioQueryKeyFor } from "@/features/portfolio/hooks/usePortfolio";
 import { usePortfolioAutosave } from "@/features/portfolio/hooks/usePortfolioAutosave";
 import { usePortfolioContentHeights } from "@/features/portfolio/hooks/usePortfolioContentHeights";
 import { usePortfolioGridMetrics } from "@/features/portfolio/hooks/usePortfolioGridMetrics";
@@ -286,6 +287,8 @@ const AVATAR_CROP_MAX_OUTPUT_PX = 512;
 
 const Portfolio: React.FC<PortfolioProps> = ({ portfolioId, initialData, onBack, isReadOnly = false, onPersisted }) => {
   const queryClient = useQueryClient();
+  const coachActAs = useCoachActAsSession();
+  const livePortfolioQueryKey = portfolioQueryKeyFor(coachActAs);
   const updatePortfolio = usePortfolioStore(s => s.updatePortfolio);
   const portfolioFromStore = usePortfolioStore(s => s.getPortfolioData(portfolioId));
 
@@ -703,7 +706,9 @@ const Portfolio: React.FC<PortfolioProps> = ({ portfolioId, initialData, onBack,
   const saveAndPublishPortfolio = async (slug: string, successToast: string): Promise<string | null> => {
     await runSave("manual");
 
-    const persistedFromCache = queryClient.getQueryData<PortfolioData | null>(portfolioQueryKey);
+    const persistedFromCache =
+      queryClient.getQueryData<PortfolioData | null>(livePortfolioQueryKey) ??
+      queryClient.getQueryData<PortfolioData | null>(portfolioQueryKey);
     const publishPortfolioId =
       persistedFromCache?.id && isPersistedPortfolioId(persistedFromCache.id)
         ? persistedFromCache.id

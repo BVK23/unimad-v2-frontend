@@ -10,9 +10,20 @@ export interface AgentMessage {
   /** ADK invocation for this turn — required for session rewind. */
   invocationId?: string;
   agent?: string;
+  /**
+   * ReAct interim narration parked when a mutating tool runs (draft prose before Accept/Discard).
+   * Shown in a collapsible lighter UI; final reply stays in `content`.
+   */
+  intermediateNarration?: string;
   timelineActivities?: TimelineActivity[];
   /** Restored from persisted tool responses on session history load. */
-  unimadNavigation?: { path: string; label: string };
+  unimadNavigation?: {
+    path: string;
+    label: string;
+    action?: "portfolio_regenerate";
+    confirm?: boolean;
+    confirm_message?: string;
+  };
   unimadJobCards?: import("./parse-unimad-job-cards").UnimadJobCardsPayload;
   unimadLinkedInSuggestions?: import("./parse-unimad-linkedin-suggestions").UnimadLinkedInSuggestionsPayload;
 }

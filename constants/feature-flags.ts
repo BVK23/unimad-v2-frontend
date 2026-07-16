@@ -1,2 +1,2 @@
-/** Value Prop Doc — disabled until post-soft-launch release. */
-export const VPD_FEATURE_ENABLED = false;
+/** Value Prop Doc — enabled in Studio and related entry points. */
+export const VPD_FEATURE_ENABLED = true;

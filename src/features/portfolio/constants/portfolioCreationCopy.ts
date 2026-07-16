@@ -1,4 +1,4 @@
-export type PortfolioCreationVariant = "fetch" | "ai_initial" | "blank" | "ai_clone";
+export type PortfolioCreationVariant = "fetch" | "ai_initial" | "ai_regenerate" | "blank" | "ai_clone";
 
 export type PortfolioCreationCopy = {
   primary: string;
@@ -25,6 +25,12 @@ export const PORTFOLIO_CREATION_COPY: Record<PortfolioCreationVariant, Portfolio
   },
   ai_initial: {
     primary: "Building your portfolio from your profile…",
+    escalation7s: "Still working—this can take a minute.",
+    escalation15s: "Taking longer than usual. You can keep this tab open.",
+    rotateSteps: true,
+  },
+  ai_regenerate: {
+    primary: "Regenerating your portfolio…",
     escalation7s: "Still working—this can take a minute.",
     escalation15s: "Taking longer than usual. You can keep this tab open.",
     rotateSteps: true,

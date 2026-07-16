@@ -1,0 +1,505 @@
+import type { PortfolioItem } from "@/types";
+
+export const WEB3_DEV_UMA_COVER_URL = "";
+
+export const WEB3_DEV_UMA_DETAILED_BLOCKS: PortfolioItem[] = [
+  {
+    "id": "tpl-web3-uma-text-0",
+    "type": "text",
+    "span": 12,
+    "fontSize": "base",
+    "title": "UMA Value Proposition Document",
+    "content":
+      "Web3 is all about adding <strong>VALUE first and GIVING more than you TAKE</strong>. So here\u2019s a value proposition document that demonstrates how I can add value to <strong>UMA as a Sales Engineer </strong>and help you achieve the desired KPIs &amp; Metrics.",
+    "templateSectionTitle": true,
+    "layoutRole": "section",
+  },
+  {
+    "id": "tpl-web3-uma-text-1",
+    "type": "text",
+    "span": 12,
+    "fontSize": "base",
+    "content":
+      "<strong>UMA's mission is to democratize the financial market, making it more accessible, fair, secure, and decentralized through the blockchain technology. Uma achieves this by building a reliable optimistic oracle for verifying truths.</strong>",
+    "layoutRole": "section",
+  },
+  {
+    "id": "tpl-web3-uma-text-2",
+    "type": "text",
+    "span": 12,
+    "fontSize": "base",
+    "content":
+      "<strong>More than looking at this like a Full-Time job, I want to actively contribute to Uma's mission and work with some really smart minds in this journey. Polybase had a similar vision as well \u2014 which was to restore humanity's control of its information.</strong>",
+    "layoutRole": "section",
+  },
+  {
+    "id": "tpl-web3-uma-text-3",
+    "type": "text",
+    "span": 12,
+    "fontSize": "base",
+    "title": "Sales Pipeline",
+    "content":
+      "In my time during Polybase, I used to work as a Sales Engineer alongside my Head of BD &amp; Sales and we came up with a playbook for approaching Sales for Polybase. Here's the high level playbook.",
+    "templateSectionTitle": true,
+    "layoutRole": "section",
+  },
+  {
+    "id": "tpl-web3-uma-text-4",
+    "type": "text",
+    "span": 12,
+    "fontSize": "base",
+    "title": "Target Audience & Market Research",
+    "content":
+      "\ud83c\udfaf Understand the market and the specific needs of potential clients in the Web3 space. I'd assume that the main target sector for Uma would be DeFi \u2014 I'd be targeting segments within DeFi like RWA, DEXs, Lending Protocols, Cross-chain protocols, explore the DeFi segment and find the ICP.<br><strong>Tools: LinkedIn Sales Navigator, Crunchbase for lead sourcing, and Google Alerts for staying updated on industry news.</strong>",
+    "layoutRole": "section",
+  },
+  {
+    "id": "tpl-web3-uma-text-5",
+    "type": "text",
+    "span": 12,
+    "fontSize": "base",
+    "title": "Outreach & Connection",
+    "content":
+      "\ud83d\ude80 Create personalized outreach campaigns that address the unique challenges businesses face in the Web3 ecosystem.<br>Educate potential clients on the value of decentralization, security, and transparency that Web3 technologies offer.<br><strong>Tools: Email automation tools like Meet Alfred, social media platforms, particularly Twitter and direct outreach through crypto communities on Discord or Telegram.</strong>",
+    "layoutRole": "section",
+  },
+  {
+    "id": "tpl-web3-uma-text-6",
+    "type": "text",
+    "span": 12,
+    "fontSize": "base",
+    "title": "Presentations & Demonstrations",
+    "content":
+      "Provide clear, jargon-free presentations and demonstrations, explaining the technical aspects and benefits of your Web3 services.<br>Highlight case studies where your service has led to increased efficiency, cost reductions, or other client benefits.<br><strong>Tools: Zoom, MS Teams, Google Meet for virtual meetings \u2014 Keynote for engaging, interactive presentations.</strong>",
+    "layoutRole": "section",
+  },
+  {
+    "id": "tpl-web3-uma-text-7",
+    "type": "text",
+    "span": 12,
+    "fontSize": "base",
+    "title": "Proposal & Negotiation",
+    "content":
+      "Present proposals that outline the service details, pricing, and ROI.<br>Be prepared to explain the pricing in cryptocurrency (if applicable), the value proposition in terms of decentralization and security, and the technical support available.<br><strong>Tools: PandaDoc or DocuSign for secure, digital proposals and contracts.</strong>",
+    "layoutRole": "section",
+  },
+  {
+    "id": "tpl-web3-uma-text-8",
+    "type": "text",
+    "span": 12,
+    "fontSize": "base",
+    "title": "Closing",
+    "content":
+      "Navigate through the procurement and legal processes of your clients.<br>Offer flexible payment options, possibly including cryptocurrency for those who are up for it.<br><strong>Tools: Stripe with cryptocurrency integration, smart contracts for secure, blockchain-based agreements.</strong>",
+    "layoutRole": "section",
+  },
+  {
+    "id": "tpl-web3-uma-text-9",
+    "type": "text",
+    "span": 12,
+    "fontSize": "base",
+    "title": "Onboarding & Relationship Management",
+    "content":
+      "Provide exceptional onboarding experiences, with educational resources for clients.<br>Maintain client relationships with regular check-ins, updates, and support.<br><strong>Tools: Customer relationship management (CRM) systems like HubSpot or Freshsales.</strong>",
+    "layoutRole": "section",
+  },
+  {
+    "id": "tpl-web3-uma-text-10",
+    "type": "text",
+    "span": 12,
+    "fontSize": "base",
+    "title": "Success Metrics \u2b07\ufe0f",
+    "layoutRole": "section",
+  },
+  {
+    "id": "tpl-web3-uma-table-0",
+    "type": "table",
+    "span": 12,
+    "fontSize": "base",
+    "content":
+      '[["Metric", "Overview"], ["<strong>Lead Conversion Rate</strong>", "The percentage of leads that turn into opportunities."], ["<strong>Sales Conversion Rate</strong>", "The percentage of opportunities that turn into closed deals."], ["<strong>Average Deal Size:</strong>", "Average revenue earned per customer."], ["<strong>Customer Acquisition Cost (CAC)</strong>", "The total cost to acquire one customer. (This might be more of a marketing metric, but just adding it anyway)."], ["<strong>Customer Lifetime Value (CLV)</strong>", "The total revenue you expect from a customer throughout their business relationship with you."], ["<strong>Churn Rate</strong>", "The rate at which customers stop doing business with you."], ["<strong>Net Promoter Score (NPS):</strong>", "Measures customer loyalty and satisfaction."]]',
+    "layoutRole": "section",
+  },
+  {
+    "id": "tpl-web3-uma-text-12",
+    "type": "text",
+    "span": 12,
+    "fontSize": "base",
+    "title": "What can you expect from me in the first \u2b07\ufe0f",
+    "templateSectionTitle": true,
+    "layoutRole": "section",
+  },
+  {
+    "id": "tpl-web3-uma-text-13",
+    "type": "text",
+    "span": 12,
+    "fontSize": "base",
+    "title": "30 days",
+    "content":
+      "<strong>Orientation &amp; Product Mastery</strong><br>In my first 30 days, I'll be dedicating myself to these key areas:<br><strong>Product Mastery</strong>: I will immerse myself in UMA's and Across's technology, ensuring I understand every nook and corner of our products and their value propositions. This deep dive will equip me to articulate the benefits and features confidently to our potential partners and clients.<br><strong>Stakeholder Familiarization</strong>: I plan to initiate meetings with our internal teams and current users or customers, absorbing vital insights into our existing sales processes, ongoing deals, and potential leads. These introductions will be crucial for my seamless integration into the team.<br><strong>Market Analysis</strong>: Then I'll be conducting a thorough analysis of the DeFi and Web3 market, pinpointing potential clients or partnerships, and understanding where our competitors stand and how we can make our offer better.<br><strong>Sales Process Audit</strong>: I will also review the current sales playbook and process, get to speed about different systems and tools in place identifying initial areas for improvement or innovation, leveraging my past experiences.<br><strong>Initial Outreach Plan</strong>: The goal during the initial outreach plan would be to convert calls and build relationships and understand more about our ICP. List down all their problems related to building in DeFi and position ourselves in a strong position to provide the solution.<br><strong>Content Strategy:</strong> I aim to identify and leverage opportunities within our content marketing strategies to amplify inbound leads. It's not just about understanding the existing system; it's about optimizing our content channels to drive impactful engagement that drives growth.<br><strong>Feedback Mechanism</strong>: I'm setting up a reliable system for collecting market feedback and intelligence, which I'll consistently funnel back to our internal teams, ensuring we're aligned with market demands.",
+    "portfolioEntryTitle": true,
+    "layoutRole": "section",
+  },
+  {
+    "id": "tpl-web3-uma-text-14",
+    "type": "text",
+    "span": 12,
+    "fontSize": "base",
+    "title": "60 days",
+    "content":
+      "<strong>Execution &amp; Relationship Management</strong><br>Entering my second month, I'll focus more on the execution side:<br><strong>Lead Generation</strong>: At Polybase I was responsible for orchestrating sequencing endeavours specifically for DeFi developers. This wasn't just about scheduling meetings; it was about crafting and refining an engagement strategy that resonated on a deeper level, enhancing our response metrics substantially. I would like to set up an exact similar system for generating a leads pipeline.<br><strong>Technical Evangelism</strong>: I\u2019m super excited to represent UMA at industry events, deliver compelling presentations alongside insightful content positioning us as thought leaders in the web3 ecosystem.<br><strong>Sales Improvements</strong>: Based on my initial audit and experiences, I will start implementing enhancements to the sales process, contributing my unique insights.<br><strong>Relationship Management</strong>: I'll ensure strong, ongoing rapport with our partners, affirming their needs are met and they are kept informed of relevant updates.<br><strong>Collaborative Initiatives</strong>: I anticipate kickstarting at least one joint project with our product or development teams, directly addressing market needs or feedback I've gathered.",
+    "portfolioEntryTitle": true,
+    "layoutRole": "section",
+  },
+  {
+    "id": "tpl-web3-uma-text-15",
+    "type": "text",
+    "span": 12,
+    "fontSize": "base",
+    "title": "90 days",
+    "content":
+      "<strong>Optimization and Strategic Expansion</strong><br>By my third month, I plan to demonstrate significant progress.<br><strong>Sales Growth</strong>: I aim to make changes wherever needed and trying out different traction strategies to find out out which one works and dive deep into it.<br><strong>Content Leadership</strong>: I will compile a portfolio of published articles and presentations that have broadened UMA\u2019s reach and solidified our reputation in the industry.<br><strong>Strategic Partnerships</strong>: I'm targeting the establishment of new, impactful partnerships or integrations that promise substantial growth and heightened product adoption.<br><strong>Process Refinement</strong>: I plan to finalize and formalize my proposed enhancements to the sales process, introducing new, vetted sales tactics or tools.<br><strong>Feedback Loop Optimization</strong>: I will ensure our feedback mechanisms are intact and contribute directly to product enhancements and client satisfaction.<br><strong>Team Integration</strong>: I aspire to be acknowledged as a key contributor who not only collaborates effectively across different departments but also enhances our team culture and embodies our company values.",
+    "portfolioEntryTitle": true,
+    "layoutRole": "section",
+  },
+  {
+    "id": "tpl-web3-uma-text-16",
+    "type": "text",
+    "span": 12,
+    "fontSize": "base",
+    "title": "Different Sales Methodologies",
+    "layoutRole": "section",
+  },
+  {
+    "id": "tpl-web3-uma-text-17",
+    "type": "text",
+    "span": 12,
+    "fontSize": "base",
+    "title": "Solution Selling",
+    "content":
+      "In my experience, particularly with web3 companies, I've found Solution Selling to be highly effective. This methodology focuses on addressing the prospect's pain points with tailored solutions. Given the complexity of web3 technology, its important to spend significant time understanding the unique challenges faced by each prospect, developing customised proposals that demonstrate how our offerings can solve their specific issues.",
+    "layoutRole": "section",
+  },
+  {
+    "id": "tpl-web3-uma-text-18",
+    "type": "text",
+    "span": 12,
+    "fontSize": "base",
+    "title": "SPIN Selling",
+    "content":
+      "SPIN Selling, with its emphasis on Situation, Problem, Implication, and Need-Payoff, has also been effective, especially during the discovery phase. When engaging with web3 companies, which often operate in uncharted territories, I try to make a list of targeted questions to uncover their current situation, explore underlying challenges, discuss the implications of these issues, and emphasize the benefits of addressing these needs.",
+    "layoutRole": "section",
+  },
+  {
+    "id": "tpl-web3-uma-text-19",
+    "type": "text",
+    "span": 12,
+    "fontSize": "base",
+    "title": "Challenger Sale",
+    "content":
+      "The Challenger Sale methodology is about gaining control over the conversation by teaching, tailoring, and taking control. In the web3 realm, this approach has helped me in staying ahead of industry trends, regulatory changes, and technological advancements. This knowledge allows me to challenge clients' assumptions respectfully, introduce new perspectives, and guide the conversation towards how our solutions can add value in ways they might not have considered.",
+    "layoutRole": "section",
+  },
+  {
+    "id": "tpl-web3-uma-text-20",
+    "type": "text",
+    "span": 12,
+    "fontSize": "base",
+    "title": "Account Based Selling",
+    "content":
+      "Given the high-stakes and often niche nature of web3 companies, Account-Based Selling has been a go-to strategy. This methodology involves a coordinated approach across sales and marketing to engage a prospect account through highly personalized and targeted communications. I've leveraged this by building detailed account profiles for key web3 prospects, aligning messaging and content with their specific industry focus, challenges, and opportunities.",
+    "layoutRole": "section",
+  },
+  {
+    "id": "tpl-web3-uma-text-21",
+    "type": "text",
+    "span": 12,
+    "fontSize": "base",
+    "title": "Value Selling",
+    "content":
+      "Value Selling, a methodology that revolves around building a strong value proposition, is key in the web3 domain. Here, I focus on clearly articulating the value of our offerings in terms of ROI, efficiency, security, and competitive advantage. This approach is critical when selling to web3 companies, which often require a clear understanding of how an investment will drive tangible results in a relatively new and evolving industry.",
+    "layoutRole": "section",
+  },
+  {
+    "id": "tpl-web3-uma-text-22",
+    "type": "text",
+    "span": 12,
+    "fontSize": "base",
+    "title": "Inbound Selling",
+    "content":
+      "In the web3 ecosystem, thought leadership and educational content are powerful tools for attracting prospects. Inbound Selling capitalizes on this by responding to leads generated through content marketing, social media, and other channels. I've integrated this methodology by ensuring I'm well-equipped to engage and nurture leads who have shown interest in our resources, and guiding them through the sales funnel with a consultative approach<strong>.</strong>",
+    "layoutRole": "section",
+  },
+  {
+    "id": "tpl-web3-uma-text-23",
+    "type": "text",
+    "span": 12,
+    "fontSize": "base",
+    "content":
+      "<strong>In adapting these methodologies, the key has been understanding that web3 companies often venture into the unknown, facing challenges that require unique solutions. My approach has always been about being flexible, staying informed, and positioning myself not just as a salesperson, but as a trusted advisor who understands the web3 ecosystem. This mindset, combined with the strategic application of these sales methodologies, has been instrumental in my success.</strong>",
+    "layoutRole": "section",
+  },
+  {
+    "id": "tpl-web3-uma-text-24",
+    "type": "text",
+    "span": 12,
+    "fontSize": "base",
+    "title": "Job Description \u2014 Profile Fit",
+    "layoutRole": "section",
+  },
+  {
+    "id": "tpl-web3-uma-text-25",
+    "type": "text",
+    "span": 12,
+    "fontSize": "base",
+    "content":
+      "<strong>Sales mindset &amp; output \u2014 </strong>Always be building a pipeline of integration leads and develop creative tactics to drive conversion. Establish a personal rapport with partners, build and maintain relationships both before and after the integrations to ensure we\u2019re meeting their needs and communicating updates effectively.",
+    "layoutRole": "section",
+  },
+  {
+    "id": "tpl-web3-uma-text-26",
+    "type": "text",
+    "span": 12,
+    "fontSize": "base",
+    "title": "Lead Generation",
+    "content":
+      "My experience at Polybase has instilled a sales mindset and a proven track record of creating dynamic pipelines for lead generation, perfectly aligning with the requirement to constantly build and creatively convert integration leads. I've demonstrated innovative tactics in identifying and targeting niche sectors, like Defi and DeSoc companies organizing potential leads into Excel spreadsheets, and efficiently outsourcing data collection through platforms like Fiverr, ensuring a rich, continuous source of prospects.",
+    "layoutRole": "section",
+  },
+  {
+    "id": "tpl-web3-uma-text-27",
+    "type": "text",
+    "span": 12,
+    "fontSize": "base",
+    "title": "Leads Sequencing",
+    "content":
+      "My proficiency with tools like Meet Alfred and LinkedIn Sales Navigator highlights my adaptability to technology and my strategic approach to connection and conversion, critical for establishing and maintaining meaningful rapport with partners. The tailored content sequences I developed for different segments signify my understanding of personalized communication, essential for effective relationship building, both pre- and post-integration. Furthermore, my keen emphasis on key success metrics\u2014such as connection requests, actual connections, meetings booked, and the number of interested prospects\u2014illustrates my results-driven approach, ensuring not just quantity but quality of leads, thereby promising strong, enduring relationships with partners and a steady understanding of their evolving needs.",
+    "layoutRole": "section",
+  },
+  {
+    "id": "tpl-web3-uma-text-28",
+    "type": "text",
+    "span": 12,
+    "fontSize": "base",
+    "content":
+      "<strong>Technical Evangelism &amp; Outreach:</strong>\u00a0Act as an UMA evangelist by attending industry events, delivering compelling presentations (from CEOs to fellow engineers), and publishing insightful content. Engage in community outreach and developer advocacy to expand UMA\u2019s reach and create a positive builder experience.",
+    "layoutRole": "section",
+  },
+  {
+    "id": "tpl-web3-uma-text-29",
+    "type": "text",
+    "span": 12,
+    "fontSize": "base",
+    "content":
+      "During my time at Polybase, I actively immersed myself in the web3 community, attending numerous industry events throughout the UK. My presence wasn't just about attendance; it was about making meaningful connections that would serve the greater objectives of brand awareness and strategic relationship building within the web3 space. This hands-on experience has equipped me with the knowledge and network necessary to act as a passionate evangelist for UMA, sharing insights and advocating for the platform across diverse forums.",
+    "layoutRole": "section",
+  },
+  {
+    "id": "tpl-web3-uma-text-30",
+    "type": "text",
+    "span": 12,
+    "fontSize": "base",
+    "content": "<strong>Community Engagement and Partnership Building</strong>",
+    "layoutRole": "section",
+  },
+  {
+    "id": "tpl-web3-uma-text-31",
+    "type": "text",
+    "span": 12,
+    "fontSize": "base",
+    "content":
+      "What I find particularly fulfilling is diving deep into community feedback, engaging directly with project communities to understand their needs, expectations, and reservations. At Polybase, I transformed this feedback into thriving partnerships, aligning mutual benefits for both parties. This direct line of communication and my knack for identifying symbiotic relationships will be instrumental in expanding UMA's reach and ensuring a positive and enriching experience for all builders involved.",
+    "layoutRole": "section",
+  },
+  {
+    "id": "tpl-web3-uma-text-32",
+    "type": "text",
+    "span": 12,
+    "fontSize": "base",
+    "content": "<strong> Insightful Content Creation and Developer Advocacy</strong>",
+    "layoutRole": "section",
+  },
+  {
+    "id": "tpl-web3-uma-text-33",
+    "type": "text",
+    "span": 12,
+    "fontSize": "base",
+    "content":
+      "Beyond the in-person interactions, I've taken to the digital world to voice my insights and technical understanding. I managed the content engine that not only underscores my technical acumen but also serves as a beacon, attracting developers to the Polybase community. This blend of technical proficiency and communication skill is what I plan to bring to UMA, delivering presentations that resonate and publishing content that sparks interest and discussion, from the executive suite to the developer's desk.",
+    "layoutRole": "section",
+  },
+  {
+    "id": "tpl-web3-uma-text-34",
+    "type": "text",
+    "span": 12,
+    "fontSize": "base",
+    "content":
+      "In sum, my journey has armed me with a unique blend of skills essential for the role at UMA: from technical evangelism to strategic partnership development, and from community engagement to insightful content creation. I am super excited about the prospect of leveraging this experience to further UMA\u2019s mission and contribute to a thriving developer ecosystem.",
+    "layoutRole": "section",
+  },
+  {
+    "id": "tpl-web3-uma-text-35",
+    "type": "text",
+    "span": 12,
+    "fontSize": "base",
+    "content":
+      "<strong>Solutions expertise:\u00a0</strong>Use deep technical knowledge to explain all technical aspects of the product and protocol needed to convey solutions and alignment with the partner needs and UMA\u2019s offerings. Be prepared to negotiate, follow up, and strategize with partners and your fellow sales team to reach the best outcome.",
+    "layoutRole": "section",
+  },
+  {
+    "id": "tpl-web3-uma-text-36",
+    "type": "text",
+    "span": 12,
+    "fontSize": "base",
+    "content": "<strong>Leveraging Past Experiences for UMA's Growth</strong>",
+    "layoutRole": "section",
+  },
+  {
+    "id": "tpl-web3-uma-text-37",
+    "type": "text",
+    "span": 12,
+    "fontSize": "base",
+    "content":
+      "I bring a wealth of experience from my previous roles at Freshworks and Polybase, two highly dynamic and technically driven environments. My journey has been characterized by deep technical expertise, strategic partner engagement, and a nuanced understanding of both Web2 and Web3 SaaS domains, making me an ideal fit for a role that demands comprehensive solutions expertise.",
+    "layoutRole": "section",
+  },
+  {
+    "id": "tpl-web3-uma-text-38",
+    "type": "text",
+    "span": 12,
+    "fontSize": "base",
+    "content": "<strong>Proven Technical Proficiency &amp; Strategic Sales Support at Freshworks</strong>",
+    "layoutRole": "section",
+  },
+  {
+    "id": "tpl-web3-uma-text-39",
+    "type": "text",
+    "span": 12,
+    "fontSize": "base",
+    "content":
+      "In my role as a PreSales Engineer at Freshworks, I was instrumental in translating the complex technical frameworks of products like Freshdesk and Freshservice into value propositions that resonated with our clients. These products required a representative who could navigate their complexities with ease. My responsibility didn't end at explanation; it extended to strategizing with account managers, ensuring that the technical validations were not just understood but aligned precisely with client needs, thus driving successful deal closures. This direct contribution to the conversion process honed my negotiation skills and instilled in me a profound understanding of sales dynamics from a technical standpoint.",
+    "layoutRole": "section",
+  },
+  {
+    "id": "tpl-web3-uma-text-40",
+    "type": "text",
+    "span": 12,
+    "fontSize": "base",
+    "content": "<strong>Bridging Technicalities and Business Needs at Polybase</strong>",
+    "layoutRole": "section",
+  },
+  {
+    "id": "tpl-web3-uma-text-41",
+    "type": "text",
+    "span": 12,
+    "fontSize": "base",
+    "content":
+      "Transitioning to Polybase, my role evolved to engage directly with top-tier leadership positions, such as CEOs and senior management partners across the Web3 ecosystem. Polybase, with its high-tech orientation, demanded that I develop tailored communication strategies - a challenge I met by creating customized scripts for diverse customer segments.What truly set my experience at Polybase apart was my ability to function as a conduit between the Product Team and the end-users. By ensuring seamless onboarding for users and continuous feedback to the development team, I played a pivotal role in aligning product offerings with customer expectations and market needs. This direct influence in shaping product applicability, especially in the nuanced space of Web3, is an asset I plan to bring to UMA.",
+    "layoutRole": "section",
+  },
+  {
+    "id": "tpl-web3-uma-text-42",
+    "type": "text",
+    "span": 12,
+    "fontSize": "base",
+    "content": "<strong>Ready for UMA: Where Past Learnings Meet New Opportunities</strong>",
+    "layoutRole": "section",
+  },
+  {
+    "id": "tpl-web3-uma-text-43",
+    "type": "text",
+    "span": 12,
+    "fontSize": "base",
+    "content":
+      "At UMA, the role's emphasis on using deep technical knowledge to articulate product and protocol specifics aligns perfectly with the expertise I've garnered. My past experiences have equipped me with the skills to not just understand, but also communicate technicalities in a manner that aligns with partner needs, thereby ensuring a beneficial relationship for all parties involved.<br>Moreover, the need to strategize with partners and the sales team at UMA is a challenge I am familiar with and eager to undertake once again. Having engaged in similar capacities at both Freshworks and Polybase, I am prepared to dive into negotiations, follow-ups, and strategic planning, armed with insights and strategies refined by past successes",
+    "layoutRole": "section",
+  },
+  {
+    "id": "tpl-web3-uma-text-44",
+    "type": "text",
+    "span": 12,
+    "fontSize": "base",
+    "content": "<strong>Conclusion: A Future at UMA Built on Solid Past Foundations</strong>",
+    "layoutRole": "section",
+  },
+  {
+    "id": "tpl-web3-uma-text-45",
+    "type": "text",
+    "span": 12,
+    "fontSize": "base",
+    "content":
+      "With a foot firmly planted in both the Web2 and Web3 arenas, and a proven track record of leveraging technical expertise for strategic sales and partner satisfaction, I am excited about the possibilities at UMA. I am ready to contribute to our shared success, bringing onboard not just my skills and experiences, but also a commitment to excellence, growth, and collaborative achievement.",
+    "layoutRole": "section",
+  },
+  {
+    "id": "tpl-web3-uma-text-46",
+    "type": "text",
+    "span": 12,
+    "fontSize": "base",
+    "content":
+      "<strong>Execution and Partner management:\u00a0</strong>Collaborate and execute on sales strategy and deliver excellent support both internally and externally. Manage your leads, within the sales process, through onboarding to post sale relationship maintenance.",
+    "layoutRole": "section",
+  },
+  {
+    "id": "tpl-web3-uma-text-47",
+    "type": "text",
+    "span": 12,
+    "fontSize": "base",
+    "content": "<strong>Strategic Sales and Post-Sale Support</strong>",
+    "layoutRole": "section",
+  },
+  {
+    "id": "tpl-web3-uma-text-48",
+    "type": "text",
+    "span": 12,
+    "fontSize": "base",
+    "content":
+      "During my tenure at Freshworks, I honed my skills in strategic sales support, specializing in Medium Market (MM) &amp; Enterprise accounts. My role as a Pre Sales Engineer wasn't just about securing sales; it extended to a crucial three-month period post-sale where my focus shifted to ensuring customer satisfaction and seamless transition to ongoing support. This phase was critical, not just for customer retention but also for creating opportunities for upselling and referrals. Learning to prioritize the customer's experience above all else, I mastered the art of creating \"WoW\" moments that differentiated our service from competitors. This approach fostered a smooth, nearly imperceptible transition from trial to paid services for the customer, a testament to the effective collaboration between the PreSales and Support teams I facilitated.",
+    "layoutRole": "section",
+  },
+  {
+    "id": "tpl-web3-uma-text-49",
+    "type": "text",
+    "span": 12,
+    "fontSize": "base",
+    "content": "<strong>Mastery in Partnership Management and Collaboration</strong>",
+    "layoutRole": "section",
+  },
+  {
+    "id": "tpl-web3-uma-text-50",
+    "type": "text",
+    "span": 12,
+    "fontSize": "base",
+    "content":
+      "Transitioning to Polybase, my role evolved to encompass complete responsibility for Partnership Management. Here, I didn't just manage partnerships; I built them from the ground up. A significant achievement was forging a strategic partnership with Chainstack, integrating Polybase as a decentralized database within their marketplace. Another milestone was our collaboration with Polygon, where we innovatively incorporated their Miden VM into our tech stack, benefiting from co-marketing activities owing to their extensive developer community.<br>My strategy always began with comprehensive research into potential partners, delving into their tech stacks, and identifying mutually beneficial opportunities. Collaborations weren't just about what we could gain but also about what we could contribute to our partner's ecosystem. My approach was two-pronged: we could either merge our infrastructures to develop something innovative together or engage in co-marketing activities. The latter involved combined blogs and Twitter Spaces, enhancing brand visibility and reinforcing both parties' market positions.",
+    "layoutRole": "section",
+  },
+  {
+    "id": "tpl-web3-uma-text-51",
+    "type": "text",
+    "span": 12,
+    "fontSize": "base",
+    "content": "<strong>Tailored Strategies for Mutual Growth</strong>",
+    "layoutRole": "section",
+  },
+  {
+    "id": "tpl-web3-uma-text-52",
+    "type": "text",
+    "span": 12,
+    "fontSize": "base",
+    "content":
+      "At Uma, I see an opportunity to leverage my extensive experience in both pre and post-sale client management from Freshworks, together with my partnership management expertise from Polybase. I understand the sales strategy's intricate tapestry, acknowledging that its execution extends beyond just closing a sale. It's about nurturing that relationship, ensuring continual support, and identifying avenues for mutual growth. This philosophy aligns perfectly with Uma's mission, and I am confident in my ability to not only execute but enhance the existing strategies, driving success for both Uma and its partners. My background has equipped me with a unique perspective on partnership, viewing it not just as a business transaction, but as a relationship that, when nurtured, will yield exponential benefits for all parties involved.",
+    "layoutRole": "section",
+  },
+  {
+    "id": "tpl-web3-uma-text-53",
+    "type": "text",
+    "span": 12,
+    "fontSize": "base",
+    "title": "Conclusion",
+    "content":
+      "I'm convinced what you guys are building would be relevant 7-10 years from now and I'd love to play my role in it. If given the opportunity, I\u2019ll do everything in my power to take <strong>UMA to the next level. </strong>But with or without me I'm sure <strong>UMA is going to be huge in the web3 realm</strong>. Mad vibes and wishes for Uma to be the next <strong>BIG WAVE</strong> in web3. It would be so cool to be on the inside though.",
+    "templateSectionTitle": true,
+    "layoutRole": "section",
+  },
+] as PortfolioItem[];

@@ -17,11 +17,14 @@ Do not put a notebook icon on the Knowledge base row itself — the FAB already 
 
 ## What it hosts
 
-| CTA                                | When shown                                                   | Behavior                                                                                                                |
-| ---------------------------------- | ------------------------------------------------------------ | ----------------------------------------------------------------------------------------------------------------------- |
-| **Finish onboarding**              | `!profile_setup_complete \|\| !niche_complete` (field-based) | Navigates to `/uniboard/onboarding?mode=profile_setup` (resume step). See [ONBOARDING_GATES.md](./ONBOARDING_GATES.md). |
-| **Knowledge base**                 | Always in the open menu                                      | Enabled when the current feature has a KB; otherwise disabled (“Soon”)                                                  |
-| **Generate portfolio with Unibot** | Portfolio page only (prop-driven)                            | Starts portfolio generation                                                                                             |
+| CTA                                             | When shown                                                                                  | Behavior                                                                   |
+| ----------------------------------------------- | ------------------------------------------------------------------------------------------- | -------------------------------------------------------------------------- |
+| **Finish onboarding**                           | `!profile_setup_complete \|\| !niche_complete`                                              | Navigates to onboarding                                                    |
+| **Knowledge base**                              | Always in the open menu                                                                     | Enabled when feature has a KB; else “Soon”                                 |
+| **Generate / Regenerate portfolio with Unibot** | Portfolio page, `portfolio_auto_create`, based on `context_snapshot.portfolio_generated_at` | Confirm modal → create-initial or replace-template (Replace Portfolio Gen) |
+| **Revert to previous portfolio**                | Portfolio page when `context_snapshot.can_revert` (`replaced_at` + `pre_replace`)           | Confirm (double-confirm if edited since replace) → revert-template         |
+
+`portfolio_auto_create` = profile setup + niche complete (see [ONBOARDING_GATES.md](./ONBOARDING_GATES.md)).
 
 Fully onboarded users still see the floater (notebook FAB) so they can open a knowledge base (or see the disabled placeholder on features without one yet).
 
@@ -37,4 +40,4 @@ Resume is the reference implementation: enabled on `/uniboard/resume`, opens `Re
 ## Mount points
 
 - `src/app/uniboard/UniboardShell.tsx` — all Uniboard routes except Unicoach and Portfolio
-- `src/app/uniboard/portfolio/PortfolioPageClient.tsx` — portfolio (also passes generate props)
+- `src/app/uniboard/portfolio/PortfolioPageClient.tsx` — portfolio (generate / regenerate / revert props)

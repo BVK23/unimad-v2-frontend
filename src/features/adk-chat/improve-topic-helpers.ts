@@ -136,12 +136,59 @@ function subsForMain(mainSessionId: string, registry = getSessionRegistry()): Un
     .sort((a, b) => new Date(a.created_at ?? 0).getTime() - new Date(b.created_at ?? 0).getTime());
 }
 
-/** Keep welcome first; sort everything else by timestamp (main + topic blocks). */
+function toSortMs(ts: Date | string | number | undefined | null): number {
+  if (ts == null) return 0;
+  if (ts instanceof Date) {
+    const ms = ts.getTime();
+    return Number.isFinite(ms) ? ms : 0;
+  }
+  const ms = new Date(ts).getTime();
+  return Number.isFinite(ms) ? ms : 0;
+}
+
+/**
+ * Sort key for the main transcript: plain messages use their own timestamp;
+ * topic cards use the latest nested message time (fallback: card timestamp / created_at).
+ */
+export function messageSortTime(msg: ChatMessage): number {
+  if (!msg.isTopic) return toSortMs(msg.timestamp);
+  let max = toSortMs(msg.timestamp);
+  for (const nested of msg.messages ?? []) {
+    const t = toSortMs(nested.timestamp);
+    if (t > max) max = t;
+  }
+  return max;
+}
+
+/** Keep welcome first; sort everything else by last activity (main + topic blocks). */
 export function sortMainThreadChronologically(messages: ChatMessage[]): ChatMessage[] {
   const welcome = messages.find(m => m.id === "welcome");
   const rest = messages.filter(m => m.id !== "welcome");
-  rest.sort((a, b) => a.timestamp.getTime() - b.timestamp.getTime());
+  rest.sort((a, b) => messageSortTime(a) - messageSortTime(b));
   return welcome ? [welcome, ...rest] : rest;
+}
+
+/** Sync a topic card's timestamp to its last nested activity (for stable UI + sorts). */
+export function withTopicActivityTimestamp(topic: ChatMessage): ChatMessage {
+  if (!topic.isTopic) return topic;
+  return { ...topic, timestamp: new Date(messageSortTime(topic) || Date.now()) };
+}
+
+/**
+ * Update a topic card in the main transcript, bump its activity timestamp, and re-sort
+ * so the card crawls to the correct chronological position (e.g. after a new sub reply).
+ */
+export function updateTopicInMainThread(
+  messages: ChatMessage[],
+  match: string | ((m: ChatMessage) => boolean),
+  updater: (topic: ChatMessage) => ChatMessage
+): ChatMessage[] {
+  const matches = typeof match === "string" ? (m: ChatMessage) => m.id === match : match;
+  const next = messages.map(m => {
+    if (!m.isTopic || !matches(m)) return m;
+    return withTopicActivityTimestamp(updater(m));
+  });
+  return sortMainThreadChronologically(next);
 }
 
 export function topicKindForSub(sub: UnibotAdkSessionRow): ChatMessage["topicKind"] | undefined {
@@ -160,9 +207,8 @@ export function topicKindForSub(sub: UnibotAdkSessionRow): ChatMessage["topicKin
 
 /**
  * After loading a main ADK session, attach each registry sub-session as a collapsed
- * improve / content_gen / application_asset topic (with nested history). Fresh load:
- * topics use Django `created_at` for ordering among themselves; live wand clicks
- * append with `new Date()` so they appear after current main messages.
+ * improve / content_gen / application_asset topic (with nested history). Ordering uses
+ * last nested message activity (fallback: Django `created_at`).
  */
 export async function mergeSubSessionsIntoMainMessages(
   userId: string,
@@ -186,19 +232,21 @@ export async function mergeSubSessionsIntoMainMessages(
     const topicId = topicIdForSubSession(sub.adk_session_id);
     if (existingSubIds.has(sub.adk_session_id) || existingTopicIds.has(topicId)) continue;
     const nested = await loadSubSessionChatMessages(userId, sub.adk_session_id);
-    topicBlocks.push({
-      id: topicIdForSubSession(sub.adk_session_id),
-      role: "model",
-      text: "",
-      timestamp: sub.created_at ? new Date(sub.created_at) : new Date(),
-      isTopic: true,
-      topicKind: topicKindForSub(sub),
-      topicTitle: deriveSubSessionDisplayTitle(sub),
-      topicSubtitle: deriveSubSessionSubtitle(sub),
-      isExpanded: false,
-      subSessionAdkId: sub.adk_session_id,
-      messages: nested,
-    });
+    topicBlocks.push(
+      withTopicActivityTimestamp({
+        id: topicIdForSubSession(sub.adk_session_id),
+        role: "model",
+        text: "",
+        timestamp: sub.created_at ? new Date(sub.created_at) : new Date(),
+        isTopic: true,
+        topicKind: topicKindForSub(sub),
+        topicTitle: deriveSubSessionDisplayTitle(sub),
+        topicSubtitle: deriveSubSessionSubtitle(sub),
+        isExpanded: false,
+        subSessionAdkId: sub.adk_session_id,
+        messages: nested,
+      })
+    );
   }
 
   if (topicBlocks.length === 0) return mainMessages;
@@ -212,5 +260,5 @@ export async function mergeSubSessionsIntoMainMessages(
 
 /** Insert a new topic block in chronological position (live improve). */
 export function insertTopicInMainThread(messages: ChatMessage[], topic: ChatMessage): ChatMessage[] {
-  return sortMainThreadChronologically([...messages.filter(m => m.id !== topic.id), topic]);
+  return sortMainThreadChronologically([...messages.filter(m => m.id !== topic.id), withTopicActivityTimestamp(topic)]);
 }

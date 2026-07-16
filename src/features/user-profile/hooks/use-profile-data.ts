@@ -1,5 +1,6 @@
 "use client";
 
+import { getQueryClient } from "@/app/get-query-client";
 import { coachActAsQueryScope, useCoachActAsSession } from "@/contexts/CoachActAsContext";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import {
@@ -24,20 +25,31 @@ export function profileQueryKeyFor(session: ReturnType<typeof useCoachActAsSessi
 
 export const useProfileData = () => {
   const actAs = useCoachActAsSession();
-  return useQuery({
-    queryKey: profileQueryKeyFor(actAs),
-    queryFn: () => fetchProfileData(),
-    staleTime: 30_000,
-  });
+  // Explicit client avoids "No QueryClient set" when Turbopack/Next splits
+  // @tanstack/react-query context across duplicate module instances.
+  const queryClient = getQueryClient();
+  return useQuery(
+    {
+      queryKey: profileQueryKeyFor(actAs),
+      queryFn: () => fetchProfileData(),
+      staleTime: 30_000,
+    },
+    queryClient
+  );
 };
 
-export const useProfileMedia = (category: string, enabled: boolean) =>
-  useQuery({
-    queryKey: profileQk.media(category),
-    queryFn: () => fetchProfileMedia(category),
-    enabled,
-    staleTime: 60_000,
-  });
+export const useProfileMedia = (category: string, enabled: boolean) => {
+  const queryClient = getQueryClient();
+  return useQuery(
+    {
+      queryKey: profileQk.media(category),
+      queryFn: () => fetchProfileMedia(category),
+      enabled,
+      staleTime: 60_000,
+    },
+    queryClient
+  );
+};
 
 export const useUpdateProfileMutation = () => {
   const qc = useQueryClient();
@@ -78,9 +90,14 @@ export const useClearProfileKnowledgeMutation = () => {
   });
 };
 
-export const useSubscriptionData = () =>
-  useQuery({
-    queryKey: profileQk.subscription,
-    queryFn: () => fetchSubscriptionData(),
-    staleTime: 30_000,
-  });
+export const useSubscriptionData = () => {
+  const queryClient = getQueryClient();
+  return useQuery(
+    {
+      queryKey: profileQk.subscription,
+      queryFn: () => fetchSubscriptionData(),
+      staleTime: 30_000,
+    },
+    queryClient
+  );
+};

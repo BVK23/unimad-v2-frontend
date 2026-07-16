@@ -1222,9 +1222,9 @@ const ResumeEditor: React.FC<ResumeEditorProps> = ({
         resume.certifications.map(c => c.id),
         "cert"
       ),
-      title: "Certification Title",
-      issuer: "Issuer",
-      description: "Description of the Project...",
+      title: "",
+      issuer: "",
+      description: "",
     };
     updateResume(prev => ({
       ...prev,
@@ -1866,12 +1866,10 @@ const ResumeEditor: React.FC<ResumeEditorProps> = ({
             : "border-slate-200 bg-white text-slate-700 hover:border-brand-200 hover:shadow-md dark:text-slate-200"
         }`}
       >
-        <TrendingUp size={16} className={atsGated || atsPillScore == null ? "text-slate-400" : atsScoreClass} />
+        <TrendingUp size={16} className={atsPillScore == null ? "text-slate-400" : atsScoreClass} />
         <span className={atsGated ? "text-slate-400 dark:text-slate-500" : "text-slate-600 dark:text-slate-400"}>
           ATS Score:{" "}
-          <span className={atsGated || atsPillScore == null ? "text-slate-400" : atsScoreClass}>
-            {atsGated || atsPillScore == null ? "—" : atsPillScore}
-          </span>
+          <span className={atsPillScore == null ? "text-slate-400" : atsScoreClass}>{atsPillScore == null ? "—" : atsPillScore}</span>
         </span>
       </button>
     </ActionHintTooltip>
@@ -2971,7 +2969,7 @@ const ResumeEditor: React.FC<ResumeEditorProps> = ({
                             onChange={html => updateCertification(cert.id, "description", html)}
                             onImprove={onImprove}
                             unibotImproveTarget={{ section: "certifications", resumeId, entryId: cert.id }}
-                            placeholder="Description (optional)..."
+                            placeholder="Description of the certification..."
                           />
                         </div>
                       )}

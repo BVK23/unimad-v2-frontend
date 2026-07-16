@@ -211,6 +211,16 @@ export function mapBackendPortfolioToFrontend(dto: Record<string, unknown>): Por
       ? { ...profileBase, coverPosition: readCoverPosition(fallbackProfile) }
       : profileBase;
 
+  const rawSnap = safeObject<Record<string, unknown>>(dto.context_snapshot, {});
+  const contextSnapshot = {
+    portfolio_generated_at: typeof rawSnap.portfolio_generated_at === "string" ? rawSnap.portfolio_generated_at : null,
+    replaced_at: typeof rawSnap.replaced_at === "string" ? rawSnap.replaced_at : null,
+    reverted_at: typeof rawSnap.reverted_at === "string" ? rawSnap.reverted_at : null,
+    can_revert: rawSnap.can_revert === true,
+    edited_since_replace: rawSnap.edited_since_replace === true,
+    number_of_edits: typeof rawSnap.number_of_edits === "number" ? rawSnap.number_of_edits : 0,
+  };
+
   return {
     id: String(dto.portfolio_id ?? dto.id ?? ""),
     title: profile.name,
@@ -220,6 +230,7 @@ export function mapBackendPortfolioToFrontend(dto: Record<string, unknown>): Por
     themeMode: dto.themeMode === "dark" ? "dark" : "light",
     profile,
     items,
+    contextSnapshot,
   };
 }
 

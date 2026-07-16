@@ -860,15 +860,29 @@ const BlockRenderer: React.FC<BlockRendererProps> = ({
             </div>
           ) : (
             isEditMode && (
-              <div className="p-4 flex flex-col gap-1">
-                <button
-                  type="button"
-                  onClick={openMediaPicker}
-                  disabled={isUploading}
-                  className="w-full px-4 py-2 rounded-full bg-white dark:bg-slate-900 border border-slate-200 dark:border-white/10 text-slate-700 dark:text-slate-200 hover:border-brand-500/40 transition-all disabled:opacity-50"
-                >
-                  {isUploading ? "Uploading..." : "Add Cover Image"}
-                </button>
+              <div className="p-4 flex flex-col gap-2">
+                <div className="flex flex-wrap items-center gap-2">
+                  <button
+                    type="button"
+                    onClick={openMediaPicker}
+                    disabled={isUploading}
+                    className="px-4 py-2 rounded-full bg-white dark:bg-slate-900 border border-slate-200 dark:border-white/10 text-slate-700 dark:text-slate-200 hover:border-brand-500/40 transition-all disabled:opacity-50"
+                  >
+                    {isUploading ? "Uploading..." : "Add Cover Image"}
+                  </button>
+                  {onSelectProject ? (
+                    <button
+                      type="button"
+                      onClick={e => {
+                        e.stopPropagation();
+                        onSelectProject(item);
+                      }}
+                      className="inline-flex items-center gap-1.5 px-4 py-2 rounded-full bg-white dark:bg-slate-900 border border-slate-200 dark:border-white/10 text-slate-700 dark:text-slate-200 hover:border-brand-500/40 transition-all text-xs font-semibold"
+                    >
+                      <Edit3 size={13} /> Edit Content
+                    </button>
+                  ) : null}
+                </div>
                 {uploadError && <span className="text-[11px] font-medium text-red-500">{uploadError}</span>}
               </div>
             )

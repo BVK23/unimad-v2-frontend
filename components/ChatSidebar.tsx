@@ -17,15 +17,19 @@ import {
   findImproveTopic,
   insertTopicInMainThread,
   loadSubSessionChatMessages,
+  sortMainThreadChronologically,
   syncTopicUserInvocationIdsFromAdk,
   topicIdForSubSession,
   topicKindForSub,
+  updateTopicInMainThread,
+  withTopicActivityTimestamp,
 } from "@/features/adk-chat/improve-topic-helpers";
 import { markMainSessionHasUserPrompt } from "@/features/adk-chat/main-session-activity";
 import { cancelOptimisticUnibotActivity, ensureOptimisticUnibotActivity } from "@/features/adk-chat/optimistic-unibot-activity";
 import { persistAcceptSnapshotForSession } from "@/features/adk-chat/persist-accept-snapshot";
 import { persistReviewDecisionForSession } from "@/features/adk-chat/persist-review-decision";
 import { isHandoffPromptForTitle } from "@/features/adk-chat/pick-title-source-prompt";
+import { resolveIntermediateAndFinalDisplay } from "@/features/adk-chat/resolve-intermediate-and-final-display";
 import { resolveAdkSessionOptionsForSessionId } from "@/features/adk-chat/resolve-sub-session-adk-app";
 import {
   buildContentGenSnapshotPayload,
@@ -122,7 +126,7 @@ import { useOnboardingGate } from "@/features/onboarding/context/OnboardingGateC
 import { useNicheDiscoveryStore } from "@/features/onboarding/niche-discovery/useNicheDiscoveryStore";
 import { mapStrengthsFocusTrigger, useStrengthsFocusStore } from "@/features/onboarding/strengths-focus/useStrengthsFocusStore";
 import { buildAdkPortfolioDataMap, buildAdkPortfolioStateDelta } from "@/features/portfolio/api/mappers";
-import { portfolioQueryKey } from "@/features/portfolio/hooks/usePortfolio";
+import { setLivePortfolioQueryData } from "@/features/portfolio/hooks/usePortfolio";
 import { usePortfolioStore } from "@/features/portfolio/store/usePortfolioStore";
 import { buildAdkResumeDataMap } from "@/features/resume/api/mappers";
 import {
@@ -152,7 +156,6 @@ import {
 import { ensureApplicationAssetTopicSubSession, ensureContentGenTopicSubSession } from "@/src/features/adk-chat/ensure-topic-sub-session";
 import { checkFeatureAvailability } from "@/src/features/adk-chat/feature-availability";
 import { useSyncUnibotUiToRoute } from "@/src/features/adk-chat/hooks/useSyncUnibotUiToRoute";
-import { SUB_THREAD_COLLAPSE_THRESHOLD } from "@/src/features/adk-chat/hydrate-loaded-topics";
 import {
   isFirstThreadUserMessage,
   isLastThreadUserMessage,
@@ -255,6 +258,7 @@ import { useAdkChatContext } from "./chat/AdkChatProvider";
 import { ContentGenDraftReviewChips } from "./chat/ContentGenDraftReviewChips";
 import { ContentGenTopicChips } from "./chat/ContentGenTopicChips";
 import { FormattedAgentMessage } from "./chat/FormattedAgentMessage";
+import { IntermediateNarrationToggle } from "./chat/IntermediateNarrationToggle";
 import NicheDiscoveryFocusView from "./chat/NicheDiscoveryFocusView";
 import StrengthsOnboardingFocusView from "./chat/StrengthsOnboardingFocusView";
 import { SubThreadGoToAssetLink } from "./chat/SubThreadGoToAssetLink";
@@ -451,8 +455,10 @@ function shouldShowStreamingModelShell(input: {
   isAgentLoading: boolean;
   isSyncingContext: boolean;
   hasPlannerOrDraft: boolean;
+  hasIntermediateNarration?: boolean;
 }): boolean {
   if (input.modelVisibleText) return true;
+  if (input.hasIntermediateNarration) return true;
   if (input.isActiveDraftStream) return true;
   if (input.hasPlannerOrDraft) return false;
   if (input.isActiveStreamTarget && (input.isAgentLoading || input.isSyncingContext)) return true;
@@ -1281,17 +1287,13 @@ const ChatSidebar: React.FC<ChatSidebarProps> = ({ incomingRequest, onRequestHan
           setMessages(prev => {
             const existing = findImproveTopic(prev, subAdkId) ?? prev.find(m => m.isTopic && m.id === topicId);
             if (existing) {
-              return prev.map(m =>
-                m.id === existing.id
-                  ? {
-                      ...m,
-                      isExpanded: true,
-                      subSessionAdkId: subAdkId,
-                      topicTitle: sub.title,
-                      messages: [...(m.messages ?? []), initialUserMsg, placeholderMsg],
-                    }
-                  : m
-              );
+              return updateTopicInMainThread(prev, existing.id, m => ({
+                ...m,
+                isExpanded: true,
+                subSessionAdkId: subAdkId,
+                topicTitle: sub.title,
+                messages: [...(m.messages ?? []), initialUserMsg, placeholderMsg],
+              }));
             }
             const newTopic: ChatMessage = {
               id: topicId,
@@ -1437,18 +1439,14 @@ const ChatSidebar: React.FC<ChatSidebarProps> = ({ incomingRequest, onRequestHan
 
           if (existing) {
             setMessages(prev =>
-              prev.map(m =>
-                m.id === existing.id
-                  ? {
-                      ...m,
-                      isExpanded: true,
-                      subSessionAdkId: sub.subAdkSessionId,
-                      topicTitle: sub.title,
-                      topicSubtitle: applicationAssetTopicSubtitle(d.company, d.role),
-                      messages: [...(m.messages ?? []), initialUserMsg, placeholderMsg],
-                    }
-                  : m
-              )
+              updateTopicInMainThread(prev, existing.id, m => ({
+                ...m,
+                isExpanded: true,
+                subSessionAdkId: sub.subAdkSessionId,
+                topicTitle: sub.title,
+                topicSubtitle: applicationAssetTopicSubtitle(d.company, d.role),
+                messages: [...(m.messages ?? []), initialUserMsg, placeholderMsg],
+              }))
             );
           } else {
             const newTopic: ChatMessage = {
@@ -1812,7 +1810,10 @@ const ChatSidebar: React.FC<ChatSidebarProps> = ({ incomingRequest, onRequestHan
           excludeFromTitleGeneration: true,
         };
         setMessages(prev =>
-          prev.map(m => (m.id === params.topicId && m.isTopic ? { ...m, messages: [...(m.messages || []), nudgeMsg] } : m))
+          updateTopicInMainThread(prev, params.topicId, m => ({
+            ...m,
+            messages: [...(m.messages || []), nudgeMsg],
+          }))
         );
       }
 
@@ -1907,7 +1908,10 @@ const ChatSidebar: React.FC<ChatSidebarProps> = ({ incomingRequest, onRequestHan
           excludeFromTitleGeneration: true,
         };
         setMessages(prevMsgs =>
-          prevMsgs.map(m => (m.id === topicId && m.isTopic ? { ...m, messages: [...(m.messages || []), nudgeMsg] } : m))
+          updateTopicInMainThread(prevMsgs, topicId, m => ({
+            ...m,
+            messages: [...(m.messages || []), nudgeMsg],
+          }))
         );
       }
 
@@ -1998,14 +2002,10 @@ const ChatSidebar: React.FC<ChatSidebarProps> = ({ incomingRequest, onRequestHan
         void loadSubSessionChatMessages(userId, subAdkSessionId).then(nested => {
           if (!nested.length) return;
           setMessages(prev =>
-            prev.map(msg =>
-              msg.id === topicId && msg.isTopic
-                ? {
-                    ...msg,
-                    messages: [...nested, ...(msg.messages ?? [])],
-                  }
-                : msg
-            )
+            updateTopicInMainThread(prev, topicId, msg => ({
+              ...msg,
+              messages: [...nested, ...(msg.messages ?? [])],
+            }))
           );
         });
         try {
@@ -2037,18 +2037,14 @@ const ChatSidebar: React.FC<ChatSidebarProps> = ({ incomingRequest, onRequestHan
       };
 
       setMessages(prev =>
-        prev.map(msg =>
-          msg.id === existing.id && msg.isTopic
-            ? {
-                ...msg,
-                id: topicId,
-                subSessionAdkId: subAdkSessionId,
-                topicTitle: title,
-                isExpanded,
-                messages: [...(msg.messages || []), userMsg, placeholderMsg],
-              }
-            : msg
-        )
+        updateTopicInMainThread(prev, existing.id, msg => ({
+          ...msg,
+          id: topicId,
+          subSessionAdkId: subAdkSessionId,
+          topicTitle: title,
+          isExpanded,
+          messages: [...(msg.messages || []), userMsg, placeholderMsg],
+        }))
       );
       if (!suppressFocus) {
         setImproveReplyTopicId(topicId);
@@ -2324,16 +2320,12 @@ const ChatSidebar: React.FC<ChatSidebarProps> = ({ incomingRequest, onRequestHan
               timestamp: new Date(),
             };
             setMessages(prev =>
-              prev.map(msg =>
-                msg.id === topicId && msg.isTopic
-                  ? {
-                      ...msg,
-                      topicTitle,
-                      isExpanded: true,
-                      messages: [...(msg.messages || []), userMsg, placeholderMsg],
-                    }
-                  : msg
-              )
+              updateTopicInMainThread(prev, topicId, msg => ({
+                ...msg,
+                topicTitle,
+                isExpanded: true,
+                messages: [...(msg.messages || []), userMsg, placeholderMsg],
+              }))
             );
             shouldStickToBottomRef.current = true;
             pendingRetryRef.current = { text: agentText, topicId, botMsgId };
@@ -2397,16 +2389,12 @@ const ChatSidebar: React.FC<ChatSidebarProps> = ({ incomingRequest, onRequestHan
               timestamp: new Date(),
             };
             setMessages(prev =>
-              prev.map(msg =>
-                msg.id === topicId && msg.isTopic
-                  ? {
-                      ...msg,
-                      topicTitle,
-                      isExpanded: true,
-                      messages: [...(msg.messages || []), userMsg, placeholderMsg],
-                    }
-                  : msg
-              )
+              updateTopicInMainThread(prev, topicId, msg => ({
+                ...msg,
+                topicTitle,
+                isExpanded: true,
+                messages: [...(msg.messages || []), userMsg, placeholderMsg],
+              }))
             );
             shouldStickToBottomRef.current = true;
             pendingRetryRef.current = { text: agentText, topicId, botMsgId };
@@ -2453,7 +2441,7 @@ const ChatSidebar: React.FC<ChatSidebarProps> = ({ incomingRequest, onRequestHan
         messages: [initialUserMsg, placeholderMsg],
       };
 
-      setMessages(prev => [...prev, newTopic]);
+      setMessages(prev => insertTopicInMainThread(prev, newTopic));
       shouldStickToBottomRef.current = true;
 
       void (async () => {
@@ -2959,13 +2947,15 @@ const ChatSidebar: React.FC<ChatSidebarProps> = ({ incomingRequest, onRequestHan
       };
       if (topicThreadId) {
         setMessages(prev =>
-          prev.map(msg =>
-            msg.id === topicThreadId && msg.isTopic ? { ...msg, messages: [...(msg.messages || []), hintMsg], isExpanded: true } : msg
-          )
+          updateTopicInMainThread(prev, topicThreadId, msg => ({
+            ...msg,
+            messages: [...(msg.messages || []), hintMsg],
+            isExpanded: true,
+          }))
         );
         return;
       }
-      setMessages(prev => [...prev, hintMsg]);
+      setMessages(prev => sortMainThreadChronologically([...prev, hintMsg]));
     },
     [setMessages]
   );
@@ -3034,14 +3024,14 @@ const ChatSidebar: React.FC<ChatSidebarProps> = ({ incomingRequest, onRequestHan
 
       if (topicThreadId) {
         setMessages(prev =>
-          prev.map(msg =>
-            msg.id === topicThreadId && msg.isTopic
-              ? { ...msg, messages: [...(msg.messages ?? []), userMsg, placeholderMsg], isExpanded: true }
-              : msg
-          )
+          updateTopicInMainThread(prev, topicThreadId, msg => ({
+            ...msg,
+            messages: [...(msg.messages ?? []), userMsg, placeholderMsg],
+            isExpanded: true,
+          }))
         );
       } else {
-        setMessages(prev => [...prev, userMsg, placeholderMsg]);
+        setMessages(prev => sortMainThreadChronologically([...prev, userMsg, placeholderMsg]));
       }
 
       const setActivity = (label: string) => {
@@ -3099,7 +3089,7 @@ const ChatSidebar: React.FC<ChatSidebarProps> = ({ incomingRequest, onRequestHan
     try {
       const merged = { ...usePortfolioStore.getState().portfolioData, [baseline.id]: baseline };
       usePortfolioStore.setState({ portfolioData: merged });
-      queryClient.setQueryData(portfolioQueryKey, baseline);
+      setLivePortfolioQueryData(queryClient, baseline);
       await syncDiscardedPortfolioToAllSessions(userId, reviewMainSessionId, baseline);
       if (card?.assistantMessageId) {
         await persistReviewDecisionForSession(userId, reviewMainSessionId, card.assistantMessageId, "discarded");
@@ -3290,19 +3280,20 @@ const ChatSidebar: React.FC<ChatSidebarProps> = ({ incomingRequest, onRequestHan
       ensureOptimisticUnibotActivity({ assistantMessageId: botMsgId });
       const placeholderMsg: ChatMessage = { id: botMsgId, role: "model", text: "", timestamp: new Date() };
       setMessages(prev =>
-        prev.map(msg => {
-          if (msg.id !== topicId && msg.id !== effectiveTopicId) return msg;
-          if (!msg.isTopic) return msg;
-          return {
+        updateTopicInMainThread(
+          prev,
+          m => Boolean(m.isTopic && (m.id === topicId || m.id === effectiveTopicId)),
+          msg => ({
             ...msg,
             id: effectiveTopicId,
             subSessionAdkId: subAdkId ?? msg.subSessionAdkId,
             legacyTopic: false,
             messages: [...(msg.messages || []), userMsg, placeholderMsg],
             isExpanded: true,
-          };
-        })
+          })
+        )
       );
+      shouldStickToBottomRef.current = true;
       pendingRetryRef.current = { text: outboundText, topicId: effectiveTopicId, botMsgId };
       try {
         const { hadAssistantText } = await sendTopicMessage(outboundText, botMsgId, subAdkId ? { sessionIdOverride: subAdkId } : undefined);
@@ -3414,6 +3405,7 @@ const ChatSidebar: React.FC<ChatSidebarProps> = ({ incomingRequest, onRequestHan
           <div className="flex w-full min-w-0 flex-col items-stretch gap-0.5">
             <UnibotEditableUserBubble
               value={editingUserMessage.draftText}
+              originalValue={editingUserMessage.previewText}
               disabled={isRewinding || isAgentLoading}
               onChange={draftText => setEditingUserMessage(prev => (prev ? { ...prev, draftText } : prev))}
               onSubmit={() => void handleSubmitEditedUserMessage()}
@@ -3525,18 +3517,14 @@ const ChatSidebar: React.FC<ChatSidebarProps> = ({ incomingRequest, onRequestHan
         setMessages(prev => {
           const alreadyOpen = prev.some(m => m.id === stableTopicId && m.isTopic);
           if (alreadyOpen) {
-            return prev.map(m =>
-              m.id === stableTopicId
-                ? {
-                    ...m,
-                    subSessionAdkId: subAdkId,
-                    topicTitle: sub.title ?? topicTitle,
-                    topicSubtitle: applicationAssetTopicSubtitle(studio.company, studio.role),
-                    isExpanded: true,
-                    messages: [...(m.messages ?? []), userMsg, placeholderMsg],
-                  }
-                : m
-            );
+            return updateTopicInMainThread(prev, stableTopicId, m => ({
+              ...m,
+              subSessionAdkId: subAdkId,
+              topicTitle: sub.title ?? topicTitle,
+              topicSubtitle: applicationAssetTopicSubtitle(studio.company, studio.role),
+              isExpanded: true,
+              messages: [...(m.messages ?? []), userMsg, placeholderMsg],
+            }));
           }
           const newTopic: ChatMessage = {
             id: stableTopicId,
@@ -4185,16 +4173,13 @@ const ChatSidebar: React.FC<ChatSidebarProps> = ({ incomingRequest, onRequestHan
       };
 
       setMessages(prev =>
-        prev.map(msg => {
-          if (msg.id === topicId && msg.isTopic) {
-            return {
-              ...msg,
-              messages: [...(msg.messages || []), userMsg, placeholderMsg],
-            };
-          }
-          return msg;
-        })
+        updateTopicInMainThread(prev, topicId, msg => ({
+          ...msg,
+          messages: [...(msg.messages || []), userMsg, placeholderMsg],
+          isExpanded: true,
+        }))
       );
+      shouldStickToBottomRef.current = true;
 
       pendingRetryRef.current = { text: text.trim(), topicId, botMsgId };
       try {
@@ -4397,20 +4382,23 @@ const ChatSidebar: React.FC<ChatSidebarProps> = ({ incomingRequest, onRequestHan
     const topicId = topicIdForSubSession(subAdkSessionId);
     if (!findImproveTopic(messages, subAdkSessionId)) {
       const nested = await loadSubSessionChatMessages(userId, subAdkSessionId);
-      setMessages(prev => [
-        ...prev,
-        {
-          id: topicId,
-          role: "model",
-          text: "",
-          timestamp: new Date(),
-          isTopic: true,
-          topicTitle: title,
-          isExpanded: true,
-          subSessionAdkId: subAdkSessionId,
-          messages: nested,
-        },
-      ]);
+      setMessages(prev =>
+        insertTopicInMainThread(
+          prev,
+          withTopicActivityTimestamp({
+            id: topicId,
+            role: "model",
+            text: "",
+            timestamp: new Date(),
+            isTopic: true,
+            topicTitle: title,
+            isExpanded: true,
+            subSessionAdkId: subAdkSessionId,
+            messages: nested,
+          })
+        )
+      );
+      shouldStickToBottomRef.current = true;
     }
     selectImproveTopic(topicId);
   };
@@ -4654,7 +4642,7 @@ const ChatSidebar: React.FC<ChatSidebarProps> = ({ incomingRequest, onRequestHan
               const tightAfterUser =
                 !msg.isTopic && msg.role === "model" && prevMessage != null && !prevMessage.isTopic && prevMessage.role === "user";
               if (msg.isTopic) {
-                const expanded = msg.isExpanded !== false;
+                const expanded = msg.isExpanded === true;
                 const subRow = msg.subSessionAdkId ? getRegistryRow(msg.subSessionAdkId) : undefined;
                 const displayTitle = displayTitleForSubSession(subRow, msg.topicTitle);
                 const studio = useApplicationAssetStudioStore.getState();
@@ -4791,6 +4779,7 @@ const ChatSidebar: React.FC<ChatSidebarProps> = ({ incomingRequest, onRequestHan
                                     isAgentLoading,
                                     isSyncingContext,
                                     hasPlannerOrDraft: subHasPlanner || subHasDraft,
+                                    hasIntermediateNarration: Boolean(subMsg.intermediateNarration?.trim()),
                                   });
                                 const showUserBubble = subMsg.role === "user" && userVisibleText;
                                 const hasActionCard = subMsg.role === "user" && subMsg.assetActionMeta;
@@ -4847,25 +4836,41 @@ const ChatSidebar: React.FC<ChatSidebarProps> = ({ incomingRequest, onRequestHan
                                         </div>
                                       ) : (
                                         (() => {
-                                          const streamingPlaceholder = modelVisibleText
-                                            ? null
-                                            : renderModelStreamingPlaceholder({
-                                                messageId: subMsg.id,
-                                                activeStreamingMessageId,
-                                                liveStreamActivity,
-                                                streamActivityLabel,
-                                                contentGenPublishActivity,
-                                                isAgentLoading,
-                                                isSyncingContext,
-                                                streamingStatusLabel,
-                                              });
-                                          if (!modelVisibleText && !streamingPlaceholder) return null;
+                                          const isLiveStreaming = isActiveStreamTarget && (isAgentLoading || isSyncingContext);
+                                          const { intermediateText, finalText, intermediateIsStreaming } =
+                                            resolveIntermediateAndFinalDisplay({
+                                              modelVisibleText,
+                                              intermediateNarration: subMsg.intermediateNarration,
+                                              isLiveStreaming,
+                                              agent: subMsg.agent,
+                                            });
+                                          const streamingPlaceholder =
+                                            finalText || intermediateText
+                                              ? null
+                                              : renderModelStreamingPlaceholder({
+                                                  messageId: subMsg.id,
+                                                  activeStreamingMessageId,
+                                                  liveStreamActivity,
+                                                  streamActivityLabel,
+                                                  contentGenPublishActivity,
+                                                  isAgentLoading,
+                                                  isSyncingContext,
+                                                  streamingStatusLabel,
+                                                });
+                                          if (!finalText && !intermediateText && !streamingPlaceholder) return null;
                                           return (
                                             <div className="flex max-w-full flex-col items-start gap-0.5">
                                               <div className="px-3 pb-2 pt-0 text-[13px] leading-relaxed text-slate-600 dark:text-slate-300">
-                                                {modelVisibleText ? (
+                                                {intermediateText ? (
+                                                  <IntermediateNarrationToggle
+                                                    text={intermediateText}
+                                                    isStreaming={intermediateIsStreaming}
+                                                    className="mb-1"
+                                                  />
+                                                ) : null}
+                                                {finalText ? (
                                                   <>
-                                                    <FormattedAgentMessage content={modelVisibleText} />
+                                                    <FormattedAgentMessage content={finalText} />
                                                     {(() => {
                                                       const followUp = getFollowUpStreamActivityLabel(
                                                         subMsg.id,
@@ -4887,12 +4892,33 @@ const ChatSidebar: React.FC<ChatSidebarProps> = ({ incomingRequest, onRequestHan
                                                       );
                                                     })()}
                                                   </>
+                                                ) : intermediateText && isLiveStreaming ? (
+                                                  (() => {
+                                                    const followUp = getFollowUpStreamActivityLabel(
+                                                      subMsg.id,
+                                                      liveStreamActivity,
+                                                      streamActivityLabel,
+                                                      {
+                                                        agentLoading: isAgentLoading,
+                                                        isSyncingContext,
+                                                        hasVisibleText: true,
+                                                        waitingLabel: streamingStatusLabel,
+                                                      }
+                                                    );
+                                                    if (!followUp) return null;
+                                                    return (
+                                                      <div className="mt-1 flex items-center gap-2 text-slate-400">
+                                                        <Loader2 size={12} className="animate-spin shrink-0" />
+                                                        <span className="text-xs">{followUp}</span>
+                                                      </div>
+                                                    );
+                                                  })()
                                                 ) : (
                                                   streamingPlaceholder
                                                 )}
                                               </div>
-                                              {modelVisibleText && subMsg.id !== "welcome" ? (
-                                                <UnibotBotMessageToolbar textToCopy={modelVisibleText} />
+                                              {finalText && subMsg.id !== "welcome" ? (
+                                                <UnibotBotMessageToolbar textToCopy={finalText} />
                                               ) : null}
                                             </div>
                                           );
@@ -5160,36 +5186,48 @@ const ChatSidebar: React.FC<ChatSidebarProps> = ({ incomingRequest, onRequestHan
                   ) : msg.role === "model" ? (
                     (() => {
                       const isActiveStreamTarget = msg.id === activeStreamingMessageId;
+                      const isLiveStreaming = isActiveStreamTarget && (isAgentLoading || isSyncingContext);
+                      const { intermediateText, finalText, intermediateIsStreaming } = resolveIntermediateAndFinalDisplay({
+                        modelVisibleText: mainModelVisible ?? "",
+                        intermediateNarration: msg.intermediateNarration,
+                        isLiveStreaming,
+                        agent: msg.agent,
+                      });
                       const showShell = shouldShowStreamingModelShell({
                         text: msg.text,
-                        modelVisibleText: mainModelVisible ?? "",
+                        modelVisibleText: finalText || (isLiveStreaming ? "" : (mainModelVisible ?? "")),
                         isActiveDraftStream: false,
                         isActiveStreamTarget,
                         isAgentLoading,
                         isSyncingContext,
                         hasPlannerOrDraft: Boolean(mainPlannerPayload) || mainHasDraft || mainHasAppAssetDraft,
+                        hasIntermediateNarration: Boolean(intermediateText),
                       });
                       if (!showShell) return null;
-                      const streamingPlaceholder = mainModelVisible
-                        ? null
-                        : renderModelStreamingPlaceholder({
-                            messageId: msg.id,
-                            activeStreamingMessageId,
-                            liveStreamActivity,
-                            streamActivityLabel,
-                            contentGenPublishActivity,
-                            isAgentLoading,
-                            isSyncingContext,
-                            streamingStatusLabel,
-                            className: "flex items-center gap-2 text-slate-400 px-1",
-                          });
-                      if (!mainModelVisible && !streamingPlaceholder) return null;
+                      const streamingPlaceholder =
+                        finalText || intermediateText
+                          ? null
+                          : renderModelStreamingPlaceholder({
+                              messageId: msg.id,
+                              activeStreamingMessageId,
+                              liveStreamActivity,
+                              streamActivityLabel,
+                              contentGenPublishActivity,
+                              isAgentLoading,
+                              isSyncingContext,
+                              streamingStatusLabel,
+                              className: "flex items-center gap-2 text-slate-400 px-1",
+                            });
+                      if (!finalText && !intermediateText && !streamingPlaceholder) return null;
                       return (
                         <div className="flex max-w-full flex-col items-start gap-0.5">
                           <div className="max-w-full bg-transparent px-1 text-[13px] leading-relaxed text-slate-600 dark:text-slate-300">
-                            {mainModelVisible ? (
+                            {intermediateText ? (
+                              <IntermediateNarrationToggle text={intermediateText} isStreaming={intermediateIsStreaming} className="mb-1" />
+                            ) : null}
+                            {finalText ? (
                               <>
-                                <FormattedAgentMessage content={mainModelVisible} />
+                                <FormattedAgentMessage content={finalText} />
                                 {(() => {
                                   const followUp = getFollowUpStreamActivityLabel(msg.id, liveStreamActivity, streamActivityLabel, {
                                     agentLoading: isAgentLoading,
@@ -5206,11 +5244,27 @@ const ChatSidebar: React.FC<ChatSidebarProps> = ({ incomingRequest, onRequestHan
                                   );
                                 })()}
                               </>
+                            ) : intermediateText && isLiveStreaming ? (
+                              (() => {
+                                const followUp = getFollowUpStreamActivityLabel(msg.id, liveStreamActivity, streamActivityLabel, {
+                                  agentLoading: isAgentLoading,
+                                  isSyncingContext,
+                                  hasVisibleText: true,
+                                  waitingLabel: streamingStatusLabel,
+                                });
+                                if (!followUp) return null;
+                                return (
+                                  <div className="mt-1 flex items-center gap-2 text-slate-400 px-1">
+                                    <Loader2 size={12} className="animate-spin shrink-0" />
+                                    <span className="text-xs">{followUp}</span>
+                                  </div>
+                                );
+                              })()
                             ) : (
                               streamingPlaceholder
                             )}
                           </div>
-                          {mainModelVisible && msg.id !== "welcome" ? <UnibotBotMessageToolbar textToCopy={mainModelVisible} /> : null}
+                          {finalText && msg.id !== "welcome" ? <UnibotBotMessageToolbar textToCopy={finalText} /> : null}
                         </div>
                       );
                     })()

@@ -1,4 +1,3 @@
-import { useAdkPortfolioReviewStore } from "@/features/adk-chat/stores/useAdkPortfolioReviewStore";
 import { normalizePortfolioData } from "@/features/portfolio/utils/normalizePortfolioItems";
 import type { PortfolioData } from "@/types";
 import { create } from "zustand";
@@ -55,7 +54,9 @@ export const usePortfolioStore = create<PortfolioStoreState>((set, get) => ({
   getPortfolioData: portfolioId => get().portfolioData[portfolioId],
 
   updatePortfolio: (portfolioId, updater, options) => {
-    useAdkPortfolioReviewStore.getState().dismissReviewsForPortfolio(portfolioId);
+    // Do NOT dismiss ADK Accept/Discard here. Layout side-effects (e.g. assigning colStart
+    // on newly inserted blocks) also call updatePortfolio and would wipe the review card
+    // before the user can act. Resume keeps review open until Accept/Discard; match that.
     set(state => {
       const current = state.portfolioData[portfolioId];
       if (!current) return state;

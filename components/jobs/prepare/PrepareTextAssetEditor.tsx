@@ -42,7 +42,10 @@ const PrepareTextAssetEditor: React.FC<PrepareTextAssetEditorProps> = ({ kind, a
     <div className="relative flex min-h-0 min-w-0 flex-1 flex-col">
       <DocumentPreviewZoomControls ref={zoomControlsRef} userZoom={userZoom} onUserZoomChange={setUserZoom} />
 
-      <div className="scrollbar-on-hover min-h-0 min-w-0 flex-1 overflow-auto rounded-xl border border-slate-200 bg-slate-100 dark:border-slate-800 dark:bg-slate-900/50">
+      {/* scrollbar-gutter:stable keeps clientWidth fixed when the 100% zoom page
+          overflows — without it, scrollbar appear/disappear thrash ResizeObserver
+          fit-scale and the preview flickers between two layouts. */}
+      <div className="scrollbar-on-hover [scrollbar-gutter:stable] min-h-0 min-w-0 flex-1 overflow-auto rounded-xl border border-slate-200 bg-slate-100 dark:border-slate-800 dark:bg-slate-900/50">
         <ApplicationDocumentPageFrame
           variant="compact"
           userZoom={userZoom}

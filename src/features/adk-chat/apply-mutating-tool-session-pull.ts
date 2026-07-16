@@ -11,7 +11,7 @@ import { extractContentGenDraftFromAdkState } from "@/features/content-lab/api/e
 import { offerContentGenDraftReview } from "@/features/content-lab/api/offerContentGenDraftReview";
 import { useContentGenStudioStore } from "@/features/content-lab/store/useContentGenStudioStore";
 import { mapAdkPortfolioDataMapToFrontend } from "@/features/portfolio/api/mappers";
-import { portfolioQueryKey } from "@/features/portfolio/hooks/usePortfolio";
+import { setLivePortfolioQueryData } from "@/features/portfolio/hooks/usePortfolio";
 import { usePortfolioStore } from "@/features/portfolio/store/usePortfolioStore";
 import {
   extractLinkedInSessionProfileFromAdkState,
@@ -104,10 +104,23 @@ function applyResumeState(state: Record<string, unknown>, ctx: MutatingToolPullC
 function applyPortfolioState(state: Record<string, unknown>, ctx: MutatingToolPullContext): void {
   const nextPortfolios = mapAdkPortfolioDataMapToFrontend(state.portfolio_data);
   const currentPortfolioIdRaw = state.current_portfolio;
-  const currentPortfolioId =
-    typeof currentPortfolioIdRaw === "string" && currentPortfolioIdRaw.trim().length > 0 ? currentPortfolioIdRaw.trim() : ctx.portfolioId;
+  const fromSession =
+    typeof currentPortfolioIdRaw === "string" && currentPortfolioIdRaw.trim().length > 0 ? currentPortfolioIdRaw.trim() : null;
+  const fromCtx = ctx.portfolioId?.trim() || null;
+  const fallbackId = Object.keys(nextPortfolios).find(id => id && nextPortfolios[id]) ?? null;
+  const currentPortfolioId = fromSession || fromCtx || fallbackId;
   const sourcePortfolio = currentPortfolioId ? nextPortfolios[currentPortfolioId] : undefined;
-  if (!currentPortfolioId || !sourcePortfolio) return;
+  if (!currentPortfolioId || !sourcePortfolio) {
+    if (isAdkActivityTraceEnabled()) {
+      console.warn("[adk-portfolio-pull] skip apply — no resolvable portfolio", {
+        fromSession,
+        fromCtx,
+        keys: Object.keys(nextPortfolios),
+        tool: ctx.toolName,
+      });
+    }
+    return;
+  }
 
   const baseline = ctx.baselines.portfolio;
   if (baseline && ctx.assistantMessageId?.trim()) {
@@ -116,6 +129,7 @@ function applyPortfolioState(state: Record<string, unknown>, ctx: MutatingToolPu
       useAdkPortfolioReviewStore.getState().beginReview({
         portfolioId: currentPortfolioId,
         baselinePortfolio: baseline,
+        appliedPortfolio: sourcePortfolio,
         highlights,
         bannerTitle,
         assistantMessageId: ctx.assistantMessageId,
@@ -123,8 +137,10 @@ function applyPortfolioState(state: Record<string, unknown>, ctx: MutatingToolPu
     }
   }
 
-  usePortfolioStore.setState({ portfolioData: nextPortfolios });
-  ctx.queryClient.setQueryData(portfolioQueryKey, nextPortfolios[currentPortfolioId]);
+  usePortfolioStore.setState(current => ({
+    portfolioData: { ...current.portfolioData, ...nextPortfolios },
+  }));
+  setLivePortfolioQueryData(ctx.queryClient, sourcePortfolio);
 }
 
 function applyLinkedInState(state: Record<string, unknown>, ctx: MutatingToolPullContext): void {

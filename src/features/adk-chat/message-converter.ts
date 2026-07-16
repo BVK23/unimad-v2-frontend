@@ -1,6 +1,7 @@
 import { collapseSimilarConsecutiveAiMessages } from "./collapse-similar-consecutive-ai-messages";
 import { enrichAgentMessagesFromToolEvents } from "./enrich-messages-from-tool-events";
 import { filterActiveAdkEvents, getEventInvocationId } from "./filter-active-adk-events";
+import { labelForThinkingAgent } from "./streaming/stream-activity";
 import type { AdkContent, AdkEvent, ConversionResult, TimelineActivity, AgentMessage } from "./types";
 
 function isAdkContentObject(content: AdkEvent["content"]): content is AdkContent {
@@ -142,10 +143,10 @@ function splitThoughtsIntoSections(combinedThoughts: string): string[] {
  * Currently unused but kept for potential future use
  */
 
-function extractThoughtTitle(thoughtSection: string): string {
-  // Look for **Title** pattern at the start of the section
-  const match = thoughtSection.match(/^\*\*([^*]+?)\*\*/);
-  return match ? `🤔 ${match[1].trim()}` : "🤔 AI Thinking";
+function extractThoughtTitle(thoughtSection: string, agentAuthor?: string): string {
+  // Prefer agent-scoped thinking copy; section headers stay in activity content.
+  void thoughtSection;
+  return labelForThinkingAgent(agentAuthor || "unibot");
 }
 
 /**
@@ -201,7 +202,7 @@ function hasMeaningfulActions(event: AdkEvent): boolean {
 
 /**
  * Reconstructs timeline activities from ADK events
- * MATCHES REAL-TIME STREAMING: Creates separate "🤔 AI Thinking" activities for each thought section
+ * MATCHES REAL-TIME STREAMING: Creates separate thinking activities for each thought section
  */
 function reconstructTimelineFromEvents(events: AdkEvent[]): {
   activities: TimelineActivity[];
@@ -216,7 +217,7 @@ function reconstructTimelineFromEvents(events: AdkEvent[]): {
     // Skip events without content
     if (!event.content) return;
 
-    // MATCH REAL-TIME STREAMING: Check for thought parts and create separate "🤔 AI Thinking" activities
+    // MATCH REAL-TIME STREAMING: Check for thought parts and create separate thinking activities
     const thoughtParts = extractThoughtsFromAdkEvent(event);
     const hasThoughts = thoughtParts.length > 0;
 
@@ -227,14 +228,13 @@ function reconstructTimelineFromEvents(events: AdkEvent[]): {
       const thoughtSections = splitThoughtsIntoSections(combinedThoughts);
 
       thoughtSections.forEach((section, sectionIndex) => {
-        // Always use generic "AI Thinking" title, put specific content inside
-        const title = "🤔 AI Thinking";
+        const title = labelForThinkingAgent(event.author || "unibot");
 
         const thoughtActivity: TimelineActivity = {
           id: `thought_${event.id}_${sectionIndex}`,
           type: "agent_action",
           agent: event.author || "assistant",
-          title: title, // Always use generic thinking title
+          title,
           timestamp: new Date(event.timestamp),
           metadata: {
             type: "thinking",

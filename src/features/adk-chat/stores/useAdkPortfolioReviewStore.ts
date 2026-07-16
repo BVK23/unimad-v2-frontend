@@ -1,3 +1,4 @@
+import { getPortfolioEditorialSignature } from "@/features/portfolio/utils/getPortfolioContentSignature";
 import type { PortfolioData } from "@/types";
 import { create } from "zustand";
 import { EMPTY_PORTFOLIO_HIGHLIGHT_MAP, type PortfolioHighlightMap } from "../adkPortfolioHighlightDiff";
@@ -15,6 +16,8 @@ export type AdkPortfolioReviewCard = {
   assistantMessageId: string | null;
   portfolioId: string;
   baselinePortfolioJson: string;
+  /** Content signature of the portfolio right after ADK applied (pre-user-edit). */
+  appliedContentSignature: string;
   highlights: PortfolioHighlightMap;
   bannerTitle: string;
 };
@@ -26,10 +29,13 @@ export type AdkPortfolioReviewState = {
   getActiveCard: () => AdkPortfolioReviewCard | null;
   getActiveHighlights: () => PortfolioHighlightMap;
   hasPendingReviewForPortfolio: (portfolioId: string) => boolean;
+  /** True when review is open and the live portfolio still matches the ADK-applied snapshot. */
+  isHoldingUnacceptedAdkDraft: (portfolioId: string, currentContentSignature: string) => boolean;
 
   beginReview: (input: {
     portfolioId: string;
     baselinePortfolio: PortfolioData;
+    appliedPortfolio: PortfolioData;
     highlights: PortfolioHighlightMap;
     bannerTitle: string;
     assistantMessageId?: string | null;
@@ -66,7 +72,14 @@ export const useAdkPortfolioReviewStore = create<AdkPortfolioReviewState>((set, 
     return Boolean(c && c.portfolioId === portfolioId);
   },
 
-  beginReview: ({ portfolioId, baselinePortfolio, highlights, bannerTitle, assistantMessageId }) => {
+  isHoldingUnacceptedAdkDraft: (portfolioId, currentContentSignature) => {
+    const c = get().getActiveCard();
+    if (!c || c.portfolioId !== portfolioId) return false;
+    if (!c.appliedContentSignature || !currentContentSignature) return true;
+    return currentContentSignature === c.appliedContentSignature;
+  },
+
+  beginReview: ({ portfolioId, baselinePortfolio, appliedPortfolio, highlights, bannerTitle, assistantMessageId }) => {
     if (!assistantMessageId?.trim()) return;
     if (Object.keys(highlights).length === 0) return;
     if (hasReviewForAssistant(get().reviewStack, assistantMessageId)) return;
@@ -75,6 +88,7 @@ export const useAdkPortfolioReviewStore = create<AdkPortfolioReviewState>((set, 
       assistantMessageId: assistantMessageId ?? null,
       portfolioId,
       baselinePortfolioJson: JSON.stringify(baselinePortfolio),
+      appliedContentSignature: getPortfolioEditorialSignature(appliedPortfolio),
       highlights,
       bannerTitle,
     };

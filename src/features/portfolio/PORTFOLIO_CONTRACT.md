@@ -139,22 +139,24 @@ Requires `ADK_BACKEND_URL` (session PATCH/GET). `AGENT_ENGINE_ENDPOINT` disables
 
 ### Mutating tool names (must match Python + `MUTATING_PORTFOLIO_TOOL_NAMES`)
 
-| Tool                      | Purpose                                                    |
-| ------------------------- | ---------------------------------------------------------- |
-| `update_profile_field`    | Single hero field                                          |
-| `update_profile`          | Batch hero JSON patch                                      |
-| `add_block`               | Add grid block (all `ContentType` values)                  |
-| `update_block`            | Partial block update by internal id (JSON)                 |
-| `update_block_content`    | Update block body/title by `block_id` (preferred for text) |
-| `update_block_by_heading` | Update block by visible title (e.g. Quick Summary)         |
-| `remove_block`            | Remove block                                               |
-| `reorder_blocks`          | JSON array of block ids in order                           |
-| `duplicate_block`         | Clone block after source                                   |
-| `add_page_block`          | Add nested block inside a page-card/project detailed view  |
-| `update_page_block`       | Patch nested block inside page-card/project                |
-| `remove_page_block`       | Remove nested block inside page-card/project               |
-| `reorder_page_blocks`     | Reorder nested blocks inside page-card/project             |
-| `duplicate_page_block`    | Duplicate nested block inside page-card/project            |
+| Tool                                   | Purpose                                                                                      |
+| -------------------------------------- | -------------------------------------------------------------------------------------------- |
+| `update_profile_field`                 | Single hero field                                                                            |
+| `update_profile`                       | Batch hero JSON patch                                                                        |
+| `add_block`                            | Add grid block (all `ContentType` values)                                                    |
+| `update_block`                         | Partial block update by internal id (JSON)                                                   |
+| `update_block_content`                 | Update block body/title by `block_id` (preferred for text)                                   |
+| `update_block_by_heading`              | Update block by visible title (e.g. Quick Summary)                                           |
+| `upsert_portfolio_section_content`     | Create/update a named section text block                                                     |
+| `upsert_domain_profile_fit_skill_card` | Create/update one Profile Fit skill page-card on the main grid (quote + nested story fields) |
+| `remove_block`                         | Remove block                                                                                 |
+| `reorder_blocks`                       | JSON array of block ids in order                                                             |
+| `duplicate_block`                      | Clone block after source                                                                     |
+| `add_page_block`                       | Add nested block inside a page-card/project detailed view                                    |
+| `update_page_block`                    | Patch nested block inside page-card/project                                                  |
+| `remove_page_block`                    | Remove nested block inside page-card/project                                                 |
+| `reorder_page_blocks`                  | Reorder nested blocks inside page-card/project                                               |
+| `duplicate_page_block`                 | Duplicate nested block inside page-card/project                                              |
 
 Read tools: `get_portfolio`, `get_profile`, `get_items`, `get_item`, `get_section`, `get_page_blocks`, `get_page_block`.
 

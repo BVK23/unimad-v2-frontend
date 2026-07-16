@@ -38,7 +38,7 @@ const TOKENS = {
   },
   lineHeights: {
     heading: 1.0,
-    body: 1.15,
+    body: 1.3,
   },
   fontWeight: {
     regular: 400,
@@ -68,7 +68,7 @@ const styles = StyleSheet.create({
     marginBottom: TOKENS.spacing.header_divider_top,
   },
   section: {
-    marginTop: TOKENS.spacing.lg,
+    marginTop: 12,
   },
   sectionTitle: {
     fontSize: TOKENS.sizes.sectionTitle,
@@ -83,8 +83,8 @@ const styles = StyleSheet.create({
     width: "100%",
     borderBottomWidth: 1,
     borderBottomColor: TOKENS.colors.divider,
-    marginTop: 2,
-    marginBottom: 8,
+    marginTop: TOKENS.spacing.xs,
+    marginBottom: TOKENS.spacing.header_divider_bottom,
   },
   entryRow: {
     marginBottom: TOKENS.spacing.entry_gap,
@@ -143,7 +143,11 @@ const Experiences = ({ experiences }: { experiences: ResumeData["experience"] })
       </View>
       {visibleExperiences.map((exp, i) => (
         // Each experience is an anchor block — Company+Role+Location+Dates+Description stay together
-        <View key={i} style={styles.entryRow} wrap={false}>
+        <View
+          key={i}
+          style={{ ...styles.entryRow, marginBottom: i === visibleExperiences.length - 1 ? 0 : TOKENS.spacing.entry_gap }}
+          wrap={false}
+        >
           <View style={styles.entryHeader}>
             <View style={styles.entryLeft}>
               <Text style={styles.entryTitle}>{exp.company}</Text>
@@ -186,7 +190,11 @@ const Projects = ({ projects }: { projects: ResumeData["projects"] }) => {
       </View>
       {visibleProjects.map((proj, i) => (
         // Each project is an anchor block — Title+Description stay together
-        <View key={i} style={{ ...styles.entryRow, marginBottom: TOKENS.spacing.md }} wrap={false}>
+        <View
+          key={i}
+          style={{ ...styles.entryRow, marginBottom: i === visibleProjects.length - 1 ? 0 : TOKENS.spacing.entry_gap }}
+          wrap={false}
+        >
           {proj.url ? (
             <Link
               src={proj.url.startsWith("http") ? proj.url : `https://${proj.url}`}
@@ -235,12 +243,14 @@ const Skills = ({ skills }: { skills: ResumeData["skills"] }) => {
     {} as Record<string, string[]>
   );
 
+  const groupedEntries = Object.entries(grouped);
+
   return (
     <View style={styles.section} wrap={false}>
       <Text style={styles.sectionTitle}>Skills</Text>
       <View style={styles.sectionDivider} />
-      {Object.entries(grouped).map(([cat, list], i) => (
-        <View key={i} style={{ flexDirection: "row", marginBottom: 2 }}>
+      {groupedEntries.map(([cat, list], i) => (
+        <View key={i} style={{ flexDirection: "row", marginBottom: i === groupedEntries.length - 1 ? 0 : 2 }}>
           <Text
             style={{
               width: 14,
@@ -250,7 +260,7 @@ const Skills = ({ skills }: { skills: ResumeData["skills"] }) => {
           >
             •
           </Text>
-          <Text style={styles.paragraph}>
+          <Text style={{ ...styles.paragraph, marginBottom: 0 }}>
             <Text style={{ fontWeight: TOKENS.fontWeight.bold }}>{cat}:</Text> {list.join(", ")}
           </Text>
         </View>
@@ -270,7 +280,11 @@ const Certifications = ({ certifications }: { certifications: ResumeData["certif
       </View>
       {visibleCertifications.map((cert, i) => (
         // Each cert is an anchor block — Title+Issuer+Date stay together
-        <View key={i} style={{ marginBottom: TOKENS.spacing.md }} wrap={false}>
+        <View
+          key={i}
+          style={{ ...styles.entryRow, marginBottom: i === visibleCertifications.length - 1 ? 0 : TOKENS.spacing.entry_gap }}
+          wrap={false}
+        >
           <View style={styles.entryHeader}>
             <View style={styles.entryLeft}>
               {cert.credentialUrl ? (
@@ -321,7 +335,11 @@ const Educations = ({ educations }: { educations: ResumeData["education"] }) => 
       </View>
       {visibleEducations.map((edu, i) => (
         // Each education is an anchor block — Degree+School+Dates+Description stay together
-        <View key={i} style={{ marginBottom: TOKENS.spacing.md }} wrap={false}>
+        <View
+          key={i}
+          style={{ ...styles.entryRow, marginBottom: i === visibleEducations.length - 1 ? 0 : TOKENS.spacing.entry_gap }}
+          wrap={false}
+        >
           <View style={styles.entryHeader}>
             <View style={styles.entryLeft}>
               <Text style={styles.entryTitle}>{edu.degree || edu.school}</Text>
@@ -362,7 +380,11 @@ const SectionRenderer = ({ resume, type }: { resume: ResumeData; type: string })
     return (
       <View style={styles.section}>
         {visibleItems.map((item, i) => (
-          <View key={i} style={styles.entryRow} wrap={false}>
+          <View
+            key={i}
+            style={{ ...styles.entryRow, marginBottom: i === visibleItems.length - 1 ? 0 : TOKENS.spacing.entry_gap }}
+            wrap={false}
+          >
             {i === 0 && (
               <View wrap={false}>
                 <Text style={styles.sectionTitle}>{customSection.title || "Custom Section"}</Text>

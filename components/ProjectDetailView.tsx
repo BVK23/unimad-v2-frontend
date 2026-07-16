@@ -1,4 +1,4 @@
-import React, { useState, useRef, type SetStateAction } from "react";
+import React, { useEffect, useState, useRef, type SetStateAction } from "react";
 import type { PortfolioHighlightMap } from "@/features/adk-chat/adkPortfolioHighlightDiff";
 import { getPortfolioBlockDeleteLabel } from "@/features/portfolio/utils/getPortfolioBlockDeleteLabel";
 import { normalizePortfolioRichTextForRender } from "@/features/portfolio/utils/portfolio-html";
@@ -53,6 +53,11 @@ interface ProjectDetailViewProps {
   onTextSelectionChange?: (info: RichTextEditorSelectionInfo | null) => void;
   selectionImproveSlot?: React.ReactNode;
   onUploadError?: (message: string) => void;
+  /**
+   * When true (default), nested page interiors suppress templateSectionTitle → H1 defaults.
+   * VPD uses the nested canvas as the full document — pass false so section titles match Studio preview.
+   */
+  isNestedDetailView?: boolean;
 }
 
 const ProjectDetailView: React.FC<ProjectDetailViewProps> = ({
@@ -71,6 +76,7 @@ const ProjectDetailView: React.FC<ProjectDetailViewProps> = ({
   onTextSelectionChange,
   selectionImproveSlot,
   onUploadError,
+  isNestedDetailView = true,
 }) => {
   const [uncontrolledEditMode, setUncontrolledEditMode] = useState(true);
   const isEditMode = isEditModeProp ?? uncontrolledEditMode;
@@ -79,6 +85,7 @@ const ProjectDetailView: React.FC<ProjectDetailViewProps> = ({
   const [draggedBlockIndex, setDraggedBlockIndex] = useState<number | null>(null);
   const [contextMenu, setContextMenu] = useState<{ x: number; y: number; targetId?: string } | null>(null);
   const [pendingDeleteBlockId, setPendingDeleteBlockId] = useState<string | null>(null);
+  const [selectedNestedPageId, setSelectedNestedPageId] = useState<string | null>(null);
   const [coverUploadError, setCoverUploadError] = useState<string | null>(null);
   const [isCoverUploading, setIsCoverUploading] = useState(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
@@ -118,6 +125,17 @@ const ProjectDetailView: React.FC<ProjectDetailViewProps> = ({
   });
   const allowedTypes: ContentType[] = allowedBlockTypes || ["text", "media", "page-card", "link-box", "table", "embed"];
   const editorMaxWidth = maxWidthClassName || "max-w-4xl";
+
+  const selectedNestedPage =
+    selectedNestedPageId != null
+      ? (blocks.find(block => block.id === selectedNestedPageId && (block.type === "page-card" || block.type === "project")) ?? null)
+      : null;
+
+  useEffect(() => {
+    if (!selectedNestedPageId) return;
+    const stillExists = blocks.some(block => block.id === selectedNestedPageId && (block.type === "page-card" || block.type === "project"));
+    if (!stillExists) setSelectedNestedPageId(null);
+  }, [blocks, selectedNestedPageId]);
 
   const handleUpdateBlock = (id: string, updates: Partial<PortfolioItem>) => {
     const newBlocks = blocks.map(b => (b.id === id ? { ...b, ...updates } : b));
@@ -356,6 +374,31 @@ const ProjectDetailView: React.FC<ProjectDetailViewProps> = ({
     else e.currentTarget.style.cursor = "default";
   };
 
+  if (selectedNestedPage) {
+    return (
+      <ProjectDetailView
+        project={selectedNestedPage}
+        onBack={() => setSelectedNestedPageId(null)}
+        onUpdateProject={updated => {
+          handleUpdateBlocks(blocks.map(block => (block.id === updated.id ? updated : block)));
+        }}
+        allowedBlockTypes={allowedBlockTypes}
+        maxWidthClassName={maxWidthClassName}
+        gridColumns={gridColumns}
+        adkHighlights={adkHighlights}
+        backLabel="Back"
+        hideToolbar={false}
+        isEditMode={isEditMode}
+        onToggleEditMode={onToggleEditMode}
+        enableSelectionImprove={enableSelectionImprove}
+        onTextSelectionChange={onTextSelectionChange}
+        selectionImproveSlot={selectionImproveSlot}
+        onUploadError={onUploadError}
+        isNestedDetailView
+      />
+    );
+  }
+
   return (
     <div className="scrollbar-on-hover [scrollbar-gutter:stable] relative h-full flex-1 animate-in overflow-y-auto bg-slate-50 duration-300 slide-in-from-right dark:bg-slate-950">
       <input
@@ -485,100 +528,115 @@ const ProjectDetailView: React.FC<ProjectDetailViewProps> = ({
           ref={gridRef as React.RefObject<HTMLDivElement>}
           className={`grid grid-cols-1 ${gridColumns === 12 ? "md:grid-cols-12" : "md:grid-cols-3"} gap-6 relative`}
         >
-          {blocks.map((block, index) => (
-            <div
-              key={block.id}
-              style={{
-                gridColumnStart: block.colStart,
-                ...(block.height && block.type !== "text" ? { height: `${block.height}px` } : {}),
-              }}
-              className={`
+          {blocks.map((block, index) => {
+            // Text + page-cards size to content. Fixed height on page-cards (e.g. VPD
+            // problem tiles at 280px) clips cover+title+subtitle and lets siblings overlap.
+            // Tables size to rows (fixed height clips metric grids when rows are added).
+            const isContentSizedBlock =
+              block.type === "text" || block.type === "page-card" || block.type === "project" || block.type === "table";
+            const blockSizeStyle =
+              block.height && !isContentSizedBlock
+                ? { height: `${block.height}px` }
+                : block.height && (block.type === "page-card" || block.type === "project")
+                  ? { minHeight: `${block.height}px` }
+                  : undefined;
+
+            return (
+              <div
+                key={block.id}
+                style={{
+                  gridColumnStart: block.colStart,
+                  ...blockSizeStyle,
+                }}
+                className={`
                 ${getSpanClass(block.span)} 
                 relative group transition-all duration-300
                 ${isEditMode ? "rounded-[2rem]" : ""}
                 ${draggedBlockIndex === index ? "opacity-30 scale-[0.98]" : "opacity-100"}
-                ${block.type === "link-box" ? "self-start" : ""}
+                ${block.type === "link-box" || isContentSizedBlock ? "self-start" : ""}
               `}
-            >
-              <PortfolioAdkBlockHighlight kind={adkHighlights?.[`page:${project.id}:block:${block.id}`]} className="h-full w-full">
-                <div
-                  ref={node => {
-                    itemRefs.current[block.id] = node;
-                  }}
-                  onDragOver={e => handleDragOver(e, index)}
-                  onDragEnd={resetDragState}
-                  onContextMenu={e => handleContextMenu(e, block.id)}
-                  onMouseDown={e => handleEdgeResizeStart(e, block)}
-                  onMouseMove={e => handleEdgeResizeHover(e, block)}
-                  onMouseLeave={e => {
-                    e.currentTarget.style.cursor = "default";
-                  }}
-                  onMouseUpCapture={() => {
-                    dragHandleArmedBlockIdRef.current = null;
-                  }}
-                  className="w-full relative h-auto"
-                >
-                  {/* Block Controls */}
-                  {isEditMode && (
-                    <div className="absolute -left-6 top-1/2 -translate-y-1/2 opacity-0 pointer-events-none group-hover:opacity-100 group-hover:pointer-events-auto transition-opacity flex flex-col gap-2 z-30">
-                      <div
-                        className="p-1.5 cursor-move text-slate-400 hover:text-slate-600 bg-white dark:bg-slate-800 rounded-lg shadow-xl border border-slate-100 dark:border-white/5"
-                        draggable={!resizing}
-                        onMouseDown={e => {
-                          e.stopPropagation();
-                          dragHandleArmedBlockIdRef.current = block.id;
-                        }}
-                        onDragStart={e => handleDragStart(e, index, block.id)}
-                        onDragEnd={resetDragState}
-                        onMouseUp={() => {
-                          dragHandleArmedBlockIdRef.current = null;
-                        }}
-                      >
-                        <GripVertical size={14} />
+              >
+                <PortfolioAdkBlockHighlight kind={adkHighlights?.[`page:${project.id}:block:${block.id}`]} className="h-full w-full">
+                  <div
+                    ref={node => {
+                      itemRefs.current[block.id] = node;
+                    }}
+                    onDragOver={e => handleDragOver(e, index)}
+                    onDragEnd={resetDragState}
+                    onContextMenu={e => handleContextMenu(e, block.id)}
+                    onMouseDown={e => handleEdgeResizeStart(e, block)}
+                    onMouseMove={e => handleEdgeResizeHover(e, block)}
+                    onMouseLeave={e => {
+                      e.currentTarget.style.cursor = "default";
+                    }}
+                    onMouseUpCapture={() => {
+                      dragHandleArmedBlockIdRef.current = null;
+                    }}
+                    className="w-full relative h-auto"
+                  >
+                    {/* Block Controls */}
+                    {isEditMode && (
+                      <div className="absolute -left-6 top-1/2 -translate-y-1/2 opacity-0 pointer-events-none group-hover:opacity-100 group-hover:pointer-events-auto transition-opacity flex flex-col gap-2 z-30">
+                        <div
+                          className="p-1.5 cursor-move text-slate-400 hover:text-slate-600 bg-white dark:bg-slate-800 rounded-lg shadow-xl border border-slate-100 dark:border-white/5"
+                          draggable={!resizing}
+                          onMouseDown={e => {
+                            e.stopPropagation();
+                            dragHandleArmedBlockIdRef.current = block.id;
+                          }}
+                          onDragStart={e => handleDragStart(e, index, block.id)}
+                          onDragEnd={resetDragState}
+                          onMouseUp={() => {
+                            dragHandleArmedBlockIdRef.current = null;
+                          }}
+                        >
+                          <GripVertical size={14} />
+                        </div>
+                        <button
+                          type="button"
+                          onClick={e => {
+                            e.stopPropagation();
+                            requestDeleteBlock(block.id);
+                          }}
+                          className="p-1.5 text-slate-400 hover:text-red-500 bg-white dark:bg-slate-800 rounded-lg shadow-xl border border-slate-100 dark:border-white/5 transition-colors"
+                          title="Delete block"
+                        >
+                          <Trash2 size={14} />
+                        </button>
                       </div>
-                      <button
-                        type="button"
-                        onClick={e => {
-                          e.stopPropagation();
-                          requestDeleteBlock(block.id);
-                        }}
-                        className="p-1.5 text-slate-400 hover:text-red-500 bg-white dark:bg-slate-800 rounded-lg shadow-xl border border-slate-100 dark:border-white/5 transition-colors"
-                        title="Delete block"
-                      >
-                        <Trash2 size={14} />
-                      </button>
-                    </div>
-                  )}
+                    )}
 
-                  <BlockRenderer
-                    item={block}
-                    isEditMode={isEditMode}
-                    onUpdate={handleUpdateBlock}
-                    isNestedDetailView
-                    enableSelectionImprove={enableSelectionImprove}
-                    onTextSelectionChange={onTextSelectionChange}
-                    selectionImproveSlot={selectionImproveSlot}
-                    onUploadError={onUploadError}
-                  />
+                    <BlockRenderer
+                      item={block}
+                      isEditMode={isEditMode}
+                      onUpdate={handleUpdateBlock}
+                      onSelectProject={page => setSelectedNestedPageId(page.id)}
+                      isNestedDetailView={isNestedDetailView}
+                      enableSelectionImprove={enableSelectionImprove}
+                      onTextSelectionChange={onTextSelectionChange}
+                      selectionImproveSlot={selectionImproveSlot}
+                      onUploadError={onUploadError}
+                    />
 
-                  {isEditMode && (
-                    <>
-                      <div
-                        className="absolute inset-y-0 left-0 w-[18px] cursor-ew-resize z-20"
-                        onMouseDown={e => initResize(e, block, "x", "left")}
-                        title="Resize width"
-                      />
-                      <div
-                        className="absolute inset-y-0 right-0 w-[18px] cursor-ew-resize z-20"
-                        onMouseDown={e => initResize(e, block, "x", "right")}
-                        title="Resize width"
-                      />
-                    </>
-                  )}
-                </div>
-              </PortfolioAdkBlockHighlight>
-            </div>
-          ))}
+                    {isEditMode && (
+                      <>
+                        <div
+                          className="absolute inset-y-0 left-0 w-[18px] cursor-ew-resize z-20"
+                          onMouseDown={e => initResize(e, block, "x", "left")}
+                          title="Resize width"
+                        />
+                        <div
+                          className="absolute inset-y-0 right-0 w-[18px] cursor-ew-resize z-20"
+                          onMouseDown={e => initResize(e, block, "x", "right")}
+                          title="Resize width"
+                        />
+                      </>
+                    )}
+                  </div>
+                </PortfolioAdkBlockHighlight>
+              </div>
+            );
+          })}
 
           {/* Editor Inline Menu */}
           {isEditMode && (

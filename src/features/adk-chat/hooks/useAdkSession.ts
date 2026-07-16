@@ -6,6 +6,8 @@ import { createSessionAction, deleteSessionAction, listSessionsAction, type Sess
 import { clearPersistedActiveSessionId, loadPersistedActiveSessionId, persistActiveSessionId } from "../active-session-persist";
 import { UNTITLED_THREAD_TITLE } from "../constants";
 import { findReusableUntitledMainSession } from "../main-session-activity";
+import { resolveAdkSessionOptionsForRegistryRow, resolveAdkSessionOptionsForSessionId } from "../resolve-sub-session-adk-app";
+import type { AdkSessionServiceOptions } from "../session-history";
 import type { UnibotSessionKind } from "../session-metadata";
 import { clearAllSessionMutatingToolTracking } from "../session-mutating-tool-tracker";
 import { getRegistryRow, getSubsForMain, removeRegistrySessions, setSessionRegistry, upsertRegistryRow } from "../session-registry";
@@ -13,6 +15,7 @@ import {
   deleteUnibotAdkSessionRegistryAction,
   listUnibotAdkSessionsAction,
   registerUnibotAdkSessionAction,
+  type UnibotAdkSessionDeleteTarget,
 } from "../unibot-adk-session-actions";
 
 function getDeletedSessionsStorageKey(userId: string): string {
@@ -194,6 +197,13 @@ export function useAdkSession(userId: string): UseAdkSessionReturn {
         getSubsForMain(sessionIdToDelete).forEach(s => optimisticIds.add(s.adk_session_id));
       }
 
+      // Capture ADK app options before clearing the in-memory registry (subs live under
+      // coverletter / resume_* / etc., not the default unibot app).
+      const deleteOptionsById = new Map<string, AdkSessionServiceOptions>();
+      for (const id of optimisticIds) {
+        deleteOptionsById.set(id, resolveAdkSessionOptionsForSessionId(id));
+      }
+
       const remainingSessions = previousSessions.filter(s => !optimisticIds.has(s.id));
       setSessions(remainingSessions);
       removeRegistrySessions(optimisticIds);
@@ -210,9 +220,28 @@ export function useAdkSession(userId: string): UseAdkSessionReturn {
 
       try {
         const regResult = await deleteUnibotAdkSessionRegistryAction(sessionIdToDelete);
-        const adkIds = regResult.adk_session_ids_to_delete.length ? regResult.adk_session_ids_to_delete : Array.from(optimisticIds);
+        const targets: UnibotAdkSessionDeleteTarget[] =
+          regResult.sessions_to_delete.length > 0
+            ? regResult.sessions_to_delete
+            : (regResult.adk_session_ids_to_delete.length ? regResult.adk_session_ids_to_delete : Array.from(optimisticIds)).map(id => ({
+                adk_session_id: id,
+                kind: "main",
+              }));
 
-        const adkResults = await Promise.allSettled(adkIds.map(id => deleteSessionAction(userId, id)));
+        for (const target of targets) {
+          if (deleteOptionsById.has(target.adk_session_id)) continue;
+          deleteOptionsById.set(
+            target.adk_session_id,
+            resolveAdkSessionOptionsForRegistryRow({
+              kind: (target.kind === "sub" ? "sub" : "main") as UnibotSessionKind,
+              feature: target.feature ?? null,
+              section: target.section ?? null,
+            })
+          );
+        }
+
+        const adkIds = targets.map(t => t.adk_session_id);
+        const adkResults = await Promise.allSettled(adkIds.map(id => deleteSessionAction(userId, id, deleteOptionsById.get(id) ?? {})));
         const failedIds = adkIds.filter((_, i) => {
           const r = adkResults[i];
           return r.status === "rejected" || (r.status === "fulfilled" && !r.value.success);

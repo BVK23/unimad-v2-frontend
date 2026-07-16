@@ -111,6 +111,16 @@ export interface ContactButton {
   isVisible: boolean;
 }
 
+export interface PortfolioContextSnapshot {
+  portfolio_generated_at?: string | null;
+  replaced_at?: string | null;
+  reverted_at?: string | null;
+  can_revert?: boolean;
+  edited_since_replace?: boolean;
+  /** Manual save / autosave counter (scratch engagement nudge). */
+  number_of_edits?: number;
+}
+
 export interface PortfolioData {
   id: string;
   title: string;
@@ -121,6 +131,7 @@ export interface PortfolioData {
   customDomain?: string;
   profile: UserProfile;
   items: PortfolioItem[];
+  contextSnapshot?: PortfolioContextSnapshot;
 }
 
 // Chat Types
@@ -137,6 +148,8 @@ export interface ChatMessage {
   role: "user" | "model";
   text: string;
   timestamp: Date;
+  /** ADK author for model messages (e.g. ats_agent); used for streaming display heuristics. */
+  agent?: string;
   /** ADK invocation id for rewind (user messages only). */
   invocationId?: string;
   // Topic / Context Support (improve sub-chats embedded in main transcript)
@@ -154,12 +167,23 @@ export interface ChatMessage {
   /** Assistant bubble failed (rate limit, stream error, etc.). */
   isError?: boolean;
   errorKind?: "rate_limit" | "generic";
+  /**
+   * Interim model narration from ReAct loops (cleared from `text` when a mutating tool runs).
+   * Collapsible in the chat UI; lighter than the final reply.
+   */
+  intermediateNarration?: string;
   /** Present on user messages created by selection quick-action or freeform refine. */
   assetActionMeta?: AssetActionMeta;
   /** Derived content scope used for rewind safety checks. */
   contentScope?: ContentScope;
   /** Go-to-page button from `suggest_unimad_navigation` tool. */
-  unimadNavigation?: { path: string; label: string };
+  unimadNavigation?: {
+    path: string;
+    label: string;
+    action?: "portfolio_regenerate";
+    confirm?: boolean;
+    confirm_message?: string;
+  };
   /** Compact job cards from `fetch_recommended_jobs` / `search_jobs_for_user`. */
   unimadJobCards?: import("@/src/features/adk-chat/parse-unimad-job-cards").UnimadJobCardsPayload;
   /** Copy-ready LinkedIn suggestion cards from `present_linkedin_suggestions`. */

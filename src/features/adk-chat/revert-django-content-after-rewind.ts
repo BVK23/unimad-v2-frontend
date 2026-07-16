@@ -7,7 +7,7 @@ import { CONTENT_GEN_EVENTS } from "@/features/content-lab/api/content-gen-event
 import { updateContentGenAsset } from "@/features/content-lab/server-actions/content-lab-actions";
 import { useContentGenStudioStore } from "@/features/content-lab/store/useContentGenStudioStore";
 import { mapFrontendPortfolioToBackend } from "@/features/portfolio/api/mappers";
-import { portfolioQueryKey } from "@/features/portfolio/hooks/usePortfolio";
+import { setLivePortfolioQueryData } from "@/features/portfolio/hooks/usePortfolio";
 import { updatePortfolioContent } from "@/features/portfolio/server-actions/portfolio-actions";
 import { usePortfolioStore } from "@/features/portfolio/store/usePortfolioStore";
 import { buildAdkLinkedInStateDelta } from "@/src/features/linkedin/api/adk-mappers";
@@ -140,7 +140,7 @@ export async function revertDjangoContentAfterRewind(params: {
     await updatePortfolioContent(mapFrontendPortfolioToBackend(portfolio));
     const merged = { ...usePortfolioStore.getState().portfolioData, [portfolio.id]: portfolio };
     usePortfolioStore.setState({ portfolioData: merged });
-    queryClient.setQueryData(portfolioQueryKey, portfolio);
+    setLivePortfolioQueryData(queryClient, portfolio);
     await syncAdkContentStateOnAccept(userId, mainSessionId, payload);
     window.dispatchEvent(
       new CustomEvent("portfolio-adk-discard", {

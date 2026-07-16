@@ -9,9 +9,14 @@ import { BookOpen, ChevronRight, Sparkles, X } from "lucide-react";
 import { usePathname, useRouter } from "next/navigation";
 
 export type UniboardHelpFloaterProps = {
-  /** Portfolio-only: show “Generate portfolio with Unibot”. */
+  /** Portfolio-only: show generate / regenerate CTA. */
   onGeneratePortfolio?: () => void;
   showPortfolioGenerate?: boolean;
+  /** Defaults to “Generate portfolio with Unibot”. */
+  portfolioGenerateLabel?: string;
+  /** Portfolio-only: revert last Replace Portfolio Gen. */
+  onRevertPortfolio?: () => void;
+  showPortfolioRevert?: boolean;
 };
 
 type KnowledgeBaseAvailability = {
@@ -35,7 +40,13 @@ type KnowledgeBaseAvailability = {
  * When adding a new feature knowledge base, wire it here — do not put a separate
  * toolbar “i” / help button on the feature page. See AGENTS.md.
  */
-export function UniboardHelpFloater({ onGeneratePortfolio, showPortfolioGenerate = false }: UniboardHelpFloaterProps) {
+export function UniboardHelpFloater({
+  onGeneratePortfolio,
+  showPortfolioGenerate = false,
+  portfolioGenerateLabel = "Generate portfolio with Unibot",
+  onRevertPortfolio,
+  showPortfolioRevert = false,
+}: UniboardHelpFloaterProps) {
   const pathname = usePathname() ?? "";
   const router = useRouter();
   const { featureGates } = useOnboardingGate();
@@ -128,7 +139,21 @@ export function UniboardHelpFloater({ onGeneratePortfolio, showPortfolioGenerate
                 }}
                 className="flex w-full items-center justify-between rounded-lg px-3 py-2.5 text-left text-sm font-medium text-slate-700 transition-colors hover:bg-slate-50 dark:text-slate-200 dark:hover:bg-slate-800"
               >
-                <span>Generate portfolio with Unibot</span>
+                <span>{portfolioGenerateLabel}</span>
+                <ChevronRight size={14} className="text-slate-400" />
+              </button>
+            ) : null}
+
+            {showPortfolioRevert && onRevertPortfolio ? (
+              <button
+                type="button"
+                onClick={() => {
+                  onRevertPortfolio();
+                  setOpen(false);
+                }}
+                className="flex w-full items-center justify-between rounded-lg px-3 py-2.5 text-left text-sm font-medium text-slate-700 transition-colors hover:bg-slate-50 dark:text-slate-200 dark:hover:bg-slate-800"
+              >
+                <span>Revert to previous portfolio</span>
                 <ChevronRight size={14} className="text-slate-400" />
               </button>
             ) : null}

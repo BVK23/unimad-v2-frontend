@@ -52,16 +52,22 @@ export function ApplicationDocumentPageFrame({
       const width = viewport.clientWidth;
       if (width <= 0) return;
       const fitScale = Math.min(MAX_SCALE, (width - PREVIEW_PADDING_PX) / A4_WIDTH_PX);
-      setScale(Math.max(MIN_SCALE, fitScale) * userZoom);
-      setPageHeight(page.offsetHeight);
+      const nextScale = Math.max(MIN_SCALE, fitScale) * userZoom;
+      const nextHeight = page.offsetHeight;
+      // Guard against no-op updates — otherwise scrollbar ↔ scale feedback can
+      // re-render every frame and look like two flickering preview copies.
+      setScale(prev => (Math.abs(prev - nextScale) < 0.001 ? prev : nextScale));
+      setPageHeight(prev => (prev === nextHeight ? prev : nextHeight));
     };
 
     update();
     const ro = new ResizeObserver(update);
     ro.observe(viewport);
     ro.observe(page);
+    // Do not depend on `children` — a new element identity each parent render
+    // would reconnect the observer and restart the scale loop.
     return () => ro.disconnect();
-  }, [variant, children, userZoom]);
+  }, [variant, userZoom]);
 
   if (variant === "studio") {
     return (
@@ -80,7 +86,7 @@ export function ApplicationDocumentPageFrame({
   const scaledHeight = pageHeight > 0 ? pageHeight * scale : undefined;
   const viewportClassName = externalScroll
     ? `w-full min-w-0 bg-slate-100 dark:bg-slate-900/50 ${className}`
-    : `scrollbar-on-hover flex h-full min-h-0 w-full min-w-0 flex-1 overflow-y-auto overflow-x-hidden bg-slate-100 dark:bg-slate-900/50 ${className}`;
+    : `scrollbar-on-hover [scrollbar-gutter:stable] flex h-full min-h-0 w-full min-w-0 flex-1 overflow-y-auto overflow-x-hidden bg-slate-100 dark:bg-slate-900/50 ${className}`;
 
   return (
     <div ref={viewportRef} className={viewportClassName}>

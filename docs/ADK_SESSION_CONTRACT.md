@@ -93,11 +93,18 @@ Sub-threads use `getStateDeltaForScope` with the registry `contentKey` (e.g. `re
 
 `unimadStreamActivity` progress events from ADK middleware (`sse_activity_middleware.py`) are **off by default** (`UNIMAD_ADK_SSE_PROGRESS=0`). Loading labels should come from real SSE (`functionCall`, `transferToAgent`, `author`). While PATCH runs, the frontend shows `Waking up Unibot…` via `isSyncingContext`.
 
+## Intermediate chat narration (ReAct parking)
+
+Mutating-tool turns often stream interim prose before apply tools. The frontend **parks** that text into `intermediateNarration` (collapsible, lighter UI) and keeps the post-mutation status as the final `text` bubble. Classification is by **mutating tool call/response**, not by Unibot vs sub-agent author.
+
+Engineering write-up: [19 — Intermediate chat narration](https://app.clickup.com/90161632295/v/dc/2kz0un17-76/2kz0un17-6216) (under [ADK Master Index](https://app.clickup.com/90161632295/v/dc/2kz0un17-76/2kz0un17-4276)).
+
 ## Code map
 
 - PATCH before send: `useAdkStreamingManager.patchSessionContextBeforeSend`
 - Mutating tool registry: `src/features/adk-chat/session-mutating-tools.ts`
 - GET + store apply: `src/features/adk-chat/apply-mutating-tool-session-pull.ts`
 - Loading labels: `src/features/adk-chat/streaming/stream-activity.ts`
+- Intermediate narration park/UI: `streaming/stream-processor.ts`, `components/chat/IntermediateNarrationToggle.tsx`
 - Review sync / dismiss: `src/features/adk-chat/sync-content-gen-review-with-persisted.ts`
 - Route UI sync: `src/features/adk-chat/hooks/useSyncUnibotUiToRoute.ts`

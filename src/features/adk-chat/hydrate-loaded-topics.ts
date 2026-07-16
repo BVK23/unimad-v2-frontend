@@ -3,11 +3,9 @@
 import { inferAssetActionMetaFromUserText } from "@/features/application-assets/api/inferAssetActionMetaFromUserText";
 import type { ChatMessage } from "@/types";
 
-/** At or below this count, sub-thread toggles load expanded; above it, collapsed. */
-export const SUB_THREAD_COLLAPSE_THRESHOLD = 2;
-
-export function shouldCollapseTopicsOnLoad(topicCount: number): boolean {
-  return topicCount > SUB_THREAD_COLLAPSE_THRESHOLD;
+/** Sub-threads always load collapsed; expand only via toggle or History → Reply. */
+export function shouldCollapseTopicsOnLoad(_topicCount: number): boolean {
+  return true;
 }
 
 function enrichNestedMessages(messages: ChatMessage[] | undefined): ChatMessage[] | undefined {
@@ -19,16 +17,13 @@ function enrichNestedMessages(messages: ChatMessage[] | undefined): ChatMessage[
   });
 }
 
-/** Restore RefineActionCard metadata; expand topic threads after history load when few subs. */
+/** Restore RefineActionCard metadata; keep all topic threads collapsed after history load. */
 export function hydrateLoadedTopicMessages(messages: ChatMessage[]): ChatMessage[] {
-  const topicCount = messages.filter(msg => msg.isTopic).length;
-  const collapseOnLoad = shouldCollapseTopicsOnLoad(topicCount);
-
   return messages.map(msg => {
     if (!msg.isTopic) return msg;
     return {
       ...msg,
-      isExpanded: collapseOnLoad ? false : true,
+      isExpanded: false,
       messages: enrichNestedMessages(msg.messages),
     };
   });

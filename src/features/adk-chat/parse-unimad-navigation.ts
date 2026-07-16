@@ -1,6 +1,10 @@
 export type UnimadNavigationAction = {
   path: string;
   label: string;
+  /** When set, FE may run a special flow instead of plain navigation. */
+  action?: "portfolio_regenerate";
+  confirm?: boolean;
+  confirm_message?: string;
 };
 
 function asRecord(value: unknown): Record<string, unknown> | null {
@@ -47,17 +51,47 @@ function navigationFromUi(response: Record<string, unknown>): UnimadNavigationAc
   const path = nav.path;
   const label = nav.label;
   if (typeof path === "string" && path.trim() && typeof label === "string" && label.trim()) {
-    return { path: path.trim(), label: label.trim() };
+    const action = nav.action === "portfolio_regenerate" ? "portfolio_regenerate" : undefined;
+    const confirm = nav.confirm === true;
+    const confirmMessage = typeof nav.confirm_message === "string" && nav.confirm_message.trim() ? nav.confirm_message.trim() : undefined;
+    return {
+      path: path.trim(),
+      label: label.trim(),
+      ...(action ? { action } : {}),
+      ...(confirm ? { confirm: true } : {}),
+      ...(confirmMessage ? { confirm_message: confirmMessage } : {}),
+    };
   }
   return null;
 }
 
-function navigationFromResumeId(response: Record<string, unknown>): UnimadNavigationAction | null {
+/** Tools whose `resume_id` in the response should render "Open tailored resume". */
+export const RESUME_CREATION_NAV_TOOL_KEYS = new Set([
+  "suggest_unimad_navigation",
+  "tailor_resume_for_job",
+  "generate_resume_for_job_description",
+  "tailor_resume_for_role",
+]);
+
+function toSnakeToolKey(name: string): string {
+  return name
+    .replace(/([A-Z])/g, "_$1")
+    .replace(/-/g, "_")
+    .toLowerCase()
+    .replace(/^_/, "");
+}
+
+function navigationFromResumeId(response: Record<string, unknown>, toolName?: string): UnimadNavigationAction | null {
   const status = typeof response.status === "string" ? response.status.toLowerCase() : "";
   if (status && status !== "ok" && status !== "duplicate") return null;
 
   const resumeId = response.resume_id ?? response.resumeId;
   if (resumeId == null || String(resumeId).trim() === "") return null;
+
+  if (toolName) {
+    const key = toSnakeToolKey(toolName);
+    if (!RESUME_CREATION_NAV_TOOL_KEYS.has(key)) return null;
+  }
 
   const id = String(resumeId).trim();
   return {
@@ -68,16 +102,16 @@ function navigationFromResumeId(response: Record<string, unknown>): UnimadNaviga
 
 /**
  * Parse navigation button from tool responses.
- * Prefers ``ui.navigation``, then resume_id deep-link, then top-level path/label.
+ * Prefers ``ui.navigation``, then resume_id deep-link (create/tailor tools only), then top-level path/label.
  */
-export function parseUnimadNavigationFromToolResponse(response: unknown): UnimadNavigationAction | null {
+export function parseUnimadNavigationFromToolResponse(response: unknown, toolName?: string): UnimadNavigationAction | null {
   const normalized = coerceToolResponseRecord(response);
   if (!normalized) return null;
 
   const fromUi = navigationFromUi(normalized);
   if (fromUi) return fromUi;
 
-  const fromResume = navigationFromResumeId(normalized);
+  const fromResume = navigationFromResumeId(normalized, toolName);
   if (fromResume) return fromResume;
 
   if (normalized.status !== "ok") return null;

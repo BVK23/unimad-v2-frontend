@@ -7,6 +7,10 @@ type PortfolioAdkBlockHighlightProps = {
   className?: string;
 };
 
+/**
+ * Resume-style ADK gutter: a thin absolute stripe inside the block padding.
+ * Does not change layout/padding (no border, no inset ring) so hover UX stays intact.
+ */
 export const PortfolioAdkBlockHighlight = ({ kind, children, className = "" }: PortfolioAdkBlockHighlightProps) => {
   if (!kind) {
     if (!className.trim()) {
@@ -15,13 +19,12 @@ export const PortfolioAdkBlockHighlight = ({ kind, children, className = "" }: P
     return <div className={className.trim()}>{children}</div>;
   }
 
-  // box-shadow avoids ring-offset layout shifts that retrigger ResizeObserver → height loops
-  const shadowClass =
-    kind === "added"
-      ? "shadow-[inset_0_0_0_2px_rgba(34,197,94,0.85)]"
-      : kind === "removed"
-        ? "shadow-[inset_0_0_0_2px_rgba(248,113,113,0.7)] opacity-60"
-        : "shadow-[inset_0_0_0_2px_rgba(245,158,11,0.85)]";
+  const stripeClass = kind === "added" ? "bg-emerald-500" : kind === "removed" ? "bg-red-400" : "bg-amber-500";
 
-  return <div className={`h-full w-full rounded-[2rem] ${shadowClass} ${className}`.trim()}>{children}</div>;
+  return (
+    <div className={`relative h-full w-full ${className}`.trim()}>
+      <div aria-hidden className={`pointer-events-none absolute left-3 top-4 bottom-4 z-20 w-0.5 rounded-full ${stripeClass}`} />
+      {children}
+    </div>
+  );
 };

@@ -1,15 +1,12 @@
+import { buildVpdPublicUrl } from "@/features/vpd/utils/vpdPublish";
 import { PortfolioItem } from "@/types";
 
-export function getVpdShareUrl(projectId: string): string {
-  const slug = String(projectId)
-    .toLowerCase()
-    .replace(/[^a-z0-9]+/g, "-")
-    .replace(/^-|-$/g, "");
-  return `https://vpd.unimad.app/${slug || "draft"}`;
+export function getVpdShareUrl(slug: string): string {
+  return buildVpdPublicUrl(slug);
 }
 
-export async function shareVpdLink(project: PortfolioItem): Promise<string> {
-  const url = getVpdShareUrl(String(project.id));
+export async function shareVpdLink(slug: string): Promise<string> {
+  const url = getVpdShareUrl(slug);
   if (typeof navigator !== "undefined" && navigator.clipboard?.writeText) {
     await navigator.clipboard.writeText(url);
   }

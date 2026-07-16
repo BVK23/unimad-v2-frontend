@@ -55,11 +55,15 @@ export class StreamingConnectionManager {
     currentAgentRef: RefObject<string>,
     setCurrentAgent: (agent: string) => void,
     setIsLoading: (loading: boolean) => void,
-    aiMessageId: string
+    aiMessageId: string,
+    intermediateNarrationRef?: RefObject<string>
   ): Promise<boolean> {
     this.connectionState = "connecting";
     setIsLoading(true);
     accumulatedTextRef.current = "";
+    if (intermediateNarrationRef) {
+      intermediateNarrationRef.current = "";
+    }
     currentAgentRef.current = "";
     this.abortController = new AbortController();
 
@@ -118,7 +122,8 @@ export class StreamingConnectionManager {
         currentAgentRef,
         setCurrentAgent,
         requestStartedAt,
-        headersAt
+        headersAt,
+        intermediateNarrationRef
       );
 
       this.connectionState = "idle";
@@ -155,7 +160,8 @@ export class StreamingConnectionManager {
     accumulatedTextRef: RefObject<string>,
     currentAgentRef: RefObject<string>,
     setCurrentAgent: (agent: string) => void,
-    setIsLoading: (loading: boolean) => void
+    setIsLoading: (loading: boolean) => void,
+    intermediateNarrationRef?: RefObject<string>
   ): void {
     if (this.abortController) {
       this.abortController.abort();
@@ -165,6 +171,9 @@ export class StreamingConnectionManager {
 
     // Clear any accumulated state
     accumulatedTextRef.current = "";
+    if (intermediateNarrationRef) {
+      intermediateNarrationRef.current = "";
+    }
     currentAgentRef.current = "";
     setCurrentAgent("");
   }
@@ -188,7 +197,8 @@ export class StreamingConnectionManager {
     currentAgentRef: RefObject<string>,
     setCurrentAgent: (agent: string) => void,
     requestStartedAt: number,
-    headersAt: number
+    headersAt: number,
+    intermediateNarrationRef?: RefObject<string>
   ): Promise<void> {
     const contentType = response.headers.get("content-type") || "";
 
@@ -264,7 +274,8 @@ export class StreamingConnectionManager {
                 accumulatedTextRef,
                 currentAgentRef,
                 setCurrentAgent,
-                activityDedupRef
+                activityDedupRef,
+                intermediateNarrationRef
               );
             } catch (error) {
               console.error("❌ [SSE ERROR] Failed to process SSE event:", error);
@@ -302,7 +313,8 @@ export class StreamingConnectionManager {
               accumulatedTextRef,
               currentAgentRef,
               setCurrentAgent,
-              activityDedupRef
+              activityDedupRef,
+              intermediateNarrationRef
             );
           } catch (error) {
             console.error("❌ [SSE ERROR] Failed to process final SSE event:", error);

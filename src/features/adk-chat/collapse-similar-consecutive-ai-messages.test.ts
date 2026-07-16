@@ -54,6 +54,21 @@ describe("preferCollapsedAiMessage", () => {
     expect(preferred?.id).toBe("a1");
   });
 
+  it("keeps long ATS analysis over resume_agent internal recap", () => {
+    const earlier = ai(
+      "a1",
+      "Your ATS score is 70. Missing keywords: Bing, Article Submissions, Forum posting. Top improvements: integrate off-page techniques in Experience.",
+      "ats_agent"
+    );
+    const later = ai(
+      "a2",
+      "I have analyzed your resume's ATS score. I've also provided a detailed guideline for the resume_agent prioritizing Experience and Skills.",
+      "ats_agent"
+    );
+    const preferred = preferCollapsedAiMessage(earlier, later);
+    expect(preferred?.id).toBe("a1");
+  });
+
   it("does not collapse distinct authors", () => {
     const earlier = ai("a1", "I'll hand this to the job board agent.", "unibot");
     const later = ai("a2", "Here are five roles that fit your background.", "job_board_agent");

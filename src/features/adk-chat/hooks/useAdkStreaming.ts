@@ -38,6 +38,7 @@ export function useAdkStreaming(retryFn: <T>(fn: () => Promise<T>) => Promise<T>
   const [currentAgent, setCurrentAgent] = useState("");
 
   const accumulatedTextRef = useRef("");
+  const intermediateNarrationRef = useRef("");
   const currentAgentRef = useRef("");
 
   const connectionManager = useRef<StreamingConnectionManager | null>(null);
@@ -102,7 +103,8 @@ export function useAdkStreaming(retryFn: <T>(fn: () => Promise<T>) => Promise<T>
         currentAgentRef,
         setCurrentAgent,
         setIsLoading,
-        aiMessageId
+        aiMessageId,
+        intermediateNarrationRef
       );
     },
     []

@@ -2,9 +2,10 @@
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { DOCUMENT_SAVED_CONFIRMATION_MS } from "@/constants/documentAutosave";
+import { useAdkPortfolioReviewStore } from "@/features/adk-chat/stores/useAdkPortfolioReviewStore";
 import { waitForPortfolioLayoutSettle } from "@/features/portfolio/layout/portfolioLayoutRemeasure";
 import { usePortfolioStore } from "@/features/portfolio/store/usePortfolioStore";
-import { getPortfolioContentSignature } from "@/features/portfolio/utils/getPortfolioContentSignature";
+import { getPortfolioContentSignature, getPortfolioEditorialSignature } from "@/features/portfolio/utils/getPortfolioContentSignature";
 import type { PortfolioData } from "@/types";
 import { useUpdatePortfolio } from "./useUpdatePortfolio";
 
@@ -17,8 +18,15 @@ export function usePortfolioAutosave(
     onPersisted?: (id: string, portfolio: PortfolioData) => void;
   }
 ) {
-  const enabled = options?.enabled !== false && Boolean(portfolioId?.trim());
-  const portfolio = usePortfolioStore(s => (enabled ? s.getPortfolioData(portfolioId) : undefined));
+  const portfolio = usePortfolioStore(s =>
+    options?.enabled !== false && portfolioId?.trim() ? s.getPortfolioData(portfolioId) : undefined
+  );
+  const currentSnapshot = useMemo(() => (portfolio ? getPortfolioContentSignature(portfolio) : ""), [portfolio]);
+  const editorialSnapshot = useMemo(() => (portfolio ? getPortfolioEditorialSignature(portfolio) : ""), [portfolio]);
+  const holdingUnacceptedAdkDraft = useAdkPortfolioReviewStore(s => s.isHoldingUnacceptedAdkDraft(portfolioId, editorialSnapshot));
+  // Pause autosave only while the ADK draft is untouched. Manual edits during Accept/Discard
+  // should start the debounce (same pattern as resume / studio drafts).
+  const enabled = options?.enabled !== false && Boolean(portfolioId?.trim()) && !holdingUnacceptedAdkDraft;
   const { mutateAsync: updatePortfolioMutation, isPending: isSavingRemote } = useUpdatePortfolio();
 
   const [lastAcknowledgedSnapshot, setLastAcknowledgedSnapshot] = useState("");
@@ -32,8 +40,6 @@ export function usePortfolioAutosave(
   const latestSnapshotRef = useRef("");
   const runSaveRef = useRef<((source: "auto" | "manual") => Promise<void>) | null>(null);
   const acknowledgedSeededForIdRef = useRef<string | null>(null);
-
-  const currentSnapshot = useMemo(() => (portfolio ? getPortfolioContentSignature(portfolio) : ""), [portfolio]);
 
   useEffect(() => {
     latestSnapshotRef.current = currentSnapshot;
@@ -88,11 +94,12 @@ export function usePortfolioAutosave(
   }, [clearSavedConfirmationTimer, hasPendingUnsavedChanges]);
 
   const saveStatusLabel = useMemo(() => {
-    if (!enabled) return "";
+    if (options?.enabled === false || !portfolioId?.trim()) return "";
+    if (holdingUnacceptedAdkDraft) return "Review Unibot changes";
     if (isSavingRemote) return activeSaveSource === "manual" ? "Saving..." : "Autosaving...";
     if (hasPendingUnsavedChanges) return "Unsaved changes";
     return "All changes saved";
-  }, [activeSaveSource, enabled, hasPendingUnsavedChanges, isSavingRemote]);
+  }, [activeSaveSource, hasPendingUnsavedChanges, holdingUnacceptedAdkDraft, isSavingRemote, options?.enabled, portfolioId]);
 
   const runSave = useCallback(
     async (source: "auto" | "manual") => {

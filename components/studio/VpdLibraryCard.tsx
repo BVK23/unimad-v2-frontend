@@ -7,6 +7,7 @@ export type VpdLibraryItem = {
   title: string;
   date: string;
   isTemplate?: boolean;
+  slug?: string | null;
   project: PortfolioItem;
 };
 
@@ -24,8 +25,8 @@ const VpdLibraryCard: React.FC<VpdLibraryCardProps> = ({ vpd, onClick }) => (
     <div className="relative h-full w-full">
       <VpdCardThumbnail project={vpd.project} />
       <div className="absolute inset-x-0 bottom-0 bg-gradient-to-t from-slate-900/90 via-slate-900/50 to-transparent px-2 pb-2 pt-6">
-        <h4 className="line-clamp-2 text-[11px] font-semibold leading-tight text-white">{vpd.title}</h4>
-        <p className="mt-0.5 text-[10px] text-white/70">{vpd.date}</p>
+        <h4 className="line-clamp-2 text-[12px] font-semibold leading-tight text-white drop-shadow-sm">{vpd.title}</h4>
+        <p className="mt-0.5 text-[10px] text-white/75">{vpd.date}</p>
       </div>
     </div>
   </button>

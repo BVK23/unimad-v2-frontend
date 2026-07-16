@@ -50,6 +50,8 @@ export function UnibotUserMessageToolbar({
 
 type UnibotEditableUserBubbleProps = {
   value: string;
+  /** Original message text when edit mode opened — used to choose guideline copy. */
+  originalValue: string;
   disabled?: boolean;
   onChange: (value: string) => void;
   onSubmit: () => void;
@@ -59,12 +61,14 @@ type UnibotEditableUserBubbleProps = {
 /** Inline editor for a user message — Enter sends, Shift+Enter newline, Escape cancels. */
 export function UnibotEditableUserBubble({
   value,
+  originalValue,
   disabled,
   onChange,
   onSubmit,
   onCancel,
 }: UnibotEditableUserBubbleProps): React.JSX.Element {
   const textareaRef = useRef<HTMLTextAreaElement>(null);
+  const hasEdited = value.trim() !== originalValue.trim();
 
   useLayoutEffect(() => {
     const el = textareaRef.current;
@@ -100,7 +104,7 @@ export function UnibotEditableUserBubble({
           }
           if (e.key === "Enter" && !e.shiftKey) {
             e.preventDefault();
-            if (value.trim() && !disabled) {
+            if (value.trim() && !disabled && hasEdited) {
               onSubmit();
             }
           }
@@ -108,13 +112,13 @@ export function UnibotEditableUserBubble({
         className="box-border w-full min-w-0 resize-none overflow-hidden rounded-2xl rounded-tr-sm border border-brand-300 bg-white px-4 py-3 text-[13px] leading-relaxed text-slate-900 outline-none ring-brand-500/30 focus:ring-2 dark:border-brand-600 dark:bg-[#1a1a1a] dark:text-slate-100"
         aria-label="Edit message"
       />
-      <div className="flex items-center justify-end gap-2 text-[11px] text-slate-400">
-        <span>Enter to resend</span>
+      <div className="flex items-center justify-end gap-2 text-[11px] text-slate-500 dark:text-slate-400">
+        <span className="select-none">{hasEdited ? "Enter to resend" : "Edit your message"}</span>
         <button
           type="button"
           onClick={onCancel}
           disabled={disabled}
-          className="text-slate-500 hover:text-slate-700 dark:hover:text-slate-300"
+          className="text-slate-500 transition-colors hover:text-brand-600 disabled:opacity-40 dark:text-slate-400 dark:hover:text-brand-400"
         >
           Cancel
         </button>

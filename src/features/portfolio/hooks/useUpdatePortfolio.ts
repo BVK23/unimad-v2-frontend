@@ -4,7 +4,7 @@ import { updatePortfolioContent } from "@/features/portfolio/server-actions/port
 import { usePortfolioStore } from "@/features/portfolio/store/usePortfolioStore";
 import type { PortfolioData } from "@/types";
 import { useMutation, useQueryClient } from "@tanstack/react-query";
-import { portfolioQueryKey } from "./usePortfolio";
+import { setLivePortfolioQueryData } from "./usePortfolio";
 
 export type SavePortfolioResult = {
   created: boolean;
@@ -60,7 +60,7 @@ export function useUpdatePortfolio() {
         });
       }
 
-      queryClient.setQueryData(portfolioQueryKey, mergedPortfolio);
+      setLivePortfolioQueryData(queryClient, mergedPortfolio);
       usePortfolioStore.getState().setPortfolioData(result.id, mergedPortfolio);
 
       if (result.created) {

@@ -62,7 +62,6 @@ import { useQueryClient } from "@tanstack/react-query";
 import { usePathname, useSearchParams } from "next/navigation";
 import { patchChatMessageInTree } from "./patch-chat-message";
 import { markEmptyAssistantStreamErrorInTree, resetAssistantTurnForRetryInTree } from "./set-chat-message-stream-error";
-import { updateChatMessageInTree } from "./update-chat-message";
 
 const WELCOME_MESSAGE: ChatMessage = {
   id: "welcome",
@@ -191,7 +190,13 @@ export function AdkChatProvider({ userId, children }: { userId: string; children
   const sessionIdRef = useRef(sessionId);
   sessionIdRef.current = sessionId;
   const onMessageUpdate = useCallback((am: AgentMessage) => {
-    setMessages(prev => updateChatMessageInTree(prev, am.id, am.content));
+    setMessages(prev =>
+      patchChatMessageInTree(prev, am.id, {
+        text: am.content,
+        ...(am.agent ? { agent: am.agent } : {}),
+        ...(am.intermediateNarration !== undefined ? { intermediateNarration: am.intermediateNarration } : {}),
+      })
+    );
   }, []);
 
   const onEventUpdate = useCallback((_messageId: string, _event: ProcessedEvent) => {
@@ -214,7 +219,12 @@ export function AdkChatProvider({ userId, children }: { userId: string; children
       const assistantMsg =
         prev.find(m => m.id === assistantId && m.role === "model") ??
         prev.flatMap(m => m.messages ?? []).find(m => m.id === assistantId && m.role === "model");
-      if (!assistantMsg || assistantMsg.text.trim().length > 0 || assistantMsg.isError) {
+      if (
+        !assistantMsg ||
+        assistantMsg.text.trim().length > 0 ||
+        Boolean(assistantMsg.intermediateNarration?.trim()) ||
+        assistantMsg.isError
+      ) {
         return prev;
       }
       if (assistantMsg.unimadJobCards?.jobs?.length || assistantMsg.unimadNavigation || assistantMsg.unimadLinkedInSuggestions) {
@@ -415,7 +425,7 @@ export function AdkChatProvider({ userId, children }: { userId: string; children
           text: "",
           timestamp: new Date(),
         };
-        setMessages(prev => [...prev, userChat, assistantChat]);
+        setMessages(prev => sortMainThreadChronologically([...prev, userChat, assistantChat]));
       }
 
       beginOptimisticUnibotActivity({ assistantMessageId: assistantId });

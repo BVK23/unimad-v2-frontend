@@ -23,6 +23,16 @@ export const MUTATING_RESUME_TOOL_NAMES = new Set<string>([
   "add_project",
   "update_project",
   "remove_project",
+  "add_certification",
+  "update_certification",
+  "remove_certification",
+  "add_custom_section",
+  "update_custom_section_title",
+  "remove_custom_section",
+  "add_custom_section_item",
+  "update_custom_section_item",
+  "update_custom_section_item_description",
+  "remove_custom_section_item",
 ]);
 
 /** ADK may emit snake_case, camelCase, or dotted names for the same handoff tool. */
@@ -78,9 +88,16 @@ export const MUTATING_PORTFOLIO_TOOL_NAMES = new Set<string>([
   "update_block",
   "update_block_content",
   "update_block_by_heading",
+  "upsert_portfolio_section_content",
+  "upsert_domain_profile_fit_skill_card",
   "remove_block",
   "reorder_blocks",
   "duplicate_block",
+  "add_page_block",
+  "update_page_block",
+  "remove_page_block",
+  "reorder_page_blocks",
+  "duplicate_page_block",
 ]);
 
 export function isMutatingPortfolioTool(name: string): boolean {
@@ -173,6 +190,22 @@ function handoffLabelForTarget(targetRaw: string): string {
       return "Opening your LinkedIn profile context…";
     case "portfolio_agent":
       return "Reviewing your portfolio…";
+    case "quick_summary_agent":
+      return "Drafting your Quick Summary…";
+    case "usp_agent":
+      return "Crafting your unique selling points…";
+    case "domain_profile_fit_agent":
+      return "Building your Profile Fit cards…";
+    case "portfolio_experience_projects_agent":
+    case "portfolio_experience_agent":
+    case "portfolio_projects_agent":
+      return "Writing your portfolio experiences and projects…";
+    case "elevator_pitch_agent":
+      return "Drafting your elevator pitch…";
+    case "who_am_i_agent":
+      return "Working on your Who Am I video script…";
+    case "portfolio_structure_agent":
+      return "Updating your portfolio layout…";
     case "profile_pic_agent":
       return "Reviewing your profile photo…";
     case "cover_pic_agent":
@@ -227,6 +260,44 @@ function handoffLabelForTarget(targetRaw: string): string {
       return "Highlighting your projects…";
     case "summary_agent":
       return "Focusing on your professional summary…";
+    case "ats_agent":
+      return "Reviewing your ATS score…";
+    case "certifications_agent":
+      return "Focusing on your certifications…";
+    case "custom_sections_agent":
+      return "Working on your custom resume sections…";
+    case "jobs_agent":
+      return "Opening your jobs journey…";
+    case "job_board_agent":
+      return "Searching the job board…";
+    case "niche_discovery_agent":
+      return "Narrowing your target niche…";
+    case "application_tracker_agent":
+      return "Checking your applications…";
+    case "interviews_agent":
+      return "Preparing interview practice…";
+    case "studio_agent":
+      return "Opening Studio…";
+    case "application_assets_agent":
+      return "Coordinating your application draft…";
+    case "application_asset_intake_agent":
+      return "Collecting role and company details…";
+    case "cover_letter_draft_agent":
+      return "Drafting your cover letter…";
+    case "cold_email_draft_agent":
+      return "Drafting your cold email…";
+    case "referral_draft_agent":
+      return "Drafting your referral message…";
+    case "vpd_agent":
+      return "Working on your value proposition…";
+    case "unicoach_agent":
+      return "Looking up Unicoach guidance…";
+    case "general_agent":
+      return "Answering your question…";
+    case "draft_missing_topic_agent":
+      return "Choosing a topic before drafting…";
+    case "funnel_missing_agent":
+      return "Choosing your content funnel…";
     case "connection_agent":
       return "Drafting your connection request…";
     case "comment_agent":
@@ -313,10 +384,48 @@ export function labelForAgent(author: string): string {
       return "Coordinating your resume…";
     case "ats_agent":
       return "Reviewing your ATS score…";
+    case "jobs_agent":
+      return "Coordinating your jobs journey…";
+    case "job_board_agent":
+      return "Searching the job board…";
+    case "niche_discovery_agent":
+      return "Narrowing your target niche…";
+    case "application_tracker_agent":
+      return "Reviewing your applications…";
+    case "interviews_agent":
+      return "Preparing interview practice…";
+    case "studio_agent":
+      return "Coordinating Studio…";
+    case "vpd_agent":
+      return "Working on your value proposition…";
+    case "unicoach_agent":
+      return "Looking up Unicoach guidance…";
+    case "general_agent":
+      return "Answering your question…";
+    case "draft_missing_topic_agent":
+      return "Choosing a topic before drafting…";
+    case "funnel_missing_agent":
+      return "Choosing your content funnel…";
     case "linkedin_agent":
       return "Coordinating your LinkedIn profile…";
     case "portfolio_agent":
       return "Analyzing your portfolio…";
+    case "quick_summary_agent":
+      return "Drafting your Quick Summary…";
+    case "usp_agent":
+      return "Crafting your unique selling points…";
+    case "domain_profile_fit_agent":
+      return "Building your Profile Fit cards…";
+    case "portfolio_experience_projects_agent":
+    case "portfolio_experience_agent":
+    case "portfolio_projects_agent":
+      return "Writing your portfolio experiences and projects…";
+    case "elevator_pitch_agent":
+      return "Drafting your elevator pitch…";
+    case "who_am_i_agent":
+      return "Working on your Who Am I video script…";
+    case "portfolio_structure_agent":
+      return "Updating your portfolio layout…";
     case "profile_pic_agent":
       return "Reviewing your profile photo…";
     case "cover_pic_agent":
@@ -389,6 +498,10 @@ export function labelForAgent(author: string): string {
       return "Tuning your skills section…";
     case "projects_agent":
       return "Reviewing your projects…";
+    case "certifications_agent":
+      return "Reviewing your certifications…";
+    case "custom_sections_agent":
+      return "Reviewing your custom resume sections…";
     case "connection_agent":
       return "Working on your connection request…";
     case "comment_agent":
@@ -399,17 +512,121 @@ export function labelForAgent(author: string): string {
   }
 }
 
+/**
+ * Status while Gemini BuiltInPlanner thoughts stream — about understanding/planning,
+ * not the same copy as tool/agent busy labels (no emoji).
+ */
+export function labelForThinkingAgent(author: string): string {
+  const a = author.trim().toLowerCase().replace(/\s+/g, "_");
+  switch (a) {
+    case "unibot":
+    case "":
+      return "Breaking down your request…";
+    case "resume_agent":
+      return "Breaking down your resume request…";
+    case "ats_agent":
+      return "Understanding your ATS feedback more deeply…";
+    case "jobs_agent":
+      return "Breaking down your jobs request…";
+    case "job_board_agent":
+      return "Understanding job matches more deeply…";
+    case "niche_discovery_agent":
+      return "Understanding your niche more deeply…";
+    case "application_tracker_agent":
+      return "Breaking down your applications…";
+    case "interviews_agent":
+      return "Breaking down interview practice…";
+    case "studio_agent":
+      return "Breaking down your Studio request…";
+    case "content_gen_agent":
+      return "Breaking down your post request…";
+    case "linkedin_agent":
+      return "Breaking down your LinkedIn request…";
+    case "portfolio_agent":
+      return "Breaking down your portfolio request…";
+    case "unicoach_agent":
+      return "Understanding your Unicoach question more deeply…";
+    case "general_agent":
+      return "Understanding your question more deeply…";
+    case "vpd_agent":
+      return "Breaking down your value proposition…";
+    case "onboarding_agent":
+      return "Breaking down your profile setup…";
+    case "summary_agent":
+    case "experience_agent":
+    case "education_agent":
+    case "skills_agent":
+    case "projects_agent":
+    case "certifications_agent":
+    case "custom_sections_agent":
+      return "Understanding this resume section more deeply…";
+    case "cover_letter_draft_agent":
+    case "cold_email_draft_agent":
+    case "referral_draft_agent":
+    case "application_assets_agent":
+      return "Breaking down your application draft…";
+    default:
+      if (a.includes("linkedin") || a.includes("post") || a.includes("funnel") || a.includes("topic")) {
+        return "Breaking down your content request…";
+      }
+      if (a.includes("portfolio")) {
+        return "Breaking down your portfolio request…";
+      }
+      return "Breaking down your request…";
+  }
+}
+
+function portfolioSectionActivityLabel(sectionKeyRaw: unknown): string {
+  const key = String(sectionKeyRaw ?? "")
+    .trim()
+    .toLowerCase()
+    .replace(/\s+/g, "_");
+  switch (key) {
+    case "quick_summary":
+      return "your Quick Summary";
+    case "unique_selling_point":
+    case "usp":
+      return "your unique selling points";
+    case "domain_profile_fit":
+    case "profile_fit":
+      return "your Profile Fit";
+    case "portfolio_experience":
+      return "your portfolio experiences";
+    case "portfolio_projects":
+      return "your portfolio projects";
+    case "portfolio_pitch":
+    case "elevator_pitch":
+      return "your elevator pitch";
+    default:
+      return "your portfolio section";
+  }
+}
+
 export function labelForToolCall(name: string, args?: Record<string, unknown>): string {
   if (isTransferTool(name)) {
     return labelForTransferTool(args);
   }
 
   const snakeKey = toSnakeToolKey(name);
+
+  // ADK Task API: Unibot specialists are callable tools named like `jobs_agent`.
+  if (/_agent$/.test(snakeKey) || snakeKey === "unibot") {
+    return labelForAgent(snakeKey);
+  }
+
   switch (snakeKey) {
     case "get_summary":
       return "Reviewing your summary…";
     case "get_resume":
       return "Reviewing your resume…";
+    case "get_resume_improve_target":
+      return "Checking the entry you want to improve…";
+    case "get_writing_standards":
+      return "Checking writing standards…";
+    case "read_latest_user_message":
+      return "Reading your latest message…";
+    case "lookup_unibot_playbook":
+      return "Choosing the best next step…";
     case "get_content_gen_context":
       return "Loading your profile for topic ideas…";
     case "fetch_user_personal_details":
@@ -459,7 +676,21 @@ export function labelForToolCall(name: string, args?: Record<string, unknown>): 
     case "get_items":
       return "Reviewing your portfolio blocks…";
     case "get_item":
+    case "get_block_by_heading":
       return "Reviewing a portfolio block…";
+    case "get_page_block":
+    case "get_page_blocks":
+      return "Reviewing portfolio Page Blocks…";
+    case "get_user_personalization":
+      return "Loading your saved interview answers…";
+    case "update_user_personalization":
+      return "Saving your Who Am I answers…";
+    case "upsert_portfolio_section_content":
+      return `Updating ${portfolioSectionActivityLabel(args?.section_key)}…`;
+    case "upsert_domain_profile_fit_skill_card":
+      return args?.title ? `Adding Profile Fit card “${String(args.title)}”…` : "Adding a Profile Fit skill card…";
+    case "get_domain_profile_fit_structure_example":
+      return "Loading Profile Fit card structure…";
     case "get_section": {
       const sectionArg = readSectionNameArg(args).toLowerCase();
       if (["profile", "hero", "items", "blocks", "grid", "editor_content"].some(k => sectionArg.includes(k))) {
@@ -484,10 +715,10 @@ export function labelForToolCall(name: string, args?: Record<string, unknown>): 
     case "fetch_application_job_context":
     case "read_resolved_job_listing_for_resume":
       return "Loading the job description…";
+    case "resolve_job_board_listing":
+      return "Pinning that job listing…";
     case "fetch_resume_ats_score":
-      return "Checking your ATS score…";
-    case "ats_agent":
-      return "Reviewing your ATS score…";
+      return args?.force === true || args?.force === "true" ? "Recalculating your ATS score…" : "Checking your ATS score…";
     case "tailor_resume_for_role":
       return "Building a resume for your target role…";
     case "tailor_resume_for_job":
@@ -507,6 +738,20 @@ export function labelForToolCall(name: string, args?: Record<string, unknown>): 
       return "Reviewing your education…";
     case "get_education_by_id":
       return "Reviewing an education entry…";
+    case "get_certifications":
+      return "Reviewing your certifications…";
+    case "get_custom_sections":
+      return "Reviewing your custom sections…";
+    case "get_application_tracker_snapshot":
+      return "Loading your application tracker…";
+    case "update_application_tracker_status":
+      return "Updating application status…";
+    case "get_interview_prep_snapshot":
+      return "Loading your interview prep…";
+    case "generate_niche_discovery_questions":
+      return "Preparing niche discovery questions…";
+    case "refine_niche_with_discovery_answers":
+      return "Refining your target niche…";
     case "get_onboarding_profile":
       return "Checking your profile draft…";
     case "add_onboarding_education":
@@ -544,6 +789,18 @@ export function labelForToolCall(name: string, args?: Record<string, unknown>): 
     case "update_project":
     case "remove_project":
       return "Refreshing your projects…";
+    case "add_certification":
+    case "update_certification":
+    case "remove_certification":
+      return "Refreshing your certifications…";
+    case "add_custom_section":
+    case "update_custom_section_title":
+    case "remove_custom_section":
+    case "add_custom_section_item":
+    case "update_custom_section_item":
+    case "update_custom_section_item_description":
+    case "remove_custom_section_item":
+      return "Refreshing your custom sections…";
     case "update_profile_field":
     case "update_profile":
       return "Updating your hero section…";
@@ -563,6 +820,16 @@ export function labelForToolCall(name: string, args?: Record<string, unknown>): 
       return "Reordering your blocks…";
     case "duplicate_block":
       return "Duplicating a portfolio block…";
+    case "add_page_block":
+      return "Adding a portfolio Page Block…";
+    case "update_page_block":
+      return "Updating a portfolio Page Block…";
+    case "remove_page_block":
+      return "Removing a portfolio Page Block…";
+    case "reorder_page_blocks":
+      return "Reordering portfolio Page Blocks…";
+    case "duplicate_page_block":
+      return "Duplicating a portfolio Page Block…";
     case "update_headline":
       return "Updating your LinkedIn headline…";
     case "update_about":
@@ -648,6 +915,18 @@ export function labelForMutatingToolResponse(name: string): string {
     case "update_project":
     case "remove_project":
       return "Projects updated — refreshing your view…";
+    case "add_certification":
+    case "update_certification":
+    case "remove_certification":
+      return "Certifications updated — refreshing your view…";
+    case "add_custom_section":
+    case "update_custom_section_title":
+    case "remove_custom_section":
+    case "add_custom_section_item":
+    case "update_custom_section_item":
+    case "update_custom_section_item_description":
+    case "remove_custom_section_item":
+      return "Custom sections updated — refreshing your view…";
     case "update_profile_field":
     case "update_profile":
       return "Hero section updated — refreshing your view…";
@@ -660,13 +939,25 @@ export function labelForMutatingToolResponse(name: string): string {
     case "update_block":
     case "update_block_content":
     case "update_block_by_heading":
-      return "Block updated — refreshing your view…";
+    case "upsert_portfolio_section_content":
+    case "upsert_domain_profile_fit_skill_card":
+      return "Portfolio draft updated — refreshing your view…";
     case "remove_block":
       return "Block removed — refreshing your view…";
     case "reorder_blocks":
       return "Blocks reordered — refreshing your view…";
     case "duplicate_block":
       return "Block duplicated — refreshing your view…";
+    case "add_page_block":
+      return "Page Block added — refreshing your view…";
+    case "update_page_block":
+      return "Page Block updated — refreshing your view…";
+    case "remove_page_block":
+      return "Page Block removed — refreshing your view…";
+    case "reorder_page_blocks":
+      return "Page Blocks reordered — refreshing your view…";
+    case "duplicate_page_block":
+      return "Page Block duplicated — refreshing your view…";
     case "add_onboarding_education":
       return "Education saved — refreshing your profile…";
     case "add_onboarding_experience":
@@ -708,6 +999,18 @@ export function completionMessageForMutatingTool(name: string): string | null {
     case "update_project":
     case "remove_project":
       return "I've updated your projects section. Review the highlighted changes in the editor.";
+    case "add_certification":
+    case "update_certification":
+    case "remove_certification":
+      return "I've updated your certifications. Review the highlighted changes in the editor.";
+    case "add_custom_section":
+    case "update_custom_section_title":
+    case "remove_custom_section":
+    case "add_custom_section_item":
+    case "update_custom_section_item":
+    case "update_custom_section_item_description":
+    case "remove_custom_section_item":
+      return "I've updated your custom sections. Review the highlighted changes in the editor.";
     case "update_post_draft":
       return "I've updated your post draft. Review the changes when you're ready.";
     case "set_content_gen_topic":

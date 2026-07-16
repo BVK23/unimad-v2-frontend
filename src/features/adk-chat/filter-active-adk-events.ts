@@ -27,12 +27,26 @@ export function isRewindMarkerEvent(event: RawAdkEvent): boolean {
 }
 
 /**
- * Returns events that remain visible after the latest rewind marker.
+ * Truncate `active` so the invocation `rewindBeforeId` and everything after it are removed.
+ * Matches ADK semantics: rewind undoes that turn and all later turns on the current branch.
+ */
+function truncateBeforeInvocation(active: RawAdkEvent[], rewindBeforeId: string): RawAdkEvent[] {
+  const cutoffIndex = active.findIndex(event => getEventInvocationId(event) === rewindBeforeId);
+  if (cutoffIndex === -1) return active;
+  return active.slice(0, cutoffIndex);
+}
+
+/**
+ * Returns events that remain visible after applying every rewind marker in order.
  *
- * ADK rewind appends a marker and then continues the session as a new branch.
- * Visible transcript =
- *   events before the rewound invocation
- *   + events after the rewind marker (the continued branch)
+ * ADK rewind does not physically delete later events from the session DB. It appends a
+ * rewind marker (`rewindBeforeInvocationId`) and continues as a new branch. Visible
+ * transcript is computed by walking events chronologically and applying each marker
+ * to the accumulating active branch.
+ *
+ * Important: applying only the *latest* marker is wrong after repeated edit/resend on
+ * the same turn — earlier discarded branches still sit before the latest cutoff and
+ * would leak back into the UI (especially after refresh).
  *
  * Does NOT mutate Postgres — display filter only.
  */
@@ -40,27 +54,18 @@ export function filterActiveAdkEvents(events: AdkEvent[]): AdkEvent[] {
   if (events.length === 0) return [];
 
   const rawEvents = events as RawAdkEvent[];
+  const active: RawAdkEvent[] = [];
 
-  let latestRewindMarkerIndex = -1;
-  let latestRewindBeforeId: string | null = null;
-  for (let i = rawEvents.length - 1; i >= 0; i--) {
-    const rewindId = getRewindBeforeInvocationId(rawEvents[i]);
-    if (rewindId) {
-      latestRewindMarkerIndex = i;
-      latestRewindBeforeId = rewindId;
-      break;
+  for (const event of rawEvents) {
+    const rewindBeforeId = getRewindBeforeInvocationId(event);
+    if (rewindBeforeId) {
+      const truncated = truncateBeforeInvocation(active, rewindBeforeId);
+      active.length = 0;
+      active.push(...truncated);
+      continue;
     }
+    active.push(event);
   }
 
-  if (!latestRewindBeforeId || latestRewindMarkerIndex < 0) {
-    return rawEvents.filter(event => !isRewindMarkerEvent(event));
-  }
-
-  const beforeMarker = rawEvents.slice(0, latestRewindMarkerIndex).filter(event => !isRewindMarkerEvent(event));
-  const afterMarker = rawEvents.slice(latestRewindMarkerIndex + 1).filter(event => !isRewindMarkerEvent(event));
-
-  const cutoffIndex = beforeMarker.findIndex(event => getEventInvocationId(event) === latestRewindBeforeId);
-  const prefix = cutoffIndex === -1 ? beforeMarker : beforeMarker.slice(0, cutoffIndex);
-
-  return [...prefix, ...afterMarker];
+  return active;
 }

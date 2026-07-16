@@ -16,6 +16,9 @@ interface USPreviewProps {
 // Helper to convert PDF points to standard web pixels (approx 1pt = 1.333px)
 const ptToPx = (pt: number) => pt * (4 / 3);
 
+// Must mirror TOKENS.lineHeights.body in USPDF so preview text rhythm matches the PDF.
+const US_BODY_LINE_HEIGHT = 1.3;
+
 const USPreview: React.FC<USPreviewProps> = ({ data, previewScale, isModal = false }) => {
   const { profile, experience, education, skills, projects, certifications, customSections, sectionOrder } = data;
 
@@ -28,7 +31,7 @@ const USPreview: React.FC<USPreviewProps> = ({ data, previewScale, isModal = fal
   } as const;
 
   const SectionTitle = ({ children }: { children: React.ReactNode }) => (
-    <div style={{ marginTop: `${ptToPx(12)}px` }}>
+    <div style={{ marginTop: `${ptToPx(16)}px` }}>
       <h2
         className="uppercase font-bold leading-none"
         style={{ fontSize: `${ptToPx(12)}px`, letterSpacing: "0.08em", marginBottom: `${ptToPx(4)}px` }}
@@ -40,7 +43,7 @@ const USPreview: React.FC<USPreviewProps> = ({ data, previewScale, isModal = fal
           width: "100%",
           borderBottom: "1px solid #000000",
           marginTop: `${ptToPx(2)}px`,
-          marginBottom: `${ptToPx(8)}px`,
+          marginBottom: `${ptToPx(6)}px`,
         }}
       />
     </div>
@@ -56,7 +59,7 @@ const USPreview: React.FC<USPreviewProps> = ({ data, previewScale, isModal = fal
       return (
         <section key={id}>
           {visibleItems.map((item, i) => (
-            <div key={i} style={{ marginBottom: `${ptToPx(8)}px`, breakInside: i === 0 ? "avoid" : "auto" }}>
+            <div key={i} style={{ marginBottom: `${ptToPx(6)}px`, breakInside: i === 0 ? "avoid" : "auto" }}>
               {i === 0 && <SectionTitle>{customSection.title || "Custom Section"}</SectionTitle>}
               <div className="flex justify-between items-start">
                 <div className="flex-1" style={{ paddingRight: `${ptToPx(8)}px` }}>
@@ -82,7 +85,7 @@ const USPreview: React.FC<USPreviewProps> = ({ data, previewScale, isModal = fal
               </div>
               {item.description && (
                 <div style={{ marginTop: `${ptToPx(4)}px` }}>
-                  <HtmlDisplay content={item.description} />
+                  <HtmlDisplay content={item.description} lineHeight={US_BODY_LINE_HEIGHT} />
                 </div>
               )}
             </div>
@@ -97,7 +100,7 @@ const USPreview: React.FC<USPreviewProps> = ({ data, previewScale, isModal = fal
         return (
           <section key={id} style={{ breakInside: "avoid" }}>
             <SectionTitle>Professional Summary</SectionTitle>
-            <HtmlDisplay content={profile.summary} />
+            <HtmlDisplay content={profile.summary} lineHeight={US_BODY_LINE_HEIGHT} />
           </section>
         );
       case SECTIONS.EXPERIENCE: {
@@ -128,7 +131,7 @@ const USPreview: React.FC<USPreviewProps> = ({ data, previewScale, isModal = fal
                 </div>
                 {exp.description && (
                   <div style={{ marginTop: `${ptToPx(4)}px` }}>
-                    <HtmlDisplay content={exp.description} />
+                    <HtmlDisplay content={exp.description} lineHeight={US_BODY_LINE_HEIGHT} />
                   </div>
                 )}
               </div>
@@ -143,7 +146,7 @@ const USPreview: React.FC<USPreviewProps> = ({ data, previewScale, isModal = fal
           <section key={id}>
             <SectionTitle>Education</SectionTitle>
             {visibleEducations.map((edu, i) => (
-              <div key={i} style={{ marginBottom: `${ptToPx(8)}px`, breakInside: i === 0 ? "avoid" : "auto" }}>
+              <div key={i} style={{ marginBottom: `${ptToPx(6)}px`, breakInside: i === 0 ? "avoid" : "auto" }}>
                 <div className="flex justify-between items-start">
                   <div className="flex-1">
                     <h3 className="font-bold leading-none" style={{ fontSize: `${ptToPx(11)}px` }}>
@@ -160,8 +163,10 @@ const USPreview: React.FC<USPreviewProps> = ({ data, previewScale, isModal = fal
                   {edu.school}
                 </p>
                 {edu.description && (
-                  <div style={{ fontSize: `${ptToPx(10)}px`, color: "#000000", lineHeight: 1.15, marginTop: `${ptToPx(4)}px` }}>
-                    <HtmlDisplay content={edu.description} />
+                  <div
+                    style={{ fontSize: `${ptToPx(10)}px`, color: "#000000", lineHeight: US_BODY_LINE_HEIGHT, marginTop: `${ptToPx(4)}px` }}
+                  >
+                    <HtmlDisplay content={edu.description} lineHeight={US_BODY_LINE_HEIGHT} />
                   </div>
                 )}
               </div>
@@ -201,7 +206,7 @@ const USPreview: React.FC<USPreviewProps> = ({ data, previewScale, isModal = fal
           <section key={id}>
             <SectionTitle>Projects</SectionTitle>
             {visibleProjects.map((proj, i) => (
-              <div key={i} style={{ marginBottom: `${ptToPx(8)}px`, breakInside: i === 0 ? "avoid" : "auto" }}>
+              <div key={i} style={{ marginBottom: `${ptToPx(6)}px`, breakInside: i === 0 ? "avoid" : "auto" }}>
                 {proj.url ? (
                   <a
                     href={proj.url.startsWith("http") ? proj.url : `https://${proj.url}`}
@@ -220,7 +225,7 @@ const USPreview: React.FC<USPreviewProps> = ({ data, previewScale, isModal = fal
                 )}
                 {proj.description && (
                   <div style={{ marginTop: `${ptToPx(2)}px` }}>
-                    <HtmlDisplay content={proj.description} />
+                    <HtmlDisplay content={proj.description} lineHeight={US_BODY_LINE_HEIGHT} />
                   </div>
                 )}
               </div>
@@ -235,7 +240,7 @@ const USPreview: React.FC<USPreviewProps> = ({ data, previewScale, isModal = fal
           <section key={id}>
             <SectionTitle>Certifications</SectionTitle>
             {visibleCertifications.map((cert, i) => (
-              <div key={i} style={{ marginBottom: `${ptToPx(8)}px`, breakInside: i === 0 ? "avoid" : "auto" }}>
+              <div key={i} style={{ marginBottom: `${ptToPx(6)}px`, breakInside: i === 0 ? "avoid" : "auto" }}>
                 <div className="flex justify-between items-start">
                   <div className="flex-1" style={{ paddingRight: `${ptToPx(8)}px` }}>
                     <h3 className="font-bold leading-none" style={{ fontSize: `${ptToPx(11)}px` }}>

@@ -5,7 +5,7 @@ import { fetchPortfolioContent } from "@/features/portfolio/server-actions/portf
 import { usePortfolioStore } from "@/features/portfolio/store/usePortfolioStore";
 import { getPortfolioContentSignature } from "@/features/portfolio/utils/getPortfolioContentSignature";
 import type { PortfolioData } from "@/types";
-import { useQuery } from "@tanstack/react-query";
+import { useQuery, type QueryClient } from "@tanstack/react-query";
 
 export const portfolioQueryKey = ["portfolio"] as const;
 
@@ -14,6 +14,25 @@ export function portfolioQueryKeyFor(session: ReturnType<typeof useCoachActAsSes
 }
 
 export const portfolioByIdQueryKey = (id: string) => ["portfolio", id] as const;
+
+/**
+ * Write the live portfolio into every React Query cache entry the editor actually reads.
+ * `usePortfolio` keys are `["portfolio","self"]` or `["portfolio","coach-act-as",…]` —
+ * writing only `["portfolio"]` leaves the UI on a stale Django snapshot after ADK mutators.
+ */
+export function setLivePortfolioQueryData(queryClient: QueryClient, portfolio: PortfolioData): void {
+  queryClient.setQueryData(portfolioQueryKey, portfolio);
+  queryClient.setQueriesData<PortfolioData | null>(
+    {
+      predicate: query => {
+        const key = query.queryKey;
+        if (!Array.isArray(key) || key[0] !== "portfolio") return false;
+        return key[1] === "self" || key[1] === "coach-act-as";
+      },
+    },
+    portfolio
+  );
+}
 
 export function usePortfolio() {
   const actAs = useCoachActAsSession();

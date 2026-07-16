@@ -15,27 +15,18 @@ function topic(id: string): ChatMessage {
 }
 
 describe("shouldCollapseTopicsOnLoad", () => {
-  it("keeps 1–2 sub-threads expanded on load", () => {
-    expect(shouldCollapseTopicsOnLoad(1)).toBe(false);
-    expect(shouldCollapseTopicsOnLoad(2)).toBe(false);
-  });
-
-  it("collapses when more than two sub-threads", () => {
-    expect(shouldCollapseTopicsOnLoad(3)).toBe(true);
+  it("always collapses sub-threads on load", () => {
+    expect(shouldCollapseTopicsOnLoad(0)).toBe(true);
+    expect(shouldCollapseTopicsOnLoad(1)).toBe(true);
+    expect(shouldCollapseTopicsOnLoad(2)).toBe(true);
     expect(shouldCollapseTopicsOnLoad(5)).toBe(true);
   });
 });
 
 describe("hydrateLoadedTopicMessages", () => {
-  it("collapses all topics when count exceeds threshold", () => {
-    const messages = [topic("a"), topic("b"), topic("c")];
-    const hydrated = hydrateLoadedTopicMessages(messages);
-    expect(hydrated.every(m => m.isExpanded === false)).toBe(true);
-  });
-
-  it("expands all topics when count is within threshold", () => {
+  it("collapses all topics regardless of count", () => {
     const messages = [topic("a"), topic("b")];
     const hydrated = hydrateLoadedTopicMessages(messages);
-    expect(hydrated.every(m => m.isExpanded === true)).toBe(true);
+    expect(hydrated.every(m => m.isExpanded === false)).toBe(true);
   });
 });

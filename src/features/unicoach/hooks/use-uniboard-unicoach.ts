@@ -1,5 +1,6 @@
 "use client";
 
+import { getQueryClient } from "@/app/get-query-client";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { applyOptimisticChecklistTaskUpdate } from "../mappers/journey-mapper";
 import {
@@ -30,15 +31,19 @@ export const qk = {
 const normalizeTargetId = (targetUserId?: string | null) =>
   targetUserId != null && String(targetUserId).length > 0 ? String(targetUserId) : null;
 
-export const useUnicoachInit = () =>
-  useQuery({
-    queryKey: qk.init,
-    queryFn: () => postUnicoachInit(),
-    staleTime: 60_000,
-    refetchInterval: 30_000,
-    refetchIntervalInBackground: false,
-  });
-
+export const useUnicoachInit = () => {
+  const queryClient = getQueryClient();
+  return useQuery(
+    {
+      queryKey: qk.init,
+      queryFn: () => postUnicoachInit(),
+      staleTime: 60_000,
+      refetchInterval: 30_000,
+      refetchIntervalInBackground: false,
+    },
+    queryClient
+  );
+};
 export const useUnicoachJourneyState = (enabled: boolean, targetUserId?: string | null) => {
   const tid = normalizeTargetId(targetUserId);
   return useQuery({

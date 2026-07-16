@@ -8,9 +8,19 @@ interface VpdPreviewProps {
   project: PortfolioItem;
   onOpenEditor?: () => void;
   variant?: "panel" | "compact";
+  slug?: string | null;
+  onSlugChange?: (slug: string) => void;
+  onBeforePublish?: () => Promise<void>;
 }
 
-const VpdPreview: React.FC<VpdPreviewProps> = ({ project, onOpenEditor, variant = "panel" }) => {
+const VpdPreview: React.FC<VpdPreviewProps> = ({
+  project,
+  onOpenEditor,
+  variant = "panel",
+  slug = null,
+  onSlugChange,
+  onBeforePublish,
+}) => {
   const blocks = project.detailedBlocks ?? [];
   const hasContent = blocks.length > 0 || Boolean(project.title?.trim());
 
@@ -20,7 +30,7 @@ const VpdPreview: React.FC<VpdPreviewProps> = ({ project, onOpenEditor, variant 
     <div className={isPanel ? "flex h-full min-h-0 flex-col" : "mt-5 border-t border-slate-100 pt-5 dark:border-slate-800"}>
       <div className="mb-3 flex shrink-0 items-center justify-between gap-2">
         <h3 className="text-xs font-medium uppercase tracking-wide text-slate-500">Preview</h3>
-        <VpdExportActions project={project} />
+        <VpdExportActions project={project} slug={slug} onSlugChange={onSlugChange} onBeforePublish={onBeforePublish} />
       </div>
 
       <div
@@ -55,9 +65,9 @@ const VpdPreview: React.FC<VpdPreviewProps> = ({ project, onOpenEditor, variant 
             </div>
           )}
           {hasContent ? (
-            <div className={`pointer-events-none overflow-y-auto p-4 ${isPanel ? "min-h-0 flex-1" : "max-h-[280px]"}`}>
+            <div className={`overflow-y-auto p-4 scrollbar-on-hover ${isPanel ? "min-h-0 flex-1" : "max-h-[280px]"}`}>
               {project.title && <h4 className="mb-3 text-sm font-semibold text-slate-900 dark:text-white">{project.title}</h4>}
-              <div className="grid grid-cols-12 gap-3">
+              <div className="pointer-events-none grid grid-cols-12 gap-3">
                 {blocks.map(block => {
                   const span = Math.max(1, Math.min(12, Number(block.span) || 12));
                   const spanClass =

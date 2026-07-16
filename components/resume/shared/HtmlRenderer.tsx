@@ -106,21 +106,27 @@ const HtmlRenderer: React.FC<HtmlRendererProps> = ({ html, style, listFontSize }
   // Process blocks sequentially to preserve order and handle formatting
   const blocks: React.ReactNode[] = [];
   const blockRegex = /<(p|ul|ol)[^>]*>([\s\S]*?)<\/\1>/gi;
-  let match;
 
   // If no tags are found at all, treat as plain text (fallback)
   if (!cleanHtml.match(/<(p|ul|ol)/i)) {
     return <Text style={{ lineHeight: 1.4, ...style }}>{parseInline(cleanHtml)}</Text>;
   }
 
-  while ((match = blockRegex.exec(cleanHtml)) !== null) {
+  // Collect blocks up front so the final block can drop its trailing margin —
+  // otherwise every description ends with dead space that (in @react-pdf,
+  // where margins don't collapse) stacks onto the entry gap and inflates height.
+  const matches = Array.from(cleanHtml.matchAll(blockRegex));
+  const lastBlockIndex = matches.length - 1;
+
+  matches.forEach((match, blockIndex) => {
     const tag = match[1].toLowerCase();
     const content = match[2];
     const key = blocks.length;
+    const isLastBlock = blockIndex === lastBlockIndex;
 
     if (tag === "p") {
       blocks.push(
-        <Text key={key} style={{ marginBottom: 4, height: "auto", lineHeight: 1.4, ...style }}>
+        <Text key={key} style={{ marginBottom: isLastBlock ? 0 : 4, height: "auto", lineHeight: 1.4, ...style }}>
           {parseInline(content)}
         </Text>
       );
@@ -128,14 +134,22 @@ const HtmlRenderer: React.FC<HtmlRendererProps> = ({ html, style, listFontSize }
       const items = content.match(/<li.*?>(.*?)<\/li>/g);
       if (items) {
         const liSize = listFontSize ?? style?.fontSize ?? 10;
+        // Marker + text must share one line-height, else the (taller) marker
+        // inflates each single-line bullet row and it looks more spacious than
+        // the wrapped lines inside a multi-line bullet.
+        const liLineHeight = (style?.lineHeight as number) ?? 1.4;
         const itemTextStyle = {
           marginBottom: 2,
           fontSize: liSize,
-          lineHeight: 1.4,
           color: style?.color || "#334155",
           ...style,
+          lineHeight: liLineHeight,
         };
         const markerStyle = { fontWeight: 600 as const };
+        let lastValidItemIndex = -1;
+        items.forEach((it, idx) => {
+          if (it.replace(/<\/?li[^>]*>/gi, "").trim()) lastValidItemIndex = idx;
+        });
         let olCounter = 0;
         blocks.push(
           <View key={key} style={style}>
@@ -145,6 +159,7 @@ const HtmlRenderer: React.FC<HtmlRendererProps> = ({ html, style, listFontSize }
               olCounter++;
               const marker = tag === "ol" ? `${olCounter}.` : "•";
               const markerWidth = tag === "ol" ? 14 : 8;
+              const isLastItem = i === lastValidItemIndex;
               return (
                 <View
                   key={`${key}-${i}`}
@@ -152,14 +167,14 @@ const HtmlRenderer: React.FC<HtmlRendererProps> = ({ html, style, listFontSize }
                   style={{
                     flexDirection: "row",
                     alignItems: "flex-start",
-                    marginBottom: 2,
+                    marginBottom: isLastBlock && isLastItem ? 0 : 2,
                   }}
                 >
                   <Text
                     style={{
                       ...markerStyle,
                       fontSize: liSize,
-                      lineHeight: 1.4,
+                      lineHeight: liLineHeight,
                       width: markerWidth,
                       color: style?.color || "#334155",
                     }}
@@ -176,7 +191,7 @@ const HtmlRenderer: React.FC<HtmlRendererProps> = ({ html, style, listFontSize }
         );
       }
     }
-  }
+  });
 
   return <>{blocks}</>;
 };

@@ -97,15 +97,24 @@ export async function registerUnibotAdkSessionAction(body: Record<string, unknow
   }
 }
 
+export type UnibotAdkSessionDeleteTarget = {
+  adk_session_id: string;
+  kind?: string | null;
+  feature?: string | null;
+  section?: string | null;
+};
+
 export async function deleteUnibotAdkSessionRegistryAction(adkSessionId: string): Promise<{
   success: boolean;
   adk_session_ids_to_delete: string[];
+  sessions_to_delete: UnibotAdkSessionDeleteTarget[];
   error?: string;
 }> {
   try {
     const { ok, data } = await authedJson<{
       success?: boolean;
       adk_session_ids_to_delete?: string[];
+      sessions_to_delete?: UnibotAdkSessionDeleteTarget[];
       error?: string;
     }>("/api/unibot-adk-sessions/delete/", {
       method: "POST",
@@ -115,17 +124,27 @@ export async function deleteUnibotAdkSessionRegistryAction(adkSessionId: string)
       return {
         success: false,
         adk_session_ids_to_delete: [adkSessionId],
+        sessions_to_delete: [{ adk_session_id: adkSessionId, kind: "main" }],
         error: data.error ?? "Registry delete failed",
       };
     }
+    const sessions_to_delete =
+      Array.isArray(data.sessions_to_delete) && data.sessions_to_delete.length > 0
+        ? data.sessions_to_delete
+        : (data.adk_session_ids_to_delete ?? [adkSessionId]).map(id => ({
+            adk_session_id: id,
+            kind: id === adkSessionId ? "main" : "sub",
+          }));
     return {
       success: true,
-      adk_session_ids_to_delete: data.adk_session_ids_to_delete ?? [adkSessionId],
+      adk_session_ids_to_delete: data.adk_session_ids_to_delete ?? sessions_to_delete.map(s => s.adk_session_id),
+      sessions_to_delete,
     };
   } catch (err) {
     return {
       success: false,
       adk_session_ids_to_delete: [adkSessionId],
+      sessions_to_delete: [{ adk_session_id: adkSessionId, kind: "main" }],
       error: err instanceof Error ? err.message : String(err),
     };
   }

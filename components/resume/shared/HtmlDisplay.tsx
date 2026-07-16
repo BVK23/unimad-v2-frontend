@@ -37,6 +37,8 @@ interface HtmlDisplayProps {
   className?: string;
   /** pdfTight: matches @react-pdf HtmlRenderer rhythm (line-height 1.4, tight lists) — no typography plugin. */
   variant?: HtmlDisplayVariant;
+  /** Override the class-based leading (inline, so it beats `leading-*`) to match a template's PDF body line-height. */
+  lineHeight?: number;
 }
 
 /**
@@ -44,7 +46,7 @@ interface HtmlDisplayProps {
  * Uses `dangerouslySetInnerHTML` — in production, sanitize with DOMPurify.
  * Shared across ALL template preview components.
  */
-const HtmlDisplay: React.FC<HtmlDisplayProps> = ({ content, className = "", variant = "default" }) => {
+const HtmlDisplay: React.FC<HtmlDisplayProps> = ({ content, className = "", variant = "default", lineHeight }) => {
   if (!content) return null;
 
   const pdfTightBase =
@@ -56,9 +58,15 @@ const HtmlDisplay: React.FC<HtmlDisplayProps> = ({ content, className = "", vari
   const mergedClassName =
     variant === "pdfTight"
       ? `${pdfTightBase} ${className}`.trim()
-      : `max-w-none leading-[1.4] ${RESUME_LIST_LAYOUT_CLASSES} ${className} [&>p]:mb-1 [&>ul]:my-1 [&>ul]:mb-2 [&>ol]:my-1 [&>ol]:mb-2`.trim();
+      : `max-w-none leading-[1.4] ${RESUME_LIST_LAYOUT_CLASSES} ${className} [&>p]:mb-1 [&>ul]:my-1 [&>ul]:mb-2 [&>ol]:my-1 [&>ol]:mb-2 [&>p:first-child]:mt-0 [&>ul:first-child]:mt-0 [&>ol:first-child]:mt-0 [&>p:last-child]:mb-0 [&>ul:last-child]:mb-0 [&>ol:last-child]:mb-0 [&_li:last-child]:mb-0`.trim();
 
-  return <div className={mergedClassName} dangerouslySetInnerHTML={{ __html: normalizeResumeHtml(content) }} />;
+  return (
+    <div
+      className={mergedClassName}
+      style={lineHeight != null ? { lineHeight } : undefined}
+      dangerouslySetInnerHTML={{ __html: normalizeResumeHtml(content) }}
+    />
+  );
 };
 
 export default HtmlDisplay;

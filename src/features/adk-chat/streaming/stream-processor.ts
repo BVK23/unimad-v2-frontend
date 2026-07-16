@@ -21,6 +21,7 @@ import {
   isMutatingAdkTool,
   isMutatingResumeTool,
   labelForAgent,
+  labelForThinkingAgent,
   labelForMutatingToolResponse,
   labelForReadToolResponse,
   labelForToolCall,
@@ -64,7 +65,8 @@ export async function processSseEventData(
   accumulatedTextRef: { current: string },
   currentAgentRef: { current: string },
   setCurrentAgent: (agent: string) => void,
-  activityDedupRef?: { current: Set<string> }
+  activityDedupRef?: { current: Set<string> },
+  intermediateNarrationRef?: { current: string }
 ): Promise<void> {
   const { textParts, thoughtParts, agent, transferToAgent, functionCall, functionResponse, partial, streamActivityHint } =
     extractDataFromSSE(jsonData);
@@ -97,11 +99,11 @@ export async function processSseEventData(
 
   // Tool / handoff labels first — they are more specific than coordinator author labels.
   if (functionCall) {
-    processFunctionCall(functionCall, actualMessageId, callbacks, emitActivityLabel);
+    processFunctionCall(functionCall, actualMessageId, callbacks, emitActivityLabel, accumulatedTextRef, intermediateNarrationRef);
   }
 
   if (functionResponse) {
-    processFunctionResponse(functionResponse, actualMessageId, callbacks, emitActivityLabel, accumulatedTextRef);
+    processFunctionResponse(functionResponse, actualMessageId, callbacks, emitActivityLabel, accumulatedTextRef, intermediateNarrationRef);
   }
 
   if (transferToAgent) {
@@ -132,7 +134,7 @@ export async function processSseEventData(
 
   // Process text content using OFFICIAL ADK TERMINATION SIGNAL PATTERN
   if (textParts.length > 0) {
-    await processTextContent(textParts, agent, actualMessageId, accumulatedTextRef, callbacks.onMessageUpdate);
+    await processTextContent(textParts, agent, actualMessageId, accumulatedTextRef, callbacks.onMessageUpdate, intermediateNarrationRef);
   }
 }
 
@@ -147,7 +149,9 @@ function processFunctionCall(
   functionCall: { name: string; args: Record<string, unknown>; id: string },
   aiMessageId: string,
   callbacks: StreamProcessingCallbacks,
-  emitActivityLabel: (label: string, meta?: { author?: string; tool?: string; transferTo?: string }, dedupKey?: string) => void
+  emitActivityLabel: (label: string, meta?: { author?: string; tool?: string; transferTo?: string }, dedupKey?: string) => void,
+  accumulatedTextRef?: { current: string },
+  intermediateNarrationRef?: { current: string }
 ): void {
   const functionCallTitle = `Function Call: ${functionCall.name}`;
   createDebugLog("SSE HANDLER", "Adding Function Call timeline event:", functionCallTitle);
@@ -160,6 +164,11 @@ function processFunctionCall(
   });
   emitActivityLabel(toolUiLabel, { tool: functionCall.name }, `call:${functionCall.id || functionCall.name}`);
 
+  // Park interim narration as soon as a mutating tool is invoked (before response clears it).
+  if (isMutatingAdkTool(functionCall.name)) {
+    parkInterimNarration(aiMessageId, callbacks, accumulatedTextRef, intermediateNarrationRef);
+  }
+
   callbacks.onEventUpdate(aiMessageId, {
     title: functionCallTitle,
     data: {
@@ -168,6 +177,33 @@ function processFunctionCall(
       args: functionCall.args,
       id: functionCall.id,
     },
+  });
+}
+
+/**
+ * Move current bubble text into intermediateNarration and clear the live accumulator.
+ * Used when a mutating tool starts/completes so ReAct draft prose is not the final reply.
+ */
+function parkInterimNarration(
+  aiMessageId: string,
+  callbacks: StreamProcessingCallbacks,
+  accumulatedTextRef?: { current: string },
+  intermediateNarrationRef?: { current: string }
+): void {
+  if (!accumulatedTextRef || !intermediateNarrationRef) return;
+  const interim = accumulatedTextRef.current.trim();
+  if (!interim) return;
+
+  const prev = intermediateNarrationRef.current.trim();
+  intermediateNarrationRef.current = prev ? `${prev}\n\n${interim}` : interim;
+  accumulatedTextRef.current = "";
+
+  callbacks.onMessageUpdate({
+    type: "ai",
+    content: "",
+    id: aiMessageId,
+    timestamp: new Date(),
+    intermediateNarration: intermediateNarrationRef.current,
   });
 }
 
@@ -187,7 +223,8 @@ function processFunctionResponse(
   aiMessageId: string,
   callbacks: StreamProcessingCallbacks,
   emitActivityLabel: (label: string, meta?: { author?: string; tool?: string; transferTo?: string }, dedupKey?: string) => void,
-  accumulatedTextRef?: { current: string }
+  accumulatedTextRef?: { current: string },
+  intermediateNarrationRef?: { current: string }
 ): void {
   const functionResponseTitle = `Function Response: ${functionResponse.name}`;
   createDebugLog("SSE HANDLER", "Adding Function Response timeline event:", functionResponseTitle);
@@ -203,7 +240,8 @@ function processFunctionResponse(
       tool: functionResponse.name,
       mutatingResume: isMutatingResumeTool(functionResponse.name),
     });
-    // Drop interim narration before the post-mutation model round (ReAct loops).
+    // Park any leftover interim narration before the post-mutation model round (ReAct loops).
+    parkInterimNarration(aiMessageId, callbacks, accumulatedTextRef, intermediateNarrationRef);
     if (accumulatedTextRef) {
       accumulatedTextRef.current = "";
     }
@@ -223,7 +261,7 @@ function processFunctionResponse(
   // Navigation chip: suggest_unimad_navigation, or any tool embedding ui.navigation
   // (e.g. generate_resume_for_job_description / tailor_resume_for_job on ok|duplicate).
   {
-    const navigation = parseUnimadNavigationFromToolResponse(functionResponse.response);
+    const navigation = parseUnimadNavigationFromToolResponse(functionResponse.response, functionResponse.name);
     if (navigation) {
       callbacks.onNavigationSuggestion?.(aiMessageId, navigation);
     }
@@ -364,8 +402,10 @@ function processThoughts(
     // Create separate timeline activity for each section
     sections.forEach(section => {
       queueMicrotask(() => {
+        // Prefer domain thinking copy over model section headers (no emoji).
+        const title = labelForThinkingAgent(agent);
         onEventUpdate(aiMessageId, {
-          title: section.title ? `🤔 ${section.title}` : `🤔 ${agent} is thinking...`,
+          title,
           data: { type: "thinking", content: section.content },
         });
       });
@@ -387,11 +427,13 @@ async function processTextContent(
   agent: string,
   aiMessageId: string,
   accumulatedTextRef: { current: string },
-  onMessageUpdate: (message: AgentMessage) => void
+  onMessageUpdate: (message: AgentMessage) => void,
+  intermediateNarrationRef?: { current: string }
 ): Promise<void> {
   // Process each text chunk using OFFICIAL ADK TERMINATION SIGNAL PATTERN
   for (const text of textParts) {
     const currentAccumulated = accumulatedTextRef.current;
+    const intermediateNarration = intermediateNarrationRef?.current?.trim() || undefined;
 
     // 🎯 OFFICIAL ADK TERMINATION SIGNAL PATTERN (matches Angular implementation):
     // if (newChunk == this.streamingTextMessage.text) { return; }
@@ -408,6 +450,8 @@ async function processTextContent(
         content: currentAccumulated.trim(),
         id: aiMessageId,
         timestamp: new Date(),
+        ...(agent ? { agent } : {}),
+        ...(intermediateNarration ? { intermediateNarration } : {}),
       };
 
       queueMicrotask(() => {
@@ -426,6 +470,8 @@ async function processTextContent(
       content: accumulatedTextRef.current.trim(),
       id: aiMessageId,
       timestamp: new Date(),
+      ...(agent ? { agent } : {}),
+      ...(intermediateNarration ? { intermediateNarration } : {}),
     };
 
     queueMicrotask(() => {

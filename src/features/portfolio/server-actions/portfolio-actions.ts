@@ -98,6 +98,21 @@ export async function replacePortfolioTemplate(): Promise<{ assetData: Record<st
   return res.json();
 }
 
+/** Revert to context_snapshot.pre_replace after a Replace Portfolio Gen. */
+export async function revertPortfolioGenerated(): Promise<{ assetData: Record<string, unknown> }> {
+  const res = await authedFetch("/api/portfolio/revert-template/", {
+    method: "POST",
+    body: JSON.stringify({}),
+  });
+
+  if (!res.ok) {
+    const data = await res.json().catch(() => ({}));
+    throw new Error(data?.error ?? "Failed to revert portfolio");
+  }
+
+  return res.json();
+}
+
 export async function updatePortfolioContent(body: Record<string, unknown>): Promise<{
   message: string;
   created?: boolean;

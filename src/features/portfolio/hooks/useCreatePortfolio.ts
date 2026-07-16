@@ -10,7 +10,7 @@ import {
 import { usePortfolioStore } from "@/features/portfolio/store/usePortfolioStore";
 import type { PortfolioData } from "@/types";
 import { useMutation, useQueryClient } from "@tanstack/react-query";
-import { portfolioQueryKey } from "./usePortfolio";
+import { setLivePortfolioQueryData } from "./usePortfolio";
 
 export type CreatePortfolioInput = {
   mode: "initial" | "from_base";
@@ -61,7 +61,7 @@ export function useCreatePortfolio() {
   return useMutation({
     mutationFn: runCreatePortfolio,
     onSuccess: portfolio => {
-      queryClient.setQueryData(portfolioQueryKey, portfolio);
+      setLivePortfolioQueryData(queryClient, portfolio);
       if (portfolio.id) {
         usePortfolioStore.getState().setPortfolioData(portfolio.id, portfolio);
       }

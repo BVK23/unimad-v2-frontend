@@ -22,7 +22,23 @@ export function shouldMergeSimilarAiMessages(earlier: string, later: string): bo
 }
 
 /** Meta wrap-up after a real answer (keep the earlier, longer analysis). */
-const META_COMPLETION_RE = /^(i('ve| have) (completed|provided|finished)|as there are no|there('s| is) nothing further|summary\s*:)/i;
+const META_COMPLETION_RE =
+  /^(i('ve| have) (completed|provided|finished|analyzed)|as there are no|there('s| is) nothing further|summary\s*:)/i;
+
+/** Internal architecture leaked in a short recap — never prefer over the long user-facing analysis. */
+const INTERNAL_ARCHITECTURE_RE =
+  /\b(resume_agent|ats_agent|unibot_agent|_agent\b|section agents?|transfer_to_agent|guideline for the resume)\b/i;
+
+function isShortRecapAfterAnalysis(earlier: string, later: string): boolean {
+  if (earlier.length < 180) return false;
+  if (later.length >= earlier.length * 0.9) return false;
+  if (META_COMPLETION_RE.test(later.trim())) return true;
+  if (INTERNAL_ARCHITECTURE_RE.test(later)) return true;
+  if (/\b(i have (also )?provided|completed the analysis|requested feedback)\b/i.test(later) && later.length < earlier.length) {
+    return true;
+  }
+  return false;
+}
 
 /** Specialist already acted after proposing / asking (keep the later result). */
 const ACTION_DONE_RE =
@@ -81,8 +97,8 @@ export function preferCollapsedAiMessage<T extends AgentMessage>(earlier: T, lat
     return { ...later, timelineActivities: activities };
   }
 
-  // Long analysis then short "I've completed…" status → keep the analysis.
-  if (META_COMPLETION_RE.test(b) && a.length > b.length * 1.25) {
+  // Long analysis then short "I've completed…" / internal recap → keep the analysis.
+  if (isShortRecapAfterAnalysis(a, b) || (META_COMPLETION_RE.test(b) && a.length > b.length * 1.25)) {
     return { ...earlier, timelineActivities: activities };
   }
 

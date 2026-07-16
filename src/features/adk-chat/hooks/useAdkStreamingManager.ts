@@ -1,6 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useMemo, useRef, useState, useSyncExternalStore } from "react";
+import { useCoachActAsSession } from "@/contexts/CoachActAsContext";
 import { syncSessionStateAction } from "@/features/adk-chat/actions";
 import { buildApplicationAssetStateDeltaFromStudio } from "@/features/application-assets/api/buildApplicationAssetStateDeltaFromStudio";
 import { useApplicationAssetStudioStore } from "@/features/application-assets/store/useApplicationAssetStudioStore";
@@ -9,7 +10,7 @@ import { getApplicationsFromQueryClient } from "@/features/application-tracker/h
 import { buildAdkContentGenStateDelta } from "@/features/content-lab/api/adk-mappers";
 import { useContentGenStudioStore } from "@/features/content-lab/store/useContentGenStudioStore";
 import { buildAdkPortfolioDataMap, buildAdkPortfolioStateDelta, mapAdkPortfolioDataMapToFrontend } from "@/features/portfolio/api/mappers";
-import { portfolioQueryKey } from "@/features/portfolio/hooks/usePortfolio";
+import { portfolioQueryKey, portfolioQueryKeyFor } from "@/features/portfolio/hooks/usePortfolio";
 import { usePortfolioStore } from "@/features/portfolio/store/usePortfolioStore";
 import { applyMutatingToolSessionPull, syncContentGenDraftPreviewOnly } from "@/src/features/adk-chat/apply-mutating-tool-session-pull";
 import { deriveActiveScope, deriveScopeFromRegistryRow, type ContentScope } from "@/src/features/adk-chat/content-scope";
@@ -148,6 +149,8 @@ export function useAdkStreamingManager({
   const pathname = usePathname() ?? "";
   const searchParams = useSearchParams();
   const queryClient = useQueryClient();
+  const coachActAs = useCoachActAsSession();
+  const livePortfolioQueryKey = useMemo(() => portfolioQueryKeyFor(coachActAs), [coachActAs]);
   const lastResumeStoreFingerprintRef = useRef<string | null>(null);
   const lastPortfolioStoreFingerprintRef = useRef<string | null>(null);
   const suppressStoreSyncRef = useRef(false);
@@ -240,10 +243,12 @@ export function useAdkStreamingManager({
     if (!pathname.startsWith("/uniboard/portfolio")) {
       return null;
     }
-    const queryPortfolio = queryClient.getQueryData<PortfolioData | null>(portfolioQueryKey);
+    const queryPortfolio =
+      queryClient.getQueryData<PortfolioData | null>(livePortfolioQueryKey) ??
+      queryClient.getQueryData<PortfolioData | null>(portfolioQueryKey);
     const allStorePortfolios = usePortfolioStore.getState().portfolioData;
     return queryPortfolio?.id ?? Object.keys(allStorePortfolios).find(id => allStorePortfolios[id]) ?? null;
-  }, [pathname, queryClient]);
+  }, [pathname, queryClient, livePortfolioQueryKey]);
 
   const { isLoading: isStreamLoading, currentAgent, startStream } = useAdkStreaming(retryWithBackoff);
   const liveSubmitInFlight = useSyncExternalStore(
@@ -360,7 +365,9 @@ export function useAdkStreamingManager({
       }
 
       if (isPortfolioRoute) {
-        const queryPortfolio = queryClient.getQueryData<PortfolioData | null>(portfolioQueryKey);
+        const queryPortfolio =
+          queryClient.getQueryData<PortfolioData | null>(livePortfolioQueryKey) ??
+          queryClient.getQueryData<PortfolioData | null>(portfolioQueryKey);
         const activePortfolioId = queryPortfolio?.id ?? Object.keys(allStorePortfolios).find(id => allStorePortfolios[id]) ?? null;
         const storePortfolio = activePortfolioId ? usePortfolioStore.getState().getPortfolioData(activePortfolioId) : undefined;
         const sourcePortfolio = storePortfolio ?? queryPortfolio ?? null;
@@ -475,7 +482,7 @@ export function useAdkStreamingManager({
         source: "clear_context",
       };
     },
-    [pathname, searchParams, queryClient, linkedInSnapshot, isLinkedInRoute]
+    [pathname, searchParams, queryClient, linkedInSnapshot, isLinkedInRoute, livePortfolioQueryKey]
   );
 
   const getStateDeltaForScope = useCallback(
@@ -530,7 +537,9 @@ export function useAdkStreamingManager({
 
       if (scope.domain === "portfolio") {
         const allStorePortfolios = usePortfolioStore.getState().portfolioData;
-        const queryPortfolio = queryClient.getQueryData<PortfolioData | null>(portfolioQueryKey);
+        const queryPortfolio =
+          queryClient.getQueryData<PortfolioData | null>(livePortfolioQueryKey) ??
+          queryClient.getQueryData<PortfolioData | null>(portfolioQueryKey);
         const sourcePortfolio = queryPortfolio ?? Object.values(allStorePortfolios)[0] ?? null;
         const warmResumeData = buildAdkResumeDataMap(useResumeStore.getState().resumeData);
         if (sourcePortfolio?.id) {
@@ -584,7 +593,7 @@ export function useAdkStreamingManager({
 
       return getStateDeltaForCurrentRoute();
     },
-    [getStateDeltaForCurrentRoute, linkedInSnapshot, queryClient, searchParams]
+    [getStateDeltaForCurrentRoute, linkedInSnapshot, queryClient, searchParams, livePortfolioQueryKey]
   );
 
   /** Snapshot current route context into ADK session (call once per user send). */
@@ -726,10 +735,15 @@ export function useAdkStreamingManager({
           return;
         }
         const activePortfolioId = getCurrentPortfolioId();
-        if (isMutatingPortfolioTool(toolName) && activePortfolioId) {
-          const cur = usePortfolioStore.getState().getPortfolioData(activePortfolioId);
-          if (cur && !pendingPortfolioPrePullBaselineRef.current) {
-            pendingPortfolioPrePullBaselineRef.current = JSON.parse(JSON.stringify(cur)) as PortfolioData;
+        if (isMutatingPortfolioTool(toolName)) {
+          // Always schedule a session pull for portfolio mutators — even when the local
+          // portfolio id is temporarily unknown. ADK writes current_portfolio + portfolio_data;
+          // applyPortfolioState resolves the id from session state on GET.
+          if (activePortfolioId) {
+            const cur = usePortfolioStore.getState().getPortfolioData(activePortfolioId);
+            if (cur && !pendingPortfolioPrePullBaselineRef.current) {
+              pendingPortfolioPrePullBaselineRef.current = JSON.parse(JSON.stringify(cur)) as PortfolioData;
+            }
           }
           noteMutatingToolDuringStream(toolName, aiMessageId);
           return;
