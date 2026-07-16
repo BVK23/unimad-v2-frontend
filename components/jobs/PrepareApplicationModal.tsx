@@ -11,7 +11,8 @@ import { getLinkedAssetId } from "@/features/application-tracker/application-ass
 import { useOnboardingGate } from "@/features/onboarding/context/OnboardingGateContext";
 import { useDocumentAutosave } from "@/hooks/useDocumentAutosave";
 import { setPrepareReturnSession, consumePrepareReturnContentSnapshot } from "@/lib/jobs/prepare-application-return";
-import { buildResumePrepareHref, type PrepareNavigateTarget } from "@/lib/jobs/prepare-application-url";
+import { buildResumePrepareHref, buildStudioHref, type PrepareNavigateTarget } from "@/lib/jobs/prepare-application-url";
+import { canShowPrepareVpdTab } from "@/lib/jobs/vpd-status-gate";
 import { MODAL_OVERLAY_Z_CLASS } from "@/lib/ui/modal-overlay";
 import { fetchColdEmailById, updateColdEmail } from "@/src/features/cold-email/server-actions/cold-email-actions";
 import { fetchCoverLetterById, updateCoverLetter } from "@/src/features/cover-letter/server-actions/cover-letter-actions";
@@ -34,6 +35,7 @@ import { useRouter } from "next/navigation";
 import { Job, ContentGeneratorType, GeneratorContext } from "../../types/jobs";
 import PrepareInterviewPanel from "./PrepareInterviewPanel";
 import PrepareApplicationResumePreview from "./prepare/PrepareApplicationResumePreview";
+import PrepareApplicationVpdPreview from "./prepare/PrepareApplicationVpdPreview";
 import PrepareAssetGenerationLoading from "./prepare/PrepareAssetGenerationLoading";
 import PrepareTextAssetEditor from "./prepare/PrepareTextAssetEditor";
 
@@ -43,7 +45,7 @@ export type PrepareTabId = ContentGeneratorType | "interview";
 
 type GeneratableTab = "resume" | "cover-letter" | "cold-email" | "vpd";
 
-type AssetStatus = "idle" | "loading" | "ready" | "error"; // loading only used for vpd mock
+type AssetStatus = "idle" | "ready" | "error";
 
 interface TabAssetState {
   status: AssetStatus;
@@ -69,12 +71,11 @@ interface PrepareApplicationModalProps {
   onStartInterviewPrep?: (payload: StartInterviewFromJobPayload) => void;
 }
 
-const PREPARE_TABS: { id: PrepareTabId; label: string; icon: React.ElementType }[] = [
+const ALL_PREPARE_TABS: { id: PrepareTabId; label: string; icon: React.ElementType }[] = [
   { id: "resume", label: "Resume", icon: UserSquare2 },
   { id: "cover-letter", label: "Cover Letter", icon: FileText },
   { id: "cold-email", label: "Cold Email", icon: Mail },
-  // VPD tab hidden until prepare-application VPD flow is ready
-  // { id: "vpd", label: "Value Prop Doc", icon: Briefcase },
+  { id: "vpd", label: "Value Prop Doc", icon: Briefcase },
   { id: "interview", label: "Interview Prep", icon: Mic2 },
 ];
 
@@ -109,16 +110,26 @@ const PrepareApplicationModal: React.FC<PrepareApplicationModalProps> = ({
   const isTabPendingRef = useRef<(tab: GeneratablePrepareTab) => boolean>(() => false);
 
   const {
+    application,
     applicationId,
     linkedResumeId,
     linkedCoverLetterId,
     linkedColdEmailId,
+    linkedVpdId,
     syncApplicationAssets,
     resolveApplicationId,
     invalidateResumeCaches,
     invalidateTextAssetCaches,
     resetResolved,
   } = usePrepareApplicationContext(job);
+
+  const showVpdTab = canShowPrepareVpdTab(job, application?.status);
+  const prepareTabs = ALL_PREPARE_TABS.filter(tab => tab.id !== "vpd" || showVpdTab);
+
+  const resolveInitialTab = (tab: PrepareTabId): PrepareTabId => {
+    if (tab === "vpd" && !canShowPrepareVpdTab(job, application?.status)) return "resume";
+    return tab;
+  };
 
   const isInterviewTab = activeTab === "interview";
   const activeAsset = !isInterviewTab ? tabStates[activeTab as GeneratableTab] : null;
@@ -182,7 +193,17 @@ const PrepareApplicationModal: React.FC<PrepareApplicationModalProps> = ({
     if (linkedColdEmailId && !isTabPendingRef.current("cold-email")) {
       void fetchAndSetTextAssetContent("cold-email", linkedColdEmailId);
     }
-  }, [linkedResumeId, linkedCoverLetterId, linkedColdEmailId, fetchAndSetTextAssetContent, invalidateResumeCaches]);
+
+    if (linkedVpdId && !isTabPendingRef.current("vpd")) {
+      setTabStates(prev => {
+        if (prev.vpd.assetId === linkedVpdId && prev.vpd.status === "ready") return prev;
+        return {
+          ...prev,
+          vpd: { ...prev.vpd, status: "ready", assetId: linkedVpdId, content: "", error: null },
+        };
+      });
+    }
+  }, [linkedResumeId, linkedCoverLetterId, linkedColdEmailId, linkedVpdId, fetchAndSetTextAssetContent, invalidateResumeCaches]);
 
   const tabHasLinkedAsset = (tab: GeneratableTab) => {
     const state = tabStates[tab];
@@ -190,20 +211,24 @@ const PrepareApplicationModal: React.FC<PrepareApplicationModalProps> = ({
     if (tab === "resume") return !!linkedResumeId;
     if (tab === "cover-letter") return !!linkedCoverLetterId;
     if (tab === "cold-email") return !!linkedColdEmailId;
+    if (tab === "vpd") return !!linkedVpdId;
     return false;
   };
 
   const applySyncedAsset = useCallback(
-    async (tab: GeneratableTab, fallbackId?: string) => {
-      if (tab === "vpd") return;
-
+    async (tab: GeneratablePrepareTab, fallbackId?: string) => {
       const { assets } = await syncApplicationAssets();
-      const syncedId = getLinkedAssetId(assets, tab) ?? fallbackId ?? null;
+      const syncedId = (tab === "vpd" ? getLinkedAssetId(assets, "vpd") : getLinkedAssetId(assets, tab)) ?? fallbackId ?? null;
       if (!syncedId) return;
 
       if (tab === "resume") {
         await invalidateResumeCaches(syncedId);
         setTabState(tab, { status: "ready", assetId: syncedId, error: null });
+        return;
+      }
+
+      if (tab === "vpd") {
+        setTabState(tab, { status: "ready", assetId: syncedId, content: "", error: null });
         return;
       }
 
@@ -283,31 +308,23 @@ const PrepareApplicationModal: React.FC<PrepareApplicationModalProps> = ({
     void invalidateResumeCaches(activeResumeIdForRefetch);
   }, [activeResumeIdForRefetch, invalidateResumeCaches]);
 
-  const isActiveTabGenerating =
-    !isInterviewTab && (activeTab === "vpd" ? tabStates.vpd.status === "loading" : isTabPending(activeTab as GeneratablePrepareTab));
+  const isActiveTabGenerating = !isInterviewTab && isTabPending(activeTab as GeneratablePrepareTab);
 
   const handleGenerate = (tab: GeneratableTab = activeTab as GeneratableTab) => {
     if (!canGenerateAssets) return;
-
-    if (tab === "vpd") {
-      setTabState("vpd", { status: "loading", error: null });
-      window.setTimeout(() => {
-        setTabState("vpd", {
-          status: "ready",
-          content: `**Value Proposition for ${job.role}**\n\n1. Strategic Alignment: My experience aligns with ${job.company}'s mission.\n\n2. Key Achievements: I successfully delivered measurable outcomes in similar roles.\n\n3. Next Steps: I'd welcome the chance to discuss how I can contribute to your team.`,
-          assetId: null,
-          error: null,
-        });
-      }, 1200);
-      return;
-    }
-
     generateTab(tab);
   };
 
   useEffect(() => {
-    setActiveTab(initialTab);
-  }, [initialTab, job.id]);
+    const next = resolveInitialTab(initialTab);
+    setActiveTab(next);
+  }, [initialTab, job.id, job.applicationStatus, application?.status]);
+
+  useEffect(() => {
+    if (activeTab === "vpd" && !showVpdTab) {
+      setActiveTab("resume");
+    }
+  }, [activeTab, showVpdTab]);
 
   const handleCopy = () => {
     const raw = activeAsset?.content ?? "";
@@ -332,18 +349,6 @@ const PrepareApplicationModal: React.FC<PrepareApplicationModalProps> = ({
         setIsDownloading(false);
       }
     })();
-  };
-
-  const handleDownloadVpdText = () => {
-    const text = activeAsset?.content ?? "";
-    if (!text) return;
-    const element = document.createElement("a");
-    const file = new Blob([text], { type: "text/plain" });
-    element.href = URL.createObjectURL(file);
-    element.download = `vpd-${job.company.replace(/\s+/g, "-").toLowerCase()}.txt`;
-    document.body.appendChild(element);
-    element.click();
-    document.body.removeChild(element);
   };
 
   const handleDownloadDocx = () => {
@@ -523,6 +528,7 @@ const PrepareApplicationModal: React.FC<PrepareApplicationModalProps> = ({
   };
 
   const activeResumeId = activeTab === "resume" ? (tabStates.resume.assetId ?? linkedResumeId) : null;
+  const activeVpdId = activeTab === "vpd" ? (tabStates.vpd.assetId ?? linkedVpdId) : null;
 
   const handleDownloadResume = () => {
     const resumeId = tabStates.resume.assetId ?? linkedResumeId;
@@ -543,6 +549,17 @@ const PrepareApplicationModal: React.FC<PrepareApplicationModalProps> = ({
   };
 
   const resumeEditHref = activeResumeId && prepareNavigate ? buildResumePrepareHref(activeResumeId, job.id, prepareNavigate) : null;
+  const vpdEditHref =
+    activeVpdId && prepareNavigate
+      ? buildStudioHref({
+          id: activeVpdId,
+          type: "vpd",
+          jobId: job.id,
+          navigate: prepareNavigate,
+          improve: true,
+          view: "edit",
+        })
+      : null;
 
   const handleClose = () => {
     resetResolved();
@@ -562,7 +579,7 @@ const PrepareApplicationModal: React.FC<PrepareApplicationModalProps> = ({
     }
 
     const state = tabStates[activeTab as GeneratableTab];
-    const tabLabel = PREPARE_TABS.find(t => t.id === activeTab)?.label ?? "asset";
+    const tabLabel = prepareTabs.find(t => t.id === activeTab)?.label ?? "asset";
     const resumeId = state.assetId ?? linkedResumeId;
 
     if (isActiveTabGenerating) {
@@ -630,16 +647,24 @@ const PrepareApplicationModal: React.FC<PrepareApplicationModalProps> = ({
       );
     }
 
-    if (state.status === "ready" && activeTab === "vpd") {
+    if (activeTab === "vpd" && (state.assetId || linkedVpdId)) {
+      const vpdId = state.assetId ?? linkedVpdId!;
       return (
-        <div className="scrollbar-on-hover relative flex-1 overflow-y-auto">
-          <textarea
-            value={state.content}
-            onChange={e => setTabState("vpd", { content: e.target.value })}
-            className="h-full min-h-[320px] w-full resize-none rounded-xl border border-slate-200 bg-slate-50 p-6 font-mono text-sm leading-relaxed text-slate-800 outline-none focus:ring-2 focus:ring-brand-500/20 dark:border-slate-800 dark:bg-slate-900 dark:text-slate-300"
-            spellCheck={false}
-          />
-        </div>
+        <PrepareApplicationVpdPreview
+          vpdId={vpdId}
+          editHref={vpdEditHref}
+          onEditVpd={() => {
+            setPrepareReturnSession({
+              jobId: job.id,
+              tab: "vpd",
+              company: job.company,
+              role: job.role,
+              jobDescription: job.description?.trim() || "",
+              logo: job.logo,
+              navigate: prepareNavigate,
+            });
+          }}
+        />
       );
     }
 
@@ -705,14 +730,11 @@ const PrepareApplicationModal: React.FC<PrepareApplicationModalProps> = ({
           </div>
 
           <div className="shrink-0 space-y-1">
-            {PREPARE_TABS.map(tab => {
+            {prepareTabs.map(tab => {
               const Icon = tab.icon;
               const isActive = activeTab === tab.id;
               const tabKey = tab.id as GeneratableTab | "interview";
-              const isLoading =
-                tabKey === "vpd"
-                  ? tabStates.vpd.status === "loading"
-                  : tabKey !== "interview" && isTabPending(tabKey as GeneratablePrepareTab);
+              const isLoading = tabKey !== "interview" && isTabPending(tabKey as GeneratablePrepareTab);
               const hasAsset = tabKey !== "interview" && tabHasLinkedAsset(tabKey as GeneratableTab);
 
               return (
@@ -764,7 +786,7 @@ const PrepareApplicationModal: React.FC<PrepareApplicationModalProps> = ({
                 </>
               ) : (
                 <>
-                  <Wand2 size={16} className="text-brand-500" /> Generate {PREPARE_TABS.find(t => t.id === activeTab)?.label}
+                  <Wand2 size={16} className="text-brand-500" /> Generate {prepareTabs.find(t => t.id === activeTab)?.label}
                   {isActiveTabGenerating && <Loader2 size={14} className="animate-spin text-brand-500" />}
                 </>
               )}
@@ -822,24 +844,6 @@ const PrepareApplicationModal: React.FC<PrepareApplicationModalProps> = ({
                   ) : null} */}
                 </>
               )}
-              {!isInterviewTab && activeAsset?.status === "ready" && activeTab === "vpd" && (
-                <>
-                  <button
-                    type="button"
-                    onClick={handleCopy}
-                    className="flex items-center gap-1.5 rounded-lg border border-slate-200 bg-slate-50 px-3 py-1.5 text-xs font-medium text-slate-600 transition-colors hover:bg-slate-100 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-300"
-                  >
-                    <Copy size={12} /> {copied ? "Copied" : "Copy"}
-                  </button>
-                  <button
-                    type="button"
-                    onClick={handleDownloadVpdText}
-                    className="flex items-center gap-1.5 rounded-lg border border-slate-200 bg-slate-50 px-3 py-1.5 text-xs font-medium text-slate-600 transition-colors hover:bg-slate-100 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-300"
-                  >
-                    <Download size={12} /> Download
-                  </button>
-                </>
-              )}
               <div className="mx-1 h-6 w-px bg-slate-200 dark:bg-slate-800" />
               <button
                 type="button"
@@ -854,6 +858,7 @@ const PrepareApplicationModal: React.FC<PrepareApplicationModalProps> = ({
           <div
             className={`flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden ${
               (activeTab === "resume" && activeResumeId) ||
+              (activeTab === "vpd" && activeVpdId) ||
               ((activeTab === "cover-letter" || activeTab === "cold-email") && activeTextAssetId)
                 ? "p-4"
                 : "p-8"

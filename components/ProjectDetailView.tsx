@@ -47,6 +47,8 @@ interface ProjectDetailViewProps {
   adkHighlights?: PortfolioHighlightMap;
   backLabel?: string;
   hideToolbar?: boolean;
+  /** Hide Preview Mode / Edit Page toggle (VPD page-card interiors keep Back only). */
+  hideEditModeToggle?: boolean;
   isEditMode?: boolean;
   onToggleEditMode?: () => void;
   enableSelectionImprove?: boolean;
@@ -70,6 +72,7 @@ const ProjectDetailView: React.FC<ProjectDetailViewProps> = ({
   adkHighlights,
   backLabel = "Back to Portfolio",
   hideToolbar = false,
+  hideEditModeToggle = false,
   isEditMode: isEditModeProp,
   onToggleEditMode,
   enableSelectionImprove = false,
@@ -388,6 +391,7 @@ const ProjectDetailView: React.FC<ProjectDetailViewProps> = ({
         adkHighlights={adkHighlights}
         backLabel="Back"
         hideToolbar={false}
+        hideEditModeToggle={hideEditModeToggle}
         isEditMode={isEditMode}
         onToggleEditMode={onToggleEditMode}
         enableSelectionImprove={enableSelectionImprove}
@@ -400,7 +404,7 @@ const ProjectDetailView: React.FC<ProjectDetailViewProps> = ({
   }
 
   return (
-    <div className="scrollbar-on-hover [scrollbar-gutter:stable] relative h-full flex-1 animate-in overflow-y-auto bg-slate-50 duration-300 slide-in-from-right dark:bg-slate-950">
+    <div className="scrollbar-on-hover relative h-full flex-1 animate-in overflow-y-auto bg-slate-50 duration-300 slide-in-from-right dark:bg-slate-950">
       <input
         ref={fileInputRef}
         type="file"
@@ -421,27 +425,31 @@ const ProjectDetailView: React.FC<ProjectDetailViewProps> = ({
           >
             <ArrowLeft size={16} /> {backLabel}
           </button>
-          <div className="flex items-center gap-3">
-            <button
-              type="button"
-              onClick={handleToggleEditMode}
-              className={`flex items-center gap-2 px-6 py-2 rounded-xl text-xs font-semibold transition-all active:scale-[0.99] ${
-                isEditMode
-                  ? "bg-brand-50 text-brand-600 shadow-sm"
-                  : "bg-brand-600 text-white shadow-lg shadow-brand-500/25 hover:bg-brand-700"
-              }`}
-            >
-              {isEditMode ? (
-                <>
-                  <Eye size={14} /> Preview Mode
-                </>
-              ) : (
-                <>
-                  <Edit3 size={14} /> Edit Page
-                </>
-              )}
-            </button>
-          </div>
+          {!hideEditModeToggle ? (
+            <div className="flex items-center gap-3">
+              <button
+                type="button"
+                onClick={handleToggleEditMode}
+                className={`flex items-center gap-2 px-6 py-2 rounded-xl text-xs font-semibold transition-all active:scale-[0.99] ${
+                  isEditMode
+                    ? "bg-brand-50 text-brand-600 shadow-sm"
+                    : "bg-brand-600 text-white shadow-lg shadow-brand-500/25 hover:bg-brand-700"
+                }`}
+              >
+                {isEditMode ? (
+                  <>
+                    <Eye size={14} /> Preview Mode
+                  </>
+                ) : (
+                  <>
+                    <Edit3 size={14} /> Edit Page
+                  </>
+                )}
+              </button>
+            </div>
+          ) : (
+            <div />
+          )}
         </div>
       )}
 

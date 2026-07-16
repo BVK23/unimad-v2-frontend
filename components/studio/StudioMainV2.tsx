@@ -83,11 +83,13 @@ import { deleteReferral, fetchReferralById, updateReferral } from "@/features/re
 import type { ReferralAsset } from "@/features/referral/types";
 import { useProfileData } from "@/features/user-profile/hooks/use-profile-data";
 import { resolveLinkedInPostAuthorDisplay } from "@/features/user-profile/utils/resolve-linkedin-post-author";
-import { useVpdAutosave, useVpdHistory, VPD_LIST_QUERY_KEY } from "@/features/vpd/hooks";
-import { deleteVpd, fetchVpdContent, generateVpd } from "@/features/vpd/server-actions/vpd-actions";
+import { VPD_OPEN_FULL_IMPROVE_EVENT } from "@/features/vpd/api/vpd-full-improve-presets";
+import { useVpdAutosave, useVpdHistory, useVpdTemplateClaim, VPD_LIST_QUERY_KEY } from "@/features/vpd/hooks";
+import { createVpd, deleteVpd, duplicateVpd, fetchVpdContent, generateVpd } from "@/features/vpd/server-actions/vpd-actions";
 import { isGenerateVpdDuplicate, type GenerateVpdParams } from "@/features/vpd/types";
 import { isPersistedVpdId } from "@/features/vpd/utils/isPersistedVpdId";
-import { mapVpdApiToListItem, mapVpdApiToStudioProject } from "@/features/vpd/utils/mapVpdApiToStudioProject";
+import { isVpdTemplateId } from "@/features/vpd/utils/isVpdTemplateId";
+import { mapVpdApiToListItem, mapVpdApiToStudioProject, mapVpdTemplateToListItem } from "@/features/vpd/utils/mapVpdApiToStudioProject";
 import { useDocumentAutosave } from "@/hooks/useDocumentAutosave";
 import { useResizablePanelWidth } from "@/hooks/useResizablePanelWidth";
 import {
@@ -120,7 +122,7 @@ import { htmlToPlainText } from "@/utils/html-to-text";
 import { sanitizeUserFacingError } from "@/utils/message-from-failed-response";
 import { normalizeContentToHtml } from "@/utils/normalize-content-to-html";
 import { useQueryClient } from "@tanstack/react-query";
-import { ThumbsUp, MessageSquare, Repeat, Send, MoreHorizontal, Wand2, Plus, History, Upload, Info } from "lucide-react";
+import { ThumbsUp, MessageSquare, Repeat, Send, MoreHorizontal, Wand2, Plus, History, Upload, Info, Loader2 } from "lucide-react";
 import { usePathname, useRouter, useSearchParams } from "next/navigation";
 import { PortfolioItem } from "../../types";
 import { GeneratorContext } from "../../types/jobs";
@@ -137,6 +139,7 @@ import { StudioAssetDeleteConfirmDialog, type StudioDeletableAssetKind } from ".
 import StudioDocumentPreview from "./StudioDocumentPreview";
 import StudioMediaPreviewImage from "./StudioMediaPreviewImage";
 import StudioSectionDot from "./StudioSectionDot";
+import { VpdClaimTemplateModal } from "./VpdClaimTemplateModal";
 import VpdEditorWindow from "./VpdEditorWindow";
 import VpdLibraryCard from "./VpdLibraryCard";
 import VpdPreview from "./VpdPreview";
@@ -148,7 +151,7 @@ import {
   sortApplicationAssetsByRecency,
 } from "./studioDocumentMappers";
 import { getTopicDescription, getTopicMeta, TOPIC_GROUPS } from "./studioTopicConfig";
-import { MOCK_VPD_TEMPLATES, createDefaultVpdProject, type VpdListItem } from "./vpdStudioHelpers";
+import { createDefaultVpdProject, type VpdListItem } from "./vpdStudioHelpers";
 
 interface StudioMainProps {
   initialContext?: GeneratorContext | null;
@@ -429,7 +432,7 @@ const StudioMainV2: React.FC<StudioMainProps> = ({ initialContext, initialAssetI
   const linkedinFileInputRef = useRef<HTMLInputElement | null>(null);
   const linkedinPendingMediaRef = useRef<LinkedinPendingMediaItem[]>([]);
   const linkedinPostAssetIdRef = useRef<string | null>(null);
-  const updateStudioUrlRef = useRef<(args: { type?: string; id?: string }) => void>(() => {});
+  const updateStudioUrlRef = useRef<(args: { type?: string; id?: string; view?: "edit" | null }) => void>(() => {});
 
   const { data: linkedInAnalysis } = useLinkedInAnalysis({ enabled: selectedTopic === "linkedin-post" });
   const linkedInPostAuthor = useMemo(
@@ -518,7 +521,6 @@ const StudioMainV2: React.FC<StudioMainProps> = ({ initialContext, initialAssetI
 
   // "All VPDs" Modal State
   const [showAllVPDsModal, setShowAllVPDsModal] = useState(false);
-  const [showVpdEditor, setShowVpdEditor] = useState(false);
   // Edit/View Post State
   const [selectedPostData, setSelectedPostData] = useState<ComposerPost | null>(null);
 
@@ -537,6 +539,10 @@ const StudioMainV2: React.FC<StudioMainProps> = ({ initialContext, initialAssetI
     existingVpdId: string;
     params: GenerateVpdParams;
   } | null>(null);
+  const [duplicatingVpdId, setDuplicatingVpdId] = useState<string | null>(null);
+  const [isCreatingBlankVpd, setIsCreatingBlankVpd] = useState(false);
+  const [newlyDuplicatedVpdId, setNewlyDuplicatedVpdId] = useState<string | null>(null);
+  const [vpdDuplicateToast, setVpdDuplicateToast] = useState<string | null>(null);
   const [coverLetterDuplicateModal, setCoverLetterDuplicateModal] = useState<{
     existingAssetId: string | number;
     params: { role: string; company: string; job_description: string };
@@ -574,7 +580,11 @@ const StudioMainV2: React.FC<StudioMainProps> = ({ initialContext, initialAssetI
   } = useVpdHistory(!isVpdFeatureLocked);
 
   const recentVpds = useMemo(() => (vpdLanding?.userVpds ?? []).map(mapVpdApiToListItem), [vpdLanding?.userVpds]);
-  const libraryVpds = useMemo(() => [...recentVpds, ...MOCK_VPD_TEMPLATES], [recentVpds]);
+  const templateVpds = useMemo(
+    () => (vpdLanding?.vpdTemplatesV2 ?? []).map(mapVpdTemplateToListItem).filter(t => Boolean(t.id)),
+    [vpdLanding?.vpdTemplatesV2]
+  );
+  const libraryVpds = useMemo(() => [...recentVpds, ...templateVpds], [recentVpds, templateVpds]);
 
   const handleVpdPersisted = useCallback(() => {
     void queryClient.invalidateQueries({ queryKey: VPD_LIST_QUERY_KEY });
@@ -865,13 +875,15 @@ const StudioMainV2: React.FC<StudioMainProps> = ({ initialContext, initialAssetI
   });
 
   const updateStudioUrl = useCallback(
-    ({ type, id }: { type?: string; id?: string }) => {
+    ({ type, id, view }: { type?: string; id?: string; view?: "edit" | null }) => {
       const parsed = parseStudioSearchParams(searchParams);
       const nextType = type ?? selectedTopic;
       const nextId = id?.trim() ? id.trim() : undefined;
+      const nextView = nextType === "vpd" ? (view === null ? undefined : view === "edit" ? "edit" : parsed.view) : undefined;
       const currentType = parsed.type ?? "";
       const currentId = parsed.id ?? "";
-      if (currentType === nextType && currentId === (nextId ?? "")) {
+      const currentView = parsed.view ?? "";
+      if (currentType === nextType && currentId === (nextId ?? "") && currentView === (nextView ?? "")) {
         return;
       }
       const params = buildStudioSearchParams({
@@ -881,6 +893,7 @@ const StudioMainV2: React.FC<StudioMainProps> = ({ initialContext, initialAssetI
         navigate: parsed.navigate,
         improve: parsed.improve,
         interviewVpd: parsed.interviewVpd,
+        view: nextView,
       });
       const query = params.toString();
       router.replace(query ? `${pathname}?${query}` : pathname, { scroll: false });
@@ -889,6 +902,29 @@ const StudioMainV2: React.FC<StudioMainProps> = ({ initialContext, initialAssetI
   );
 
   updateStudioUrlRef.current = updateStudioUrl;
+
+  const studioUrlState = useMemo(() => parseStudioSearchParams(searchParams), [searchParams]);
+  const showVpdEditor = !isVpdFeatureLocked && selectedTopic === "vpd" && studioUrlState.view === "edit";
+
+  const openVpdEditor = useCallback(
+    (id?: string | null) => {
+      if (isVpdFeatureLocked) return;
+      updateStudioUrl({
+        type: "vpd",
+        id: id?.trim() ? id.trim() : undefined,
+        view: "edit",
+      });
+    },
+    [isVpdFeatureLocked, updateStudioUrl]
+  );
+
+  const closeVpdEditor = useCallback(() => {
+    updateStudioUrl({
+      type: "vpd",
+      id: isPersistedVpdId(vpdProject.id) ? String(vpdProject.id) : undefined,
+      view: null,
+    });
+  }, [updateStudioUrl, vpdProject.id]);
 
   const applyVpdProject = useCallback(
     (project: PortfolioItem, options?: { updateUrl?: boolean; slug?: string | null }) => {
@@ -936,6 +972,34 @@ const StudioMainV2: React.FC<StudioMainProps> = ({ initialContext, initialAssetI
     },
     [applyVpdDraftToForm, applyVpdProject]
   );
+
+  const handleTemplateClaimed = useCallback(
+    (next: { id: string; title: string; project: PortfolioItem }) => {
+      applyVpdProject(next.project, { slug: null });
+      void queryClient.invalidateQueries({ queryKey: VPD_LIST_QUERY_KEY });
+      setVpdLibraryTab("recents");
+      setNewlyDuplicatedVpdId(next.id);
+      setVpdDuplicateToast(`Saved as your VPD "${next.title}"`);
+      setTimeout(() => setVpdDuplicateToast(null), 2500);
+      setTimeout(() => setNewlyDuplicatedVpdId(null), 2500);
+    },
+    [applyVpdProject, queryClient]
+  );
+
+  const {
+    isDirty: isVpdTemplateDirty,
+    showModal: showVpdClaimModal,
+    showBanner: showVpdClaimBanner,
+    isClaiming: isClaimingVpdTemplate,
+    claimError: vpdClaimError,
+    dismissPrompt: dismissVpdClaimPrompt,
+    claimAsMyVpd,
+  } = useVpdTemplateClaim(vpdProject, {
+    enabled: !isVpdFeatureLocked && showVpdEditor,
+    onClaimed: handleTemplateClaimed,
+  });
+
+  const isEditingVpdTemplate = isVpdTemplateId(vpdProject.id);
 
   const canAutosaveDocument =
     !hasApplicationAssetPendingRevision &&
@@ -1169,7 +1233,7 @@ const StudioMainV2: React.FC<StudioMainProps> = ({ initialContext, initialAssetI
     // Templates are local starters — open immediately without fetching.
     if (vpd.isTemplate) {
       applyVpdProject({ ...vpd.project, id: String(vpd.id), title: vpd.title }, { updateUrl: false, slug: null });
-      setShowVpdEditor(true);
+      openVpdEditor();
       return;
     }
     // Optimistic preview from landing payload, then refresh from content API.
@@ -1178,13 +1242,96 @@ const StudioMainV2: React.FC<StudioMainProps> = ({ initialContext, initialAssetI
     void openVpdById(String(vpd.id));
   };
 
-  const handleCreateNewVpd = () => {
+  const handleEditVpd = (vpd: VpdListItem) => {
     if (isVpdFeatureLocked) return;
-    const fresh = createDefaultVpdProject();
-    applyVpdProject(fresh, { updateUrl: false, slug: null });
-    updateStudioUrl({ type: "vpd" });
-    setShowVpdEditor(true);
+    setShowAllVPDsModal(false);
+    if (vpd.isTemplate) {
+      applyVpdProject({ ...vpd.project, id: String(vpd.id), title: vpd.title }, { updateUrl: false, slug: null });
+      openVpdEditor();
+      return;
+    }
+    applyVpdDraftToForm(vpd);
+    applyVpdProject({ ...vpd.project, id: String(vpd.id), title: vpd.title }, { slug: vpd.slug ?? null });
+    openVpdEditor(String(vpd.id));
+    void openVpdById(String(vpd.id));
   };
+
+  const handleCreateNewVpd = useCallback(async () => {
+    if (isVpdFeatureLocked || isCreatingBlankVpd) return;
+    setIsCreatingBlankVpd(true);
+    setVpdFormError(null);
+    try {
+      const result = await createVpd();
+      await queryClient.invalidateQueries({ queryKey: VPD_LIST_QUERY_KEY });
+      setVpdLibraryTab("recents");
+      setNewlyDuplicatedVpdId(result.id);
+      setTimeout(() => setNewlyDuplicatedVpdId(null), 2500);
+      applyVpdProject(mapVpdApiToStudioProject(result.vpdData), { slug: null });
+      openVpdEditor(result.id);
+    } catch (err) {
+      setVpdFormError(sanitizeUserFacingError(err instanceof Error ? err.message : "Failed to create VPD", "Failed to create VPD."));
+    } finally {
+      setIsCreatingBlankVpd(false);
+    }
+  }, [applyVpdProject, isCreatingBlankVpd, isVpdFeatureLocked, openVpdEditor, queryClient]);
+
+  const handleDuplicateVpd = useCallback(
+    async (vpd: VpdListItem) => {
+      if (isVpdFeatureLocked || duplicatingVpdId) return;
+      const sourceId = String(vpd.id);
+      setDuplicatingVpdId(sourceId);
+      setVpdFormError(null);
+      try {
+        const result = await duplicateVpd(sourceId, Boolean(vpd.isTemplate));
+        await queryClient.invalidateQueries({ queryKey: VPD_LIST_QUERY_KEY });
+        setVpdLibraryTab("recents");
+        setNewlyDuplicatedVpdId(result.id);
+        setVpdDuplicateToast(vpd.isTemplate ? `Added to your VPDs as "${result.title}"` : `Duplicated as "${result.title}"`);
+        setTimeout(() => setVpdDuplicateToast(null), 2500);
+        setTimeout(() => setNewlyDuplicatedVpdId(null), 2500);
+      } catch (err) {
+        setVpdFormError(
+          sanitizeUserFacingError(err instanceof Error ? err.message : "Failed to duplicate VPD", "Failed to duplicate VPD.")
+        );
+      } finally {
+        setDuplicatingVpdId(null);
+      }
+    },
+    [duplicatingVpdId, isVpdFeatureLocked, queryClient]
+  );
+
+  const handleDeleteVpd = useCallback(
+    async (id: string | number) => {
+      const idStr = String(id);
+      await deleteVpd(idStr);
+      void queryClient.invalidateQueries({ queryKey: VPD_LIST_QUERY_KEY });
+      if (String(vpdProject.id) === idStr) {
+        const fresh = createDefaultVpdProject();
+        applyVpdProject(fresh, { updateUrl: false, slug: null });
+        closeVpdEditor();
+        setRole("");
+        setCompany("");
+        setJobDescription("");
+        setSelectedDocumentId(null);
+      }
+      if (newlyDuplicatedVpdId === idStr) {
+        setNewlyDuplicatedVpdId(null);
+      }
+    },
+    [applyVpdProject, closeVpdEditor, newlyDuplicatedVpdId, queryClient, vpdProject.id]
+  );
+
+  const requestDeleteVpd = useCallback(
+    (vpd: VpdListItem) => {
+      if (isVpdFeatureLocked || vpd.isTemplate) return;
+      setPendingStudioAssetDelete({
+        id: vpd.id,
+        kind: "vpd",
+        label: vpd.title?.trim() || "this VPD",
+      });
+    },
+    [isVpdFeatureLocked]
+  );
 
   const handleViewAllDocuments = () => {
     setShowAllDocumentsModal(true);
@@ -1867,9 +2014,9 @@ const StudioMainV2: React.FC<StudioMainProps> = ({ initialContext, initialAssetI
         description: roleLabel && companyLabel ? `Interview VPD for ${roleLabel} at ${companyLabel}` : "",
       });
       setGeneratedContent("");
-      setShowVpdEditor(true);
+      openVpdEditor();
     }
-  }, [initialContext, updateStudioUrl]);
+  }, [initialContext, openVpdEditor, updateStudioUrl]);
 
   const syncPrepareReturnFromUrl = useCallback(async () => {
     const parsed = parseStudioSearchParams(searchParams);
@@ -2165,6 +2312,19 @@ const StudioMainV2: React.FC<StudioMainProps> = ({ initialContext, initialAssetI
             updateUrl: false,
             slug: typeof data.slug === "string" && data.slug.trim() ? data.slug.trim() : null,
           });
+          if (initialContext?.openImproveMode && !improveDispatchedRef.current) {
+            improveDispatchedRef.current = true;
+            window.dispatchEvent(
+              new CustomEvent(VPD_OPEN_FULL_IMPROVE_EVENT, {
+                detail: {
+                  vpdId: String(urlId),
+                  role: data.role?.trim() || role || initialContext.role || prepareReturn?.role || "",
+                  company: data.company?.trim() || company || initialContext.company || prepareReturn?.company || "",
+                  fromPrepareApplication: true,
+                },
+              })
+            );
+          }
           return;
         }
       } catch {
@@ -2185,13 +2345,19 @@ const StudioMainV2: React.FC<StudioMainProps> = ({ initialContext, initialAssetI
     connectionName,
     dispatchOpenImproveForAsset,
     initialAssetId,
+    initialContext?.company,
     initialContext?.description,
+    initialContext?.openImproveMode,
     initialContext?.recipientName,
+    initialContext?.role,
     jobDescription,
     managerName,
     pathname,
     prepareApplicationId,
+    prepareReturn?.company,
     prepareReturn?.jobDescription,
+    prepareReturn?.role,
+    role,
     router,
     searchParams,
     selectedTopic,
@@ -2391,6 +2557,8 @@ const StudioMainV2: React.FC<StudioMainProps> = ({ initialContext, initialAssetI
     try {
       if (pendingStudioAssetDelete.kind === "linkedin-post") {
         await handleDeleteLinkedinPost(String(pendingStudioAssetDelete.id));
+      } else if (pendingStudioAssetDelete.kind === "vpd") {
+        await handleDeleteVpd(pendingStudioAssetDelete.id);
       } else {
         await handleDeleteDocument(pendingStudioAssetDelete.id);
       }
@@ -2398,7 +2566,7 @@ const StudioMainV2: React.FC<StudioMainProps> = ({ initialContext, initialAssetI
     } finally {
       setIsDeletingStudioAsset(false);
     }
-  }, [handleDeleteDocument, handleDeleteLinkedinPost, pendingStudioAssetDelete]);
+  }, [handleDeleteDocument, handleDeleteLinkedinPost, handleDeleteVpd, pendingStudioAssetDelete]);
 
   const handleViewAll = (tab: "scheduled" | "history") => {
     if (isDocumentTopic(selectedTopic)) {
@@ -3156,11 +3324,18 @@ const StudioMainV2: React.FC<StudioMainProps> = ({ initialContext, initialAssetI
 
   const renderVpdSavedCards = () => {
     const recents = recentVpds;
-    const templates = MOCK_VPD_TEMPLATES;
+    const templates = templateVpds;
     const activeList = vpdLibraryTab === "recents" ? recents : templates;
 
     return (
-      <div className="mt-5 border-t border-slate-100 pt-5 dark:border-slate-800">
+      <div className="relative mt-5 border-t border-slate-100 pt-5 dark:border-slate-800">
+        {vpdDuplicateToast && (
+          <div className="pointer-events-none absolute inset-x-0 top-1 z-10 flex justify-center">
+            <span className="rounded-full bg-slate-900 px-3 py-1.5 text-[11px] font-medium text-white shadow-lg animate-in fade-in slide-in-from-top-1 duration-200 dark:bg-white dark:text-slate-900">
+              {vpdDuplicateToast}
+            </span>
+          </div>
+        )}
         <div className="mb-3 flex items-center justify-between gap-2">
           <div className="inline-flex rounded-full bg-slate-100 p-0.5 dark:bg-slate-900">
             <button
@@ -3195,9 +3370,9 @@ const StudioMainV2: React.FC<StudioMainProps> = ({ initialContext, initialAssetI
           </button>
         </div>
 
-        {vpdLibraryTab === "recents" && isVpdHistoryLoading ? (
+        {isVpdHistoryLoading ? (
           <p className="rounded-xl border border-dashed border-slate-200 px-4 py-6 text-center text-xs text-slate-400 dark:border-slate-700">
-            Loading your VPDs…
+            {vpdLibraryTab === "recents" ? "Loading your VPDs…" : "Loading templates…"}
           </p>
         ) : vpdLibraryTab === "recents" && isVpdHistoryError ? (
           <div className="rounded-xl border border-dashed border-slate-200 px-4 py-6 text-center dark:border-slate-700">
@@ -3210,25 +3385,46 @@ const StudioMainV2: React.FC<StudioMainProps> = ({ initialContext, initialAssetI
               Retry
             </button>
           </div>
+        ) : vpdLibraryTab === "templates" && isVpdHistoryError ? (
+          <div className="rounded-xl border border-dashed border-slate-200 px-4 py-6 text-center dark:border-slate-700">
+            <p className="text-xs text-slate-500">Couldn’t load templates.</p>
+            <button
+              type="button"
+              onClick={() => void refetchVpdHistory()}
+              className="mt-2 text-xs font-medium text-brand-600 hover:underline dark:text-brand-400"
+            >
+              Retry
+            </button>
+          </div>
         ) : activeList.length > 0 ? (
           <div className="grid grid-cols-3 gap-2.5">
             {activeList.slice(0, 6).map(vpd => (
-              <VpdLibraryCard key={vpd.id} vpd={vpd} onClick={() => handleSelectVpd(vpd)} />
+              <VpdLibraryCard
+                key={vpd.id}
+                vpd={vpd}
+                onClick={() => handleSelectVpd(vpd)}
+                onEdit={handleEditVpd}
+                onDuplicate={v => void handleDuplicateVpd(v)}
+                onDelete={requestDeleteVpd}
+                isDuplicating={duplicatingVpdId === String(vpd.id)}
+                isHighlighted={newlyDuplicatedVpdId === String(vpd.id)}
+              />
             ))}
           </div>
         ) : (
           <p className="rounded-xl border border-dashed border-slate-200 px-4 py-6 text-center text-xs text-slate-400 dark:border-slate-700">
-            {vpdLibraryTab === "recents" ? "No recent VPDs yet. Generate a draft to create one." : "No templates available yet."}
+            {vpdLibraryTab === "recents" ? "No recent VPDs yet. Create a blank one or generate a draft." : "No templates available yet."}
           </p>
         )}
 
         <button
           type="button"
-          onClick={handleCreateNewVpd}
-          className="mt-3 flex w-full items-center justify-center gap-2 rounded-xl border-2 border-dashed border-slate-300 py-3 text-sm font-medium text-slate-500 transition-all hover:border-brand-500 hover:text-brand-600 hover:bg-slate-50 dark:border-slate-700 dark:hover:bg-slate-900"
+          onClick={() => void handleCreateNewVpd()}
+          disabled={isCreatingBlankVpd}
+          className="mt-3 flex w-full items-center justify-center gap-2 rounded-xl border-2 border-dashed border-slate-300 py-3 text-sm font-medium text-slate-500 transition-all hover:border-brand-500 hover:text-brand-600 hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-60 dark:border-slate-700 dark:hover:bg-slate-900"
         >
-          <Plus size={18} />
-          Create blank VPD
+          {isCreatingBlankVpd ? <Loader2 size={18} className="animate-spin" /> : <Plus size={18} />}
+          {isCreatingBlankVpd ? "Creating…" : "Create blank VPD"}
         </button>
       </div>
     );
@@ -3921,343 +4117,399 @@ const StudioMainV2: React.FC<StudioMainProps> = ({ initialContext, initialAssetI
           onDismiss={handleDismissPrepareReturn}
         />
       ) : null}
-      <div className="flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden lg:flex-row">
-        {/* LEFT: Input / Generator — drag right edge to resize */}
-        <div className={`flex h-1/2 w-full shrink-0 lg:h-full lg:w-auto ${isEditorResizing ? "select-none" : ""}`}>
-          <div
-            className="h-full min-w-0 overflow-hidden border-b border-slate-100 bg-white dark:border-slate-800 dark:bg-slate-900 lg:border-b-0 lg:border-r lg:border-slate-200/60 dark:lg:border-slate-700/60"
-            style={{ width: editorPanelWidth }}
-          >
-            <div className="scrollbar-on-hover h-full overflow-y-auto p-8">
-              <div className="mb-8">
-                <h1 className="mb-2 font-['Onest'] text-2xl font-medium text-slate-900 transition-colors dark:text-white">
-                  {getTopicMeta(selectedTopic).label}
-                </h1>
-                <p className="text-[14px] text-slate-500 transition-colors dark:text-slate-400">{getTopicDescription(selectedTopic)}</p>
-              </div>
-
-              {renderInputs()}
-            </div>
-          </div>
-          <PanelResizeHandle variant="inline" onPointerDown={startEditorResize} label="Resize studio editor panel" />
-        </div>
-
-        {/* RIGHT: Preview + Tabs */}
-        <div className="flex min-h-0 min-w-0 flex-1 flex-col relative bg-slate-100 dark:bg-slate-950">
-          {/* Top Bar for Tabs - Sticky */}
-          <div className="sticky top-0 z-20 w-full border-b border-slate-200/50 bg-slate-100/50 px-8 py-6 backdrop-blur-sm dark:border-slate-800/50 dark:bg-slate-950">
-            <div className="flex flex-wrap items-center justify-center gap-3 overflow-visible">
-              {TOPIC_GROUPS.map((group, gi) => (
-                <div
-                  key={gi}
-                  className={`inline-flex overflow-visible rounded-full bg-slate-200/50 p-1 dark:bg-slate-900 ${
-                    group.blueStroke ? "border border-brand-500/25 dark:border-brand-400/30" : "border border-transparent"
-                  }`}
-                >
-                  {group.topics.map(t => {
-                    const isLockedInPrepareMode = prepareReturn != null && PREPARE_MODE_LOCKED_TOPICS.has(t.id);
-                    const isVpdLockedTab = isVpdFeatureLocked && t.id === "vpd";
-                    const isTabDisabled = isLockedInPrepareMode || isVpdLockedTab;
-                    return (
-                      <button
-                        key={t.id}
-                        type="button"
-                        onClick={() => handleTopicChange(t.id)}
-                        disabled={isTabDisabled}
-                        title={
-                          isLockedInPrepareMode ? "Close the banner to switch to this tab" : isVpdLockedTab ? "Coming soon" : undefined
-                        }
-                        className={`relative inline-flex items-center whitespace-nowrap rounded-full px-4 py-2 text-sm font-medium transition-all ${
-                          isVpdLockedTab
-                            ? "cursor-not-allowed pr-5 text-slate-400 dark:text-slate-500"
-                            : selectedTopic === t.id
-                              ? "bg-white text-slate-900 shadow-sm dark:bg-slate-800 dark:text-white"
-                              : "text-slate-500 hover:text-slate-700 dark:text-slate-400 dark:hover:text-slate-200"
-                        } ${isLockedInPrepareMode ? "cursor-not-allowed opacity-40" : ""}`}
-                      >
-                        {t.label}
-                        {isVpdLockedTab ? <ComingSoonBadge variant="corner" /> : null}
-                      </button>
-                    );
-                  })}
+      {showVpdEditor && !isVpdFeatureLocked ? (
+        <VpdEditorWindow
+          embedded
+          project={vpdProject}
+          onClose={closeVpdEditor}
+          onUpdateProject={updated => setVpdProject(updated)}
+          hasPendingUnsavedChanges={vpdHasPendingUnsavedChanges || (isEditingVpdTemplate && isVpdTemplateDirty)}
+          isSaving={vpdIsSaving || isClaimingVpdTemplate}
+          savedConfirmationVisible={vpdSavedConfirmationVisible}
+          onSaveNow={
+            isEditingVpdTemplate
+              ? undefined
+              : () => {
+                  void runVpdSave("manual");
+                }
+          }
+          showSaveStatus={Boolean(vpdSaveStatusLabel) || (isEditingVpdTemplate && (isVpdTemplateDirty || isClaimingVpdTemplate))}
+          saveErrorMessage={vpdLastSaveError?.message ?? vpdClaimError}
+          slug={vpdSlug}
+          onSlugChange={setVpdSlug}
+          onBeforePublish={async () => {
+            if (isEditingVpdTemplate) {
+              await claimAsMyVpd();
+              return;
+            }
+            if (vpdHasPendingUnsavedChanges) {
+              await runVpdSave("manual");
+            }
+          }}
+          claimBannerVisible={showVpdClaimBanner}
+          onClaimAsMyVpd={() => {
+            void claimAsMyVpd().catch(() => undefined);
+          }}
+          isClaimingTemplate={isClaimingVpdTemplate}
+          savingLabel={isClaimingVpdTemplate ? "Saving as your VPD..." : undefined}
+        />
+      ) : (
+        <div className="flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden lg:flex-row">
+          {/* LEFT: Input / Generator — drag right edge to resize */}
+          <div className={`flex h-1/2 w-full shrink-0 lg:h-full lg:w-auto ${isEditorResizing ? "select-none" : ""}`}>
+            <div
+              className="h-full min-w-0 overflow-hidden border-b border-slate-100 bg-white dark:border-slate-800 dark:bg-slate-900 lg:border-b-0 lg:border-r lg:border-slate-200/60 dark:lg:border-slate-700/60"
+              style={{ width: editorPanelWidth }}
+            >
+              <div className="scrollbar-on-hover h-full overflow-y-auto p-8">
+                <div className="mb-8">
+                  <h1 className="mb-2 font-['Onest'] text-2xl font-medium text-slate-900 transition-colors dark:text-white">
+                    {getTopicMeta(selectedTopic).label}
+                  </h1>
+                  <p className="text-[14px] text-slate-500 transition-colors dark:text-slate-400">{getTopicDescription(selectedTopic)}</p>
                 </div>
-              ))}
+
+                {renderInputs()}
+              </div>
             </div>
+            <PanelResizeHandle variant="inline" onPointerDown={startEditorResize} label="Resize studio editor panel" />
           </div>
 
-          <div className="relative flex min-h-0 flex-1 flex-col overflow-hidden">
-            <div className="flex min-h-0 flex-1 items-start justify-center overflow-y-auto p-8 scrollbar-on-hover">
-              {isVpdTopic ? (
-                <div className="flex h-full min-h-[min(70vh,640px)] w-full max-w-3xl flex-col">
-                  <div className="mb-2 flex shrink-0 items-center justify-end gap-2">
-                    <DocumentSaveStatusBar
-                      hasPendingUnsavedChanges={vpdHasPendingUnsavedChanges}
-                      isSaving={vpdIsSaving}
-                      savedConfirmationVisible={vpdSavedConfirmationVisible}
-                      onSaveNow={() => void runVpdSave("manual")}
-                      saveNowLabel="Save Now"
-                      savingLabel={vpdIsSaving ? "Saving..." : "Autosaving..."}
-                      visible={Boolean(vpdSaveStatusLabel) && (vpdHasPendingUnsavedChanges || vpdIsSaving || vpdSavedConfirmationVisible)}
-                      variant="studio"
+          {/* RIGHT: Preview + Tabs */}
+          <div className="flex min-h-0 min-w-0 flex-1 flex-col relative bg-slate-100 dark:bg-slate-950">
+            {/* Top Bar for Tabs - Sticky */}
+            <div className="sticky top-0 z-20 w-full border-b border-slate-200/50 bg-slate-100/50 px-8 py-6 backdrop-blur-sm dark:border-slate-800/50 dark:bg-slate-950">
+              <div className="flex flex-wrap items-center justify-center gap-3 overflow-visible">
+                {TOPIC_GROUPS.map((group, gi) => (
+                  <div
+                    key={gi}
+                    className={`inline-flex overflow-visible rounded-full bg-slate-200/50 p-1 dark:bg-slate-900 ${
+                      group.blueStroke ? "border border-brand-500/25 dark:border-brand-400/30" : "border border-transparent"
+                    }`}
+                  >
+                    {group.topics.map(t => {
+                      const isLockedInPrepareMode = prepareReturn != null && PREPARE_MODE_LOCKED_TOPICS.has(t.id);
+                      const isVpdLockedTab = isVpdFeatureLocked && t.id === "vpd";
+                      const isTabDisabled = isLockedInPrepareMode || isVpdLockedTab;
+                      return (
+                        <button
+                          key={t.id}
+                          type="button"
+                          onClick={() => handleTopicChange(t.id)}
+                          disabled={isTabDisabled}
+                          title={
+                            isLockedInPrepareMode ? "Close the banner to switch to this tab" : isVpdLockedTab ? "Coming soon" : undefined
+                          }
+                          className={`relative inline-flex items-center whitespace-nowrap rounded-full px-4 py-2 text-sm font-medium transition-all ${
+                            isVpdLockedTab
+                              ? "cursor-not-allowed pr-5 text-slate-400 dark:text-slate-500"
+                              : selectedTopic === t.id
+                                ? "bg-white text-slate-900 shadow-sm dark:bg-slate-800 dark:text-white"
+                                : "text-slate-500 hover:text-slate-700 dark:text-slate-400 dark:hover:text-slate-200"
+                          } ${isLockedInPrepareMode ? "cursor-not-allowed opacity-40" : ""}`}
+                        >
+                          {t.label}
+                          {isVpdLockedTab ? <ComingSoonBadge variant="corner" /> : null}
+                        </button>
+                      );
+                    })}
+                  </div>
+                ))}
+              </div>
+            </div>
+
+            <div className="relative flex min-h-0 flex-1 flex-col overflow-hidden">
+              <div className="flex min-h-0 flex-1 items-start justify-center overflow-y-auto p-8 scrollbar-on-hover">
+                {isVpdTopic ? (
+                  <div className="flex h-full min-h-[min(70vh,640px)] w-full max-w-3xl flex-col">
+                    <div className="mb-2 flex shrink-0 items-center justify-end gap-2">
+                      <DocumentSaveStatusBar
+                        hasPendingUnsavedChanges={vpdHasPendingUnsavedChanges || (isEditingVpdTemplate && isVpdTemplateDirty)}
+                        isSaving={vpdIsSaving || isClaimingVpdTemplate}
+                        savedConfirmationVisible={vpdSavedConfirmationVisible}
+                        onSaveNow={
+                          isEditingVpdTemplate
+                            ? undefined
+                            : () => {
+                                void runVpdSave("manual");
+                              }
+                        }
+                        saveNowLabel="Save Now"
+                        savingLabel={isClaimingVpdTemplate ? "Saving as your VPD..." : vpdIsSaving ? "Saving..." : "Autosaving..."}
+                        visible={
+                          Boolean(vpdSaveStatusLabel) && (vpdHasPendingUnsavedChanges || vpdIsSaving || vpdSavedConfirmationVisible)
+                            ? true
+                            : isEditingVpdTemplate && (isVpdTemplateDirty || isClaimingVpdTemplate)
+                        }
+                        variant="studio"
+                      />
+                    </div>
+                    {vpdLastSaveError ? (
+                      <p className="mb-2 shrink-0 text-xs text-red-600 dark:text-red-400" role="alert">
+                        Could not save VPD: {vpdLastSaveError.message}
+                      </p>
+                    ) : null}
+                    <VpdPreview
+                      project={vpdProject}
+                      onOpenEditor={
+                        isVpdFeatureLocked
+                          ? undefined
+                          : () => openVpdEditor(isPersistedVpdId(vpdProject.id) ? String(vpdProject.id) : undefined)
+                      }
+                      variant="panel"
+                      slug={vpdSlug}
+                      onSlugChange={setVpdSlug}
+                      onBeforePublish={async () => {
+                        if (isEditingVpdTemplate) {
+                          await claimAsMyVpd();
+                          return;
+                        }
+                        if (vpdHasPendingUnsavedChanges) {
+                          await runVpdSave("manual");
+                        }
+                      }}
                     />
                   </div>
-                  {vpdLastSaveError ? (
-                    <p className="mb-2 shrink-0 text-xs text-red-600 dark:text-red-400" role="alert">
-                      Could not save VPD: {vpdLastSaveError.message}
-                    </p>
-                  ) : null}
-                  <VpdPreview
-                    project={vpdProject}
-                    onOpenEditor={isVpdFeatureLocked ? undefined : () => setShowVpdEditor(true)}
-                    variant="panel"
-                    slug={vpdSlug}
-                    onSlugChange={setVpdSlug}
-                    onBeforePublish={async () => {
-                      if (vpdHasPendingUnsavedChanges) {
-                        await runVpdSave("manual");
-                      }
-                    }}
-                  />
-                </div>
-              ) : (
-                <div className="relative w-full max-w-[210mm] group/preview">
-                  {selectedTopic === "linkedin-post" ? (
-                    <div className="flex min-h-[min(68vh,580px)] w-full flex-col rounded-2xl border border-slate-200 bg-white p-5 shadow-sm dark:border-slate-800 dark:bg-slate-900">
-                      <div className="mb-3 flex shrink-0 items-start justify-between gap-3">
-                        <LinkedInPostAuthorHeader author={linkedInPostAuthor} />
-                        <div className="flex shrink-0 items-center gap-2">
-                          <DocumentSaveStatusBar
-                            hasPendingUnsavedChanges={linkedinHasPendingUnsavedChanges}
-                            isSaving={linkedinIsSaving}
-                            savedConfirmationVisible={linkedinSavedConfirmationVisible}
-                            onSaveNow={() => void runLinkedinSave()}
-                            visible={
-                              linkedinServerPersistEnabled &&
-                              Boolean(getLinkedInPreviewContent().trim()) &&
-                              (linkedinHasPendingUnsavedChanges || linkedinIsSaving || linkedinSavedConfirmationVisible)
-                            }
+                ) : (
+                  <div className="relative w-full max-w-[210mm] group/preview">
+                    {selectedTopic === "linkedin-post" ? (
+                      <div className="flex min-h-[min(68vh,580px)] w-full flex-col rounded-2xl border border-slate-200 bg-white p-5 shadow-sm dark:border-slate-800 dark:bg-slate-900">
+                        <div className="mb-3 flex shrink-0 items-start justify-between gap-3">
+                          <LinkedInPostAuthorHeader author={linkedInPostAuthor} />
+                          <div className="flex shrink-0 items-center gap-2">
+                            <DocumentSaveStatusBar
+                              hasPendingUnsavedChanges={linkedinHasPendingUnsavedChanges}
+                              isSaving={linkedinIsSaving}
+                              savedConfirmationVisible={linkedinSavedConfirmationVisible}
+                              onSaveNow={() => void runLinkedinSave()}
+                              visible={
+                                linkedinServerPersistEnabled &&
+                                Boolean(getLinkedInPreviewContent().trim()) &&
+                                (linkedinHasPendingUnsavedChanges || linkedinIsSaving || linkedinSavedConfirmationVisible)
+                              }
+                            />
+                            <button type="button" className="rounded-full p-1 text-slate-500 hover:bg-slate-100" aria-label="More options">
+                              <MoreHorizontal size={20} />
+                            </button>
+                          </div>
+                        </div>
+                        {linkedinPersistError ? (
+                          <p className="mb-2 shrink-0 text-xs text-red-600 dark:text-red-400" role="alert">
+                            {linkedinPersistError}
+                          </p>
+                        ) : null}
+                        <div className="relative mb-2 min-h-[min(42vh,360px)] flex-1">
+                          {isGenerating && !getLinkedInPreviewContent().trim() ? (
+                            <AssetPreviewLoadingOverlay label="Generating your draft" />
+                          ) : null}
+                          <textarea
+                            value={getLinkedInPreviewContent()}
+                            onChange={e => {
+                              handleLinkedinPreviewContentChange(e.target.value);
+                            }}
+                            onBlur={handleLinkedinPreviewBlur}
+                            placeholder="Your content preview will appear here..."
+                            aria-label="LinkedIn post content"
+                            disabled={isGenerating && !getLinkedInPreviewContent().trim()}
+                            className="scrollbar-on-hover h-full min-h-[min(42vh,360px)] w-full resize-none overflow-y-auto border-none bg-transparent text-sm leading-relaxed text-slate-800 outline-none placeholder:text-slate-300 disabled:opacity-60 dark:text-slate-100 dark:placeholder:text-slate-600"
                           />
-                          <button type="button" className="rounded-full p-1 text-slate-500 hover:bg-slate-100" aria-label="More options">
-                            <MoreHorizontal size={20} />
+                        </div>
+                        {linkedinPendingMedia.length > 0 || linkedinImages.length > 0 ? (
+                          <div className="mb-3 grid shrink-0 grid-cols-2 gap-2">
+                            {linkedinPendingMedia.map(p => (
+                              <div key={p.id} className="relative overflow-hidden rounded-lg border border-amber-200">
+                                <StudioMediaPreviewImage src={p.objectUrl} alt="" className="h-32 w-full object-cover" />
+                                <span className="absolute bottom-1 left-1 rounded bg-amber-100/90 px-1 text-[10px] font-medium text-amber-900">
+                                  Pending upload
+                                </span>
+                              </div>
+                            ))}
+                            {linkedinImages.map(url => (
+                              <StudioMediaPreviewImage
+                                key={url}
+                                src={url}
+                                alt="LinkedIn media preview"
+                                className="h-32 w-full rounded-lg border border-slate-200 object-cover"
+                              />
+                            ))}
+                          </div>
+                        ) : null}
+                        <div className="mt-2 flex shrink-0 items-center justify-between border-b border-slate-100 pb-3 text-xs text-slate-500 dark:border-slate-800">
+                          <div className="flex cursor-pointer items-center gap-1.5 hover:text-brand-600 hover:underline">
+                            <div className="flex -space-x-1">
+                              <div className="flex h-4 w-4 items-center justify-center rounded-full bg-brand-500 ring-2 ring-white">
+                                <ThumbsUp size={8} className="fill-current text-white" />
+                              </div>
+                              <div className="flex h-4 w-4 items-center justify-center rounded-full bg-red-500 ring-2 ring-white">
+                                <span className="text-[6px] text-white">❤️</span>
+                              </div>
+                            </div>
+                            <span>1,245</span>
+                          </div>
+                          <div className="cursor-pointer hover:text-brand-600 hover:underline">88 comments • 12 reposts</div>
+                        </div>
+                        <div className="flex shrink-0 items-center justify-between px-2 pt-1">
+                          <button
+                            type="button"
+                            className="flex items-center gap-2 rounded px-2 py-3 text-sm font-semibold text-slate-600 transition-colors hover:bg-slate-100"
+                          >
+                            <ThumbsUp size={18} /> <span className="hidden sm:inline">Like</span>
+                          </button>
+                          <button
+                            type="button"
+                            className="flex items-center gap-2 rounded px-2 py-3 text-sm font-semibold text-slate-600 transition-colors hover:bg-slate-100"
+                          >
+                            <MessageSquare size={18} /> <span className="hidden sm:inline">Comment</span>
+                          </button>
+                          <button
+                            type="button"
+                            className="flex items-center gap-2 rounded px-2 py-3 text-sm font-semibold text-slate-600 transition-colors hover:bg-slate-100"
+                          >
+                            <Repeat size={18} /> <span className="hidden sm:inline">Repost</span>
+                          </button>
+                          <button
+                            type="button"
+                            className="flex items-center gap-2 rounded px-2 py-3 text-sm font-semibold text-slate-600 transition-colors hover:bg-slate-100"
+                          >
+                            <Send size={18} /> <span className="hidden sm:inline">Send</span>
+                          </button>
+                        </div>
+                        <div className="mt-4 flex shrink-0 justify-end gap-3 border-t border-slate-100 pt-4 dark:border-slate-800">
+                          {topicHasGeneratedDraft ? (
+                            <OnboardingGateTooltip
+                              enabled={linkedinMoreGated}
+                              messageKey="linkedin_post"
+                              ctaLabel={FINISH_ONBOARDING_CTA}
+                              align="right"
+                              className="inline-flex shrink-0"
+                            >
+                              <button
+                                type="button"
+                                onClick={handleImproveWithUnibot}
+                                disabled={linkedinMoreGated || isDocumentAdkLoading || !getLinkedInPreviewContent().trim()}
+                                className="inline-flex items-center gap-2 rounded-full border border-brand-200 bg-brand-50 px-5 py-2.5 text-sm font-medium text-brand-700 transition-all hover:bg-brand-100 active:scale-[0.99] disabled:cursor-not-allowed disabled:opacity-40 dark:border-brand-800 dark:bg-brand-900/40 dark:text-brand-300 dark:hover:bg-brand-900/60"
+                              >
+                                <Wand2 size={16} />
+                                Improve with Unibot
+                              </button>
+                            </OnboardingGateTooltip>
+                          ) : null}
+                          <button
+                            type="button"
+                            disabled={
+                              !getLinkedInPreviewContent().trim() ||
+                              getLinkedInPreviewContent().trim().length < MIN_LINKEDIN_POST_CHARS ||
+                              isUploadingLinkedinMedia ||
+                              linkedinPendingMedia.length > 0
+                            }
+                            onClick={() => {
+                              window.dispatchEvent(
+                                new CustomEvent(CONTENT_GEN_EVENTS.requestPublish, {
+                                  detail: { mode: "schedule" },
+                                })
+                              );
+                            }}
+                            className="inline-flex shrink-0 items-center rounded-full bg-brand-600 px-6 py-2.5 text-sm font-medium text-white shadow-md shadow-brand-500/25 transition-all hover:bg-brand-700 active:scale-[0.99] disabled:cursor-not-allowed disabled:opacity-40"
+                          >
+                            Post / Schedule
                           </button>
                         </div>
                       </div>
-                      {linkedinPersistError ? (
-                        <p className="mb-2 shrink-0 text-xs text-red-600 dark:text-red-400" role="alert">
-                          {linkedinPersistError}
-                        </p>
-                      ) : null}
-                      <div className="relative mb-2 min-h-[min(42vh,360px)] flex-1">
-                        {isGenerating && !getLinkedInPreviewContent().trim() ? (
-                          <AssetPreviewLoadingOverlay label="Generating your draft" />
-                        ) : null}
-                        <textarea
-                          value={getLinkedInPreviewContent()}
-                          onChange={e => {
-                            handleLinkedinPreviewContentChange(e.target.value);
-                          }}
-                          onBlur={handleLinkedinPreviewBlur}
-                          placeholder="Your content preview will appear here..."
-                          aria-label="LinkedIn post content"
-                          disabled={isGenerating && !getLinkedInPreviewContent().trim()}
-                          className="scrollbar-on-hover h-full min-h-[min(42vh,360px)] w-full resize-none overflow-y-auto border-none bg-transparent text-sm leading-relaxed text-slate-800 outline-none placeholder:text-slate-300 disabled:opacity-60 dark:text-slate-100 dark:placeholder:text-slate-600"
-                        />
-                      </div>
-                      {linkedinPendingMedia.length > 0 || linkedinImages.length > 0 ? (
-                        <div className="mb-3 grid shrink-0 grid-cols-2 gap-2">
-                          {linkedinPendingMedia.map(p => (
-                            <div key={p.id} className="relative overflow-hidden rounded-lg border border-amber-200">
-                              <StudioMediaPreviewImage src={p.objectUrl} alt="" className="h-32 w-full object-cover" />
-                              <span className="absolute bottom-1 left-1 rounded bg-amber-100/90 px-1 text-[10px] font-medium text-amber-900">
-                                Pending upload
-                              </span>
-                            </div>
-                          ))}
-                          {linkedinImages.map(url => (
-                            <StudioMediaPreviewImage
-                              key={url}
-                              src={url}
-                              alt="LinkedIn media preview"
-                              className="h-32 w-full rounded-lg border border-slate-200 object-cover"
-                            />
-                          ))}
-                        </div>
-                      ) : null}
-                      <div className="mt-2 flex shrink-0 items-center justify-between border-b border-slate-100 pb-3 text-xs text-slate-500 dark:border-slate-800">
-                        <div className="flex cursor-pointer items-center gap-1.5 hover:text-brand-600 hover:underline">
-                          <div className="flex -space-x-1">
-                            <div className="flex h-4 w-4 items-center justify-center rounded-full bg-brand-500 ring-2 ring-white">
-                              <ThumbsUp size={8} className="fill-current text-white" />
-                            </div>
-                            <div className="flex h-4 w-4 items-center justify-center rounded-full bg-red-500 ring-2 ring-white">
-                              <span className="text-[6px] text-white">❤️</span>
-                            </div>
-                          </div>
-                          <span>1,245</span>
-                        </div>
-                        <div className="cursor-pointer hover:text-brand-600 hover:underline">88 comments • 12 reposts</div>
-                      </div>
-                      <div className="flex shrink-0 items-center justify-between px-2 pt-1">
-                        <button
-                          type="button"
-                          className="flex items-center gap-2 rounded px-2 py-3 text-sm font-semibold text-slate-600 transition-colors hover:bg-slate-100"
-                        >
-                          <ThumbsUp size={18} /> <span className="hidden sm:inline">Like</span>
-                        </button>
-                        <button
-                          type="button"
-                          className="flex items-center gap-2 rounded px-2 py-3 text-sm font-semibold text-slate-600 transition-colors hover:bg-slate-100"
-                        >
-                          <MessageSquare size={18} /> <span className="hidden sm:inline">Comment</span>
-                        </button>
-                        <button
-                          type="button"
-                          className="flex items-center gap-2 rounded px-2 py-3 text-sm font-semibold text-slate-600 transition-colors hover:bg-slate-100"
-                        >
-                          <Repeat size={18} /> <span className="hidden sm:inline">Repost</span>
-                        </button>
-                        <button
-                          type="button"
-                          className="flex items-center gap-2 rounded px-2 py-3 text-sm font-semibold text-slate-600 transition-colors hover:bg-slate-100"
-                        >
-                          <Send size={18} /> <span className="hidden sm:inline">Send</span>
-                        </button>
-                      </div>
-                      <div className="mt-4 flex shrink-0 justify-end gap-3 border-t border-slate-100 pt-4 dark:border-slate-800">
-                        {topicHasGeneratedDraft ? (
-                          <OnboardingGateTooltip
-                            enabled={linkedinMoreGated}
-                            messageKey="linkedin_post"
-                            ctaLabel={FINISH_ONBOARDING_CTA}
-                            align="right"
-                            className="inline-flex shrink-0"
-                          >
-                            <button
-                              type="button"
-                              onClick={handleImproveWithUnibot}
-                              disabled={linkedinMoreGated || isDocumentAdkLoading || !getLinkedInPreviewContent().trim()}
-                              className="inline-flex items-center gap-2 rounded-full border border-brand-200 bg-brand-50 px-5 py-2.5 text-sm font-medium text-brand-700 transition-all hover:bg-brand-100 active:scale-[0.99] disabled:cursor-not-allowed disabled:opacity-40 dark:border-brand-800 dark:bg-brand-900/40 dark:text-brand-300 dark:hover:bg-brand-900/60"
-                            >
-                              <Wand2 size={16} />
-                              Improve with Unibot
-                            </button>
-                          </OnboardingGateTooltip>
-                        ) : null}
-                        <button
-                          type="button"
-                          disabled={
-                            !getLinkedInPreviewContent().trim() ||
-                            getLinkedInPreviewContent().trim().length < MIN_LINKEDIN_POST_CHARS ||
-                            isUploadingLinkedinMedia ||
-                            linkedinPendingMedia.length > 0
-                          }
-                          onClick={() => {
-                            window.dispatchEvent(
-                              new CustomEvent(CONTENT_GEN_EVENTS.requestPublish, {
-                                detail: { mode: "schedule" },
-                              })
-                            );
-                          }}
-                          className="inline-flex shrink-0 items-center rounded-full bg-brand-600 px-6 py-2.5 text-sm font-medium text-white shadow-md shadow-brand-500/25 transition-all hover:bg-brand-700 active:scale-[0.99] disabled:cursor-not-allowed disabled:opacity-40"
-                        >
-                          Post / Schedule
-                        </button>
-                      </div>
-                    </div>
-                  ) : isDocumentTopic(selectedTopic) ? (
-                    <StudioDocumentPreview
-                      content={documentPreviewContent}
-                      placeholder={getDocumentPlaceholder()}
-                      hasPendingUnsavedChanges={documentHasPendingUnsavedChanges}
-                      isSaving={documentIsSaving || reviewAcceptSaving}
-                      savedConfirmationVisible={documentSavedConfirmationVisible || reviewAcceptSavedVisible}
-                      isGenerating={isDocumentPreviewLoading}
-                      refineInProgress={selectionRefineLoading}
-                      generatingLabel={
-                        selectedTopic === "cover-letter"
-                          ? "Generating cover letter..."
-                          : selectedTopic === "cold-email"
-                            ? "Generating cold email..."
-                            : "Generating referral request..."
-                      }
-                      refineLabel={documentRefineLoadingLabel}
-                      copyFeedback={
-                        selectedTopic === "cover-letter"
-                          ? copyToast
-                          : selectedTopic === "cold-email"
-                            ? coldEmailCopyToast
-                            : referralCopyToast
-                      }
-                      assetType={documentAssetApiType}
-                      isAdkLoading={isDocumentAdkLoading}
-                      hasPendingRevision={hasApplicationAssetPendingRevision}
-                      adkReviewBusy={applicationAssetReviewBusy}
-                      onAcceptRevision={() => void acceptApplicationAssetReview()}
-                      onRevertRevision={discardApplicationAssetReview}
-                      baselineDraft={activeApplicationAssetReview?.baselineDraft ?? ""}
-                      anchorSelectedText={activeApplicationAssetReview?.anchorSelectedText}
-                      reviewSessionKey={activeApplicationAssetReview?.id}
-                      onApplyReconciled={async (html: string) => acceptApplicationAssetReview(html)}
-                      onCopy={() => {
-                        if (selectedTopic === "cover-letter") {
-                          setCopyToast(true);
-                          setTimeout(() => setCopyToast(false), 2000);
-                        } else if (selectedTopic === "cold-email") {
-                          setColdEmailCopyToast(true);
-                          setTimeout(() => setColdEmailCopyToast(false), 2000);
-                        } else {
-                          setReferralCopyToast(true);
-                          setTimeout(() => setReferralCopyToast(false), 2000);
+                    ) : isDocumentTopic(selectedTopic) ? (
+                      <StudioDocumentPreview
+                        content={documentPreviewContent}
+                        placeholder={getDocumentPlaceholder()}
+                        hasPendingUnsavedChanges={documentHasPendingUnsavedChanges}
+                        isSaving={documentIsSaving || reviewAcceptSaving}
+                        savedConfirmationVisible={documentSavedConfirmationVisible || reviewAcceptSavedVisible}
+                        isGenerating={isDocumentPreviewLoading}
+                        refineInProgress={selectionRefineLoading}
+                        generatingLabel={
+                          selectedTopic === "cover-letter"
+                            ? "Generating cover letter..."
+                            : selectedTopic === "cold-email"
+                              ? "Generating cold email..."
+                              : "Generating referral request..."
                         }
-                      }}
-                      onContentChange={handleDocumentContentChange}
-                      onSaveNow={() => {
-                        documentContentRef.current = getDocumentPreviewContent();
-                        void runDocumentSave();
-                      }}
-                      showDocumentDownload={selectedTopic === "cover-letter"}
-                      generateCtaLabel={showDocumentGenerateCta ? documentGenerateCtaLabel : undefined}
-                      onGenerateCta={showDocumentGenerateCta ? handleGenerate : undefined}
-                      onImproveWithUnibot={topicHasGeneratedDraft ? handleImproveWithUnibot : undefined}
-                      improveDisabled={isDocumentAdkLoading || hasApplicationAssetPendingRevision}
-                      onDownloadPdf={
-                        selectedTopic === "cover-letter"
-                          ? async () => {
-                              const content = getDocumentPreviewContent();
-                              if (currentCoverLetterDraft) {
-                                await exportCoverLetterAsPDF({ ...currentCoverLetterDraft, content });
+                        refineLabel={documentRefineLoadingLabel}
+                        copyFeedback={
+                          selectedTopic === "cover-letter"
+                            ? copyToast
+                            : selectedTopic === "cold-email"
+                              ? coldEmailCopyToast
+                              : referralCopyToast
+                        }
+                        assetType={documentAssetApiType}
+                        isAdkLoading={isDocumentAdkLoading}
+                        hasPendingRevision={hasApplicationAssetPendingRevision}
+                        adkReviewBusy={applicationAssetReviewBusy}
+                        onAcceptRevision={() => void acceptApplicationAssetReview()}
+                        onRevertRevision={discardApplicationAssetReview}
+                        baselineDraft={activeApplicationAssetReview?.baselineDraft ?? ""}
+                        anchorSelectedText={activeApplicationAssetReview?.anchorSelectedText}
+                        reviewSessionKey={activeApplicationAssetReview?.id}
+                        onApplyReconciled={async (html: string) => acceptApplicationAssetReview(html)}
+                        onCopy={() => {
+                          if (selectedTopic === "cover-letter") {
+                            setCopyToast(true);
+                            setTimeout(() => setCopyToast(false), 2000);
+                          } else if (selectedTopic === "cold-email") {
+                            setColdEmailCopyToast(true);
+                            setTimeout(() => setColdEmailCopyToast(false), 2000);
+                          } else {
+                            setReferralCopyToast(true);
+                            setTimeout(() => setReferralCopyToast(false), 2000);
+                          }
+                        }}
+                        onContentChange={handleDocumentContentChange}
+                        onSaveNow={() => {
+                          documentContentRef.current = getDocumentPreviewContent();
+                          void runDocumentSave();
+                        }}
+                        showDocumentDownload={selectedTopic === "cover-letter"}
+                        generateCtaLabel={showDocumentGenerateCta ? documentGenerateCtaLabel : undefined}
+                        onGenerateCta={showDocumentGenerateCta ? handleGenerate : undefined}
+                        onImproveWithUnibot={topicHasGeneratedDraft ? handleImproveWithUnibot : undefined}
+                        improveDisabled={isDocumentAdkLoading || hasApplicationAssetPendingRevision}
+                        onDownloadPdf={
+                          selectedTopic === "cover-letter"
+                            ? async () => {
+                                const content = getDocumentPreviewContent();
+                                if (currentCoverLetterDraft) {
+                                  await exportCoverLetterAsPDF({ ...currentCoverLetterDraft, content });
+                                }
                               }
-                            }
-                          : undefined
-                      }
-                      onDownloadDocx={
-                        selectedTopic === "cover-letter"
-                          ? async () => {
-                              const content = getDocumentPreviewContent();
-                              if (currentCoverLetterDraft) {
-                                await exportApplicationAssetAsDocx(
-                                  content,
-                                  "cover-letter",
-                                  currentCoverLetterDraft.company,
-                                  currentCoverLetterDraft.role
-                                );
+                            : undefined
+                        }
+                        onDownloadDocx={
+                          selectedTopic === "cover-letter"
+                            ? async () => {
+                                const content = getDocumentPreviewContent();
+                                if (currentCoverLetterDraft) {
+                                  await exportApplicationAssetAsDocx(
+                                    content,
+                                    "cover-letter",
+                                    currentCoverLetterDraft.company,
+                                    currentCoverLetterDraft.role
+                                  );
+                                }
                               }
-                            }
-                          : undefined
-                      }
-                    />
-                  ) : null}
-                </div>
-              )}
-            </div>
-            {showLinkedInOptimizeBanner ? (
-              <div className="shrink-0 border-t border-slate-200/60 bg-slate-100 px-8 py-4 dark:border-slate-800/60 dark:bg-slate-950">
-                <LinkedInOptimizeBanner />
+                            : undefined
+                        }
+                      />
+                    ) : null}
+                  </div>
+                )}
               </div>
-            ) : null}
+              {showLinkedInOptimizeBanner ? (
+                <div className="shrink-0 border-t border-slate-200/60 bg-slate-100 px-8 py-4 dark:border-slate-800/60 dark:bg-slate-950">
+                  <LinkedInOptimizeBanner />
+                </div>
+              ) : null}
+            </div>
           </div>
         </div>
-      </div>
+      )}
 
       {/* Modals */}
       {showScheduler && (
@@ -4325,6 +4577,11 @@ const StudioMainV2: React.FC<StudioMainProps> = ({ initialContext, initialAssetI
             setShowAllVPDsModal(false);
             handleSelectVpd(vpd);
           }}
+          onEdit={handleEditVpd}
+          onDuplicate={vpd => void handleDuplicateVpd(vpd)}
+          onDelete={requestDeleteVpd}
+          duplicatingVpdId={duplicatingVpdId}
+          highlightedVpdId={newlyDuplicatedVpdId}
         />
       )}
 
@@ -4342,26 +4599,15 @@ const StudioMainV2: React.FC<StudioMainProps> = ({ initialContext, initialAssetI
         />
       )}
 
-      {showVpdEditor && !isVpdFeatureLocked && (
-        <VpdEditorWindow
-          project={vpdProject}
-          onClose={() => setShowVpdEditor(false)}
-          onUpdateProject={updated => setVpdProject(updated)}
-          hasPendingUnsavedChanges={vpdHasPendingUnsavedChanges}
-          isSaving={vpdIsSaving}
-          savedConfirmationVisible={vpdSavedConfirmationVisible}
-          onSaveNow={() => void runVpdSave("manual")}
-          showSaveStatus={Boolean(vpdSaveStatusLabel)}
-          saveErrorMessage={vpdLastSaveError?.message ?? null}
-          slug={vpdSlug}
-          onSlugChange={setVpdSlug}
-          onBeforePublish={async () => {
-            if (vpdHasPendingUnsavedChanges) {
-              await runVpdSave("manual");
-            }
-          }}
-        />
-      )}
+      <VpdClaimTemplateModal
+        open={showVpdClaimModal}
+        isClaiming={isClaimingVpdTemplate}
+        errorMessage={vpdClaimError}
+        onConfirm={() => {
+          void claimAsMyVpd().catch(() => undefined);
+        }}
+        onCancel={dismissVpdClaimPrompt}
+      />
 
       {vpdDuplicateModal && (
         <ModalPortalOverlay

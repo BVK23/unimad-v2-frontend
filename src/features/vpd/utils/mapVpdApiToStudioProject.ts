@@ -1,7 +1,7 @@
 import { normalizePortfolioItems } from "@/features/portfolio/utils/normalizePortfolioItems";
 import type { PortfolioItem } from "@/types";
 import { formatRelativeTimeFromNow } from "@/utils/format-relative-time";
-import type { VpdApiData, VpdEditorContentV2, VpdStudioListItem } from "../types";
+import type { VpdApiData, VpdEditorContentV2, VpdStudioListItem, VpdTemplateApi } from "../types";
 
 const isPortfolioItemArray = (value: unknown): value is PortfolioItem[] =>
   Array.isArray(value) &&
@@ -59,5 +59,29 @@ export const mapVpdApiToListItem = (vpdData: VpdApiData): VpdStudioListItem => {
     company: vpdData.company?.trim() || "",
     job_description: vpdData.job_description?.trim() || "",
     project,
+  };
+};
+
+/** Map a Studio V2 template fixture into a Templates library card. */
+export const mapVpdTemplateToListItem = (template: VpdTemplateApi): VpdStudioListItem => {
+  const id = String(template.id || "").trim();
+  const label = template.label?.trim() || template.name?.trim() || template.title?.trim() || "Template";
+  const docTitle = template.title?.trim() || label;
+  const project = mapVpdApiToStudioProject({
+    id,
+    title: docTitle,
+    cover_pic: template.cover_pic,
+    editor_content: template.editor_content,
+  });
+
+  return {
+    id,
+    title: label,
+    date: "Template",
+    isTemplate: true,
+    project: {
+      ...project,
+      title: docTitle,
+    },
   };
 };

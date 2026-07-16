@@ -9,10 +9,25 @@ interface AllVPDsModalProps {
   onClose: () => void;
   vpds: VpdLibraryItem[];
   onVPClick: (vpd: VpdLibraryItem) => void;
+  onEdit?: (vpd: VpdLibraryItem) => void;
+  onDuplicate?: (vpd: VpdLibraryItem) => void;
+  onDelete?: (vpd: VpdLibraryItem) => void;
+  duplicatingVpdId?: string | null;
+  highlightedVpdId?: string | null;
   initialTab?: "recents" | "templates";
 }
 
-const AllVPDsModal: React.FC<AllVPDsModalProps> = ({ onClose, vpds, onVPClick, initialTab = "recents" }) => {
+const AllVPDsModal: React.FC<AllVPDsModalProps> = ({
+  onClose,
+  vpds,
+  onVPClick,
+  onEdit,
+  onDuplicate,
+  onDelete,
+  duplicatingVpdId = null,
+  highlightedVpdId = null,
+  initialTab = "recents",
+}) => {
   const [searchQuery, setSearchQuery] = useState("");
   const [libraryTab, setLibraryTab] = useState<"recents" | "templates">(initialTab);
 
@@ -57,6 +72,7 @@ const AllVPDsModal: React.FC<AllVPDsModalProps> = ({ onClose, vpds, onVPClick, i
             type="button"
             onClick={onClose}
             className="shrink-0 rounded-full p-2 transition-colors hover:bg-slate-100 dark:hover:bg-slate-800"
+            aria-label="Close"
           >
             <X size={20} className="text-slate-400" />
           </button>
@@ -78,7 +94,16 @@ const AllVPDsModal: React.FC<AllVPDsModalProps> = ({ onClose, vpds, onVPClick, i
           {filteredVPDs.length > 0 ? (
             <div className="grid grid-cols-3 gap-3">
               {filteredVPDs.map(vpd => (
-                <VpdLibraryCard key={vpd.id} vpd={vpd} onClick={() => onVPClick(vpd)} />
+                <VpdLibraryCard
+                  key={vpd.id}
+                  vpd={vpd}
+                  onClick={() => onVPClick(vpd)}
+                  onEdit={onEdit}
+                  onDuplicate={onDuplicate}
+                  onDelete={onDelete}
+                  isDuplicating={duplicatingVpdId === String(vpd.id)}
+                  isHighlighted={highlightedVpdId === String(vpd.id)}
+                />
               ))}
             </div>
           ) : (

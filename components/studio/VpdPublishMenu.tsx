@@ -118,7 +118,7 @@ const VpdPublishMenu: React.FC<VpdPublishMenuProps> = ({ project, slug, onSlugCh
           handleToggleMenu();
         }}
         disabled={!canPublish}
-        title={canPublish ? "Save and publish your VPD" : "Generate or open a saved VPD to publish"}
+        title={canPublish ? "Publish your VPD" : "Generate or open a saved VPD to publish"}
         className={`inline-flex items-center gap-1.5 rounded-lg border px-3 py-1.5 text-xs font-medium shadow-sm transition-colors ${
           canPublish
             ? "border-slate-200 bg-white text-slate-700 hover:bg-slate-50 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-200 dark:hover:bg-slate-800"
@@ -126,7 +126,7 @@ const VpdPublishMenu: React.FC<VpdPublishMenuProps> = ({ project, slug, onSlugCh
         }`}
       >
         <ExternalLink size={14} />
-        {publishedUrl ? "Save and publish" : "Publish"}
+        Publish
       </button>
 
       {showMenu ? (

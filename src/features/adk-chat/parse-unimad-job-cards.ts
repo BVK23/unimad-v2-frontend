@@ -14,7 +14,12 @@ export function parseJobCardsFromToolResponse(response: Record<string, unknown> 
   const ui = response.ui;
   let seeMorePath: string | undefined;
   let seeMoreLabel: string | undefined;
-  if (ui && typeof ui === "object") {
+  const topLevelPath = response.path;
+  const topLevelLabel = response.label;
+  if (typeof topLevelPath === "string" && topLevelPath.trim()) {
+    seeMorePath = topLevelPath.trim();
+    if (typeof topLevelLabel === "string" && topLevelLabel.trim()) seeMoreLabel = topLevelLabel.trim();
+  } else if (ui && typeof ui === "object") {
     const nav = (ui as Record<string, unknown>).navigation;
     if (nav && typeof nav === "object") {
       const path = (nav as Record<string, unknown>).path;

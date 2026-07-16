@@ -47,6 +47,8 @@ export interface GeneratorContext {
   navigate?: "jobs" | "tracker";
   /** Auto-open Unibot improve chips after asset hydrates (Prepare → Studio). */
   openImproveMode?: boolean;
+  /** VPD embedded editor workspace (`view=edit`). */
+  view?: "edit";
 }
 
 // Mock Data for Discovery

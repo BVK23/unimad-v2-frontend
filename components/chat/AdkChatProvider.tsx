@@ -87,6 +87,35 @@ function collectAssistantIds(messages: ChatMessage[]): Set<string> {
   return ids;
 }
 
+function trimThreadFromInvocation(threadMessages: ChatMessage[], invocationId: string): ChatMessage[] {
+  const cutoffIndex = threadMessages.findIndex(message => message.role === "user" && message.invocationId === invocationId);
+  if (cutoffIndex < 0) return threadMessages;
+  return threadMessages.slice(0, cutoffIndex);
+}
+
+function applyOptimisticRewind(messages: ChatMessage[], invocationId: string, topicId?: string): ChatMessage[] {
+  if (topicId) {
+    return messages.map(message =>
+      message.id === topicId && message.isTopic
+        ? {
+            ...message,
+            messages: trimThreadFromInvocation(message.messages ?? [], invocationId),
+          }
+        : message
+    );
+  }
+
+  const trimmed = trimThreadFromInvocation(messages, invocationId);
+  return trimmed.length > 0 ? trimmed : [WELCOME_MESSAGE];
+}
+
+function applyOptimisticThreadDelete(messages: ChatMessage[], topicId?: string): ChatMessage[] {
+  if (topicId) {
+    return messages.filter(message => message.id !== topicId);
+  }
+  return [WELCOME_MESSAGE];
+}
+
 export interface SendMainMessageOptions {
   /** Send in a sub-session after switching and loading its history. */
   targetSessionId?: string;
@@ -189,6 +218,10 @@ export function AdkChatProvider({ userId, children }: { userId: string; children
 
   const sessionIdRef = useRef(sessionId);
   sessionIdRef.current = sessionId;
+  const deriveCurrentActiveScopeRef = useRef(deriveCurrentActiveScope);
+  deriveCurrentActiveScopeRef.current = deriveCurrentActiveScope;
+  const pathnameRef = useRef(pathname);
+  pathnameRef.current = pathname;
   const onMessageUpdate = useCallback((am: AgentMessage) => {
     setMessages(prev =>
       patchChatMessageInTree(prev, am.id, {
@@ -292,9 +325,11 @@ export function AdkChatProvider({ userId, children }: { userId: string; children
     useAdkApplicationAssetReviewStore.getState().clearAllReviews();
   }, [sessionId, userId]);
 
-  // Load chat history when the ADK session (or user) changes — NOT when only the open
-  // resume id changes. Re-running this on activeResumeId wiped the UI and re-applied
-  // rewind filters, which looked like "messages disappeared" when opening a resume.
+  // Load chat history when the ADK session (or user) changes — NOT on Uniboard soft
+  // navigations (pathname) or when only the open resume id changes. Pathname used to be
+  // in this dep list for a studio store sync side-effect; that wiped messages to the
+  // welcome bubble and re-fetched history on every top-nav click. Resume id was removed
+  // earlier for the same reason (looked like "messages disappeared").
   useEffect(() => {
     if (!userId || !sessionId) return;
 
@@ -342,7 +377,7 @@ export function AdkChatProvider({ userId, children }: { userId: string; children
             if (isSubSession && meta) {
               return { ...message, contentScope: deriveScopeFromRegistryRow(meta) };
             }
-            return { ...message, contentScope: deriveCurrentActiveScope(mainSessionIdForLoad) };
+            return { ...message, contentScope: deriveCurrentActiveScopeRef.current(mainSessionIdForLoad) };
           });
           let mainMessages = scopedMapped.length > 0 ? scopedMapped : [WELCOME_MESSAGE];
 
@@ -361,8 +396,8 @@ export function AdkChatProvider({ userId, children }: { userId: string; children
               void backfillMainSessionTitleFromHistory(loadSessionId, result.messages, refreshIfStillActive, userId);
             }
 
-            if (pathname.startsWith("/uniboard/studio")) {
-              void applyAdkSessionStateToStores(userId, mainSessionIdForLoad, pathname, queryClient);
+            if (pathnameRef.current.startsWith("/uniboard/studio")) {
+              void applyAdkSessionStateToStores(userId, mainSessionIdForLoad, pathnameRef.current, queryClient);
             }
           }
 
@@ -380,7 +415,13 @@ export function AdkChatProvider({ userId, children }: { userId: string; children
     return () => {
       cancelled = true;
     };
-  }, [deriveCurrentActiveScope, userId, sessionId, refreshSessions, pathname, queryClient]);
+  }, [userId, sessionId, refreshSessions, queryClient]);
+
+  // Soft-nav into Studio: sync ADK session state into studio stores without reloading chat.
+  useEffect(() => {
+    if (!userId || !sessionId || !pathname.startsWith("/uniboard/studio")) return;
+    void applyAdkSessionStateToStores(userId, sessionId, pathname, queryClient);
+  }, [userId, sessionId, pathname, queryClient]);
 
   // Align Accept/Discard drafts when the open resume changes — do not reload chat history.
   useEffect(() => {
@@ -528,12 +569,17 @@ export function AdkChatProvider({ userId, children }: { userId: string; children
       }
 
       setIsRewinding(true);
+      let rollbackMessages = messages;
       try {
         const adkSessionOptions = resolveAdkSessionOptionsForSessionId(targetSessionId);
         const threadMessagesBeforeRewind = options.topicId
           ? (messages.find(message => message.id === options.topicId)?.messages ?? [])
           : messages.filter(message => !message.isTopic);
         const previousAssistantIds = collectAssistantIds(messages);
+        setMessages(prev => {
+          rollbackMessages = prev;
+          return applyOptimisticRewind(prev, options.invocationId, options.topicId);
+        });
         const rewindResult = await rewindSessionAction(userId, targetSessionId, options.invocationId, adkSessionOptions);
         if (!rewindResult.success) {
           throw new Error(rewindResult.error ?? "Could not rewind this conversation.");
@@ -661,6 +707,9 @@ export function AdkChatProvider({ userId, children }: { userId: string; children
         }
 
         clearStreamError();
+      } catch (error) {
+        setMessages(rollbackMessages);
+        throw error;
       } finally {
         setIsRewinding(false);
       }
@@ -682,6 +731,7 @@ export function AdkChatProvider({ userId, children }: { userId: string; children
       }
 
       setIsRewinding(true);
+      let rollbackMessages = messages;
       try {
         const targetRow = getRegistryRow(targetSessionId);
         const parentMainSessionId = targetRow?.parent_adk_session_id?.trim();
@@ -697,6 +747,11 @@ export function AdkChatProvider({ userId, children }: { userId: string; children
         const reviewMainSessionId = parentMainSessionId || sessionId;
         const shouldRevertDjango =
           options.revertEditorState && scopeAllowsEditorRevert(options.scopeMatch) && targetScope && removedAssistantIds.size > 0;
+
+        setMessages(prev => {
+          rollbackMessages = prev;
+          return applyOptimisticThreadDelete(prev, options.topicId);
+        });
 
         let restoredFromSnapshot = false;
         if (shouldRevertDjango) {
@@ -776,6 +831,9 @@ export function AdkChatProvider({ userId, children }: { userId: string; children
         }
 
         clearStreamError();
+      } catch (error) {
+        setMessages(rollbackMessages);
+        throw error;
       } finally {
         setIsRewinding(false);
       }

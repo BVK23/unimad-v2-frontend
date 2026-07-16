@@ -3,11 +3,13 @@
 import { runPrepareApplicationAssetDraft } from "@/features/application-assets/api/runPrepareApplicationAssetDraft";
 import { checkApplicationAssetAvailability } from "@/features/application-assets/server-actions/application-asset-actions";
 import { generateResume } from "@/features/resume/server-actions/resume-actions";
+import { generateVpd } from "@/features/vpd/server-actions/vpd-actions";
+import { isGenerateVpdDuplicate } from "@/features/vpd/types";
 import type { Job } from "@/types/jobs";
 import { sanitizeUserFacingError } from "@/utils/message-from-failed-response";
 import { useMutation } from "@tanstack/react-query";
 
-export type GeneratablePrepareTab = "resume" | "cover-letter" | "cold-email";
+export type GeneratablePrepareTab = "resume" | "cover-letter" | "cold-email" | "vpd";
 
 type TabPatch = {
   assetId?: string | null;
@@ -61,6 +63,27 @@ async function generatePrepareTabAsset(
 
     await applySyncedAsset(tab, result.id);
     return { status: "ready", error: null };
+  }
+
+  if (tab === "vpd") {
+    const result = await generateVpd({
+      application_id: applicationId,
+      schemaVersion: 2,
+    });
+
+    if (isGenerateVpdDuplicate(result)) {
+      const existingId = result.existing_vpd_id?.trim();
+      if (!existingId) {
+        return { status: "error", error: result.message || "VPD already exists" };
+      }
+      await syncApplicationAssets();
+      await applySyncedAsset(tab, existingId);
+      return { status: "ready", assetId: existingId, error: null };
+    }
+
+    await syncApplicationAssets();
+    await applySyncedAsset(tab, result.id);
+    return { status: "ready", assetId: result.id, error: null };
   }
 
   const assetType = tab === "cover-letter" ? "coverletter" : "coldemail";
@@ -132,11 +155,13 @@ export function usePrepareApplicationAssetMutations(options: UsePrepareApplicati
   const resume = usePrepareTabMutation("resume", options);
   const coverLetter = usePrepareTabMutation("cover-letter", options);
   const coldEmail = usePrepareTabMutation("cold-email", options);
+  const vpd = usePrepareTabMutation("vpd", options);
 
   const byTab: Record<GeneratablePrepareTab, typeof resume> = {
     resume,
     "cover-letter": coverLetter,
     "cold-email": coldEmail,
+    vpd,
   };
 
   const isTabPending = (tab: GeneratablePrepareTab) => byTab[tab].isPending;

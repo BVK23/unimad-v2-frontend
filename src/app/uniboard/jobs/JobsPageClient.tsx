@@ -44,6 +44,7 @@ function JobsPageContent() {
           navigate: context.navigate,
           improve: context.openImproveMode,
           interviewVpd: context.fromInterviewVpd,
+          view: context.view ?? (context.type === "vpd" && context.openImproveMode ? "edit" : undefined),
         })
       );
     });

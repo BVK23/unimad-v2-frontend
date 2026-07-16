@@ -30,6 +30,7 @@ export function usePrepareApplicationContext(job: Job) {
   const linkedResumeId = getLinkedAssetId(assets, "resume");
   const linkedCoverLetterId = getLinkedAssetId(assets, "cover-letter");
   const linkedColdEmailId = getLinkedAssetId(assets, "cold-email");
+  const linkedVpdId = getLinkedAssetId(assets, "vpd");
 
   const syncApplicationAssets = useCallback(async (): Promise<{
     application: Application | undefined;
@@ -79,6 +80,7 @@ export function usePrepareApplicationContext(job: Job) {
     linkedResumeId,
     linkedCoverLetterId,
     linkedColdEmailId,
+    linkedVpdId,
     isFetchingApplications: isFetching,
     syncApplicationAssets,
     resolveApplicationId,

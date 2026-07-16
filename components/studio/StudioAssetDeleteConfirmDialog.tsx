@@ -2,13 +2,14 @@
 
 import { ProfileConfirmDialog } from "@/components/user-profile/ProfileConfirmDialog";
 
-export type StudioDeletableAssetKind = "linkedin-post" | "cover-letter" | "cold-email" | "referral";
+export type StudioDeletableAssetKind = "linkedin-post" | "cover-letter" | "cold-email" | "referral" | "vpd";
 
 const ASSET_TYPE_SINGULAR: Record<StudioDeletableAssetKind, string> = {
   "linkedin-post": "LinkedIn post",
   "cover-letter": "cover letter",
   "cold-email": "cold email",
   referral: "referral request",
+  vpd: "VPD",
 };
 
 type StudioAssetDeleteConfirmDialogProps = {

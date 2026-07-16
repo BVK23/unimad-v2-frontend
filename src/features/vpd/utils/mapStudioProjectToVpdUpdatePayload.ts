@@ -30,6 +30,15 @@ export const getVpdProjectContentSignature = (project: PortfolioItem): string =>
     detailedBlocks: project.detailedBlocks ?? [],
   });
 
+/** Content-only snapshot (excludes id) — used for template edit / claim detection. */
+export const getVpdProjectEditSignature = (project: PortfolioItem): string =>
+  JSON.stringify({
+    title: project.title,
+    content: project.content,
+    showCoverImage: project.showCoverImage,
+    detailedBlocks: project.detailedBlocks ?? [],
+  });
+
 export const mapVpdUpdateResponseToApiData = (assetData: unknown): VpdApiData | null => {
   if (!assetData || typeof assetData !== "object") return null;
   return assetData as VpdApiData;

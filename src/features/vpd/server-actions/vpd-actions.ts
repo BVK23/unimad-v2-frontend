@@ -1,7 +1,7 @@
 "use server";
 
 import { authedFetch } from "@/lib/authed-fetch";
-import type { GenerateVpdParams, GenerateVpdResult, VpdApiData, VpdLandingData } from "../types";
+import type { GenerateVpdParams, GenerateVpdResult, VpdApiData, VpdLandingData, VpdTemplateApi } from "../types";
 import type { VpdUpdateContent } from "../utils/mapStudioProjectToVpdUpdatePayload";
 
 function getBackendUrl(): string {
@@ -23,23 +23,66 @@ function getPublicAssetAuthSecret(): string {
 }
 
 /**
- * Fetch VPD library (user docs + legacy templates).
+ * Fetch VPD library (user docs + templates).
  * GET /api/vpd/landing/
  */
 export async function fetchVpdLanding(): Promise<VpdLandingData> {
   const res = await authedFetch("/api/vpd/landing/", { method: "GET" });
   const data = (await res.json().catch(() => ({}))) as {
     userVpds?: VpdApiData[];
-    vpdTemplates?: unknown[];
+    vpdTemplates?: unknown;
+    vpdTemplatesV2?: unknown;
     error?: string;
   };
   if (!res.ok) {
     throw new Error(data.error ?? "Failed to fetch VPD library");
   }
+
+  const toList = <T>(value: unknown): T[] => {
+    if (Array.isArray(value)) return value as T[];
+    if (value && typeof value === "object") return Object.values(value) as T[];
+    return [];
+  };
+
   return {
     userVpds: Array.isArray(data.userVpds) ? data.userVpds : [],
-    vpdTemplates: Array.isArray(data.vpdTemplates) ? data.vpdTemplates : [],
+    vpdTemplates: toList(data.vpdTemplates),
+    vpdTemplatesV2: toList<VpdTemplateApi>(data.vpdTemplatesV2),
   };
+}
+
+/**
+ * Create a blank user-owned VPD (no AI, no application).
+ * POST /api/vpd/create/
+ */
+export async function createVpd(): Promise<{ id: string; title: string; vpdData: VpdApiData }> {
+  const res = await authedFetch("/api/vpd/create/", {
+    method: "POST",
+    body: JSON.stringify({}),
+  });
+  const data = (await res.json().catch(() => ({}))) as {
+    id?: string;
+    title?: string;
+    vpdData?: VpdApiData;
+    error?: string;
+  };
+  if (!res.ok) {
+    throw new Error(data.error ?? "Failed to create VPD");
+  }
+  const id = String(data.id ?? data.vpdData?.id ?? "").trim();
+  if (!id) {
+    throw new Error("Create VPD returned no id");
+  }
+  const title =
+    (typeof data.title === "string" && data.title.trim()) ||
+    (typeof data.vpdData?.title === "string" && data.vpdData.title.trim()) ||
+    "Untitled VPD";
+  const vpdData: VpdApiData = data.vpdData ?? {
+    id,
+    title,
+    editor_content: { schemaVersion: 2, items: [] },
+  };
+  return { id, title, vpdData };
 }
 
 /**
@@ -126,6 +169,38 @@ export async function deleteVpd(vpdId: string): Promise<void> {
     const data = (await res.json().catch(() => ({}))) as { error?: string };
     throw new Error(data.error ?? "Failed to delete VPD");
   }
+}
+
+export type DuplicateVpdResult = {
+  id: string;
+  title: string;
+};
+
+/**
+ * Duplicate a user VPD or create a personal copy from a template.
+ * POST /api/vpd/duplicate/
+ * Template copies title as "Untitled VPD"; user copies use "Title (n)".
+ */
+export async function duplicateVpd(vpdId: string, isDuplicatingTemplate = false): Promise<DuplicateVpdResult> {
+  const res = await authedFetch("/api/vpd/duplicate/", {
+    method: "POST",
+    body: JSON.stringify({
+      id: vpdId,
+      isDuplicatingTemplate,
+    }),
+  });
+  const data = (await res.json().catch(() => ({}))) as { id?: string; title?: string; error?: string };
+  if (!res.ok) {
+    throw new Error(data.error ?? "Failed to duplicate VPD");
+  }
+  const id = String(data.id ?? "").trim();
+  if (!id) {
+    throw new Error("Duplicate VPD returned no id");
+  }
+  return {
+    id,
+    title: typeof data.title === "string" && data.title.trim() ? data.title.trim() : "Untitled VPD",
+  };
 }
 
 /**

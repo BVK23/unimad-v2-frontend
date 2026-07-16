@@ -23,6 +23,11 @@ export function downloadVpdPdf(project: PortfolioItem): void {
     return;
   }
 
+  const coverUrl = typeof project.content === "string" ? project.content.trim() : "";
+  const coverHtml = coverUrl
+    ? `<section class="cover"><div class="cover-inner"><img src="${escapeHtml(coverUrl)}" alt="${escapeHtml(title)}" /></div></section>`
+    : "";
+
   const blocks = project.detailedBlocks ?? [];
   const blockHtml = blocks
     .map(block => {
@@ -45,6 +50,9 @@ export function downloadVpdPdf(project: PortfolioItem): void {
     body { font-family: system-ui, sans-serif; margin: 32px; color: #0f172a; }
     h1 { font-size: 28px; margin-bottom: 8px; }
     .desc { color: #64748b; margin-bottom: 24px; }
+    .cover { margin-bottom: 16px; page-break-inside: avoid; }
+    .cover-inner { border: 1px solid #e2e8f0; border-radius: 12px; overflow: hidden; }
+    .cover-inner img { display: block; width: 100%; height: auto; max-height: 280px; object-fit: cover; }
     .block { margin-bottom: 16px; page-break-inside: avoid; }
     .block-inner { border: 1px solid #e2e8f0; border-radius: 12px; padding: 16px; }
     h3 { font-size: 14px; margin: 0 0 8px; color: #475569; text-transform: uppercase; letter-spacing: 0.04em; }
@@ -54,6 +62,7 @@ export function downloadVpdPdf(project: PortfolioItem): void {
 <body>
   <h1>${escapeHtml(title)}</h1>
   ${project.description ? `<p class="desc">${escapeHtml(project.description)}</p>` : ""}
+  ${coverHtml}
   ${blockHtml || "<p>No content yet.</p>"}
 </body>
 </html>`);

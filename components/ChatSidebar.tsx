@@ -138,6 +138,12 @@ import {
 import { isResumeWholeDocumentJdImprovePrompt } from "@/features/resume/api/resume-jd-improve-detection";
 import { resumeByIdQueryKey } from "@/features/resume/hooks/useResume";
 import { useResumeStore } from "@/features/resume/store/useResumeStore";
+import {
+  VPD_FULL_IMPROVE_PRESETS,
+  VPD_OPEN_FULL_IMPROVE_EVENT,
+  type VpdOpenFullImproveDetail,
+  type VpdFullImprovePreset,
+} from "@/features/vpd/api/vpd-full-improve-presets";
 import { MODAL_OVERLAY_Z_CLASS } from "@/lib/ui/modal-overlay";
 import { compactTopicSubMessages, groupSubMessagesIntoTurns } from "@/src/features/adk-chat/compact-topic-sub-messages";
 import { isUntitledMainSessionTitle, UNTITLED_THREAD_TITLE } from "@/src/features/adk-chat/constants";
@@ -891,6 +897,11 @@ const ChatSidebar: React.FC<ChatSidebarProps> = ({ incomingRequest, onRequestHan
     role: string;
     company: string;
   } | null>(null);
+  const [vpdFullImproveContext, setVpdFullImproveContext] = useState<{
+    vpdId: string;
+    role: string;
+    company: string;
+  } | null>(null);
   const [selectionSentPill, setSelectionSentPill] = useState<string | null>(null);
   const selectionSentPillTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const [documentImprovePool, setDocumentImprovePool] = useState<FullDocumentImprovePreset[]>([]);
@@ -921,8 +932,16 @@ const ChatSidebar: React.FC<ChatSidebarProps> = ({ incomingRequest, onRequestHan
     return searchParams?.get("improve") === "1" && Boolean(searchParams?.get("jobId")?.trim());
   }, [pathname, searchParams]);
 
+  const isStudioVpdPrepareImproveRoute = useMemo(() => {
+    if (!pathname.startsWith("/uniboard/studio")) return false;
+    if (searchParams?.get("type") !== "vpd") return false;
+    return searchParams?.get("improve") === "1" && Boolean(searchParams?.get("jobId")?.trim());
+  }, [pathname, searchParams]);
+
   const showPrepareImproveFooter = Boolean(
-    (resumeFullImproveContext && isResumePrepareImproveRoute) || (fullDocumentImproveContext && isStudioPrepareImproveRoute)
+    (resumeFullImproveContext && isResumePrepareImproveRoute) ||
+    (fullDocumentImproveContext && isStudioPrepareImproveRoute) ||
+    (vpdFullImproveContext && isStudioVpdPrepareImproveRoute)
   );
 
   useEffect(() => {
@@ -935,7 +954,17 @@ const ChatSidebar: React.FC<ChatSidebarProps> = ({ incomingRequest, onRequestHan
       setDocumentImprovePool([]);
       documentImproveFetchKeyRef.current = null;
     }
-  }, [fullDocumentImproveContext, isResumePrepareImproveRoute, isStudioPrepareImproveRoute, resumeFullImproveContext]);
+    if (vpdFullImproveContext && !isStudioVpdPrepareImproveRoute) {
+      setVpdFullImproveContext(null);
+    }
+  }, [
+    fullDocumentImproveContext,
+    isResumePrepareImproveRoute,
+    isStudioPrepareImproveRoute,
+    isStudioVpdPrepareImproveRoute,
+    resumeFullImproveContext,
+    vpdFullImproveContext,
+  ]);
 
   useEffect(() => {
     sidebarWidthRef.current = sidebarWidth;
@@ -3212,6 +3241,28 @@ const ChatSidebar: React.FC<ChatSidebarProps> = ({ incomingRequest, onRequestHan
     [resumeFullImproveContext, isResumePrepareImproveRoute, clearStreamError, sendMainMessage]
   );
 
+  const sendVpdPrepareImproveToMain = useCallback(
+    async (text: string, options?: { retryAssistantId?: string }) => {
+      if (!vpdFullImproveContext || !isStudioVpdPrepareImproveRoute) {
+        return false;
+      }
+      setImproveReplyTopicId(null);
+      clearStreamError();
+      const roleLabel = vpdFullImproveContext.role.trim();
+      const companyLabel = vpdFullImproveContext.company.trim();
+      const contextSuffix =
+        roleLabel || companyLabel
+          ? `\n\nContext: Value Proposition Document for ${roleLabel || "this role"}${companyLabel ? ` at ${companyLabel}` : ""}. The VPD is open in Studio (id: ${vpdFullImproveContext.vpdId}).`
+          : `\n\nContext: Value Proposition Document open in Studio (id: ${vpdFullImproveContext.vpdId}).`;
+      await sendMainMessage(`${text.trim()}${contextSuffix}`, {
+        excludeFromTitleGeneration: true,
+        retryAssistantId: options?.retryAssistantId,
+      });
+      return true;
+    },
+    [vpdFullImproveContext, isStudioVpdPrepareImproveRoute, clearStreamError, sendMainMessage]
+  );
+
   const sendUserMessageToTopic = useCallback(
     async (topicId: string, text: string, actionMeta?: AssetActionMeta) => {
       const trimmed = text.trim();
@@ -3671,6 +3722,7 @@ const ChatSidebar: React.FC<ChatSidebarProps> = ({ incomingRequest, onRequestHan
       setUsedDocumentImproveIds(new Set());
       useApplicationAssetStudioStore.getState().clearConsumedSelectionSuggestions();
       setResumeFullImproveContext(null);
+      setVpdFullImproveContext(null);
     };
 
     const onResumeOpenFullImprove = (e: Event) => {
@@ -3681,8 +3733,25 @@ const ChatSidebar: React.FC<ChatSidebarProps> = ({ incomingRequest, onRequestHan
       setIsCollapsed(false);
       setSelectionQuoteContext(null);
       setFullDocumentImproveContext(null);
+      setVpdFullImproveContext(null);
       setResumeFullImproveContext({
         resumeId: d.resumeId.trim(),
+        role: d.role?.trim() ?? "",
+        company: d.company?.trim() ?? "",
+      });
+    };
+
+    const onVpdOpenFullImprove = (e: Event) => {
+      const d = (e as CustomEvent<VpdOpenFullImproveDetail>).detail;
+      if (!d?.vpdId?.trim() || !d.fromPrepareApplication) {
+        return;
+      }
+      setIsCollapsed(false);
+      setSelectionQuoteContext(null);
+      setFullDocumentImproveContext(null);
+      setResumeFullImproveContext(null);
+      setVpdFullImproveContext({
+        vpdId: d.vpdId.trim(),
         role: d.role?.trim() ?? "",
         company: d.company?.trim() ?? "",
       });
@@ -3692,11 +3761,13 @@ const ChatSidebar: React.FC<ChatSidebarProps> = ({ incomingRequest, onRequestHan
     window.addEventListener(APPLICATION_ASSET_EVENTS.selectionFreeform, onSelectionFreeform);
     window.addEventListener(APPLICATION_ASSET_EVENTS.openImprove, onOpenImprove);
     window.addEventListener(RESUME_OPEN_FULL_IMPROVE_EVENT, onResumeOpenFullImprove);
+    window.addEventListener(VPD_OPEN_FULL_IMPROVE_EVENT, onVpdOpenFullImprove);
     return () => {
       window.removeEventListener(APPLICATION_ASSET_EVENTS.selectionRefine, onSelectionRefine);
       window.removeEventListener(APPLICATION_ASSET_EVENTS.selectionFreeform, onSelectionFreeform);
       window.removeEventListener(APPLICATION_ASSET_EVENTS.openImprove, onOpenImprove);
       window.removeEventListener(RESUME_OPEN_FULL_IMPROVE_EVENT, onResumeOpenFullImprove);
+      window.removeEventListener(VPD_OPEN_FULL_IMPROVE_EVENT, onVpdOpenFullImprove);
     };
   }, [sendApplicationAssetRefinement, showSelectionSentPill, tryEnterStrengthsFocus]);
 
@@ -3812,6 +3883,17 @@ const ChatSidebar: React.FC<ChatSidebarProps> = ({ incomingRequest, onRequestHan
     [resumeFullImproveContext, sendMainMessage, showSelectionSentPill]
   );
 
+  const handleVpdFullImprovePreset = useCallback(
+    (preset: VpdFullImprovePreset) => {
+      if (!vpdFullImproveContext) {
+        return;
+      }
+      showSelectionSentPill(preset.label);
+      void sendVpdPrepareImproveToMain(preset.instruction);
+    },
+    [vpdFullImproveContext, sendVpdPrepareImproveToMain, showSelectionSentPill]
+  );
+
   useEffect(() => {
     if (!showPrepareImproveFooter) {
       return;
@@ -3820,7 +3902,7 @@ const ChatSidebar: React.FC<ChatSidebarProps> = ({ incomingRequest, onRequestHan
       footerInputCardRef.current?.scrollIntoView({ behavior: "smooth", block: "nearest" });
     }, 350);
     return () => window.clearTimeout(timer);
-  }, [showPrepareImproveFooter, fullDocumentImproveContext, resumeFullImproveContext]);
+  }, [showPrepareImproveFooter, fullDocumentImproveContext, resumeFullImproveContext, vpdFullImproveContext]);
 
   useEffect(() => {
     return () => {
@@ -3868,6 +3950,12 @@ const ChatSidebar: React.FC<ChatSidebarProps> = ({ incomingRequest, onRequestHan
       if (resumeFullImproveContext && isResumePrepareImproveRoute) {
         setInput("");
         await sendResumePrepareImproveToMain(textToSend);
+        return;
+      }
+
+      if (vpdFullImproveContext && isStudioVpdPrepareImproveRoute) {
+        setInput("");
+        await sendVpdPrepareImproveToMain(textToSend);
         return;
       }
 
@@ -3970,9 +4058,12 @@ const ChatSidebar: React.FC<ChatSidebarProps> = ({ incomingRequest, onRequestHan
       selectionQuoteContext,
       fullDocumentImproveContext,
       resumeFullImproveContext,
+      vpdFullImproveContext,
       isResumePrepareImproveRoute,
       isStudioPrepareImproveRoute,
+      isStudioVpdPrepareImproveRoute,
       sendResumePrepareImproveToMain,
+      sendVpdPrepareImproveToMain,
       sendApplicationAssetRefinement,
     ]
   );
@@ -5478,6 +5569,24 @@ const ChatSidebar: React.FC<ChatSidebarProps> = ({ incomingRequest, onRequestHan
               })}
             </div>
           ) : null}
+          {vpdFullImproveContext && isStudioVpdPrepareImproveRoute ? (
+            <div className="mb-2 flex flex-wrap gap-1.5">
+              {VPD_FULL_IMPROVE_PRESETS.map(preset => {
+                const Icon = preset.icon;
+                return (
+                  <button
+                    key={preset.id}
+                    type="button"
+                    onClick={() => handleVpdFullImprovePreset(preset)}
+                    className="inline-flex items-center gap-1 rounded-full border border-slate-200 bg-slate-50 px-2.5 py-1 text-[11px] font-medium text-slate-700 transition-colors hover:border-brand-200 hover:bg-brand-50 hover:text-brand-800 dark:border-slate-600 dark:bg-slate-800 dark:text-slate-200 dark:hover:border-brand-500/40 dark:hover:bg-brand-500/10 dark:hover:text-brand-200"
+                  >
+                    <Icon size={12} className="shrink-0 opacity-80" aria-hidden />
+                    {preset.label}
+                  </button>
+                );
+              })}
+            </div>
+          ) : null}
           {fullDocumentImproveContext && isStudioPrepareImproveRoute ? (
             <div className="mb-2">
               <span className="inline-flex max-w-full items-center gap-1 rounded-full border border-brand-200 bg-brand-50 py-1 pl-2.5 pr-1 text-[11px] font-medium text-brand-900 dark:border-brand-500/40 dark:bg-brand-500/15 dark:text-brand-100">
@@ -5514,6 +5623,28 @@ const ChatSidebar: React.FC<ChatSidebarProps> = ({ incomingRequest, onRequestHan
                   }}
                   className="shrink-0 rounded-full p-0.5"
                   aria-label="Clear resume improve context"
+                >
+                  <X size={13} />
+                </button>
+              </span>
+            </div>
+          ) : null}
+          {vpdFullImproveContext && isStudioVpdPrepareImproveRoute ? (
+            <div className="mb-2">
+              <span className="inline-flex max-w-full items-center gap-1 rounded-full border border-brand-200 bg-brand-50 py-1 pl-2.5 pr-1 text-[11px] font-medium text-brand-900 dark:border-brand-500/40 dark:bg-brand-500/15 dark:text-brand-100">
+                <span className="truncate">
+                  Improving VPD
+                  {vpdFullImproveContext.role
+                    ? ` · ${vpdFullImproveContext.role}${vpdFullImproveContext.company ? ` @ ${vpdFullImproveContext.company}` : ""}`
+                    : ""}
+                </span>
+                <button
+                  type="button"
+                  onClick={() => {
+                    setVpdFullImproveContext(null);
+                  }}
+                  className="shrink-0 rounded-full p-0.5"
+                  aria-label="Clear VPD improve context"
                 >
                   <X size={13} />
                 </button>
@@ -5592,11 +5723,13 @@ const ChatSidebar: React.FC<ChatSidebarProps> = ({ incomingRequest, onRequestHan
                     ? "Tell Unibot how to improve this document…"
                     : resumeFullImproveContext && isResumePrepareImproveRoute
                       ? "Tell Unibot how to improve your resume…"
-                      : selectionQuoteContext
-                        ? "How should Unibot change this section?"
-                        : improveReplyTopicId && improveContextTopic
-                          ? "Reply in this topic…"
-                          : "Ask anything"
+                      : vpdFullImproveContext && isStudioVpdPrepareImproveRoute
+                        ? "Tell Unibot how to improve your VPD…"
+                        : selectionQuoteContext
+                          ? "How should Unibot change this section?"
+                          : improveReplyTopicId && improveContextTopic
+                            ? "Reply in this topic…"
+                            : "Ask anything"
             }
             rows={1}
             disabled={!canSend}

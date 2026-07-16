@@ -55,8 +55,21 @@ export const isGenerateVpdDuplicate = (result: GenerateVpdResult): result is Gen
 
 export type VpdLandingData = {
   userVpds: VpdApiData[];
-  /** Legacy BlockNote templates from backend — unused by Studio Recents. */
+  /** Legacy BlockNote templates (V1) — used by unimadai-frontendapp. */
   vpdTemplates?: unknown[];
+  /** Studio portfolio-grid templates (schemaVersion 2). */
+  vpdTemplatesV2?: VpdTemplateApi[];
+};
+
+/** Backend V2 template fixture shape from `/api/vpd/landing/`. */
+export type VpdTemplateApi = {
+  id: string;
+  label?: string;
+  name?: string;
+  title?: string;
+  cover_pic?: VpdCoverPic;
+  editor_content?: VpdEditorContentV2 | PortfolioItem[] | unknown;
+  schemaVersion?: 2;
 };
 
 /** Studio Recents / library card shape. */
