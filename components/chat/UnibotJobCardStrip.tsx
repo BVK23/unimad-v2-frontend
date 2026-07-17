@@ -1,18 +1,49 @@
 "use client";
 
-import React, { useState } from "react";
+import React, { useCallback, useState, useTransition } from "react";
 import { CompanyLogo } from "@/components/jobs/CompanyLogo";
 import JobDetailsModal from "@/components/jobs/JobDetailsModal";
+import { buildStudioHref } from "@/lib/jobs/prepare-application-url";
 import type { UnimadJobCardsPayload } from "@/src/features/adk-chat/parse-unimad-job-cards";
-import type { Job } from "@/types/jobs";
+import type { GeneratorContext, Job } from "@/types/jobs";
+import { useRouter } from "next/navigation";
 
 type Props = {
   payload: UnimadJobCardsPayload;
   onSeeMore?: (path: string) => void;
+  /** Legacy shell (e.g. App.tsx); Next.js uniboard uses router fallback when omitted. */
+  onNavigateToStudio?: (context: GeneratorContext) => void;
 };
 
-export function UnibotJobCardStrip({ payload, onSeeMore }: Props) {
+export function UnibotJobCardStrip({ payload, onSeeMore, onNavigateToStudio }: Props) {
   const [selected, setSelected] = useState<Job | null>(null);
+  const router = useRouter();
+  const [, startTransition] = useTransition();
+
+  const navigateToStudio = useCallback(
+    (context: GeneratorContext) => {
+      if (onNavigateToStudio) {
+        onNavigateToStudio(context);
+        return;
+      }
+      startTransition(() => {
+        router.push(
+          buildStudioHref({
+            id: context.assetId,
+            type: context.type,
+            jobId: context.fromInterviewVpd ? undefined : context.jobId,
+            navigate: context.fromInterviewVpd ? undefined : context.navigate,
+            improve: context.fromInterviewVpd ? undefined : context.openImproveMode,
+            interviewVpd: context.fromInterviewVpd,
+            view: context.fromInterviewVpd
+              ? undefined
+              : (context.view ?? (context.type === "vpd" && context.openImproveMode ? "edit" : undefined)),
+          })
+        );
+      });
+    },
+    [onNavigateToStudio, router]
+  );
 
   return (
     <div className="mt-2 max-w-full space-y-2">
@@ -43,7 +74,7 @@ export function UnibotJobCardStrip({ payload, onSeeMore }: Props) {
           {payload.seeMoreLabel ?? "See more on Job Board"}
         </button>
       ) : null}
-      {selected ? <JobDetailsModal job={selected} onClose={() => setSelected(null)} /> : null}
+      {selected ? <JobDetailsModal job={selected} onClose={() => setSelected(null)} onNavigateToStudio={navigateToStudio} /> : null}
     </div>
   );
 }

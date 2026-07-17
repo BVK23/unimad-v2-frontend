@@ -3,7 +3,7 @@ export const isHtmlLikeContent = (content: string) => /<\/?[a-z][\s\S]*>/i.test(
 
 type ListMode = "ul" | "ol" | false;
 
-const BULLET_LINE = /^(?:[-*+]\s+|•\s*|\u2022\s*)/u;
+const BULLET_LINE = /^(?:[-*+]\s+|•\s*|\u2022\s*|->\s*|→\s*)/u;
 const ORDERED_LINE = /^(\d+)\.\s+(.+)$/;
 
 /** Lines like **Strategic Vision:** rest of sentence — common in generated cover letters */

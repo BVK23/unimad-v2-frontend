@@ -102,6 +102,9 @@ export async function generateVpd(params: GenerateVpdParams = {}): Promise<Gener
     if (params.company) body.company = params.company;
     if (params.jobDescription) body.jobDescription = params.jobDescription;
   }
+  if (params.company_logo_url?.trim()) {
+    body.company_logo_url = params.company_logo_url.trim();
+  }
 
   const res = await authedFetch("/api/vpd/generate/", {
     method: "POST",

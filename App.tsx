@@ -161,7 +161,11 @@ const App: React.FC = () => {
     >
       {/* Sidebar (AI Chatbot) */}
       <AdkChatProvider userId="">
-        <ChatSidebar incomingRequest={pendingAIRequest} onRequestHandled={() => setPendingAIRequest(null)} />
+        <ChatSidebar
+          incomingRequest={pendingAIRequest}
+          onRequestHandled={() => setPendingAIRequest(null)}
+          onNavigateToStudio={handleNavigateToStudio}
+        />
       </AdkChatProvider>
 
       {/* Main Content Area */}

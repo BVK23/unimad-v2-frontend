@@ -337,15 +337,12 @@ const LinkBoxBlock = React.forwardRef<HTMLDivElement, LinkBoxBlockProps>(functio
 
   if (!isEditMode) {
     const viewHref = resolvePortfolioLinkHref(item.linkUrl ?? "");
+    if (!viewHref) return null;
     return (
       <div ref={ref} data-portfolio-block-root className={shellClassName}>
-        {viewHref ? (
-          <a href={viewHref} {...getLinkAnchorProps(viewHref)} className={linkCardClassName}>
-            {inner}
-          </a>
-        ) : (
-          <div className={`${linkCardClassName} cursor-default`}>{inner}</div>
-        )}
+        <a href={viewHref} {...getLinkAnchorProps(viewHref)} className={linkCardClassName}>
+          {inner}
+        </a>
       </div>
     );
   }
@@ -624,6 +621,11 @@ const BlockRenderer: React.FC<BlockRendererProps> = ({
 
   // -- Media Block (Image, Video, PDF) --
   if (item.type === "media") {
+    // Published / preview: omit empty placeholders (no upload chrome).
+    if (!item.content?.trim() && !isEditMode) {
+      return null;
+    }
+
     const isVideo = item.mediaType === "video";
     const isPDF = item.mediaType === "pdf";
 

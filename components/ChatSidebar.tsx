@@ -238,6 +238,7 @@ import {
   useStreamingStatusLabel,
   useUnibotStreamActivityLabel,
 } from "@/src/hooks/useUnibotStreamActivityLabel";
+import type { GeneratorContext } from "@/types/jobs";
 import { growTextareaToFit, resetTextareaHeight } from "@/utils/textarea-autosize";
 import { useQueryClient } from "@tanstack/react-query";
 import {
@@ -306,6 +307,7 @@ interface ChatSidebarProps {
   onRequestHandled?: () => void;
   /** Coach viewing student profile — history only, no send/delete/edit. */
   coachActAsReadOnly?: boolean;
+  onNavigateToStudio?: (context: GeneratorContext) => void;
 }
 
 const SIDEBAR_WIDTH_MAX_PCT = 0.3;
@@ -501,7 +503,7 @@ function renderModelStreamingPlaceholder(input: {
   );
 }
 
-const ChatSidebar: React.FC<ChatSidebarProps> = ({ incomingRequest, onRequestHandled, coachActAsReadOnly = false }) => {
+const ChatSidebar: React.FC<ChatSidebarProps> = ({ incomingRequest, onRequestHandled, coachActAsReadOnly = false, onNavigateToStudio }) => {
   const {
     messages,
     setMessages,
@@ -5044,7 +5046,11 @@ const ChatSidebar: React.FC<ChatSidebarProps> = ({ incomingRequest, onRequestHan
                                       <UnimadNavigationChip navigation={subMsg.unimadNavigation} onNavigate={path => router.push(path)} />
                                     ) : null}
                                     {subMsg.role === "model" && subMsg.unimadJobCards ? (
-                                      <UnibotJobCardStrip payload={subMsg.unimadJobCards} onSeeMore={path => router.push(path)} />
+                                      <UnibotJobCardStrip
+                                        payload={subMsg.unimadJobCards}
+                                        onSeeMore={path => router.push(path)}
+                                        onNavigateToStudio={onNavigateToStudio}
+                                      />
                                     ) : null}
                                     {subMsg.role === "model" && subMsg.unimadLinkedInSuggestions ? (
                                       <UnibotLinkedInSuggestionCards
@@ -5378,7 +5384,11 @@ const ChatSidebar: React.FC<ChatSidebarProps> = ({ incomingRequest, onRequestHan
                     <UnimadNavigationChip navigation={msg.unimadNavigation} onNavigate={path => router.push(path)} />
                   ) : null}
                   {msg.role === "model" && msg.unimadJobCards ? (
-                    <UnibotJobCardStrip payload={msg.unimadJobCards} onSeeMore={path => router.push(path)} />
+                    <UnibotJobCardStrip
+                      payload={msg.unimadJobCards}
+                      onSeeMore={path => router.push(path)}
+                      onNavigateToStudio={onNavigateToStudio}
+                    />
                   ) : null}
                   {msg.role === "model" && msg.unimadLinkedInSuggestions ? (
                     <UnibotLinkedInSuggestionCards

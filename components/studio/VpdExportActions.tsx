@@ -13,10 +13,18 @@ interface VpdExportActionsProps {
   slug?: string | null;
   onSlugChange?: (slug: string) => void;
   onBeforePublish?: () => Promise<void>;
+  publishedAt?: string | null;
   className?: string;
 }
 
-const VpdExportActions: React.FC<VpdExportActionsProps> = ({ project, slug = null, onSlugChange, onBeforePublish, className = "" }) => {
+const VpdExportActions: React.FC<VpdExportActionsProps> = ({
+  project,
+  slug = null,
+  onSlugChange,
+  onBeforePublish,
+  publishedAt = null,
+  className = "",
+}) => {
   // PDF export temporarily disabled for all VPDs (user assets + templates).
   // const handleDownload = (e: React.MouseEvent) => {
   //   e.stopPropagation();
@@ -31,7 +39,13 @@ const VpdExportActions: React.FC<VpdExportActionsProps> = ({ project, slug = nul
 
   return (
     <div className={`flex flex-wrap items-center gap-2 ${className}`}>
-      <VpdPublishMenu project={project} slug={slug} onSlugChange={onSlugChange} onBeforePublish={onBeforePublish} />
+      <VpdPublishMenu
+        project={project}
+        slug={slug}
+        onSlugChange={onSlugChange}
+        onBeforePublish={onBeforePublish}
+        publishedAt={publishedAt}
+      />
       {/* <button
         type="button"
         onClick={handleDownload}

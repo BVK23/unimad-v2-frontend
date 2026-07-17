@@ -4,8 +4,10 @@ import React, { useEffect, useState } from "react";
 import {
   RESUME_GENERATION_MESSAGES,
   RESUME_GENERATION_MESSAGE_INTERVAL_MS,
+  RESUME_GENERATION_TAIL_COUNT,
   type ResumeGenerationMessageVariant,
 } from "@/features/resume/constants/resumeGenerationMessages";
+import { getPrepareAssetGenerationMessageIndex } from "@/lib/jobs/prepare-asset-generation-messages";
 import { Loader2 } from "lucide-react";
 
 interface ResumeGenerationOverlayProps {
@@ -14,19 +16,34 @@ interface ResumeGenerationOverlayProps {
 
 const ResumeGenerationMessageRotator: React.FC<{ variant: ResumeGenerationMessageVariant }> = ({ variant }) => {
   const messages = RESUME_GENERATION_MESSAGES[variant];
-  const [messageIndex, setMessageIndex] = useState(0);
+  const [step, setStep] = useState(0);
 
   useEffect(() => {
-    if (messages.length <= 1) return;
+    const id = window.setTimeout(() => setStep(0), 0);
+    return () => window.clearTimeout(id);
+  }, [variant]);
 
-    const interval = window.setInterval(() => {
-      setMessageIndex(prev => (prev < messages.length - 1 ? prev + 1 : prev));
+  useEffect(() => {
+    if (messages.length <= 1) return undefined;
+
+    const id = window.setInterval(() => {
+      setStep(prev => prev + 1);
     }, RESUME_GENERATION_MESSAGE_INTERVAL_MS);
 
-    return () => window.clearInterval(interval);
-  }, [messages]);
+    return () => window.clearInterval(id);
+  }, [messages.length, variant]);
 
-  return <p className="text-base font-medium text-slate-700 transition-opacity duration-300">{messages[messageIndex]}</p>;
+  const index = getPrepareAssetGenerationMessageIndex(messages.length, step, RESUME_GENERATION_TAIL_COUNT);
+  const statusLine = messages[index] ?? messages[0];
+
+  return (
+    <p
+      key={`${variant}-${index}-${step}`}
+      className="text-base font-medium text-slate-700 transition-opacity duration-300 dark:text-slate-200"
+    >
+      {statusLine}
+    </p>
+  );
 };
 
 const ResumeGenerationOverlay: React.FC<ResumeGenerationOverlayProps> = ({ variant }) => {

@@ -37,21 +37,6 @@ const JobCard: React.FC<JobCardProps> = ({
       onClick={() => onClick(job)}
       className="group relative flex h-full cursor-pointer flex-col rounded-2xl border border-slate-200 bg-white p-4 shadow-[0_2px_8px_rgba(0,0,0,0.02)] transition-all duration-300 hover:border-brand-200/60 hover:shadow-[0_8px_24px_rgba(0,0,0,0.04)] dark:border-slate-800 dark:bg-slate-900 dark:hover:border-brand-500/30"
     >
-      {showVpdPrompt && (
-        <button
-          type="button"
-          onClick={e => {
-            e.stopPropagation();
-            onVpdPromptClick?.(job);
-          }}
-          className="absolute right-2.5 top-2.5 z-20 flex h-3.5 w-3.5 items-center justify-center"
-          title="Build your Value Proposition Document"
-          aria-label="Build Value Proposition Document for this interview"
-        >
-          <span className="h-2 w-2 animate-pulse rounded-full bg-red-500 ring-2 ring-white dark:ring-slate-900" />
-        </button>
-      )}
-
       <div className="mb-0 flex gap-4">
         {/* Logo - Left */}
         <CompanyLogo
@@ -106,9 +91,6 @@ const JobCard: React.FC<JobCardProps> = ({
             className="relative flex-1 active:scale-95"
           >
             {hasPreparedApplication ? "Continue" : "Prepare"}
-            {showVpdPrompt && (
-              <span className="absolute right-2 top-2 h-2 w-2 animate-pulse rounded-full bg-red-500 ring-2 ring-white dark:ring-slate-900" />
-            )}
           </Button>
           <button
             type="button"

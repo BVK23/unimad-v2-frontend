@@ -1,7 +1,12 @@
 import React, { useEffect, useState, useRef, type SetStateAction } from "react";
 import type { PortfolioHighlightMap } from "@/features/adk-chat/adkPortfolioHighlightDiff";
 import { getPortfolioBlockDeleteLabel } from "@/features/portfolio/utils/getPortfolioBlockDeleteLabel";
-import { normalizePortfolioRichTextForRender } from "@/features/portfolio/utils/portfolio-html";
+import { isReadOnlyPortfolioBlockVisible } from "@/features/portfolio/utils/isReadOnlyPortfolioBlockVisible";
+import {
+  normalizePortfolioRichTextForRender,
+  wrapPortfolioTitleWithHeadingLevel,
+  extractTitleHeadingLevel,
+} from "@/features/portfolio/utils/portfolio-html";
 import {
   formatPortfolioUploadError,
   logPortfolioUploadError,
@@ -12,8 +17,6 @@ import { uploadPortfolioFile } from "@/features/portfolio/utils/upload";
 import {
   ArrowLeft,
   Trash2,
-  GripVertical,
-  MoveHorizontal,
   Edit3,
   Eye,
   Copy,
@@ -25,17 +28,23 @@ import {
   Table2,
   Code2,
   Figma,
+  Pencil,
 } from "lucide-react";
 import { useGridResize } from "../hooks/useGridResize";
 import { PortfolioItem, ContentType } from "../types";
-import BlockRenderer from "./BlockRenderer";
 import RichTextEditor, { type RichTextEditorSelectionInfo } from "./RichTextEditor";
 import DeleteBlockConfirmModal from "./portfolio/DeleteBlockConfirmModal";
-import { PortfolioAdkBlockHighlight } from "./portfolio/PortfolioAdkBlockHighlight";
+import { PortfolioGridBlock } from "./portfolio/PortfolioGridBlock";
 import PortfolioImage from "./portfolio/PortfolioImage";
 
 const PAGE_HERO_RICH_TEXT_CLASSES =
   "[&_strong]:font-bold [&_b]:font-bold [&_em]:italic [&_i]:italic [&_u]:underline [&_p]:inline [&_br]:block [&_a]:text-brand-200 [&_a]:underline [&_a]:underline-offset-2 hover:[&_a]:text-white";
+
+const PAGE_BANNER_RICH_TEXT_CLASSES =
+  "[&_strong]:font-bold [&_b]:font-bold [&_em]:italic [&_i]:italic [&_u]:underline [&_p]:m-0 [&_br]:block [&_a]:text-brand-600 [&_a]:underline [&_a]:underline-offset-2 hover:[&_a]:text-brand-700";
+
+/** Stable heading sizes so H1/H2/H3 don't jump the title layout. Default visual weight matches H2. */
+const PAGE_BANNER_TITLE_CLASSES = `${PAGE_BANNER_RICH_TEXT_CLASSES} min-h-[2.5rem] text-3xl font-semibold leading-tight text-slate-900 md:text-4xl dark:text-white [&_h1]:m-0 [&_h1]:block [&_h1]:text-4xl [&_h1]:leading-tight md:[&_h1]:text-5xl [&_h2]:m-0 [&_h2]:block [&_h2]:text-3xl [&_h2]:leading-tight md:[&_h2]:text-4xl [&_h3]:m-0 [&_h3]:block [&_h3]:text-2xl [&_h3]:leading-tight md:[&_h3]:text-3xl`;
 
 interface ProjectDetailViewProps {
   project: PortfolioItem;
@@ -47,7 +56,7 @@ interface ProjectDetailViewProps {
   adkHighlights?: PortfolioHighlightMap;
   backLabel?: string;
   hideToolbar?: boolean;
-  /** Hide Preview Mode / Edit Page toggle (VPD page-card interiors keep Back only). */
+  /** Hide Preview Mode / Edit Page toggle (e.g. published read-only). Nested page cards still show it when editable. */
   hideEditModeToggle?: boolean;
   isEditMode?: boolean;
   onToggleEditMode?: () => void;
@@ -60,6 +69,13 @@ interface ProjectDetailViewProps {
    * VPD uses the nested canvas as the full document — pass false so section titles match Studio preview.
    */
   isNestedDetailView?: boolean;
+  /** When true, force read-only: no edit toggle, no mutations UI. */
+  isReadOnly?: boolean;
+  /**
+   * `hero` — full-bleed cover with title overlay (portfolio nested pages).
+   * `banner` — portfolio-style max-width cover with upload/reposition (VPD document canvas).
+   */
+  coverLayout?: "hero" | "banner";
 }
 
 const ProjectDetailView: React.FC<ProjectDetailViewProps> = ({
@@ -80,10 +96,13 @@ const ProjectDetailView: React.FC<ProjectDetailViewProps> = ({
   selectionImproveSlot,
   onUploadError,
   isNestedDetailView = true,
+  isReadOnly = false,
+  coverLayout = "hero",
 }) => {
   const [uncontrolledEditMode, setUncontrolledEditMode] = useState(true);
-  const isEditMode = isEditModeProp ?? uncontrolledEditMode;
-  const handleToggleEditMode = onToggleEditMode ?? (() => setUncontrolledEditMode(prev => !prev));
+  const isEditMode = isReadOnly ? false : (isEditModeProp ?? uncontrolledEditMode);
+  const handleToggleEditMode = isReadOnly ? () => {} : (onToggleEditMode ?? (() => setUncontrolledEditMode(prev => !prev)));
+  const suppressEditToggle = hideEditModeToggle || isReadOnly;
 
   const [draggedBlockIndex, setDraggedBlockIndex] = useState<number | null>(null);
   const [contextMenu, setContextMenu] = useState<{ x: number; y: number; targetId?: string } | null>(null);
@@ -91,9 +110,22 @@ const ProjectDetailView: React.FC<ProjectDetailViewProps> = ({
   const [selectedNestedPageId, setSelectedNestedPageId] = useState<string | null>(null);
   const [coverUploadError, setCoverUploadError] = useState<string | null>(null);
   const [isCoverUploading, setIsCoverUploading] = useState(false);
+  const [isIconUploading, setIsIconUploading] = useState(false);
+  const [isRepositioningCover, setIsRepositioningCover] = useState(false);
+  const [tempCoverPos, setTempCoverPos] = useState<{ x: number; y: number }>(() => project.coverPosition ?? { x: 50, y: 50 });
+  const [inlineInserterIndex, setInlineInserterIndex] = useState<number | null>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
+  const iconInputRef = useRef<HTMLInputElement>(null);
+  const coverBannerRef = useRef<HTMLDivElement>(null);
+  const coverDragStateRef = useRef<{ x: number; y: number } | null>(null);
+  const coverRepositionBaselineRef = useRef<{ x: number; y: number } | null>(null);
+  const tempCoverPosRef = useRef(tempCoverPos);
   const dragHandleArmedBlockIdRef = useRef<string | null>(null);
   const itemRefs = useRef<Record<string, HTMLDivElement | null>>({});
+
+  const useBannerCover = coverLayout === "banner";
+  const coverVisible = project.showCoverImage !== false;
+  const coverPosition = project.coverPosition ?? { x: 50, y: 50 };
 
   const selectionEditorProps =
     enableSelectionImprove && isEditMode
@@ -126,7 +158,10 @@ const ProjectDetailView: React.FC<ProjectDetailViewProps> = ({
       ...(typeof normalizedColStart === "number" ? { colStart: normalizedColStart } : {}),
     };
   });
-  const allowedTypes: ContentType[] = allowedBlockTypes || ["text", "media", "page-card", "link-box", "table", "embed"];
+  const renderBlocks = isEditMode ? blocks : blocks.filter(isReadOnlyPortfolioBlockVisible);
+  const allowedTypes: ContentType[] = (allowedBlockTypes || ["text", "media", "page-card", "link-box", "table", "embed"]).filter(
+    type => !(isNestedDetailView && (type === "page-card" || type === "project"))
+  );
   const editorMaxWidth = maxWidthClassName || "max-w-4xl";
 
   const selectedNestedPage =
@@ -139,6 +174,15 @@ const ProjectDetailView: React.FC<ProjectDetailViewProps> = ({
     const stillExists = blocks.some(block => block.id === selectedNestedPageId && (block.type === "page-card" || block.type === "project"));
     if (!stillExists) setSelectedNestedPageId(null);
   }, [blocks, selectedNestedPageId]);
+
+  useEffect(() => {
+    if (isRepositioningCover) return;
+    setTempCoverPos(project.coverPosition ?? { x: 50, y: 50 });
+  }, [isRepositioningCover, project.coverPosition]);
+
+  useEffect(() => {
+    tempCoverPosRef.current = tempCoverPos;
+  }, [tempCoverPos]);
 
   const handleUpdateBlock = (id: string, updates: Partial<PortfolioItem>) => {
     const newBlocks = blocks.map(b => (b.id === id ? { ...b, ...updates } : b));
@@ -153,6 +197,10 @@ const ProjectDetailView: React.FC<ProjectDetailViewProps> = ({
   const { gridRef, resizing, initResize } = useGridResize(blocks, handleUpdateBlocks, itemRefs);
 
   const handleAddBlock = (type: ContentType, preset?: Partial<PortfolioItem>) => {
+    if (isNestedDetailView && (type === "page-card" || type === "project")) {
+      setContextMenu(null);
+      return;
+    }
     const getDefaultSpanForType = (contentType: ContentType): PortfolioItem["span"] => {
       if (gridColumns === 12) {
         if (contentType === "link-box") return 3;
@@ -179,6 +227,58 @@ const ProjectDetailView: React.FC<ProjectDetailViewProps> = ({
     };
     handleUpdateBlocks([...blocks, newBlock]);
     setContextMenu(null);
+  };
+
+  const handleInsertBlockAfter = (index: number, type: ContentType, preset?: Partial<PortfolioItem>) => {
+    if (isNestedDetailView && (type === "page-card" || type === "project")) {
+      setInlineInserterIndex(null);
+      return;
+    }
+    const getDefaultSpanForType = (contentType: ContentType): PortfolioItem["span"] => {
+      if (gridColumns === 12) {
+        if (contentType === "link-box") return 3;
+        if (contentType === "text") return 12;
+        if (contentType === "table") return 12;
+        if (contentType === "embed") return 12;
+        if (contentType === "media") return 12;
+        return 6;
+      }
+      if (contentType === "link-box") return 1;
+      if (contentType === "text") return 2;
+      if (contentType === "table") return 3;
+      if (contentType === "embed") return 3;
+      return 2;
+    };
+    const newBlock: PortfolioItem = {
+      id: Date.now().toString(),
+      type,
+      content: "",
+      span: getDefaultSpanForType(type),
+      detailedBlocks: [],
+      ...preset,
+    };
+    const next = [...blocks];
+    next.splice(index + 1, 0, newBlock);
+    handleUpdateBlocks(next);
+    setInlineInserterIndex(null);
+  };
+
+  const handleIconUpload = async (file: File) => {
+    setCoverUploadError(null);
+    setIsIconUploading(true);
+    logPortfolioUploadStart("page-icon", file, { pageId: project.id, pageTitle: project.title });
+    try {
+      const uploaded = await uploadPortfolioFile(file);
+      onUpdateProject({ ...project, iconUrl: uploaded.url });
+      logPortfolioUploadSuccess("page-icon", uploaded.url, { pageId: project.id });
+    } catch (error) {
+      const message = formatPortfolioUploadError(error, "Could not upload icon. Try a JPG/PNG/GIF under 4MB.");
+      logPortfolioUploadError("page-icon", error, { pageId: project.id, pageTitle: project.title });
+      setCoverUploadError(message);
+      onUploadError?.(message);
+    } finally {
+      setIsIconUploading(false);
+    }
   };
 
   const handleDuplicateBlock = (id: string) => {
@@ -300,7 +400,16 @@ const ProjectDetailView: React.FC<ProjectDetailViewProps> = ({
     logPortfolioUploadStart("page-cover", file, { pageId: project.id, pageTitle: project.title });
     try {
       const uploaded = await uploadPortfolioFile(file);
-      onUpdateProject({ ...project, content: uploaded.url });
+      const initialPos = { x: 50, y: 50 };
+      onUpdateProject({
+        ...project,
+        content: uploaded.url,
+        showCoverImage: true,
+        coverPosition: initialPos,
+      });
+      coverRepositionBaselineRef.current = initialPos;
+      setTempCoverPos(initialPos);
+      if (useBannerCover) setIsRepositioningCover(true);
       logPortfolioUploadSuccess("page-cover", uploaded.url, { pageId: project.id });
     } catch (error) {
       const message = formatPortfolioUploadError(error, "Could not upload cover. Try a JPG/PNG/GIF under 4MB, or check your connection.");
@@ -310,6 +419,64 @@ const ProjectDetailView: React.FC<ProjectDetailViewProps> = ({
     } finally {
       setIsCoverUploading(false);
     }
+  };
+
+  const clampCoverPos = (value: number, min: number, max: number) => Math.min(max, Math.max(min, value));
+
+  const beginCoverReposition = (position: { x: number; y: number }) => {
+    coverRepositionBaselineRef.current = project.coverPosition ?? { x: 50, y: 50 };
+    setTempCoverPos(position);
+    setIsRepositioningCover(true);
+  };
+
+  const handleRepositionCover = () => {
+    if (!project.content?.trim()) return;
+    beginCoverReposition(project.coverPosition ?? { x: 50, y: 50 });
+  };
+
+  const handleBannerPointerDown = (e: React.PointerEvent<HTMLDivElement>) => {
+    if (!isRepositioningCover) return;
+    e.preventDefault();
+    coverDragStateRef.current = { x: e.clientX, y: e.clientY };
+    e.currentTarget.setPointerCapture(e.pointerId);
+  };
+
+  const handleBannerPointerMove = (e: React.PointerEvent<HTMLDivElement>) => {
+    if (!isRepositioningCover || !coverDragStateRef.current || !coverBannerRef.current) return;
+    const rect = coverBannerRef.current.getBoundingClientRect();
+    const dx = e.clientX - coverDragStateRef.current.x;
+    const dy = e.clientY - coverDragStateRef.current.y;
+    coverDragStateRef.current = { x: e.clientX, y: e.clientY };
+    const pctDx = (dx / Math.max(1, rect.width)) * 100;
+    const pctDy = (dy / Math.max(1, rect.height)) * 100;
+    setTempCoverPos(prev => ({
+      x: clampCoverPos(prev.x - pctDx, 0, 100),
+      y: clampCoverPos(prev.y - pctDy, 0, 100),
+    }));
+  };
+
+  const handleBannerPointerUp = (e: React.PointerEvent<HTMLDivElement>) => {
+    coverDragStateRef.current = null;
+    if (e.currentTarget.hasPointerCapture(e.pointerId)) {
+      e.currentTarget.releasePointerCapture(e.pointerId);
+    }
+    if (isRepositioningCover) {
+      onUpdateProject({ ...project, coverPosition: tempCoverPosRef.current });
+    }
+  };
+
+  const handleSaveCoverLayout = () => {
+    onUpdateProject({ ...project, coverPosition: tempCoverPosRef.current });
+    coverRepositionBaselineRef.current = null;
+    setIsRepositioningCover(false);
+  };
+
+  const handleCancelCoverReposition = () => {
+    const baseline = coverRepositionBaselineRef.current ?? project.coverPosition ?? { x: 50, y: 50 };
+    onUpdateProject({ ...project, coverPosition: baseline });
+    setTempCoverPos(baseline);
+    coverRepositionBaselineRef.current = null;
+    setIsRepositioningCover(false);
   };
 
   const onDropCover = (e: React.DragEvent<HTMLDivElement>) => {
@@ -383,6 +550,7 @@ const ProjectDetailView: React.FC<ProjectDetailViewProps> = ({
         project={selectedNestedPage}
         onBack={() => setSelectedNestedPageId(null)}
         onUpdateProject={updated => {
+          if (isReadOnly) return;
           handleUpdateBlocks(blocks.map(block => (block.id === updated.id ? updated : block)));
         }}
         allowedBlockTypes={allowedBlockTypes}
@@ -391,14 +559,17 @@ const ProjectDetailView: React.FC<ProjectDetailViewProps> = ({
         adkHighlights={adkHighlights}
         backLabel="Back"
         hideToolbar={false}
-        hideEditModeToggle={hideEditModeToggle}
+        // Page interiors match Portfolio: hero cover (title/description on image), no VPD root icon row.
+        hideEditModeToggle={isReadOnly}
         isEditMode={isEditMode}
-        onToggleEditMode={onToggleEditMode}
-        enableSelectionImprove={enableSelectionImprove}
+        onToggleEditMode={isReadOnly ? undefined : onToggleEditMode}
+        enableSelectionImprove={!isReadOnly && enableSelectionImprove}
         onTextSelectionChange={onTextSelectionChange}
         selectionImproveSlot={selectionImproveSlot}
         onUploadError={onUploadError}
         isNestedDetailView
+        isReadOnly={isReadOnly}
+        coverLayout="hero"
       />
     );
   }
@@ -416,6 +587,17 @@ const ProjectDetailView: React.FC<ProjectDetailViewProps> = ({
           e.target.value = "";
         }}
       />
+      <input
+        ref={iconInputRef}
+        type="file"
+        accept="image/*"
+        className="hidden"
+        onChange={e => {
+          const file = e.target.files?.[0];
+          if (file) void handleIconUpload(file);
+          e.target.value = "";
+        }}
+      />
 
       {!hideToolbar && (
         <div className="sticky top-0 z-40 bg-white/80 dark:bg-slate-950/80 backdrop-blur-md border-b border-slate-100 dark:border-white/5 py-4 px-6 flex items-center justify-between shadow-sm">
@@ -425,7 +607,7 @@ const ProjectDetailView: React.FC<ProjectDetailViewProps> = ({
           >
             <ArrowLeft size={16} /> {backLabel}
           </button>
-          {!hideEditModeToggle ? (
+          {!suppressEditToggle ? (
             <div className="flex items-center gap-3">
               <button
                 type="button"
@@ -453,198 +635,335 @@ const ProjectDetailView: React.FC<ProjectDetailViewProps> = ({
         </div>
       )}
 
-      {/* Nested Hero / Cover */}
-      <div
-        className="relative h-64 md:h-[400px] w-full bg-slate-100 dark:bg-slate-900 overflow-hidden group/hero"
-        onDragOver={e => {
-          e.preventDefault();
-          e.stopPropagation();
-        }}
-        onDrop={onDropCover}
-      >
-        {isEditMode && (
-          <div className="absolute top-6 right-6 z-30 opacity-0 group-hover/hero:opacity-100 transition-opacity">
+      {/* Cover + title */}
+      {useBannerCover ? (
+        <div className={`${editorMaxWidth} mx-auto w-full px-4 pt-6 md:px-6`}>
+          {isEditMode && !coverVisible ? (
             <button
-              onClick={() => fileInputRef.current?.click()}
-              disabled={isCoverUploading}
-              className="px-5 py-2 bg-white/90 backdrop-blur text-slate-900 rounded-full font-bold text-xs shadow-xl hover:bg-white hover:scale-105 active:scale-95 transition-all border border-slate-200"
+              type="button"
+              onClick={() => onUpdateProject({ ...project, showCoverImage: true })}
+              className="mb-6 flex w-full items-center justify-center gap-2 rounded-xl border-2 border-dashed border-slate-200 py-4 text-sm font-medium text-slate-400 transition-colors hover:border-brand-500 hover:text-brand-600 dark:border-white/10"
             >
-              {isCoverUploading ? "Uploading..." : "Update Cover"}
+              <ImageIcon size={16} /> Show Cover Image
             </button>
-          </div>
-        )}
+          ) : null}
 
-        {project.content ? (
-          <PortfolioImage src={project.content} alt={project.title || "Project cover"} fill sizes="100vw" className="object-cover" />
-        ) : (
-          <div className="w-full h-full flex items-center justify-center border-b border-slate-200 dark:border-white/10 border-dashed">
-            <span className="text-slate-300 font-bold text-sm flex items-center gap-2">
-              <ImageIcon size={20} /> No Cover Image
-            </span>
-          </div>
-        )}
-        {coverUploadError && (
-          <div className="absolute top-6 left-6 z-30 max-w-sm text-xs font-semibold text-red-600 bg-white/95 dark:bg-slate-900 border border-red-200 rounded-lg px-3 py-2 shadow-lg">
-            {coverUploadError}
-          </div>
-        )}
-
-        <div className="absolute inset-0 bg-gradient-to-t from-slate-950 via-slate-950/20 to-transparent flex flex-col justify-end p-8 md:p-16">
-          <div className={`${editorMaxWidth} mx-auto w-full group/text`}>
-            {isEditMode ? (
-              <RichTextEditor
-                autoLinkUrls
-                value={normalizePortfolioRichTextForRender(project.title || "")}
-                onChange={value => onUpdateProject({ ...project, title: value })}
-                className={`block w-full bg-transparent text-4xl md:text-6xl font-semibold text-white outline-none mb-2 placeholder:text-white/50 ${PAGE_HERO_RICH_TEXT_CLASSES}`}
-                placeholder="Page Title"
-                {...selectionEditorProps}
-              />
-            ) : (
-              <h1
-                className={`text-4xl md:text-6xl font-black text-white mb-2 leading-tight drop-shadow-md ${PAGE_HERO_RICH_TEXT_CLASSES}`}
-                dangerouslySetInnerHTML={{
-                  __html: normalizePortfolioRichTextForRender(project.title || "Untitled Page"),
-                }}
-              />
-            )}
-
-            {isEditMode ? (
-              <RichTextEditor
-                autoLinkUrls
-                value={normalizePortfolioRichTextForRender(project.description || "")}
-                onChange={value => onUpdateProject({ ...project, description: value })}
-                className={`block w-full max-w-2xl resize-none bg-transparent text-xl text-white/80 outline-none placeholder:text-white/40 ${PAGE_HERO_RICH_TEXT_CLASSES}`}
-                placeholder="Add a description..."
-                {...selectionEditorProps}
-              />
-            ) : (
-              project.description && (
-                <p
-                  className={`text-xl text-white/80 max-w-2xl leading-relaxed text-balance drop-shadow-md ${PAGE_HERO_RICH_TEXT_CLASSES}`}
-                  dangerouslySetInnerHTML={{ __html: normalizePortfolioRichTextForRender(project.description) }}
+          {coverVisible ? (
+            <div
+              ref={coverBannerRef}
+              className={`group/hero relative aspect-[4/1] w-full overflow-hidden rounded-2xl border border-slate-200 bg-slate-100 dark:border-white/5 dark:bg-slate-900 ${
+                isRepositioningCover ? "ring-2 ring-brand-500/60 ring-offset-2 ring-offset-slate-50 dark:ring-offset-slate-950" : ""
+              }`}
+              onDragOver={e => {
+                e.preventDefault();
+                e.stopPropagation();
+              }}
+              onDrop={onDropCover}
+            >
+              {project.content ? (
+                <PortfolioImage
+                  src={project.content}
+                  alt={project.title || "Project cover"}
+                  fill
+                  sizes="(max-width: 768px) 100vw, 1280px"
+                  className={`object-cover ${isRepositioningCover ? "cursor-grab select-none active:cursor-grabbing" : ""}`}
+                  style={{
+                    objectPosition: `${(isRepositioningCover ? tempCoverPos : coverPosition).x}% ${(isRepositioningCover ? tempCoverPos : coverPosition).y}%`,
+                  }}
+                  onPointerDown={isRepositioningCover ? handleBannerPointerDown : undefined}
+                  onPointerMove={isRepositioningCover ? handleBannerPointerMove : undefined}
+                  onPointerUp={isRepositioningCover ? handleBannerPointerUp : undefined}
+                  onPointerCancel={isRepositioningCover ? handleBannerPointerUp : undefined}
                 />
-              )
-            )}
-          </div>
-        </div>
-      </div>
+              ) : (
+                <div className="flex h-full w-full items-center justify-center text-sm font-medium text-slate-400">No Cover Image</div>
+              )}
 
-      {/* Grid Container */}
-      <div className={`${editorMaxWidth} mx-auto px-6 py-16 pb-40 min-h-[500px]`} onClick={() => setContextMenu(null)}>
-        <div
-          ref={gridRef as React.RefObject<HTMLDivElement>}
-          className={`grid grid-cols-1 ${gridColumns === 12 ? "md:grid-cols-12" : "md:grid-cols-3"} gap-6 relative`}
-        >
-          {blocks.map((block, index) => {
-            // Text + page-cards size to content. Fixed height on page-cards (e.g. VPD
-            // problem tiles at 280px) clips cover+title+subtitle and lets siblings overlap.
-            // Tables size to rows (fixed height clips metric grids when rows are added).
-            const isContentSizedBlock =
-              block.type === "text" || block.type === "page-card" || block.type === "project" || block.type === "table";
-            const blockSizeStyle =
-              block.height && !isContentSizedBlock
-                ? { height: `${block.height}px` }
-                : block.height && (block.type === "page-card" || block.type === "project")
-                  ? { minHeight: `${block.height}px` }
-                  : undefined;
-
-            return (
-              <div
-                key={block.id}
-                style={{
-                  gridColumnStart: block.colStart,
-                  ...blockSizeStyle,
-                }}
-                className={`
-                ${getSpanClass(block.span)} 
-                relative group transition-all duration-300
-                ${isEditMode ? "rounded-[2rem]" : ""}
-                ${draggedBlockIndex === index ? "opacity-30 scale-[0.98]" : "opacity-100"}
-                ${block.type === "link-box" || isContentSizedBlock ? "self-start" : ""}
-              `}
-              >
-                <PortfolioAdkBlockHighlight kind={adkHighlights?.[`page:${project.id}:block:${block.id}`]} className="h-full w-full">
-                  <div
-                    ref={node => {
-                      itemRefs.current[block.id] = node;
-                    }}
-                    onDragOver={e => handleDragOver(e, index)}
-                    onDragEnd={resetDragState}
-                    onContextMenu={e => handleContextMenu(e, block.id)}
-                    onMouseDown={e => handleEdgeResizeStart(e, block)}
-                    onMouseMove={e => handleEdgeResizeHover(e, block)}
-                    onMouseLeave={e => {
-                      e.currentTarget.style.cursor = "default";
-                    }}
-                    onMouseUpCapture={() => {
-                      dragHandleArmedBlockIdRef.current = null;
-                    }}
-                    className="w-full relative h-auto"
+              {isEditMode && !isRepositioningCover ? (
+                <div className="absolute inset-0 z-10 hidden items-center justify-center gap-4 bg-black/40 backdrop-blur-sm transition-all group-hover/hero:flex">
+                  <button
+                    type="button"
+                    onClick={() => fileInputRef.current?.click()}
+                    disabled={isCoverUploading}
+                    className="rounded-full bg-white px-6 py-2 text-sm font-medium text-slate-900 shadow-xl transition-transform hover:scale-105 active:scale-95 disabled:opacity-60"
                   >
-                    {/* Block Controls */}
-                    {isEditMode && (
-                      <div className="absolute -left-6 top-1/2 -translate-y-1/2 opacity-0 pointer-events-none group-hover:opacity-100 group-hover:pointer-events-auto transition-opacity flex flex-col gap-2 z-30">
-                        <div
-                          className="p-1.5 cursor-move text-slate-400 hover:text-slate-600 bg-white dark:bg-slate-800 rounded-lg shadow-xl border border-slate-100 dark:border-white/5"
-                          draggable={!resizing}
-                          onMouseDown={e => {
-                            e.stopPropagation();
-                            dragHandleArmedBlockIdRef.current = block.id;
-                          }}
-                          onDragStart={e => handleDragStart(e, index, block.id)}
-                          onDragEnd={resetDragState}
-                          onMouseUp={() => {
-                            dragHandleArmedBlockIdRef.current = null;
-                          }}
-                        >
-                          <GripVertical size={14} />
-                        </div>
+                    {isCoverUploading ? "Uploading..." : project.content ? "Update Cover" : "Upload Cover"}
+                  </button>
+                  {project.content ? (
+                    <button
+                      type="button"
+                      onClick={handleRepositionCover}
+                      className="rounded-full bg-white px-6 py-2 text-sm font-medium text-slate-900 shadow-xl transition-transform hover:scale-105 active:scale-95"
+                    >
+                      Reposition Cover
+                    </button>
+                  ) : null}
+                  <button
+                    type="button"
+                    onClick={() => onUpdateProject({ ...project, showCoverImage: false })}
+                    className="rounded-full bg-red-500 p-2.5 text-white shadow-xl transition-transform hover:scale-105 active:scale-95"
+                    title="Hide Cover"
+                  >
+                    <Trash2 size={16} />
+                  </button>
+                </div>
+              ) : null}
+
+              {isEditMode && isRepositioningCover ? (
+                <>
+                  <p className="absolute left-4 top-3 z-20 rounded-full bg-black/40 px-3 py-1 text-[11px] font-medium text-white/80 backdrop-blur-sm">
+                    Drag to reposition your cover
+                  </p>
+                  <div className="absolute bottom-4 right-4 z-20 flex items-center gap-2">
+                    <button
+                      type="button"
+                      onClick={handleCancelCoverReposition}
+                      className="inline-flex items-center gap-1.5 rounded-lg border border-white/20 bg-black/40 px-4 py-2 text-sm font-medium text-white backdrop-blur-sm transition-colors hover:bg-black/55"
+                    >
+                      Cancel
+                    </button>
+                    <button
+                      type="button"
+                      onClick={handleSaveCoverLayout}
+                      className="inline-flex items-center gap-1.5 rounded-lg border border-transparent bg-white px-4 py-2 text-sm font-semibold text-slate-900 shadow-sm transition-colors hover:bg-slate-100"
+                    >
+                      Save Layout
+                    </button>
+                  </div>
+                </>
+              ) : null}
+
+              {coverUploadError ? (
+                <div className="absolute left-4 top-4 z-30 max-w-sm rounded-lg border border-red-200 bg-white/95 px-3 py-2 text-xs font-semibold text-red-600 shadow-lg dark:bg-slate-900">
+                  {coverUploadError}
+                </div>
+              ) : null}
+            </div>
+          ) : null}
+
+          <div
+            className={`relative mb-2 flex items-end gap-4 pl-5 md:pl-6 ${
+              coverVisible && (project.iconUrl || isEditMode) ? "-mt-10" : "mt-4"
+            }`}
+          >
+            {(project.iconUrl || isEditMode) && (
+              <div className="relative z-10 shrink-0">
+                {project.iconUrl ? (
+                  <div className="group/icon relative h-24 w-24 overflow-hidden rounded-2xl bg-slate-100 dark:bg-slate-800 md:h-28 md:w-28">
+                    <PortfolioImage src={project.iconUrl} alt="VPD icon" fill sizes="112px" className="object-cover" />
+                    {isEditMode ? (
+                      <div className="absolute inset-0 hidden items-center justify-center gap-1.5 bg-black/45 group-hover/icon:flex">
                         <button
                           type="button"
-                          onClick={e => {
-                            e.stopPropagation();
-                            requestDeleteBlock(block.id);
-                          }}
-                          className="p-1.5 text-slate-400 hover:text-red-500 bg-white dark:bg-slate-800 rounded-lg shadow-xl border border-slate-100 dark:border-white/5 transition-colors"
-                          title="Delete block"
+                          onClick={() => iconInputRef.current?.click()}
+                          disabled={isIconUploading}
+                          className="inline-flex h-8 w-8 items-center justify-center rounded-full bg-white text-slate-800 shadow-sm transition-transform hover:scale-105"
+                          title="Change icon"
+                          aria-label="Change icon"
+                        >
+                          <Pencil size={14} />
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => onUpdateProject({ ...project, iconUrl: "" })}
+                          className="inline-flex h-8 w-8 items-center justify-center rounded-full bg-red-500 text-white shadow-sm transition-transform hover:scale-105"
+                          title="Remove icon"
+                          aria-label="Remove icon"
                         >
                           <Trash2 size={14} />
                         </button>
                       </div>
-                    )}
-
-                    <BlockRenderer
-                      item={block}
-                      isEditMode={isEditMode}
-                      onUpdate={handleUpdateBlock}
-                      onSelectProject={page => setSelectedNestedPageId(page.id)}
-                      isNestedDetailView={isNestedDetailView}
-                      enableSelectionImprove={enableSelectionImprove}
-                      onTextSelectionChange={onTextSelectionChange}
-                      selectionImproveSlot={selectionImproveSlot}
-                      onUploadError={onUploadError}
-                    />
-
-                    {isEditMode && (
-                      <>
-                        <div
-                          className="absolute inset-y-0 left-0 w-[18px] cursor-ew-resize z-20"
-                          onMouseDown={e => initResize(e, block, "x", "left")}
-                          title="Resize width"
-                        />
-                        <div
-                          className="absolute inset-y-0 right-0 w-[18px] cursor-ew-resize z-20"
-                          onMouseDown={e => initResize(e, block, "x", "right")}
-                          title="Resize width"
-                        />
-                      </>
-                    )}
+                    ) : null}
                   </div>
-                </PortfolioAdkBlockHighlight>
+                ) : isEditMode ? (
+                  <button
+                    type="button"
+                    onClick={() => iconInputRef.current?.click()}
+                    disabled={isIconUploading}
+                    className="flex h-24 w-24 flex-col items-center justify-center gap-1 rounded-2xl border-2 border-dashed border-slate-300 bg-white/80 text-slate-400 transition-colors hover:border-brand-500 hover:text-brand-600 dark:border-white/15 dark:bg-slate-900/60 md:h-28 md:w-28"
+                    title="Add company or job icon"
+                  >
+                    <ImageIcon size={20} />
+                    <span className="text-[9px] font-medium uppercase tracking-wide">Icon</span>
+                  </button>
+                ) : null}
               </div>
-            );
-          })}
+            )}
+
+            <div className="group/text min-w-0 flex-1 pb-0.5 pt-3">
+              {isEditMode ? (
+                <RichTextEditor
+                  autoLinkUrls
+                  toolbarVariant="title"
+                  value={normalizePortfolioRichTextForRender(
+                    extractTitleHeadingLevel(project.title || "")
+                      ? project.title || ""
+                      : wrapPortfolioTitleWithHeadingLevel(project.title || "", "h2")
+                  )}
+                  onChange={value => onUpdateProject({ ...project, title: value })}
+                  className={`block w-full bg-transparent outline-none placeholder:text-slate-400 ${PAGE_BANNER_TITLE_CLASSES}`}
+                  placeholder="Page Title"
+                  {...selectionEditorProps}
+                />
+              ) : (
+                <div
+                  className={PAGE_BANNER_TITLE_CLASSES}
+                  dangerouslySetInnerHTML={{
+                    __html: normalizePortfolioRichTextForRender(
+                      extractTitleHeadingLevel(project.title || "")
+                        ? project.title || "Untitled Page"
+                        : wrapPortfolioTitleWithHeadingLevel(project.title || "Untitled Page", "h2")
+                    ),
+                  }}
+                />
+              )}
+
+              {/* Description field intentionally disabled for VPD banner layout.
+              {isEditMode ? (
+                <RichTextEditor ... placeholder="Add a description..." />
+              ) : (
+                project.description && <p>...</p>
+              )}
+              */}
+            </div>
+          </div>
+        </div>
+      ) : (
+        <div
+          className="group/hero relative h-64 w-full overflow-hidden bg-slate-100 dark:bg-slate-900 md:h-[400px]"
+          onDragOver={e => {
+            e.preventDefault();
+            e.stopPropagation();
+          }}
+          onDrop={onDropCover}
+        >
+          {isEditMode && (
+            <div className="absolute right-6 top-6 z-30 opacity-0 transition-opacity group-hover/hero:opacity-100">
+              <button
+                onClick={() => fileInputRef.current?.click()}
+                disabled={isCoverUploading}
+                className="rounded-full border border-slate-200 bg-white/90 px-5 py-2 text-xs font-bold text-slate-900 shadow-xl backdrop-blur transition-all hover:scale-105 hover:bg-white active:scale-95"
+              >
+                {isCoverUploading ? "Uploading..." : "Update Cover"}
+              </button>
+            </div>
+          )}
+
+          {project.content ? (
+            <PortfolioImage src={project.content} alt={project.title || "Project cover"} fill sizes="100vw" className="object-cover" />
+          ) : (
+            <div className="flex h-full w-full items-center justify-center border-b border-dashed border-slate-200 dark:border-white/10">
+              <span className="flex items-center gap-2 text-sm font-bold text-slate-300">
+                <ImageIcon size={20} /> No Cover Image
+              </span>
+            </div>
+          )}
+          {coverUploadError && (
+            <div className="absolute left-6 top-6 z-30 max-w-sm rounded-lg border border-red-200 bg-white/95 px-3 py-2 text-xs font-semibold text-red-600 shadow-lg dark:bg-slate-900">
+              {coverUploadError}
+            </div>
+          )}
+
+          <div className="absolute inset-0 flex flex-col justify-end bg-gradient-to-t from-slate-950 via-slate-950/20 to-transparent p-8 md:p-16">
+            <div className={`${editorMaxWidth} group/text mx-auto w-full`}>
+              {isEditMode ? (
+                <RichTextEditor
+                  autoLinkUrls
+                  value={normalizePortfolioRichTextForRender(project.title || "")}
+                  onChange={value => onUpdateProject({ ...project, title: value })}
+                  className={`mb-2 block w-full bg-transparent text-4xl font-semibold text-white outline-none placeholder:text-white/50 md:text-6xl ${PAGE_HERO_RICH_TEXT_CLASSES}`}
+                  placeholder="Page Title"
+                  {...selectionEditorProps}
+                />
+              ) : (
+                <h1
+                  className={`mb-2 text-4xl font-black leading-tight text-white drop-shadow-md md:text-6xl ${PAGE_HERO_RICH_TEXT_CLASSES}`}
+                  dangerouslySetInnerHTML={{
+                    __html: normalizePortfolioRichTextForRender(project.title || "Untitled Page"),
+                  }}
+                />
+              )}
+
+              {isEditMode ? (
+                <RichTextEditor
+                  autoLinkUrls
+                  value={normalizePortfolioRichTextForRender(project.description || "")}
+                  onChange={value => onUpdateProject({ ...project, description: value })}
+                  className={`block w-full max-w-2xl resize-none bg-transparent text-xl text-white/80 outline-none placeholder:text-white/40 ${PAGE_HERO_RICH_TEXT_CLASSES}`}
+                  placeholder="Add a description..."
+                  {...selectionEditorProps}
+                />
+              ) : (
+                project.description && (
+                  <p
+                    className={`max-w-2xl text-balance text-xl leading-relaxed text-white/80 drop-shadow-md ${PAGE_HERO_RICH_TEXT_CLASSES}`}
+                    dangerouslySetInnerHTML={{ __html: normalizePortfolioRichTextForRender(project.description) }}
+                  />
+                )
+              )}
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Grid Container */}
+      <div
+        className={`${editorMaxWidth} mx-auto min-h-[500px] px-6 ${useBannerCover ? "py-6" : "py-16"} pb-40`}
+        onClick={() => {
+          setContextMenu(null);
+          setInlineInserterIndex(null);
+        }}
+      >
+        <div
+          ref={gridRef as React.RefObject<HTMLDivElement>}
+          className={`grid grid-cols-1 ${gridColumns === 12 ? "md:grid-cols-12" : "md:grid-cols-3"} gap-6 relative`}
+        >
+          {renderBlocks.map((block, index) => (
+            <PortfolioGridBlock
+              key={block.id}
+              item={block}
+              index={index}
+              isEditMode={isEditMode}
+              isResizingThis={resizing?.id === block.id}
+              isGridResizing={Boolean(resizing)}
+              isDragging={draggedBlockIndex === index}
+              rowSpan={1}
+              spanClass={getSpanClass(block.span)}
+              blockHighlight={adkHighlights?.[`page:${project.id}:block:${block.id}`]}
+              isInlineInserterActive={inlineInserterIndex === index}
+              enableSelectionImprove={enableSelectionImprove}
+              onTextSelectionChange={onTextSelectionChange}
+              selectionImproveSlot={selectionImproveSlot}
+              allowedBlockTypes={allowedTypes}
+              isNestedDetailView={isNestedDetailView}
+              heightMode="explicit"
+              onItemRef={(id, el) => {
+                itemRefs.current[id] = el;
+              }}
+              onDragOver={handleDragOver}
+              onDragEnd={resetDragState}
+              onContextMenu={handleContextMenu}
+              onDragHandleMouseUp={() => {
+                dragHandleArmedBlockIdRef.current = null;
+              }}
+              onEdgeResizeStart={handleEdgeResizeStart}
+              onEdgeResizeHover={handleEdgeResizeHover}
+              onUpdate={handleUpdateBlock}
+              onSelectProject={page => setSelectedNestedPageId(page.id)}
+              onMeasureHeight={() => {}}
+              onRequestDelete={requestDeleteBlock}
+              onDragStart={handleDragStart}
+              onDragHandleMouseDown={itemId => {
+                dragHandleArmedBlockIdRef.current = itemId;
+              }}
+              onToggleInlineInserter={(idx, isActive) => {
+                setInlineInserterIndex(isActive ? null : idx);
+              }}
+              onInsertBlockAfter={handleInsertBlockAfter}
+              initResize={initResize}
+              onUploadError={onUploadError}
+            />
+          ))}
 
           {/* Editor Inline Menu */}
           {isEditMode && (

@@ -1,14 +1,14 @@
 "use client";
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { DOCUMENT_SAVED_CONFIRMATION_MS } from "@/constants/documentAutosave";
+import { DOCUMENT_AUTOSAVE_DELAY_MS, DOCUMENT_SAVED_CONFIRMATION_MS } from "@/constants/documentAutosave";
 import type { PortfolioItem } from "@/types";
 import { updateVpdContent } from "../server-actions/vpd-actions";
 import { isPersistedVpdId } from "../utils/isPersistedVpdId";
 import { getVpdProjectContentSignature, mapStudioProjectToVpdUpdateContent } from "../utils/mapStudioProjectToVpdUpdatePayload";
 
-/** Match portfolio autosave debounce (usePortfolioAutosave). */
-const AUTOSAVE_DELAY_MS = 5000;
+/** Match resume / document autosave debounce (~12s). */
+const AUTOSAVE_DELAY_MS = DOCUMENT_AUTOSAVE_DELAY_MS;
 
 type UseVpdAutosaveOptions = {
   enabled?: boolean;

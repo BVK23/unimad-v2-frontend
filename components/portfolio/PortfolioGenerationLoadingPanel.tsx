@@ -1,46 +1,13 @@
 "use client";
 
 import { useEffect, useState } from "react";
+import {
+  getPortfolioGenerationMessageIndex,
+  PORTFOLIO_GENERATION_MESSAGE_INTERVAL_MS,
+  PORTFOLIO_GENERATION_MESSAGES,
+  type PortfolioGenerationMessageMode,
+} from "@/features/portfolio/constants/portfolioGenerationMessages";
 import { Sparkles } from "lucide-react";
-
-/** Rotates continuously — no fixed “completed steps” UI tied to backend timing. */
-const PORTFOLIO_GENERATION_MESSAGES = [
-  "Reading your personal data from onboarding…",
-  "Crafting your USP…",
-  "Crafting your quick summary…",
-  "Building your domain profile fit…",
-  "Highlighting experience and projects…",
-  "Shaping your elevator pitch…",
-  "Laying out your portfolio sections…",
-  "Applying final touches and polishing your portfolio…",
-] as const;
-
-const PORTFOLIO_REGENERATION_MESSAGES = [
-  "Reading your personal data from onboarding…",
-  "Crafting your USP…",
-  "Crafting your quick summary…",
-  "Building your domain profile fit…",
-  "Refreshing experience and project sections…",
-  "Shaping your elevator pitch…",
-  "Laying out your portfolio sections…",
-  "Applying final touches and polishing your portfolio…",
-] as const;
-
-const MESSAGE_ROTATION_MS = 1800;
-
-const useRotatingMessage = (messages: readonly string[]) => {
-  const [index, setIndex] = useState(0);
-
-  useEffect(() => {
-    if (messages.length <= 1) return;
-    const id = window.setInterval(() => {
-      setIndex(current => (current + 1) % messages.length);
-    }, MESSAGE_ROTATION_MS);
-    return () => window.clearInterval(id);
-  }, [messages]);
-
-  return messages[index] ?? messages[0];
-};
 
 const PortfolioBlocksGraphic = () => (
   <div className="relative mx-auto h-40 w-44 overflow-hidden rounded-xl border border-slate-200 bg-white shadow-md dark:border-slate-700 dark:bg-slate-800">
@@ -73,20 +40,41 @@ const PortfolioBlocksGraphic = () => (
   </div>
 );
 
-export type PortfolioGenerationLoadingMode = "generate" | "regenerate";
+export type PortfolioGenerationLoadingMode = PortfolioGenerationMessageMode;
 
 type Props = {
   mode: PortfolioGenerationLoadingMode;
+  title?: string;
+  subtitle?: string;
 };
 
-export function PortfolioGenerationLoadingPanel({ mode }: Props) {
-  const messages = mode === "regenerate" ? PORTFOLIO_REGENERATION_MESSAGES : PORTFOLIO_GENERATION_MESSAGES;
-  const statusMessage = useRotatingMessage(messages);
-  const title = mode === "regenerate" ? "Regenerating your portfolio" : "Generating your portfolio";
+export function PortfolioGenerationLoadingPanel({ mode, title: titleOverride, subtitle: subtitleOverride }: Props) {
+  const messages = PORTFOLIO_GENERATION_MESSAGES[mode];
+  const [step, setStep] = useState(0);
+
+  useEffect(() => {
+    const id = window.setTimeout(() => setStep(0), 0);
+    return () => window.clearTimeout(id);
+  }, [mode]);
+
+  useEffect(() => {
+    if (messages.length <= 1) return undefined;
+
+    const id = window.setInterval(() => {
+      setStep(prev => prev + 1);
+    }, PORTFOLIO_GENERATION_MESSAGE_INTERVAL_MS);
+
+    return () => window.clearInterval(id);
+  }, [messages.length, mode]);
+
+  const index = getPortfolioGenerationMessageIndex(messages.length, step);
+  const statusMessage = messages[index] ?? messages[0];
+  const title = titleOverride ?? (mode === "regenerate" ? "Regenerating your portfolio" : "Generating your portfolio");
   const subtitle =
-    mode === "regenerate"
+    subtitleOverride ??
+    (mode === "regenerate"
       ? "Unibot is rebuilding your sections from your latest profile. This can take a minute."
-      : "Unibot is drafting a personalised portfolio from your profile. This can take a minute.";
+      : "Unibot is drafting a personalised portfolio from your profile. This can take a minute.");
 
   return (
     <div
@@ -111,7 +99,7 @@ export function PortfolioGenerationLoadingPanel({ mode }: Props) {
           <h3 className="text-lg font-semibold text-slate-900 dark:text-white">{title}</h3>
           <p className="text-xs leading-relaxed text-slate-500 dark:text-slate-400">{subtitle}</p>
           <p
-            key={statusMessage}
+            key={`${mode}-${index}-${step}`}
             className="min-h-[2.5rem] text-sm font-medium text-brand-600 dark:text-brand-400 animate-in fade-in slide-in-from-bottom-1 duration-300"
           >
             {statusMessage}

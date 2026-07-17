@@ -1,9 +1,11 @@
 "use client";
 
-import React, { useEffect, useRef, useState } from "react";
+import React, { useEffect, useMemo, useRef, useState } from "react";
+import ResumePublishedBeacon from "@/components/resume/ResumePublishedBeacon";
 import { publishVpdAsset } from "@/features/vpd/server-actions/vpd-actions";
 import { isPersistedVpdId } from "@/features/vpd/utils/isPersistedVpdId";
 import { buildVpdPublicUrl, mapStudioProjectToVpdPublishContent, normalizeVpdPublishSlug } from "@/features/vpd/utils/vpdPublish";
+import { getPublicSiteHost } from "@/lib/publicSiteOrigin";
 import type { PortfolioItem } from "@/types";
 import { Check, Copy, ExternalLink } from "lucide-react";
 
@@ -14,12 +16,21 @@ type VpdPublishMenuProps = {
   onSlugChange: (slug: string) => void;
   /** Save latest editor content before publishing (autosave). */
   onBeforePublish?: () => Promise<void>;
+  publishedAt?: string | null;
   className?: string;
 };
 
-const VpdPublishMenu: React.FC<VpdPublishMenuProps> = ({ project, slug, onSlugChange, onBeforePublish, className = "" }) => {
+const VpdPublishMenu: React.FC<VpdPublishMenuProps> = ({
+  project,
+  slug,
+  onSlugChange,
+  onBeforePublish,
+  publishedAt = null,
+  className = "",
+}) => {
   const canPublish = isPersistedVpdId(project.id);
   const publishedUrl = slug ? buildVpdPublicUrl(slug) : null;
+  const siteHost = useMemo(() => getPublicSiteHost(), []);
 
   const [showMenu, setShowMenu] = useState(false);
   const [publishUrlInput, setPublishUrlInput] = useState(slug ?? "");
@@ -110,7 +121,8 @@ const VpdPublishMenu: React.FC<VpdPublishMenuProps> = ({ project, slug, onSlugCh
   };
 
   return (
-    <div className={`relative ${className}`} ref={menuRef}>
+    <div className={`relative inline-flex items-center gap-2 ${className}`} ref={menuRef}>
+      {publishedUrl ? <ResumePublishedBeacon label="VPD published" publishedAt={publishedAt} /> : null}
       <button
         type="button"
         onClick={e => {
@@ -140,8 +152,10 @@ const VpdPublishMenu: React.FC<VpdPublishMenuProps> = ({ project, slug, onSlugCh
           </p>
           <label className="mt-3 block text-[10px] font-semibold uppercase tracking-widest text-slate-500 dark:text-slate-400">URL</label>
           <div className="mt-1.5 flex w-full items-center rounded-xl border border-slate-200 bg-white px-3 py-2.5 text-sm text-slate-800 transition-colors focus-within:border-brand-500/40 focus-within:ring-2 focus-within:ring-brand-500/30 dark:border-white/10 dark:bg-slate-900 dark:text-slate-100">
-            <span className="mr-1 hidden flex-none select-none whitespace-nowrap text-slate-400 sm:inline-block">unimad.com/vpd/</span>
-            <span className="mr-1 flex-none select-none whitespace-nowrap text-slate-400 sm:hidden">/vpd/</span>
+            <span className="mr-1 hidden flex-none select-none whitespace-nowrap text-slate-600 dark:text-slate-300 sm:inline-block">
+              {siteHost}/vpd/
+            </span>
+            <span className="mr-1 flex-none select-none whitespace-nowrap text-slate-600 dark:text-slate-300 sm:hidden">/vpd/</span>
             <input
               value={publishUrlInput}
               onChange={e => {

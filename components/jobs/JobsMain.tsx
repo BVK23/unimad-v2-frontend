@@ -55,10 +55,10 @@ const JobsMain: React.FC<JobsMainProps> = ({
   const [prepareModalTab, setPrepareModalTab] = useState<PrepareApplicationTab>("resume");
   const goToTracker = () => onTabChange("tracker");
 
-  const handleOpenPrepareApplication = useCallback((job: Job, options: OpenPrepareApplicationOptions) => {
+  const handleOpenPrepareApplication = useCallback((job: Job, options?: OpenPrepareApplicationOptions) => {
     setPrepareModalJob(job);
-    setPrepareModalSource(options.source);
-    setPrepareModalTab(options.tab ?? "resume");
+    setPrepareModalSource(options?.source ?? "discovery");
+    setPrepareModalTab(options?.tab ?? "resume");
   }, []);
 
   useEffect(() => {
@@ -176,7 +176,7 @@ const JobsMain: React.FC<JobsMainProps> = ({
         {activeTab === "tracker" && (
           <ApplicationTracker
             onNavigateToStudio={onNavigateToStudio}
-            onStartInterviewPrep={openInterviewPrepSetup}
+            onStartInterviewPrep={startInterviewFromJob}
             onOpenPrepareApplication={handleOpenPrepareApplication}
           />
         )}

@@ -1,31 +1,22 @@
 export type ResumeGenerationMessageVariant = "jd" | "upload";
 
-export const RESUME_GENERATION_MESSAGES: Record<ResumeGenerationMessageVariant, string[]> = {
-  jd: [
-    "Okay I'm analysing your job description.",
-    "Matching your profile and JD.",
-    "Now optimising your experiences",
-    "Done with experiences",
-    "Now optimising your projects",
-    "Done with projects",
-    "Working on your skills",
-    "Fine-tuning your resume now",
-    "Adding final touches",
-    "Sit tight! It's almost done",
-  ],
-  upload: [
-    "Okay I'm analysing your uploaded resume",
-    "Extracting and processing your data",
-    "Now optimising your experiences",
-    "Done with experiences",
-    "Now optimising your projects",
-    "Done with projects",
-    "Working on your skills",
-    "Fine-tuning your resume now",
-    "Adding final touches",
-    "Sit tight! It's almost done",
-  ],
+/** Worst-case loop: aligning → finishing → final bits → polish (never restart from step 1). */
+export const RESUME_GENERATION_TAIL_COUNT = 4;
+
+const RESUME_MIDDLE_STEPS = [
+  "Reviewing your profile and experience…",
+  "Going through your education and skills sections…",
+  "Checking your projects section…",
+  "Crafting a summary for you…",
+  "Tweaking value-based points…",
+  "Making fine adjustments…",
+] as const;
+
+const RESUME_TAIL_STEPS = ["Putting on the finishing touches…", "Final bits of work…", "Polishing your resume…"] as const;
+
+export const RESUME_GENERATION_MESSAGES: Record<ResumeGenerationMessageVariant, readonly string[]> = {
+  jd: ["Reading your job description…", ...RESUME_MIDDLE_STEPS, "Aligning with your job description…", ...RESUME_TAIL_STEPS],
+  upload: ["Reading your uploaded resume…", ...RESUME_MIDDLE_STEPS, "Aligning with your resume…", ...RESUME_TAIL_STEPS],
 };
 
-/** Slightly faster than v1 (~2s per message via dot cycles). */
-export const RESUME_GENERATION_MESSAGE_INTERVAL_MS = 1800;
+export const RESUME_GENERATION_MESSAGE_INTERVAL_MS = 1500;

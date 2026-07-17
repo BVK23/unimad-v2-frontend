@@ -290,6 +290,22 @@ function handoffLabelForTarget(targetRaw: string): string {
       return "Drafting your referral message…";
     case "vpd_agent":
       return "Working on your value proposition…";
+    case "vpd_introduction_agent":
+      return "Drafting your VPD introduction…";
+    case "vpd_problem_statements_agent":
+      return "Crafting problem statements and strategies…";
+    case "vpd_user_value_agent":
+      return "Writing how you add value…";
+    case "vpd_day_plan_agent":
+      return "Building your 30-60-90 day plan…";
+    case "vpd_company_value_agent":
+      return "Writing value the company adds to you…";
+    case "vpd_culture_fit_agent":
+      return "Writing culture and values fit…";
+    case "vpd_conclusion_agent":
+      return "Drafting your VPD conclusion…";
+    case "vpd_structure_agent":
+      return "Adjusting VPD layout…";
     case "unicoach_agent":
       return "Looking up Unicoach guidance…";
     case "general_agent":
@@ -397,6 +413,14 @@ export function labelForAgent(author: string): string {
     case "studio_agent":
       return "Coordinating Studio…";
     case "vpd_agent":
+    case "vpd_introduction_agent":
+    case "vpd_problem_statements_agent":
+    case "vpd_user_value_agent":
+    case "vpd_day_plan_agent":
+    case "vpd_company_value_agent":
+    case "vpd_culture_fit_agent":
+    case "vpd_conclusion_agent":
+    case "vpd_structure_agent":
       return "Working on your value proposition…";
     case "unicoach_agent":
       return "Looking up Unicoach guidance…";
@@ -549,6 +573,14 @@ export function labelForThinkingAgent(author: string): string {
     case "general_agent":
       return "Understanding your question more deeply…";
     case "vpd_agent":
+    case "vpd_introduction_agent":
+    case "vpd_problem_statements_agent":
+    case "vpd_user_value_agent":
+    case "vpd_day_plan_agent":
+    case "vpd_company_value_agent":
+    case "vpd_culture_fit_agent":
+    case "vpd_conclusion_agent":
+    case "vpd_structure_agent":
       return "Breaking down your value proposition…";
     case "onboarding_agent":
       return "Breaking down your profile setup…";

@@ -6,6 +6,8 @@ import { VPD_FEATURE_ENABLED } from "@/constants/feature-flags";
 import { useApplications } from "@/features/application-tracker/hooks/useApplications";
 import { createApplication, updateApplication } from "@/features/application-tracker/server-actions/application-actions";
 import type { Application, ApplicationStatus, CreateApplicationInput } from "@/features/application-tracker/types";
+import { useOnboardingGate } from "@/features/onboarding/context/OnboardingGateContext";
+import { needsProfileSetup, onboardingHref } from "@/features/onboarding/featureGates";
 import {
   activateInterviewVpdPrompt,
   buildInterviewVpdStudioContext,
@@ -15,13 +17,17 @@ import {
 } from "@/lib/jobs/interview-vpd-prompt";
 import { applicationToJob } from "@/lib/jobs/job-ui-mappers";
 import type { OpenPrepareApplicationOptions } from "@/lib/jobs/open-prepare-application";
+import type { StartInterviewFromJobPayload } from "@/src/features/interview-prep/types";
 import type { GeneratorContext, Job } from "@/types/jobs";
 import { useQueryClient } from "@tanstack/react-query";
 import confetti from "canvas-confetti";
 import { ChevronLeft, ChevronRight, MoreHorizontal, Plus, Trash2 } from "lucide-react";
+import { useRouter } from "next/navigation";
 import ApplicationManager from "./ApplicationManager";
 import InterviewingStageModal from "./InterviewingStageModal";
 import JobCard from "./JobCard";
+
+const TRACKER_ONBOARDING_DISMISS_KEY = "unimad_tracker_onboarding_prompt_dismissed";
 
 interface TrackerColumnProps {
   title: string;
@@ -123,13 +129,17 @@ function TrackerColumn({
 
 interface ApplicationTrackerProps {
   onNavigateToStudio: (context: GeneratorContext) => void;
-  onStartInterviewPrep?: (job: Job) => void;
-  onOpenPrepareApplication?: (job: Job, options: OpenPrepareApplicationOptions) => void;
+  onStartInterviewPrep?: (payload: StartInterviewFromJobPayload) => void;
+  onOpenPrepareApplication?: (job: Job, options?: OpenPrepareApplicationOptions) => void;
 }
 
 const ApplicationTracker: React.FC<ApplicationTrackerProps> = ({ onNavigateToStudio, onStartInterviewPrep, onOpenPrepareApplication }) => {
   const queryClient = useQueryClient();
+  const router = useRouter();
+  const { featureGates } = useOnboardingGate();
   const { data: applications = [], isLoading } = useApplications();
+  const needsOnboarding = needsProfileSetup(featureGates);
+  const interviewPrepGated = !featureGates.jobs_prepare_application;
 
   const [addModalInitialStatus, setAddModalInitialStatus] = useState<ApplicationStatus>("applied");
   const [tabState, setTabState] = useState<"toAdd" | "toView" | "toEdit" | "">("");
@@ -140,7 +150,29 @@ const ApplicationTracker: React.FC<ApplicationTrackerProps> = ({ onNavigateToStu
   const [draftsCollapsed, setDraftsCollapsed] = useState(false);
   const [interviewingPromptJob, setInterviewingPromptJob] = useState<Job | null>(null);
   const [vpdPromptTick, setVpdPromptTick] = useState(0);
+  const [onboardingPromptDismissed, setOnboardingPromptDismissed] = useState(false);
   const trackerJobs = useMemo(() => applications.map(applicationToJob), [applications]);
+
+  useEffect(() => {
+    try {
+      if (sessionStorage.getItem(TRACKER_ONBOARDING_DISMISS_KEY) === "1") {
+        setOnboardingPromptDismissed(true);
+      }
+    } catch {
+      // sessionStorage may be unavailable
+    }
+  }, []);
+
+  const dismissOnboardingPrompt = () => {
+    setOnboardingPromptDismissed(true);
+    try {
+      sessionStorage.setItem(TRACKER_ONBOARDING_DISMISS_KEY, "1");
+    } catch {
+      // ignore
+    }
+  };
+
+  const showOnboardingPrompt = needsOnboarding && !onboardingPromptDismissed;
 
   const openPrepare = (job: Job, tab?: OpenPrepareApplicationOptions["tab"]) => {
     onOpenPrepareApplication?.(job, { source: "tracker", tab });
@@ -406,14 +438,22 @@ const ApplicationTracker: React.FC<ApplicationTrackerProps> = ({ onNavigateToStu
         <InterviewingStageModal
           job={interviewingPromptJob}
           onClose={() => setInterviewingPromptJob(null)}
+          interviewPrepDisabled={interviewPrepGated}
           onBuildVpd={() => {
-            onNavigateToStudio(buildInterviewVpdStudioContext(interviewingPromptJob));
-            setInterviewingPromptJob(null);
-          }}
-          onStartInterviewPrep={() => {
             const job = interviewingPromptJob;
             setInterviewingPromptJob(null);
-            if (job) onStartInterviewPrep?.(job);
+            onNavigateToStudio(buildInterviewVpdStudioContext(job));
+          }}
+          onStartInterviewPrep={({ roundType, mode }) => {
+            const job = interviewingPromptJob;
+            setInterviewingPromptJob(null);
+            if (!job) return;
+            onStartInterviewPrep?.({
+              job,
+              roundType,
+              mode,
+              applicationId: job.id,
+            });
           }}
         />
       )}
@@ -465,6 +505,44 @@ const ApplicationTracker: React.FC<ApplicationTrackerProps> = ({ onNavigateToStu
           </div>
         </ModalPortalOverlay>
       )}
+
+      {showOnboardingPrompt ? (
+        <div className="absolute inset-0 z-40 flex items-center justify-center bg-slate-900/40 p-6 backdrop-blur-[2px]">
+          <div
+            role="dialog"
+            aria-modal="true"
+            aria-labelledby="tracker-onboarding-title"
+            className="w-full max-w-md rounded-2xl border border-slate-200 bg-white p-6 shadow-xl dark:border-slate-800 dark:bg-slate-900"
+          >
+            <h2 id="tracker-onboarding-title" className="text-lg font-semibold text-slate-900 dark:text-white">
+              Finish setting up your profile
+            </h2>
+            <p className="mt-2 text-sm leading-relaxed text-slate-600 dark:text-slate-300">
+              Complete onboarding so Prepare Application and interview prep can use your background. You can keep using your tracker in the
+              meantime.
+            </p>
+            <div className="mt-5 flex flex-col gap-2 sm:flex-row">
+              <button
+                type="button"
+                onClick={dismissOnboardingPrompt}
+                className="inline-flex flex-1 items-center justify-center rounded-xl border border-slate-200 px-4 py-3 text-sm font-medium text-slate-700 hover:bg-slate-50 dark:border-slate-700 dark:text-slate-200 dark:hover:bg-slate-800"
+              >
+                Not now
+              </button>
+              <button
+                type="button"
+                onClick={() => {
+                  dismissOnboardingPrompt();
+                  router.push(onboardingHref("profile_setup"));
+                }}
+                className="inline-flex flex-1 items-center justify-center rounded-xl bg-brand-600 px-4 py-3 text-sm font-medium text-white hover:bg-brand-700"
+              >
+                Finish onboarding
+              </button>
+            </div>
+          </div>
+        </div>
+      ) : null}
     </div>
   );
 };

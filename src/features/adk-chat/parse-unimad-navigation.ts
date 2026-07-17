@@ -2,9 +2,14 @@ export type UnimadNavigationAction = {
   path: string;
   label: string;
   /** When set, FE may run a special flow instead of plain navigation. */
-  action?: "portfolio_regenerate";
+  action?: "portfolio_regenerate" | "vpd_generate";
   confirm?: boolean;
   confirm_message?: string;
+  /** VPD generate payload (from suggest_unimad_navigation feature=vpd_generate). */
+  role?: string;
+  company?: string;
+  job_description?: string;
+  application_id?: string;
 };
 
 function asRecord(value: unknown): Record<string, unknown> | null {
@@ -51,15 +56,23 @@ function navigationFromUi(response: Record<string, unknown>): UnimadNavigationAc
   const path = nav.path;
   const label = nav.label;
   if (typeof path === "string" && path.trim() && typeof label === "string" && label.trim()) {
-    const action = nav.action === "portfolio_regenerate" ? "portfolio_regenerate" : undefined;
+    const action = nav.action === "portfolio_regenerate" || nav.action === "vpd_generate" ? nav.action : undefined;
     const confirm = nav.confirm === true;
     const confirmMessage = typeof nav.confirm_message === "string" && nav.confirm_message.trim() ? nav.confirm_message.trim() : undefined;
+    const role = typeof nav.role === "string" && nav.role.trim() ? nav.role.trim() : undefined;
+    const company = typeof nav.company === "string" && nav.company.trim() ? nav.company.trim() : undefined;
+    const jobDescription = typeof nav.job_description === "string" && nav.job_description.trim() ? nav.job_description.trim() : undefined;
+    const applicationId = typeof nav.application_id === "string" && nav.application_id.trim() ? nav.application_id.trim() : undefined;
     return {
       path: path.trim(),
       label: label.trim(),
       ...(action ? { action } : {}),
       ...(confirm ? { confirm: true } : {}),
       ...(confirmMessage ? { confirm_message: confirmMessage } : {}),
+      ...(role ? { role } : {}),
+      ...(company ? { company } : {}),
+      ...(jobDescription ? { job_description: jobDescription } : {}),
+      ...(applicationId ? { application_id: applicationId } : {}),
     };
   }
   return null;

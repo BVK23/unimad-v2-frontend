@@ -3,7 +3,7 @@ import type { ContentGeneratorType } from "@/types/jobs";
 
 export type PrepareNavigateTarget = "jobs" | "tracker";
 
-export type StudioUrlView = "edit";
+export type StudioUrlView = "edit" | "preview";
 
 export type StudioUrlState = {
   id?: string;
@@ -12,8 +12,10 @@ export type StudioUrlState = {
   navigate?: PrepareNavigateTarget;
   improve?: boolean;
   interviewVpd?: boolean;
-  /** VPD embedded editor workspace (`view=edit`). */
+  /** VPD workspace mode: edit canvas or full preview (`view=edit|preview`). */
   view?: StudioUrlView;
+  /** Selected Studio VPD template id for landing preview (`template=vpd-template-*`). */
+  template?: string;
   /** True when jobId is set or legacy return=prepare is present. */
   fromPrepareApplication: boolean;
 };
@@ -34,7 +36,8 @@ export function buildStudioSearchParams(input: {
   navigate?: PrepareNavigateTarget;
   improve?: boolean;
   interviewVpd?: boolean;
-  view?: StudioUrlView;
+  view?: StudioUrlView | null;
+  template?: string | null;
 }): URLSearchParams {
   const params = new URLSearchParams();
   if (input.id?.trim()) params.set("id", input.id.trim());
@@ -43,7 +46,8 @@ export function buildStudioSearchParams(input: {
   if (input.navigate) params.set("navigate", input.navigate);
   if (input.improve) params.set("improve", "1");
   if (input.interviewVpd) params.set("interviewVpd", "1");
-  if (input.view === "edit") params.set("view", "edit");
+  if (input.view === "edit" || input.view === "preview") params.set("view", input.view);
+  if (input.template?.trim()) params.set("template", input.template.trim());
   return params;
 }
 
@@ -55,6 +59,7 @@ export function parseStudioSearchParams(searchParams: { get(name: string): strin
   const jobId = searchParams.get("jobId")?.trim() || undefined;
   const legacyPrepare = searchParams.get("return") === "prepare";
   const viewRaw = searchParams.get("view")?.trim();
+  const view: StudioUrlView | undefined = viewRaw === "edit" || viewRaw === "preview" ? viewRaw : undefined;
   return {
     id: searchParams.get("id")?.trim() || undefined,
     type: type as ContentGeneratorType | undefined,
@@ -62,7 +67,8 @@ export function parseStudioSearchParams(searchParams: { get(name: string): strin
     navigate: parsePrepareNavigate(searchParams.get("navigate")),
     improve: searchParams.get("improve") === "1",
     interviewVpd: searchParams.get("interviewVpd") === "1",
-    view: viewRaw === "edit" ? "edit" : undefined,
+    view,
+    template: searchParams.get("template")?.trim() || undefined,
     fromPrepareApplication: Boolean(jobId || legacyPrepare),
   };
 }

@@ -20,7 +20,7 @@ export interface AgentMessage {
   unimadNavigation?: {
     path: string;
     label: string;
-    action?: "portfolio_regenerate";
+    action?: "portfolio_regenerate" | "vpd_generate";
     confirm?: boolean;
     confirm_message?: string;
   };

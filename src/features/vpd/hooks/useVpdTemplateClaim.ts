@@ -1,13 +1,14 @@
 "use client";
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { DOCUMENT_AUTOSAVE_DELAY_MS } from "@/constants/documentAutosave";
 import type { PortfolioItem } from "@/types";
 import { duplicateVpd, updateVpdContent } from "../server-actions/vpd-actions";
 import { isVpdTemplateId } from "../utils/isVpdTemplateId";
 import { getVpdProjectEditSignature, mapStudioProjectToVpdUpdateContent } from "../utils/mapStudioProjectToVpdUpdatePayload";
 
 /** Match `useVpdAutosave` debounce so claim timing feels like a save. */
-const CLAIM_DEBOUNCE_MS = 5000;
+const CLAIM_DEBOUNCE_MS = DOCUMENT_AUTOSAVE_DELAY_MS;
 
 type UseVpdTemplateClaimOptions = {
   enabled?: boolean;

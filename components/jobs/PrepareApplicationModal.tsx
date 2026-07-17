@@ -24,6 +24,7 @@ import {
   usePrepareApplicationAssetMutations,
 } from "@/src/features/jobs/hooks/usePrepareApplicationAssetMutations";
 import { usePrepareApplicationContext } from "@/src/features/jobs/hooks/usePrepareApplicationContext";
+import { JOBS_TRACKER_HREF } from "@/src/features/jobs/jobs-url";
 import { downloadResumePdf } from "@/src/features/resume/utils/downloadResumePdf";
 import type { ResumeData } from "@/types";
 import { exportApplicationAssetAsDocx, exportApplicationAssetAsPdf } from "@/utils/export-application-asset-file";
@@ -316,9 +317,13 @@ const PrepareApplicationModal: React.FC<PrepareApplicationModalProps> = ({
   };
 
   useEffect(() => {
-    const next = resolveInitialTab(initialTab);
-    setActiveTab(next);
-  }, [initialTab, job.id, job.applicationStatus, application?.status]);
+    // Only reset the selected tab when opening for a different job / entry tab.
+    // Do not depend on application.status — ensuring/linking assets during generate
+    // updates status and was bouncing cover-letter (etc.) back to resume.
+    setActiveTab(resolveInitialTab(initialTab));
+    // resolveInitialTab reads job/application for VPD gating; VPD fallback effect handles mid-session changes.
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- intentional: job.id + initialTab only
+  }, [initialTab, job.id]);
 
   useEffect(() => {
     if (activeTab === "vpd" && !showVpdTab) {
@@ -723,9 +728,16 @@ const PrepareApplicationModal: React.FC<PrepareApplicationModalProps> = ({
             <h3 className="mb-1 line-clamp-1 text-lg font-medium text-slate-900 dark:text-white">{job.role}</h3>
             <p className="text-sm text-slate-500 dark:text-slate-400">{job.company}</p>
             {source === "discovery" && applicationId && (
-              <p className="mt-2 text-[10px] font-medium uppercase tracking-wide text-emerald-600 dark:text-emerald-400">
+              <button
+                type="button"
+                onClick={() => {
+                  onClose();
+                  router.push(JOBS_TRACKER_HREF);
+                }}
+                className="mt-2 text-[10px] font-medium uppercase tracking-wide text-emerald-600 transition-colors hover:text-brand-600 dark:text-emerald-400 dark:hover:text-brand-400"
+              >
                 Saved to tracker
-              </p>
+              </button>
             )}
           </div>
 

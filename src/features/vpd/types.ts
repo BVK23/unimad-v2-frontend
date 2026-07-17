@@ -3,6 +3,11 @@ import type { PortfolioItem } from "@/types";
 export type VpdCoverPic = {
   url?: string;
   blob_name?: string;
+  position?: { x: number; y: number };
+  /** When false, cover is hidden in the editor/canvas but the URL is kept. */
+  show?: boolean;
+  /** Optional company/application icon overlapping the cover. */
+  icon_url?: string;
 };
 
 export type VpdEditorContentV2 = {
@@ -30,6 +35,8 @@ export type GenerateVpdParams = {
   company?: string;
   jobDescription?: string;
   application_id?: string;
+  /** Prefill VPD icon from job/company logo (stored on cover_pic.icon_url). */
+  company_logo_url?: string;
   schemaVersion?: 1 | 2;
 };
 

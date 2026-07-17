@@ -1,6 +1,6 @@
 import { UploadError } from "@/features/portfolio/utils/upload";
 
-export type PortfolioUploadContext = "hero-cover" | "hero-avatar" | "page-cover" | "canvas-cover" | "block-media";
+export type PortfolioUploadContext = "hero-cover" | "hero-avatar" | "page-cover" | "page-icon" | "canvas-cover" | "block-media";
 
 const LOG_PREFIX = "[portfolio-upload]";
 

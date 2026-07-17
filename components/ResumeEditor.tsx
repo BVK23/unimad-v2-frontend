@@ -1901,6 +1901,7 @@ const ResumeEditor: React.FC<ResumeEditorProps> = ({
             actions={
               <>
                 {resumeToolbarSaveStatus}
+                {isPublishedResume ? <ResumePublishedBeacon label="Resume published" publishedAt={resume.publishedAt} /> : null}
                 {resumeToolbarTemplateButton}
                 {resumeToolbarAtsButton}
               </>
@@ -1942,6 +1943,7 @@ const ResumeEditor: React.FC<ResumeEditorProps> = ({
 
           <div className="ml-auto flex shrink-0 flex-nowrap items-center gap-2 sm:gap-3">
             {resumeToolbarSaveStatus}
+            {isPublishedResume ? <ResumePublishedBeacon label="Resume published" publishedAt={resume.publishedAt} /> : null}
             {resumeToolbarTemplateButton}
             {resumeToolbarAtsButton}
 
@@ -1964,12 +1966,9 @@ const ResumeEditor: React.FC<ResumeEditorProps> = ({
                   className={`flex items-center gap-2 px-4 py-2 rounded-lg font-medium text-sm transition-all shadow-md ${
                     validationErrors.length > 0
                       ? "bg-slate-400 hover:bg-slate-500 text-white"
-                      : isPublishedResume
-                        ? "border border-green-500/30 bg-green-50 text-green-800 hover:bg-green-100 hover:shadow-lg hover:-translate-y-0.5 dark:border-green-500/25 dark:bg-green-950/40 dark:text-green-300 dark:hover:bg-green-950/55"
-                        : "bg-slate-900 hover:bg-slate-800 text-white hover:shadow-lg hover:-translate-y-0.5"
+                      : "bg-slate-900 hover:bg-slate-800 text-white hover:shadow-lg hover:-translate-y-0.5"
                   }`}
                 >
-                  {isPublishedResume ? <ResumePublishedBeacon label="Resume published" /> : null}
                   <Share2 size={16} /> Share & Download
                 </button>
               </ActionHintTooltip>

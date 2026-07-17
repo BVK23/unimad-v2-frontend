@@ -26,6 +26,9 @@ export type PortfolioGridBlockProps = {
   isInlineInserterActive: boolean;
   enableSelectionImprove: boolean;
   selectionImproveSlot?: React.ReactNode;
+  /** When set, only these types appear in the inline + menu. */
+  allowedBlockTypes?: ContentType[];
+  isNestedDetailView?: boolean;
   onItemRef: (id: string, el: HTMLDivElement | null) => void;
   onDragOver: (event: React.DragEvent, index: number) => void;
   onDragEnd: () => void;
@@ -44,6 +47,8 @@ export type PortfolioGridBlockProps = {
   onInsertBlockAfter: (index: number, type: ContentType, preset?: Partial<PortfolioItem>) => void;
   initResize: (event: React.MouseEvent, item: PortfolioItem, axis: ResizeAxis, xHandle: ResizeHandle, yHandle?: ResizeYHandle) => void;
   onUploadError?: (message: string) => void;
+  /** Override height layout: portfolio uses rowSpan; VPD/page detail uses explicit height/minHeight. */
+  heightMode?: "rowSpan" | "explicit";
 };
 
 const PortfolioGridBlockInner: React.FC<PortfolioGridBlockProps> = ({
@@ -59,6 +64,8 @@ const PortfolioGridBlockInner: React.FC<PortfolioGridBlockProps> = ({
   isInlineInserterActive,
   enableSelectionImprove,
   selectionImproveSlot,
+  allowedBlockTypes,
+  isNestedDetailView = false,
   onItemRef,
   onDragOver,
   onDragEnd,
@@ -77,57 +84,87 @@ const PortfolioGridBlockInner: React.FC<PortfolioGridBlockProps> = ({
   onInsertBlockAfter,
   initResize,
   onUploadError,
+  heightMode = "rowSpan",
 }) => {
   const inlineInsertOptions: Array<{
     type: ContentType;
     icon: React.ReactNode;
     label: string;
     preset?: Partial<PortfolioItem>;
-  }> = [
-    { type: "text", icon: <Type size={14} />, label: "Text" },
-    { type: "media", icon: <ImageIcon size={14} />, label: "Media" },
-    { type: "page-card", icon: <FileText size={14} />, label: "Page" },
-    { type: "link-box", icon: <LinkIcon size={14} />, label: "Link" },
-    {
-      type: "table",
-      icon: <Table2 size={14} />,
-      label: "Table",
-      preset: {
-        title: "Table",
-        content: JSON.stringify([
-          ["Header 1", "Header 2", "Header 3"],
-          ["", "", ""],
-          ["", "", ""],
-        ]),
+  }> = (
+    [
+      { type: "text" as const, icon: <Type size={14} />, label: "Text" },
+      { type: "media" as const, icon: <ImageIcon size={14} />, label: "Media" },
+      // Page cards cannot nest other page cards — only offered on the root portfolio grid.
+      { type: "page-card" as const, icon: <FileText size={14} />, label: "Page" },
+      { type: "link-box" as const, icon: <LinkIcon size={14} />, label: "Link" },
+      {
+        type: "table" as const,
+        icon: <Table2 size={14} />,
+        label: "Table",
+        preset: {
+          title: "Table",
+          content: JSON.stringify([
+            ["Header 1", "Header 2", "Header 3"],
+            ["", "", ""],
+            ["", "", ""],
+          ]),
+        },
       },
-    },
-    {
-      type: "embed",
-      icon: <Code2 size={14} />,
-      label: "Code",
-      preset: { title: "Embed Code", variant: "code" as const },
-    },
-    {
-      type: "embed",
-      icon: <Figma size={14} />,
-      label: "Figma",
-      preset: { title: "Figma Embed", variant: "figma" as const },
-    },
-  ];
+      {
+        type: "embed" as const,
+        icon: <Code2 size={14} />,
+        label: "Code",
+        preset: { title: "Embed Code", variant: "code" as const },
+      },
+      {
+        type: "embed" as const,
+        icon: <Figma size={14} />,
+        label: "Figma",
+        preset: { title: "Figma Embed", variant: "figma" as const },
+      },
+    ] satisfies Array<{
+      type: ContentType;
+      icon: React.ReactNode;
+      label: string;
+      preset?: Partial<PortfolioItem>;
+    }>
+  ).filter(opt => {
+    if (allowedBlockTypes && !allowedBlockTypes.includes(opt.type)) return false;
+    if (isNestedDetailView && opt.type === "page-card") return false;
+    return true;
+  });
+
+  const isContentSizedBlock = item.type === "text" || item.type === "page-card" || item.type === "project" || item.type === "table";
 
   const wrapperClassName = `
     ${spanClass}
     relative ${isResizingThis ? "transition-none" : "transition-all duration-300"}
     ${isEditMode ? "rounded-[2rem]" : ""}
     ${isDragging ? "opacity-30 scale-[0.98]" : "opacity-100"}
+    ${heightMode === "explicit" && (item.type === "link-box" || isContentSizedBlock) ? "self-start" : ""}
   `;
 
-  const wrapperStyle: React.CSSProperties = {
-    gridColumnStart: item.colStart,
-    gridRowEnd: `span ${rowSpan}`,
-    height: "100%",
-    overflow: "visible",
-  };
+  const explicitHeightStyle: React.CSSProperties | undefined =
+    heightMode === "explicit" && item.height
+      ? isContentSizedBlock
+        ? { minHeight: `${item.height}px` }
+        : { height: `${item.height}px` }
+      : undefined;
+
+  const wrapperStyle: React.CSSProperties =
+    heightMode === "explicit"
+      ? {
+          gridColumnStart: item.colStart,
+          ...explicitHeightStyle,
+          overflow: "visible",
+        }
+      : {
+          gridColumnStart: item.colStart,
+          gridRowEnd: `span ${rowSpan}`,
+          height: "100%",
+          overflow: "visible",
+        };
 
   const blockBody = (
     <PortfolioAdkBlockHighlight kind={blockHighlight} className="h-full w-full">
@@ -179,6 +216,7 @@ const PortfolioGridBlockInner: React.FC<PortfolioGridBlockProps> = ({
           onTextSelectionChange={onTextSelectionChange}
           selectionImproveSlot={selectionImproveSlot}
           onUploadError={onUploadError}
+          isNestedDetailView={isNestedDetailView}
         />
         {isEditMode && (
           <>
@@ -297,6 +335,9 @@ const arePortfolioGridBlockPropsEqual = (prev: PortfolioGridBlockProps, next: Po
   prev.blockHighlight === next.blockHighlight &&
   prev.isInlineInserterActive === next.isInlineInserterActive &&
   prev.enableSelectionImprove === next.enableSelectionImprove &&
-  prev.selectionImproveSlot === next.selectionImproveSlot;
+  prev.selectionImproveSlot === next.selectionImproveSlot &&
+  prev.allowedBlockTypes === next.allowedBlockTypes &&
+  prev.isNestedDetailView === next.isNestedDetailView &&
+  prev.heightMode === next.heightMode;
 
 export const PortfolioGridBlock = memo(PortfolioGridBlockInner, arePortfolioGridBlockPropsEqual);

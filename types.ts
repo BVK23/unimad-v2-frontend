@@ -44,6 +44,10 @@ export interface PortfolioItem {
   mediaMimeType?: string;
   cropRatio?: "1:1" | "3:4" | "4:5" | "16:9";
   showCoverImage?: boolean; // For page-card/project blocks
+  /** Inline drag-to-pan position for page/VPD cover banners, stored as percentages. */
+  coverPosition?: { x: number; y: number };
+  /** Optional VPD/company icon that overlaps the cover banner. */
+  iconUrl?: string;
   /** Grid-card-only cover preview; does not replace the page's main cover image */
   canvasCover?: string;
   linkUrl?: string;
@@ -126,6 +130,7 @@ export interface PortfolioData {
   title: string;
   lastModified: Date;
   slug?: string;
+  publishedAt?: string | null;
   isBase?: boolean;
   themeMode?: "light" | "dark";
   customDomain?: string;
@@ -180,7 +185,7 @@ export interface ChatMessage {
   unimadNavigation?: {
     path: string;
     label: string;
-    action?: "portfolio_regenerate";
+    action?: "portfolio_regenerate" | "vpd_generate";
     confirm?: boolean;
     confirm_message?: string;
   };

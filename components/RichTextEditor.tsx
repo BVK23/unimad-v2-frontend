@@ -39,6 +39,11 @@ interface RichTextEditorProps {
   /** Studio-only: white two-row toolbar with improve actions on top. */
   unifiedSelectionToolbar?: boolean;
   selectionImproveSlot?: React.ReactNode;
+  /**
+   * `full` — all formatting controls.
+   * `title` — bold/italic/underline, headings, alignment (no lists). Used for VPD/page titles.
+   */
+  toolbarVariant?: "full" | "title";
   /** Persistent highlight for the text span sent to Unibot (survives toolbar dismiss). */
   refineAnchorText?: string;
   /** When true, pasted or typed raw URLs are converted into anchor links on paste/blur. */
@@ -81,6 +86,7 @@ const RichTextEditor: React.FC<RichTextEditorProps> = ({
   readOnly = false,
   unifiedSelectionToolbar = false,
   selectionImproveSlot,
+  toolbarVariant = "full",
   refineAnchorText = "",
   autoLinkUrls = false,
 }) => {
@@ -271,9 +277,24 @@ const RichTextEditor: React.FC<RichTextEditorProps> = ({
   };
 
   const toggleHeading = (level: "H1" | "H2" | "H3") => {
+    if (readOnly || !editorRef.current) return;
+    const targetTag = level.toLowerCase() as "h1" | "h2" | "h3";
     const current = activeFormats.heading;
-    const target = current === level.toLowerCase() ? "P" : level;
-    executeCommand("formatBlock", target);
+    editorRef.current.focus();
+
+    if (current === targetTag) {
+      // Remove heading → plain paragraph, keep content.
+      document.execCommand("formatBlock", false, "p");
+    } else {
+      document.execCommand("formatBlock", false, level);
+      // Headings default to bold; if bold is already on, leave it.
+      if (!document.queryCommandState("bold")) {
+        document.execCommand("bold", false);
+      }
+    }
+
+    onChange(editorRef.current.innerHTML);
+    setActiveFormats(computeActiveFormats());
   };
 
   const darkButtonClass = (isActive: boolean) =>
@@ -308,29 +329,34 @@ const RichTextEditor: React.FC<RichTextEditorProps> = ({
       >
         <Underline size={16} />
       </button>
-      <div className={`mx-1 h-4 w-px ${dividerClass}`} />
-      <button
-        type="button"
-        onClick={() => executeCommand("insertUnorderedList")}
-        aria-pressed={activeFormats.bulletList}
-        className={btnClass(activeFormats.bulletList)}
-      >
-        <List size={16} />
-      </button>
-      <button
-        type="button"
-        onClick={() => executeCommand("insertOrderedList")}
-        aria-pressed={activeFormats.orderedList}
-        className={btnClass(activeFormats.orderedList)}
-      >
-        <ListOrdered size={16} />
-      </button>
+      {toolbarVariant === "full" ? (
+        <>
+          <div className={`mx-1 h-4 w-px ${dividerClass}`} />
+          <button
+            type="button"
+            onClick={() => executeCommand("insertUnorderedList")}
+            aria-pressed={activeFormats.bulletList}
+            className={btnClass(activeFormats.bulletList)}
+          >
+            <List size={16} />
+          </button>
+          <button
+            type="button"
+            onClick={() => executeCommand("insertOrderedList")}
+            aria-pressed={activeFormats.orderedList}
+            className={btnClass(activeFormats.orderedList)}
+          >
+            <ListOrdered size={16} />
+          </button>
+        </>
+      ) : null}
       <div className={`mx-1 h-4 w-px ${dividerClass}`} />
       <button
         type="button"
         onClick={() => toggleHeading("H1")}
         aria-pressed={activeFormats.heading === "h1"}
         className={btnClass(activeFormats.heading === "h1")}
+        title="Heading 1 — largest"
       >
         <Heading1 size={16} />
       </button>
@@ -339,6 +365,7 @@ const RichTextEditor: React.FC<RichTextEditorProps> = ({
         onClick={() => toggleHeading("H2")}
         aria-pressed={activeFormats.heading === "h2"}
         className={btnClass(activeFormats.heading === "h2")}
+        title="Heading 2"
       >
         <Heading2 size={16} />
       </button>
@@ -347,6 +374,7 @@ const RichTextEditor: React.FC<RichTextEditorProps> = ({
         onClick={() => toggleHeading("H3")}
         aria-pressed={activeFormats.heading === "h3"}
         className={btnClass(activeFormats.heading === "h3")}
+        title="Heading 3 — smallest heading"
       >
         <Heading3 size={16} />
       </button>

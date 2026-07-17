@@ -71,18 +71,17 @@ const ResumeDashboardCard: React.FC<ResumeDashboardCardProps> = ({
         ${newlyDuplicatedResumeId === resume.id ? "ring-2 ring-brand-400 shadow-md" : ""}
       `}
     >
-      {isResumePublished(resume) ? (
-        <div className="pointer-events-none absolute left-3 top-3 z-[35] inline-flex items-center gap-1.5 rounded-full border border-green-200 bg-white/95 px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wider text-green-700 shadow-sm backdrop-blur-sm">
-          <ResumePublishedBeacon label="Resume published" />
-          Published
-        </div>
-      ) : null}
       <ResumeThumbnail resume={resume} versionBadgeLabel={versionMetadata?.versionBadgeLabel ?? null} />
 
       <div className="p-4 rounded-b-xl relative">
         <div className="flex justify-between items-start gap-2">
           <div className="flex-1 min-w-0 pr-1">
-            <h3 className="font-medium text-slate-900 mb-1 truncate">{resume.title}</h3>
+            <div className="mb-1 flex min-w-0 items-center gap-2">
+              <h3 className="min-w-0 truncate font-medium text-slate-900">{resume.title}</h3>
+              {isResumePublished(resume) ? (
+                <ResumePublishedBeacon label="Resume published" publishedAt={resume.publishedAt} className="shrink-0" />
+              ) : null}
+            </div>
             <div className="flex items-center gap-1.5 text-xs text-slate-500 mt-1">
               <Clock size={12} />
               <span>Edited {resume.lastModified.toLocaleDateString("en-US")}</span>

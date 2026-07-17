@@ -1,7 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { DOCUMENT_SAVED_CONFIRMATION_MS } from "@/constants/documentAutosave";
+import { DOCUMENT_AUTOSAVE_DELAY_MS, DOCUMENT_SAVED_CONFIRMATION_MS } from "@/constants/documentAutosave";
 import { useAdkPortfolioReviewStore } from "@/features/adk-chat/stores/useAdkPortfolioReviewStore";
 import { waitForPortfolioLayoutSettle } from "@/features/portfolio/layout/portfolioLayoutRemeasure";
 import { usePortfolioStore } from "@/features/portfolio/store/usePortfolioStore";
@@ -9,7 +9,8 @@ import { getPortfolioContentSignature, getPortfolioEditorialSignature } from "@/
 import type { PortfolioData } from "@/types";
 import { useUpdatePortfolio } from "./useUpdatePortfolio";
 
-const AUTOSAVE_DELAY_MS = 5000;
+/** Match resume / document autosave debounce (~12s). */
+const AUTOSAVE_DELAY_MS = DOCUMENT_AUTOSAVE_DELAY_MS;
 
 export function usePortfolioAutosave(
   portfolioId: string,

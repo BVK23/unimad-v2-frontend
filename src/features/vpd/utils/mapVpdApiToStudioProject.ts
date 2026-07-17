@@ -1,6 +1,7 @@
 import { normalizePortfolioItems } from "@/features/portfolio/utils/normalizePortfolioItems";
 import type { PortfolioItem } from "@/types";
 import { formatRelativeTimeFromNow } from "@/utils/format-relative-time";
+import { stripHtmlToText } from "@/utils/stripHtmlToText";
 import type { VpdApiData, VpdEditorContentV2, VpdStudioListItem, VpdTemplateApi } from "../types";
 
 const isPortfolioItemArray = (value: unknown): value is PortfolioItem[] =>
@@ -21,6 +22,13 @@ export const mapVpdApiToStudioProject = (vpdData: VpdApiData): PortfolioItem => 
   const id = String(vpdData.id ?? vpdData.vpdId ?? `vpd-${Date.now()}`);
   const title = vpdData.title?.trim() || "Value Proposition Document";
   const coverUrl = typeof vpdData.cover_pic?.url === "string" && vpdData.cover_pic.url.trim() ? vpdData.cover_pic.url.trim() : "";
+  const rawPosition = vpdData.cover_pic?.position;
+  const coverPosition =
+    rawPosition && typeof rawPosition.x === "number" && typeof rawPosition.y === "number"
+      ? { x: rawPosition.x, y: rawPosition.y }
+      : undefined;
+  const iconUrl =
+    typeof vpdData.cover_pic?.icon_url === "string" && vpdData.cover_pic.icon_url.trim() ? vpdData.cover_pic.icon_url.trim() : undefined;
 
   let detailedBlocks: PortfolioItem[] = [];
   const editor = vpdData.editor_content;
@@ -42,7 +50,9 @@ export const mapVpdApiToStudioProject = (vpdData: VpdApiData): PortfolioItem => 
     title,
     description: "",
     content: coverUrl,
-    showCoverImage: Boolean(coverUrl),
+    showCoverImage: coverUrl ? vpdData.cover_pic?.show !== false : true,
+    ...(coverPosition ? { coverPosition } : {}),
+    ...(iconUrl ? { iconUrl } : {}),
     detailedBlocks,
   };
 };
@@ -50,9 +60,10 @@ export const mapVpdApiToStudioProject = (vpdData: VpdApiData): PortfolioItem => 
 /** Map a persisted VPD into a Recents library card. */
 export const mapVpdApiToListItem = (vpdData: VpdApiData): VpdStudioListItem => {
   const project = mapVpdApiToStudioProject(vpdData);
+  const plainTitle = stripHtmlToText(project.title || "") || stripHtmlToText(vpdData.title || "") || "Value Proposition Document";
   return {
     id: project.id,
-    title: project.title || "Value Proposition Document",
+    title: plainTitle,
     date: formatRelativeTimeFromNow(vpdData.updated_at, "Recently"),
     slug: typeof vpdData.slug === "string" && vpdData.slug.trim() ? vpdData.slug.trim() : null,
     role: vpdData.role?.trim() || "",

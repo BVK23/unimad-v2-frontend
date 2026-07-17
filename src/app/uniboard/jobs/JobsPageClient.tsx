@@ -40,11 +40,14 @@ function JobsPageContent() {
         buildStudioHref({
           id: context.assetId,
           type: context.type,
-          jobId: context.jobId,
-          navigate: context.navigate,
-          improve: context.openImproveMode,
+          // Interview Build VPD must not pass jobId — that opens the prepare-return (blue) banner.
+          jobId: context.fromInterviewVpd ? undefined : context.jobId,
+          navigate: context.fromInterviewVpd ? undefined : context.navigate,
+          improve: context.fromInterviewVpd ? undefined : context.openImproveMode,
           interviewVpd: context.fromInterviewVpd,
-          view: context.view ?? (context.type === "vpd" && context.openImproveMode ? "edit" : undefined),
+          view: context.fromInterviewVpd
+            ? undefined
+            : (context.view ?? (context.type === "vpd" && context.openImproveMode ? "edit" : undefined)),
         })
       );
     });

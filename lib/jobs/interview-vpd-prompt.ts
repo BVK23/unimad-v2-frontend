@@ -1,4 +1,5 @@
 import { VPD_FEATURE_ENABLED } from "@/constants/feature-flags";
+import { setPendingInterviewVpdGeneration } from "@/lib/jobs/interview-vpd-pending";
 import type { Job } from "@/types/jobs";
 
 const STORAGE_KEY = "interview-vpd-prompts-v1";
@@ -56,10 +57,20 @@ export function syncInterviewVpdPrompts(jobs: Job[]) {
   if (changed) writePrompts(map);
 }
 
+/**
+ * Studio navigation for Build VPD from the interview-stage modal.
+ * Omits `jobId` so Studio does not open the prepare-return banner.
+ * Application context is stashed for one-shot generation after redirect.
+ */
 export function buildInterviewVpdStudioContext(job: Job) {
+  setPendingInterviewVpdGeneration({
+    applicationId: job.id,
+    role: job.role ?? "",
+    company: job.company ?? "",
+    description: job.description ?? "",
+  });
   return {
     type: "vpd" as const,
-    jobId: job.id,
     company: job.company,
     role: job.role,
     description: job.description,

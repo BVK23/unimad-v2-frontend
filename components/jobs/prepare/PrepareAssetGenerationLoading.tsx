@@ -3,6 +3,7 @@
 import React, { useEffect, useState } from "react";
 import {
   getPrepareAssetGenerationMessageIndex,
+  getPrepareAssetGenerationTailCount,
   PREPARE_ASSET_GENERATION_MESSAGES,
   prepareAssetGenerationTitle,
   type PrepareAssetGenerationKind,
@@ -39,7 +40,8 @@ export default function PrepareAssetGenerationLoading({ kind, intervalMs = 1500,
     return () => window.clearInterval(id);
   }, [messages.length, intervalMs, kind]);
 
-  const index = getPrepareAssetGenerationMessageIndex(messages.length, step);
+  const tailCount = getPrepareAssetGenerationTailCount(kind);
+  const index = getPrepareAssetGenerationMessageIndex(messages.length, step, tailCount);
   const statusLine = messages[index] ?? messages[0];
 
   return (

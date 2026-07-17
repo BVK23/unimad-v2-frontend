@@ -1,11 +1,21 @@
+import { RESUME_GENERATION_MESSAGES, RESUME_GENERATION_TAIL_COUNT } from "@/features/resume/constants/resumeGenerationMessages";
+
 export type PrepareAssetGenerationKind = "resume" | "cover-letter" | "cold-email" | "vpd" | "ensuring-app";
 
-/** How many ending messages cycle once the full sequence has played. */
-export const PREPARE_ASSET_GENERATION_TAIL_COUNT = 3;
+/** Default tail loop length when a kind is not listed in {@link PREPARE_ASSET_GENERATION_TAIL_BY_KIND}. */
+export const PREPARE_ASSET_GENERATION_TAIL_COUNT = 4;
+
+export const PREPARE_ASSET_GENERATION_TAIL_BY_KIND: Partial<Record<PrepareAssetGenerationKind, number>> = {
+  resume: RESUME_GENERATION_TAIL_COUNT,
+  "cover-letter": 4,
+  "cold-email": 4,
+  vpd: 4,
+  "ensuring-app": 2,
+};
 
 /**
  * Map a monotonic step counter to a message index: play all messages in order once,
- * then loop only the last {@link PREPARE_ASSET_GENERATION_TAIL_COUNT} lines (e.g. fine adjustments → finishing touches).
+ * then loop only the last `tailCount` lines (polish / almost-done copy).
  */
 export function getPrepareAssetGenerationMessageIndex(
   messageCount: number,
@@ -24,40 +34,45 @@ export function getPrepareAssetGenerationMessageIndex(
   return tailStart + ((overflow - 1) % tailLength);
 }
 
+export function getPrepareAssetGenerationTailCount(kind: PrepareAssetGenerationKind): number {
+  return PREPARE_ASSET_GENERATION_TAIL_BY_KIND[kind] ?? PREPARE_ASSET_GENERATION_TAIL_COUNT;
+}
+
 export const PREPARE_ASSET_GENERATION_MESSAGES: Record<PrepareAssetGenerationKind, readonly string[]> = {
-  resume: [
-    "Reading your job description…",
-    "Reviewing your profile and experience…",
-    "Drafting your tailored resume…",
-    "Highlighting your strongest achievements…",
-    "Making fine adjustments…",
-    "Adding value-based points…",
-    "Putting on the finishing touches…",
-  ],
+  resume: RESUME_GENERATION_MESSAGES.jd,
   "cover-letter": [
     "Reading your job description…",
     "Reviewing your profile and experience…",
     "Drafting your cover letter…",
     "Shaping your opening and key points…",
-    "Making fine adjustments…",
     "Adding value-based points…",
+    "Making fine adjustments…",
+    "Final bits of work…",
     "Putting on the finishing touches…",
+    "Polishing it to the best version…",
   ],
   "cold-email": [
     "Reading your job description…",
     "Reviewing your profile and experience…",
     "Crafting your cold email…",
     "Personalizing your hook and ask…",
-    "Making fine adjustments…",
     "Adding value-based points…",
+    "Making fine adjustments…",
     "Putting on the finishing touches…",
+    "Final bits of work…",
+    "Polishing it to the best version…",
   ],
   vpd: [
     "Reading your job description…",
     "Analyzing company fit…",
     "Building your value proposition…",
+    "Crafting your first 30-60-90 day plan…",
+    "Writing your culture fit section…",
+    "Adding more to elevate your VPD…",
     "Making fine adjustments…",
     "Putting on the finishing touches…",
+    "Final bits of work…",
+    "Polishing your VPD…",
   ],
   "ensuring-app": ["Saving this job to your tracker…", "Linking role and company details…", "Almost ready…"],
 };

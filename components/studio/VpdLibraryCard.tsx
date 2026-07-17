@@ -2,6 +2,7 @@
 
 import React, { useCallback, useEffect, useState } from "react";
 import { createPortal } from "react-dom";
+import { stripHtmlToText } from "@/utils/stripHtmlToText";
 import { Copy, Loader2, Pencil, Trash2 } from "lucide-react";
 import { PortfolioItem } from "../../types";
 import VpdCardThumbnail from "./VpdCardThumbnail";
@@ -114,6 +115,7 @@ const VpdLibraryCard: React.FC<VpdLibraryCardProps> = ({
   const duplicateLabel = vpd.isTemplate ? "Use as my VPD" : "Duplicate";
   const menuItemCount = (onEdit ? 1 : 0) + (onDuplicate ? 1 : 0) + (canDelete ? 1 : 0);
   const menuHeight = 8 + menuItemCount * 40;
+  const displayTitle = stripHtmlToText(vpd.title || "") || stripHtmlToText(vpd.project.title || "") || "Untitled VPD";
 
   return (
     <>
@@ -122,7 +124,7 @@ const VpdLibraryCard: React.FC<VpdLibraryCardProps> = ({
         onClick={onClick}
         onContextMenu={handleContextMenu}
         disabled={isDuplicating}
-        aria-label={vpd.title}
+        aria-label={displayTitle}
         className={`group relative aspect-square overflow-hidden rounded-xl border bg-white text-left shadow-sm transition-all hover:border-brand-500/50 hover:shadow-md dark:bg-slate-900 dark:hover:border-brand-500/40 ${
           isHighlighted ? "border-brand-400 ring-2 ring-brand-400/70 dark:border-brand-400" : "border-slate-200 dark:border-slate-700"
         } ${isDuplicating ? "pointer-events-none opacity-70" : ""}`}
@@ -130,7 +132,7 @@ const VpdLibraryCard: React.FC<VpdLibraryCardProps> = ({
         <div className="relative h-full w-full">
           <VpdCardThumbnail project={vpd.project} />
           <div className="absolute inset-x-0 bottom-0 bg-gradient-to-t from-slate-900/90 via-slate-900/50 to-transparent px-2 pb-2 pt-6">
-            <h4 className="line-clamp-2 text-[12px] font-semibold leading-tight text-white drop-shadow-sm">{vpd.title}</h4>
+            <h4 className="line-clamp-2 text-[12px] font-semibold leading-tight text-white drop-shadow-sm">{displayTitle}</h4>
             <p className="mt-0.5 text-[10px] text-white/75">{vpd.date}</p>
           </div>
           {isDuplicating ? (

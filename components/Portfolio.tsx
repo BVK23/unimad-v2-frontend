@@ -1,6 +1,7 @@
 "use client";
 import React, { useState, useRef, useEffect, useLayoutEffect, useCallback } from "react";
 import { DocumentSaveStatusBar } from "@/components/application-assets/DocumentSaveStatusBar";
+import ResumePublishedBeacon from "@/components/resume/ResumePublishedBeacon";
 import { useCoachActAsSession } from "@/contexts/CoachActAsContext";
 import { EMPTY_PORTFOLIO_HIGHLIGHT_MAP } from "@/features/adk-chat/adkPortfolioHighlightDiff";
 import { useAdkPortfolioReviewStore } from "@/features/adk-chat/stores/useAdkPortfolioReviewStore";
@@ -23,6 +24,7 @@ import { publishPortfolioAsset } from "@/features/portfolio/server-actions/portf
 import { usePortfolioStore } from "@/features/portfolio/store/usePortfolioStore";
 import { getPortfolioBlockDeleteLabel } from "@/features/portfolio/utils/getPortfolioBlockDeleteLabel";
 import { getPortfolioHistorySignature } from "@/features/portfolio/utils/getPortfolioHistorySignature";
+import { isReadOnlyPortfolioBlockVisible } from "@/features/portfolio/utils/isReadOnlyPortfolioBlockVisible";
 import { normalizePortfolioItems } from "@/features/portfolio/utils/normalizePortfolioItems";
 import {
   formatPortfolioUploadError,
@@ -33,6 +35,7 @@ import {
 import { uploadHeroImageFromDataUrl } from "@/features/portfolio/utils/upload";
 import { profileQk } from "@/features/user-profile/hooks/use-profile-data";
 import { loadPublishedUrl, savePublishedUrl } from "@/lib/portfolio/portfolioStorage";
+import { getPublicSiteHost } from "@/lib/publicSiteOrigin";
 import { resolveMediaDisplayUrl } from "@/utils/resolve-media-url";
 import { useQueryClient } from "@tanstack/react-query";
 import {
@@ -77,11 +80,8 @@ import { PortfolioGridBlock } from "./portfolio/PortfolioGridBlock";
 import PortfolioImage from "./portfolio/PortfolioImage";
 import { PortfolioSelectionImproveActions } from "./portfolio/PortfolioSelectionImprove";
 
-const PortfolioLiveDot = () => (
-  <span className="relative flex h-2 w-2 shrink-0" aria-hidden>
-    <span className="absolute inline-flex h-full w-full animate-ping rounded-full bg-green-400 opacity-75" />
-    <span className="relative inline-flex h-2 w-2 rounded-full bg-green-500 shadow-[0_0_8px_rgba(34,197,94,0.85)]" />
-  </span>
+const PortfolioLiveDot = ({ publishedAt }: { publishedAt?: string | null }) => (
+  <ResumePublishedBeacon label="Portfolio published" publishedAt={publishedAt} />
 );
 
 const buildPortfolioPublicUrl = (slug: string) => {
@@ -91,6 +91,8 @@ const buildPortfolioPublicUrl = (slug: string) => {
   }
   return `/portfolio/${trimmed}`;
 };
+
+const portfolioPublishHostPrefix = () => `${getPublicSiteHost()}/portfolio/`;
 
 // Mock Initial Data (Enhanced for Notion-style Grid)
 const INITIAL_PROFILE: UserProfile = {
@@ -733,7 +735,11 @@ const Portfolio: React.FC<PortfolioProps> = ({ portfolioId, initialData, onBack,
     const publicUrl = buildPortfolioPublicUrl(result.slug);
     setPublishedUrl(publicUrl);
     savePublishedUrl(publishPortfolioId, publicUrl);
-    updatePortfolio(publishPortfolioId, prev => ({ ...prev, slug: result.slug }));
+    updatePortfolio(publishPortfolioId, prev => ({
+      ...prev,
+      slug: result.slug,
+      publishedAt: new Date().toISOString(),
+    }));
     showToast(successToast);
     setPublishShowPublished(true);
     return publicUrl;
@@ -803,8 +809,12 @@ const Portfolio: React.FC<PortfolioProps> = ({ portfolioId, initialData, onBack,
       )}
       <label className="mt-3 block text-[10px] font-semibold uppercase tracking-widest text-slate-500 dark:text-slate-400">URL</label>
       <div className="mt-1.5 flex w-full items-center rounded-xl border border-slate-200 bg-white px-3 py-2.5 text-sm text-slate-800 transition-colors focus-within:border-brand-500/40 focus-within:ring-2 focus-within:ring-brand-500/30 dark:border-white/10 dark:bg-slate-900 dark:text-slate-100">
-        <span className="mr-1 hidden flex-none select-none whitespace-nowrap text-slate-400 sm:inline-block">unimad.com/portfolio/</span>
-        <span className="mr-1 flex-none select-none whitespace-nowrap text-slate-400 sm:hidden">unimad.com/</span>
+        <span className="mr-1 hidden flex-none select-none whitespace-nowrap text-slate-600 dark:text-slate-300 sm:inline-block">
+          {portfolioPublishHostPrefix()}
+        </span>
+        <span className="mr-1 flex-none select-none whitespace-nowrap text-slate-600 dark:text-slate-300 sm:hidden">
+          {getPublicSiteHost()}/
+        </span>
         <input
           value={publishUrlInput}
           onChange={e => {
@@ -1519,6 +1529,7 @@ const Portfolio: React.FC<PortfolioProps> = ({ portfolioId, initialData, onBack,
   };
 
   const renderPortfolioGridItem = (item: PortfolioItem, index: number) => {
+    if (!isEditMode && !isReadOnlyPortfolioBlockVisible(item)) return null;
     const blockHighlight = adkPortfolioHighlights[`block:${item.id}`];
     const isResizingThis = resizing?.id === item.id;
 
@@ -1566,15 +1577,18 @@ const Portfolio: React.FC<PortfolioProps> = ({ portfolioId, initialData, onBack,
           project={selectedProject}
           onBack={() => setFocusedPageCardId(portfolioId, null)}
           onUpdateProject={updated => {
+            if (isReadOnly) return;
             updateItemContent(updated.id, updated);
             setFocusedPageCardId(portfolioId, updated.id);
           }}
-          isEditMode={isEditMode}
-          onToggleEditMode={() => setIsEditMode(prev => !prev)}
+          isEditMode={isEditMode && !isReadOnly}
+          onToggleEditMode={isReadOnly ? undefined : () => setIsEditMode(prev => !prev)}
+          hideEditModeToggle={isReadOnly}
+          isReadOnly={isReadOnly}
           adkHighlights={adkPortfolioHighlights}
           gridColumns={12}
           maxWidthClassName="max-w-5xl"
-          enableSelectionImprove={isEditMode && !hasPendingAdkReview}
+          enableSelectionImprove={isEditMode && !isReadOnly && !hasPendingAdkReview}
           onTextSelectionChange={handleTextSelectionChange}
           selectionImproveSlot={selectionImproveSlot}
           onUploadError={message => showToast(message)}
@@ -1636,7 +1650,8 @@ const Portfolio: React.FC<PortfolioProps> = ({ portfolioId, initialData, onBack,
                 ) : null}
                 {isEditMode ? (
                   <>
-                    <div className="relative" ref={publishMenuRef}>
+                    <div className="relative inline-flex items-center gap-2" ref={publishMenuRef}>
+                      {isPortfolioLive ? <PortfolioLiveDot publishedAt={portfolio.publishedAt} /> : null}
                       <button
                         type="button"
                         onClick={togglePublishMenu}
@@ -1671,15 +1686,15 @@ const Portfolio: React.FC<PortfolioProps> = ({ portfolioId, initialData, onBack,
                           onClick={togglePublishMenu}
                           aria-expanded={showPublishMenu}
                           aria-haspopup="true"
-                          className={`inline-flex items-center gap-2 rounded-full border px-5 py-2 text-xs font-semibold transition-all ${
+                          aria-label="Portfolio published"
+                          className={`inline-flex items-center justify-center rounded-full border p-2 transition-all ${
                             showPublishMenu
-                              ? "border-green-500/50 bg-green-100 text-green-900 dark:border-green-500/40 dark:bg-green-950/60 dark:text-green-200"
-                              : "border-green-500/30 bg-green-50 text-green-800 dark:border-green-500/25 dark:bg-green-950/40 dark:text-green-300"
+                              ? "border-green-500/50 bg-green-100 dark:border-green-500/40 dark:bg-green-950/60"
+                              : "border-green-500/30 bg-green-50 hover:border-green-500/50 dark:border-green-500/25 dark:bg-green-950/40"
                           }`}
                           title="View portfolio URL"
                         >
-                          <PortfolioLiveDot />
-                          Published
+                          <PortfolioLiveDot publishedAt={portfolio.publishedAt} />
                         </button>
                         {publishMenuDropdown}
                       </div>

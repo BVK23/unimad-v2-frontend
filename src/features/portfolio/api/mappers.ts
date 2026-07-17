@@ -226,6 +226,7 @@ export function mapBackendPortfolioToFrontend(dto: Record<string, unknown>): Por
     title: profile.name,
     lastModified: toDate(dto.updated_at),
     slug: typeof dto.slug === "string" && dto.slug.trim() ? dto.slug.trim() : undefined,
+    publishedAt: typeof dto.published_at === "string" && dto.published_at.trim() ? dto.published_at.trim() : null,
     isBase: dto.is_base === true || dto.isBase === true,
     themeMode: dto.themeMode === "dark" ? "dark" : "light",
     profile,
