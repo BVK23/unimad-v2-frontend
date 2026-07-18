@@ -4,7 +4,7 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import PhoneInput, { isValidPhoneNumber } from "react-phone-number-input";
 import "react-phone-number-input/style.css";
 import { useOnboardingGate } from "@/features/onboarding/context/OnboardingGateContext";
-import { resolveOnboardingEntryStep } from "@/features/onboarding/resolveOnboardingEntryStep";
+import { resolveOnboardingEntryStep, hasResumeProfileProgress } from "@/features/onboarding/resolveOnboardingEntryStep";
 import { useOnboardingStore, type OnboardingAnswers } from "@/features/onboarding/useOnboardingStore";
 import { resumesListQueryKey } from "@/features/resume/hooks/useResumesList";
 import { useProfileData } from "@/features/user-profile/hooks/use-profile-data";
@@ -110,8 +110,22 @@ export default function UniboardOnboardingFlow({ testConfig = null }: { testConf
 
     const entry = resolveOnboardingEntryStep(featureGates, profileData);
     entryResolvedRef.current = true;
+
+    // Prefill wizard fields from the profile so returning / minimal users don't retype.
+    const onboarding = profileData?.onboarding_data;
+    const preferredName = onboarding?.preferred_name?.trim() || "";
+    const phone = profileData?.phone_number?.trim() || "";
+    const linkedin = profileData?.linkedin_url?.trim() || "";
+    const goal = onboarding?.goal?.trim();
+    setAnswers({
+      ...(preferredName ? { name: preferredName } : {}),
+      ...(phone ? { phone } : {}),
+      ...(linkedin ? { linkedin } : {}),
+      ...(goal ? { goals: [goal] } : {}),
+    });
+
     setStack([entry]);
-  }, [featureGates, profileData, profileFetched, testConfig]);
+  }, [featureGates, profileData, profileFetched, setAnswers, testConfig]);
 
   const set = (patch: Partial<OnboardingAnswers>) => setAnswers(patch);
 
@@ -241,7 +255,16 @@ export default function UniboardOnboardingFlow({ testConfig = null }: { testConf
                   onNext={() => {
                     setError(null);
                     save("preferred_name", { preferred_name: answers.name.trim() });
-                    go("phone");
+                    // Minimal onboarded users already finished phone/goals — continue full setup.
+                    if (featureGates.initial_onboarding_complete) {
+                      if (!featureGates.niche_complete && hasResumeProfileProgress(profileData)) {
+                        go("niche");
+                      } else {
+                        go("resume");
+                      }
+                    } else {
+                      go("phone");
+                    }
                   }}
                 />
               )}

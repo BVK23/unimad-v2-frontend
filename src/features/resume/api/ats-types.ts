@@ -90,6 +90,8 @@ export interface AtsScoreViewModel {
   scoringMode?: AtsScoringMode;
   generalScore?: number;
   jdMatchScore?: number;
+  /** Hybrid keyword coverage % (JD mode). */
+  keywordMatchPercentage?: number;
   improvements: string[];
   sectionAnalysis: AtsSectionAnalysisRow[];
   hasComparison?: boolean;

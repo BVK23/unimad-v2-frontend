@@ -22,14 +22,16 @@ Soft “Finish onboarding” / sparkles floater: `!profile_setup_complete || !ni
 ## Computed onboarding entry step (Jul 2026)
 
 All CTAs link to **`/uniboard/onboarding`** only (no `?mode=` deep links).  
-`UniboardOnboardingFlow` calls `resolveOnboardingEntryStep(feature_gates, profile)` after profile loads:
+`UniboardOnboardingFlow` calls `resolveOnboardingEntryStep(feature_gates, profile)` after profile loads.
+Feature gates come from `OnboardingGateProvider` (also mounted on the onboarding route).
 
-| Order | Condition                                            | Opens at                                  |
-| ----- | ---------------------------------------------------- | ----------------------------------------- |
-| 1     | `profile_setup_complete && niche_complete`           | Redirect to `/uniboard/resume` (server)   |
-| 2     | `!initial_onboarding_complete`                       | `welcome`                                 |
-| 3     | `!niche_complete` **and** resume progress on profile | `niche`                                   |
-| 4     | Otherwise                                            | `resume` (upload PDF / Build with Unibot) |
+| Order | Condition                                            | Opens at                                     |
+| ----- | ---------------------------------------------------- | -------------------------------------------- |
+| 1     | `profile_setup_complete && niche_complete`           | Redirect to `/uniboard/resume` (server)      |
+| 2     | `!initial_onboarding_complete`                       | `welcome`                                    |
+| 3     | Missing `preferred_name` (minimal → full)            | `name` (then skip to `resume` if goals done) |
+| 4     | `!niche_complete` **and** resume progress on profile | `niche`                                      |
+| 5     | Otherwise                                            | `resume` (upload PDF / Build with Unibot)    |
 
 **Resume progress** = any of: ≥1 education, ≥3 skills, ≥1 experience, ≥1 project (`hasResumeProfileProgress()`).
 
@@ -45,6 +47,8 @@ Legacy `?mode=niche|profile_setup|strengths` URLs are stripped client-side.
 ## Portfolio scratch + first save (Jul 2026)
 
 Gates used: `needsProfileSetup()` (= `!profile_setup_complete || !niche_complete`); onboarding complete for portfolio = `portfolio_auto_create` (= profile + niche).
+
+Prompts are **derived** only after `usePortfolio().isFetched` — never flash a modal before gates + portfolio row state are known.
 
 | User state                                                                                                       | Portfolio page behaviour                                                                                   |
 | ---------------------------------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------- |

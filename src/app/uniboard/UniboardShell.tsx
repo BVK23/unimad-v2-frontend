@@ -281,106 +281,106 @@ function UniboardShellContent({
 
   const isOnboardingRoute = pathname.startsWith("/uniboard/onboarding");
 
-  if (isOnboardingRoute) {
-    return <>{children}</>;
-  }
-
   return (
     <OnboardingGateProvider
       profileSetupRequired={Boolean(userData?.profile_setup_required && !isCoachActAs)}
       featureGates={parseFeatureGates(userData?.feature_gates)}
     >
-      <AdkChatProvider userId={adkUserId}>
-        <div className="flex h-screen bg-slate-50 dark:bg-slate-950 font-sans text-slate-900 dark:text-slate-100 text-[13px] transition-colors duration-300">
-          <Suspense fallback={null}>
-            <ChatSidebar
-              incomingRequest={isCoachActAs ? null : pendingAIRequest}
-              onRequestHandled={() => setPendingAIRequest(null)}
-              coachActAsReadOnly={isCoachActAs}
-            />
-          </Suspense>
+      {isOnboardingRoute ? (
+        children
+      ) : (
+        <AdkChatProvider userId={adkUserId}>
+          <div className="flex h-screen bg-slate-50 dark:bg-slate-950 font-sans text-slate-900 dark:text-slate-100 text-[13px] transition-colors duration-300">
+            <Suspense fallback={null}>
+              <ChatSidebar
+                incomingRequest={isCoachActAs ? null : pendingAIRequest}
+                onRequestHandled={() => setPendingAIRequest(null)}
+                coachActAsReadOnly={isCoachActAs}
+              />
+            </Suspense>
 
-          <div className="relative flex h-full min-w-0 flex-1 flex-col overflow-hidden">
-            <StrengthsFocusMainOverlay />
-            <NicheDiscoveryMainOverlay />
-            <header
-              className={`sticky top-0 z-[100] flex h-16 min-h-[4rem] flex-none border-b bg-white/80 font-sans backdrop-blur-md transition-colors dark:bg-slate-950/80 ${
-                isCoachActAs
-                  ? "border-brand-500 ring-2 ring-inset ring-brand-500/30 dark:border-brand-400"
-                  : "border-slate-100 dark:border-white/5"
-              }`}
-            >
-              <div className="flex h-full w-full items-center justify-between gap-4 px-6">
-                <nav className="flex min-w-0 flex-1 items-center gap-2 overflow-x-auto no-scrollbar">
-                  {navItems.map(({ href, label }) => {
-                    const isActive = pathname === href || (href !== "/uniboard/resume" && pathname.startsWith(href));
-                    const isResumeLanding = href === "/uniboard/resume";
-                    return (
-                      <Link
-                        key={href}
-                        href={href}
-                        onClick={e => {
-                          if (!isResumeLanding || pathname !== href) return;
-                          if (typeof window === "undefined" || !window.location.search.includes("id=")) return;
-                          e.preventDefault();
-                          router.replace(href, { scroll: false });
-                        }}
-                        className={`px-4 py-2 rounded-lg text-[13px] font-medium transition-all duration-200 whitespace-nowrap ${
-                          isActive
-                            ? "bg-slate-100 dark:bg-brand-500/10 text-slate-900 dark:text-brand-400"
-                            : "text-slate-500 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white hover:bg-slate-50 dark:hover:bg-white/5"
-                        }`}
-                      >
-                        {label}
-                      </Link>
-                    );
-                  })}
-                </nav>
+            <div className="relative flex h-full min-w-0 flex-1 flex-col overflow-hidden">
+              <StrengthsFocusMainOverlay />
+              <NicheDiscoveryMainOverlay />
+              <header
+                className={`sticky top-0 z-[100] flex h-16 min-h-[4rem] flex-none border-b bg-white/80 font-sans backdrop-blur-md transition-colors dark:bg-slate-950/80 ${
+                  isCoachActAs
+                    ? "border-brand-500 ring-2 ring-inset ring-brand-500/30 dark:border-brand-400"
+                    : "border-slate-100 dark:border-white/5"
+                }`}
+              >
+                <div className="flex h-full w-full items-center justify-between gap-4 px-6">
+                  <nav className="flex min-w-0 flex-1 items-center gap-2 overflow-x-auto no-scrollbar">
+                    {navItems.map(({ href, label }) => {
+                      const isActive = pathname === href || (href !== "/uniboard/resume" && pathname.startsWith(href));
+                      const isResumeLanding = href === "/uniboard/resume";
+                      return (
+                        <Link
+                          key={href}
+                          href={href}
+                          onClick={e => {
+                            if (!isResumeLanding || pathname !== href) return;
+                            if (typeof window === "undefined" || !window.location.search.includes("id=")) return;
+                            e.preventDefault();
+                            router.replace(href, { scroll: false });
+                          }}
+                          className={`px-4 py-2 rounded-lg text-[13px] font-medium transition-all duration-200 whitespace-nowrap ${
+                            isActive
+                              ? "bg-slate-100 dark:bg-brand-500/10 text-slate-900 dark:text-brand-400"
+                              : "text-slate-500 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white hover:bg-slate-50 dark:hover:bg-white/5"
+                          }`}
+                        >
+                          {label}
+                        </Link>
+                      );
+                    })}
+                  </nav>
 
-                <div className="flex shrink-0 items-center gap-4">
-                  {!isCoachActAs && !showUnicoachNav ? (
-                    <button
-                      type="button"
-                      onClick={() => router.push("/uniboard/unicoach?book=discovery")}
-                      className="hidden sm:inline-flex bg-brand-600 hover:bg-brand-700 text-white px-5 py-2 rounded-xl text-xs font-semibold shadow-sm shadow-brand-500/20 transition-all active:scale-[0.99] items-center gap-2"
-                    >
-                      Book free discovery call
-                    </button>
-                  ) : null}
-                  {isCoachActAs && coachActAsSession ? (
-                    <CoachActAsNavControls
-                      session={coachActAsSession}
-                      studentPictureUrl={userData?.profilePictureUrl ?? liveProfile?.profilePictureUrl}
-                      coachPictureUrl={userData?.coach_actor?.profilePictureUrl}
-                      coachDisplayName={userData?.coach_actor?.name}
-                    />
-                  ) : (
-                    <>
-                      <div className="w-px h-6 bg-slate-200 dark:bg-slate-700 hidden sm:block mx-2" />
+                  <div className="flex shrink-0 items-center gap-4">
+                    {!isCoachActAs && !showUnicoachNav ? (
                       <button
                         type="button"
-                        className="text-slate-400 hover:text-slate-600 dark:hover:text-slate-200 p-1"
-                        aria-label="Notifications"
+                        onClick={() => router.push("/uniboard/unicoach?book=discovery")}
+                        className="hidden sm:inline-flex bg-brand-600 hover:bg-brand-700 text-white px-5 py-2 rounded-xl text-xs font-semibold shadow-sm shadow-brand-500/20 transition-all active:scale-[0.99] items-center gap-2"
                       >
-                        <Bell size={18} />
+                        Book free discovery call
                       </button>
-                      <ProfileMenu userData={profileMenuUser} />
-                    </>
-                  )}
+                    ) : null}
+                    {isCoachActAs && coachActAsSession ? (
+                      <CoachActAsNavControls
+                        session={coachActAsSession}
+                        studentPictureUrl={userData?.profilePictureUrl ?? liveProfile?.profilePictureUrl}
+                        coachPictureUrl={userData?.coach_actor?.profilePictureUrl}
+                        coachDisplayName={userData?.coach_actor?.name}
+                      />
+                    ) : (
+                      <>
+                        <div className="w-px h-6 bg-slate-200 dark:bg-slate-700 hidden sm:block mx-2" />
+                        <button
+                          type="button"
+                          className="text-slate-400 hover:text-slate-600 dark:hover:text-slate-200 p-1"
+                          aria-label="Notifications"
+                        >
+                          <Bell size={18} />
+                        </button>
+                        <ProfileMenu userData={profileMenuUser} />
+                      </>
+                    )}
+                  </div>
                 </div>
-              </div>
-            </header>
+              </header>
 
-            <main className="flex min-h-0 w-full min-w-0 flex-1 flex-col overflow-hidden">{children}</main>
+              <main className="flex min-h-0 w-full min-w-0 flex-1 flex-col overflow-hidden">{children}</main>
+            </div>
+
+            {!pathname.includes("/uniboard/unicoach") && !pathname.includes("/uniboard/portfolio") ? <UniboardHelpFloater /> : null}
+
+            {showOnboardingModal && <OnboardingModal onComplete={() => setShowOnboardingModal(false)} />}
+
+            <UniboardOnboardingGate userData={userData} />
           </div>
-
-          {!pathname.includes("/uniboard/unicoach") && !pathname.includes("/uniboard/portfolio") ? <UniboardHelpFloater /> : null}
-
-          {showOnboardingModal && <OnboardingModal onComplete={() => setShowOnboardingModal(false)} />}
-
-          <UniboardOnboardingGate userData={userData} />
-        </div>
-      </AdkChatProvider>
+        </AdkChatProvider>
+      )}
     </OnboardingGateProvider>
   );
 }

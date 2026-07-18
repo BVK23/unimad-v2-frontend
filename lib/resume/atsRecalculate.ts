@@ -19,6 +19,7 @@ export function getAtsRecalculateState(params: {
   resumeUpdatedAt: string | Date | null | undefined;
   atsCalcCount: number;
   hasUnsavedChanges?: boolean;
+  scoreStale?: boolean;
 }): AtsRecalculateState {
   if (params.atsCalcCount >= MAX_RECALCULATIONS) {
     return {
@@ -34,6 +35,11 @@ export function getAtsRecalculateState(params: {
       reason: "unsaved_changes",
       message: "Save your resume before recalculating your ATS score.",
     };
+  }
+
+  // Older-rubric scores may always be recalculated (matches the server gate).
+  if (params.scoreStale) {
+    return { allowed: true, reason: null, message: null };
   }
 
   const scoredMs = toTimestamp(params.scoredAt);

@@ -1,4 +1,4 @@
-import { buildDisplayFeedback, buildFullFeedback, buildScoreLabel } from "./ats-section-display";
+import { buildDisplayFeedback, buildFullFeedback, buildScoreLabel, sanitizeProfileFeedback } from "./ats-section-display";
 import type { AtsScorePayload, AtsScoreViewModel, AtsSectionKey, AtsSectionScore, AtsSectionUiStatus } from "./ats-types";
 
 export const ATS_SECTION_ORDER: { key: AtsSectionKey; label: string }[] = [
@@ -12,6 +12,17 @@ export const ATS_SECTION_ORDER: { key: AtsSectionKey; label: string }[] = [
   { key: "formatting", label: "Formatting" },
 ];
 
+const SECTION_TIP_PATTERNS: Partial<Record<AtsSectionKey, RegExp>> = {
+  header: /\b(header|email|phone|contact|linkedin|github|portfolio link)\b/i,
+  profile: /\b(summary|professional summary|first sentence|filler|quantified differentiator)\b/i,
+  experience: /\b(experience|bullet|role|action verb|xyz formula|quantify more experience)\b/i,
+  skills: /\b(skills?|categoris|categoriz|soft-skill|keyword coverage)\b/i,
+  education: /\b(education|degree|institution|coursework|graduation)\b/i,
+  projects: /\b(projects?|project descriptions?)\b/i,
+  certifications: /\b(certifications?|issuer)\b/i,
+  formatting: /\b(date format|formatting|layout|section order)\b/i,
+};
+
 const mapBackendStatusToUi = (status: string | undefined): AtsSectionUiStatus => {
   if (status === "strong") return "good";
   if (status === "needs_improvement") return "critical";
@@ -23,11 +34,25 @@ const formatDeltaSuffix = (delta: number | undefined): string => {
   return ` (${delta > 0 ? `+${delta}` : delta})`;
 };
 
+const sectionHasOpenTip = (key: AtsSectionKey, improvements: string[]): boolean => {
+  const pattern = SECTION_TIP_PATTERNS[key];
+  if (!pattern) return false;
+  return improvements.some(tip => pattern.test(tip));
+};
+
+const coerceStatus = (status: AtsSectionUiStatus, key: AtsSectionKey, improvements: string[]): AtsSectionUiStatus => {
+  if (status === "good" && sectionHasOpenTip(key, improvements)) {
+    return "warning";
+  }
+  return status;
+};
+
 const rowFromSection = (
   key: AtsSectionKey,
   label: string,
   sec: AtsSectionScore | undefined,
-  sectionDelta?: number
+  sectionDelta: number | undefined,
+  improvements: string[]
 ): AtsScoreViewModel["sectionAnalysis"][0] => {
   if (!sec) {
     return {
@@ -39,8 +64,12 @@ const rowFromSection = (
     };
   }
   const scoreSuffix = typeof sec.score === "number" && typeof sec.max_score === "number" ? ` (${sec.score}/${sec.max_score})` : "";
-  const baseFeedback = typeof sec.feedback === "string" && sec.feedback.trim() ? sec.feedback : "—";
-  const status = mapBackendStatusToUi(typeof sec.status === "string" ? sec.status : undefined);
+  let baseFeedback = typeof sec.feedback === "string" && sec.feedback.trim() ? sec.feedback : "—";
+  let status = mapBackendStatusToUi(typeof sec.status === "string" ? sec.status : undefined);
+  status = coerceStatus(status, key, improvements);
+  if (key === "profile") {
+    baseFeedback = sanitizeProfileFeedback(baseFeedback, status);
+  }
   const deltaSuffix = formatDeltaSuffix(sectionDelta);
   return {
     key,
@@ -68,22 +97,26 @@ export const mapAtsScoreToViewModel = (payload: AtsScorePayload | null | undefin
   const sectionDeltas = delta?.sections;
 
   const sectionAnalysis = ATS_SECTION_ORDER.map(({ key, label }) =>
-    rowFromSection(key, label, section_scores?.[key], sectionDeltas?.[key])
+    rowFromSection(key, label, section_scores?.[key], sectionDeltas?.[key], improvements)
   ).filter(row => row.fullFeedback !== "Not analyzed.");
 
   const generalRaw = payload?.general_score;
   const jdRaw = payload?.jd_match_score;
+  const keywordRaw = payload?.keyword_match_percentage;
 
   const keywordsResolved = stringList(delta?.keywords_resolved?.length ? delta.keywords_resolved : payload?.keyword_resolved);
   const keywordsStillMissing = stringList(
     delta?.keywords_still_missing?.length ? delta.keywords_still_missing : (payload?.keyword_still_missing ?? payload?.missing_keywords)
   );
+  // First-run JD ledger: show missing keywords even without a comparison delta.
+  const firstRunMissing = stringList(payload?.missing_keywords);
 
   return {
     score,
     scoringMode: payload?.scoring_mode,
     generalScore: typeof generalRaw === "number" && Number.isFinite(generalRaw) ? Math.round(generalRaw) : undefined,
     jdMatchScore: typeof jdRaw === "number" && Number.isFinite(jdRaw) ? Math.round(jdRaw) : undefined,
+    keywordMatchPercentage: typeof keywordRaw === "number" && Number.isFinite(keywordRaw) ? Math.round(keywordRaw) : undefined,
     improvements,
     sectionAnalysis,
     hasComparison: typeof delta?.overall_score === "number" && Number.isFinite(delta.overall_score),
@@ -97,7 +130,7 @@ export const mapAtsScoreToViewModel = (payload: AtsScorePayload | null | undefin
     improvementsAddressed: stringList(payload?.improvements_addressed),
     improvementsStillOpen: stringList(payload?.improvements_still_open),
     keywordsResolved,
-    keywordsStillMissing,
+    keywordsStillMissing: keywordsStillMissing.length > 0 ? keywordsStillMissing : firstRunMissing,
     previousSnapshot: payload?.previous_snapshot,
   };
 };
@@ -107,3 +140,7 @@ export const formatAtsDeltaLabel = (delta: number | undefined): string | null =>
   const prefix = delta > 0 ? "+" : "";
   return `${prefix}${delta} since last score`;
 };
+
+/** Hero quote: only call out sections that are actually weak (G4f). */
+export const getAtsHeroFocusSections = (vm: AtsScoreViewModel): string[] =>
+  vm.sectionAnalysis.filter(row => row.status !== "good").map(row => row.name);

@@ -48,8 +48,14 @@ export default function PortfolioPageClient() {
   const router = useRouter();
   const { featureGates } = useOnboardingGate();
   const { data: profileData } = useProfileData();
-  const [showPostOnboardingPrompt, setShowPostOnboardingPrompt] = useState(false);
-  const [showIncompleteOnboardingPrompt, setShowIncompleteOnboardingPrompt] = useState(false);
+  const [postOnboardingDismissed, setPostOnboardingDismissed] = useState(() => {
+    if (typeof window === "undefined") return false;
+    return window.sessionStorage.getItem(POST_ONBOARDING_PROMPT_KEY) === "1";
+  });
+  const [incompleteOnboardingDismissed, setIncompleteOnboardingDismissed] = useState(() => {
+    if (typeof window === "undefined") return false;
+    return window.sessionStorage.getItem(INCOMPLETE_ONBOARDING_PROMPT_KEY) === "1";
+  });
   const [showGenerateConfirm, setShowGenerateConfirm] = useState(false);
   const [showRevertConfirm, setShowRevertConfirm] = useState(false);
   const [showRevertDoubleConfirm, setShowRevertDoubleConfirm] = useState(false);
@@ -63,6 +69,8 @@ export default function PortfolioPageClient() {
   const scratchSeededRef = useRef(false);
 
   const hasPersistedRow = Boolean(portfolioQuery.data?.id && isPersistedPortfolioId(portfolioQuery.data.id));
+  /** Do not decide which prompt to show until the portfolio row fetch has settled. */
+  const promptsReady = portfolioQuery.isFetched;
 
   const scratchDraft = useMemo(() => {
     if (portfolioQuery.data) return null;
@@ -108,6 +116,19 @@ export default function PortfolioPageClient() {
 
   // Generate = never AI-gen'd; Regenerate = already AI-gen'd
   const isRegenerate = hasGeneratedAt;
+
+  // Derived prompts — never flash before gates + portfolio fetch are known.
+  // Incomplete vs generate are mutually exclusive (`needsOnboarding` ⇔ `!canAutoCreate`).
+  const showIncompleteOnboardingPrompt = promptsReady && needsOnboarding && !hasPersistedRow && !incompleteOnboardingDismissed;
+  const showPostOnboardingPrompt =
+    promptsReady &&
+    canAutoCreate &&
+    Boolean(displayPortfolio) &&
+    !hasGeneratedAt &&
+    !isEngagedScratchBuild &&
+    !postOnboardingDismissed &&
+    !showIncompleteOnboardingPrompt;
+
   const showGenerateCta = canAutoCreate && !showPostOnboardingPrompt && !showGenerateConfirm && !showIncompleteOnboardingPrompt;
   const showRevertCta = canAutoCreate && canRevert && !showPostOnboardingPrompt && !showGenerateConfirm;
 
@@ -118,30 +139,6 @@ export default function PortfolioPageClient() {
     },
     [queryClient]
   );
-
-  // Finished onboarding + never AI-gen'd + not yet an engaged scratch build → soft generate modal.
-  // Low item count (≤2) or low context_snapshot.number_of_edits (≤5) keep nudging; else floater only.
-  useEffect(() => {
-    if (!canAutoCreate || !displayPortfolio) return;
-    if (hasGeneratedAt || isEngagedScratchBuild) {
-      setShowPostOnboardingPrompt(false);
-      return;
-    }
-    if (typeof window === "undefined") return;
-    if (window.sessionStorage.getItem(POST_ONBOARDING_PROMPT_KEY) === "1") return;
-    setShowPostOnboardingPrompt(true);
-  }, [canAutoCreate, displayPortfolio, hasGeneratedAt, isEngagedScratchBuild]);
-
-  // Incomplete onboarding (`needsProfileSetup`) + no persisted row → finish onboarding OR explore scratch.
-  // No row alone is not enough — fully onboarded users with no row get the generate modal above.
-  useEffect(() => {
-    if (!needsOnboarding) return;
-    if (hasPersistedRow) return;
-    if (!portfolioQuery.isFetched) return;
-    if (typeof window === "undefined") return;
-    if (window.sessionStorage.getItem(INCOMPLETE_ONBOARDING_PROMPT_KEY) === "1") return;
-    setShowIncompleteOnboardingPrompt(true);
-  }, [needsOnboarding, hasPersistedRow, portfolioQuery.isFetched]);
 
   const phase: PortfolioCreationPhase = useMemo(() => {
     if (portfolioQuery.isError && !displayPortfolio) return "error";
@@ -169,7 +166,7 @@ export default function PortfolioPageClient() {
       if (typeof window !== "undefined") {
         window.sessionStorage.setItem(POST_ONBOARDING_PROMPT_KEY, "1");
       }
-      setShowPostOnboardingPrompt(false);
+      setPostOnboardingDismissed(true);
       setShowGenerateConfirm(false);
       setGenerationOverlayVariant(action === "replace" ? "ai_regenerate" : "ai_initial");
       setIsGeneratingTemplate(true);
@@ -226,14 +223,14 @@ export default function PortfolioPageClient() {
     if (typeof window !== "undefined") {
       window.sessionStorage.setItem(POST_ONBOARDING_PROMPT_KEY, "1");
     }
-    setShowPostOnboardingPrompt(false);
+    setPostOnboardingDismissed(true);
   };
 
   const dismissIncompleteOnboardingPrompt = () => {
     if (typeof window !== "undefined") {
       window.sessionStorage.setItem(INCOMPLETE_ONBOARDING_PROMPT_KEY, "1");
     }
-    setShowIncompleteOnboardingPrompt(false);
+    setIncompleteOnboardingDismissed(true);
   };
 
   const loadErrorMessage = portfolioQuery.isError ? getFriendlyLoadError(portfolioQuery.error) : null;

@@ -894,7 +894,10 @@ const ResumeEditor: React.FC<ResumeEditorProps> = ({
   }, [showAtsModal, resumeId, atsCacheLoading, cachedAtsVm, runAtsScore]);
 
   const atsPillScore = atsVm?.score;
-  const atsScoreQuote = useMemo(() => getAtsScoreQuote(atsPillScore ?? 0), [atsPillScore]);
+  const atsScoreQuote = useMemo(() => {
+    const weak = atsVm?.sectionAnalysis.filter(row => row.status !== "good").map(row => ({ name: row.name })) ?? [];
+    return getAtsScoreQuote(atsPillScore ?? atsVm?.score ?? 0, weak);
+  }, [atsPillScore, atsVm]);
   const atsDeltaLabel = useMemo(() => formatAtsDeltaLabel(atsVm?.deltaOverall), [atsVm?.deltaOverall]);
   const atsDeltaTone =
     atsVm?.deltaOverall != null && atsVm.deltaOverall > 0
@@ -961,10 +964,11 @@ const ResumeEditor: React.FC<ResumeEditorProps> = ({
       getAtsRecalculateState({
         scoredAt: atsScoredAt,
         resumeUpdatedAt: atsResumeUpdatedAt,
+        scoreStale: atsScoreStale,
         atsCalcCount,
         hasUnsavedChanges: hasPendingUnsavedChanges,
       }),
-    [atsCalcCount, atsResumeUpdatedAt, atsScoredAt, hasPendingUnsavedChanges]
+    [atsCalcCount, atsResumeUpdatedAt, atsScoreStale, atsScoredAt, hasPendingUnsavedChanges]
   );
 
   const handleRecalculate = async () => {
@@ -3460,6 +3464,19 @@ const ResumeEditor: React.FC<ResumeEditorProps> = ({
                                   {atsVm.deltaJdMatch})
                                 </span>
                               ) : null}
+                              {atsVm.keywordMatchPercentage != null ? (
+                                <>
+                                  {" "}
+                                  · Keywords {atsVm.keywordMatchPercentage}%
+                                  {atsVm.deltaKeywordMatch != null && atsVm.deltaKeywordMatch !== 0 ? (
+                                    <span className={atsVm.deltaKeywordMatch > 0 ? "text-green-600" : "text-red-600"}>
+                                      {" "}
+                                      ({atsVm.deltaKeywordMatch > 0 ? "+" : ""}
+                                      {atsVm.deltaKeywordMatch})
+                                    </span>
+                                  ) : null}
+                                </>
+                              ) : null}
                             </p>
                           ) : atsVm.scoringMode === "general_only" ? (
                             <p className="mt-3 text-xs text-slate-500 dark:text-slate-400">General resume quality score</p>
@@ -3632,6 +3649,30 @@ const ResumeEditor: React.FC<ResumeEditorProps> = ({
                               ) : null}
                             </div>
                           ) : null}
+                        </div>
+                      ) : atsVm.scoringMode === "jd_blended" &&
+                        (atsVm.keywordMatchPercentage != null || atsVm.keywordsStillMissing.length > 0) ? (
+                        <div className="rounded-xl border border-slate-200 dark:border-slate-800 bg-slate-50/80 dark:bg-slate-800/40 p-4 space-y-3">
+                          <h4 className="text-xs font-medium text-slate-400 uppercase tracking-wider">Keyword match</h4>
+                          {atsVm.keywordMatchPercentage != null ? (
+                            <p className="text-sm text-slate-700 dark:text-slate-300">
+                              Coverage {atsVm.keywordMatchPercentage}% against the job description (present sections only).
+                            </p>
+                          ) : null}
+                          {atsVm.keywordsStillMissing.length > 0 ? (
+                            <div className="flex flex-wrap gap-2">
+                              {atsVm.keywordsStillMissing.map(keyword => (
+                                <span
+                                  key={`missing-first-${keyword}`}
+                                  className="rounded-full bg-slate-200 px-2.5 py-1 text-xs font-medium text-slate-600 dark:bg-slate-700 dark:text-slate-300"
+                                >
+                                  {keyword}
+                                </span>
+                              ))}
+                            </div>
+                          ) : (
+                            <p className="text-xs text-green-700 dark:text-green-400">No critical keywords flagged as missing.</p>
+                          )}
                         </div>
                       ) : null}
 

@@ -1,7 +1,7 @@
 import { ONBOARDING_ROUTE } from "./resolveOnboardingEntryStep";
 
 export type { OnboardingEntryStep } from "./resolveOnboardingEntryStep";
-export { ONBOARDING_ROUTE, hasResumeProfileProgress, resolveOnboardingEntryStep } from "./resolveOnboardingEntryStep";
+export { ONBOARDING_ROUTE, hasPreferredName, hasResumeProfileProgress, resolveOnboardingEntryStep } from "./resolveOnboardingEntryStep";
 
 export type FeatureGates = {
   initial_onboarding_complete: boolean;
