@@ -1,4 +1,6 @@
 import type { PortfolioItem } from "@/types";
+import { htmlToPlainText } from "@/utils/html-to-text";
+import { clampVpdTitle, VPD_TITLE_MAX_CHARS } from "../constants/title";
 import type { VpdApiData, VpdCoverPic, VpdEditorContentV2 } from "../types";
 
 /** Payload nested under `{ id, content }` for POST /api/vpd/update/. */
@@ -8,12 +10,19 @@ export type VpdUpdateContent = {
   editor_content: VpdEditorContentV2;
 };
 
+const resolveVpdTitleForSave = (rawTitle: string): string => {
+  const raw = (rawTitle || "").trim() || "Value Proposition Document";
+  const plain = htmlToPlainText(raw).trim() || "Value Proposition Document";
+  if (plain.length <= VPD_TITLE_MAX_CHARS) return raw.length <= VPD_TITLE_MAX_CHARS * 2 ? raw : plain;
+  return clampVpdTitle(plain);
+};
+
 export const mapStudioProjectToVpdUpdateContent = (project: PortfolioItem): VpdUpdateContent => {
   const coverUrl = typeof project.content === "string" ? project.content.trim() : "";
   const position = project.coverPosition;
   const iconUrl = typeof project.iconUrl === "string" ? project.iconUrl.trim() : "";
   return {
-    title: (project.title || "").trim() || "Value Proposition Document",
+    title: resolveVpdTitleForSave(project.title || ""),
     cover_pic:
       coverUrl || iconUrl
         ? {

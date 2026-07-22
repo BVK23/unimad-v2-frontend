@@ -129,7 +129,7 @@ export const TEMPLATE_CONFIGS: Record<ResumeTemplateId, TemplateConfig> = {
     showInPicker: true,
     accentColor: "#346DE0",
     pdf: {
-      fontFamily: "Poppins",
+      fontFamily: "Outfit",
       baseFontSize: 9,
       pagePadding: 30,
     },

@@ -1,7 +1,7 @@
 import React from "react";
 import { htmlToPlainText } from "@/utils/html-to-text";
 import { ResumeData } from "../../../../types";
-import { SECTIONS, isCustomSection } from "../../config/constants";
+import { SECTIONS, isCustomSection, getTemplateConfig } from "../../config/constants";
 import HtmlDisplay from "../../shared/HtmlDisplay";
 import ScaledA4PreviewShell from "../../shared/ScaledA4PreviewShell";
 import { parseDate as formatDateMonthYear } from "../../shared/dateUtils";
@@ -15,6 +15,9 @@ interface BasicPreviewProps {
 
 const BasicPreview: React.FC<BasicPreviewProps> = ({ data, previewScale = 1, isModal = false }) => {
   const profile = data.profile || {};
+  const fontStack = {
+    fontFamily: `${getTemplateConfig("basic").pdf.fontFamily}, ui-sans-serif, system-ui, sans-serif`,
+  } as const;
 
   const sortedSections = data.sectionOrder || [
     { id: SECTIONS.PROFILE },
@@ -121,7 +124,7 @@ const BasicPreview: React.FC<BasicPreviewProps> = ({ data, previewScale = 1, isM
     if (!visibleExperiences.length) return null;
 
     return (
-      <div className="flex flex-col w-full">
+      <div className="flex flex-col w-full gap-[9pt]">
         {visibleExperiences.map((exp, idx) => (
           <div key={idx} className="flex flex-col gap-[3.4px] text-[#373737]">
             {idx === 0 && <SectionHeading title="Work Experience" />}
@@ -153,7 +156,7 @@ const BasicPreview: React.FC<BasicPreviewProps> = ({ data, previewScale = 1, isM
     if (!visibleEducations.length) return null;
 
     return (
-      <div className="flex flex-col w-full">
+      <div className="flex flex-col w-full gap-[9pt]">
         {visibleEducations.map((edu, idx) => (
           <div key={idx} className="flex flex-col gap-[3.4px] text-[#373737]">
             {idx === 0 && <SectionHeading title="Education" />}
@@ -185,7 +188,7 @@ const BasicPreview: React.FC<BasicPreviewProps> = ({ data, previewScale = 1, isM
     if (!visibleProjects.length) return null;
 
     return (
-      <div className="flex flex-col w-full">
+      <div className="flex flex-col w-full gap-[9pt]">
         {visibleProjects.map((project, idx) => (
           <div key={idx} className="flex flex-col gap-[3.4px] text-[#373737]">
             {idx === 0 && <SectionHeading title="Projects" />}
@@ -356,10 +359,11 @@ const BasicPreview: React.FC<BasicPreviewProps> = ({ data, previewScale = 1, isM
     <ScaledA4PreviewShell
       previewScale={previewScale}
       isModal={isModal}
-      outerClassName="bg-white text-[#373737] font-sans"
+      outerClassName="bg-white text-[#373737]"
       nonModalOuterClassName="shadow-2xl"
       innerClassName="flex-1"
-      scaledInnerStyle={{ padding: "40px" }}
+      scaledInnerStyle={{ padding: "40px", ...fontStack }}
+      modalInnerStyle={fontStack}
     >
       {profile.fullName && (
         <div className="w-full flex justify-center items-center flex-col pb-[7pt] text-center gap-[3pt] relative z-10">

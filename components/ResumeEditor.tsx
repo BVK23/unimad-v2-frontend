@@ -18,6 +18,7 @@ import { buildAtsFixMainSessionTitle } from "@/features/resume/api/build-ats-imp
 import { formatAtsDeltaLabel, mapAtsScoreToViewModel } from "@/features/resume/api/mapAtsScoreToViewModel";
 import { mapBackendResumeToFrontend, mapFrontendResumeToBackend } from "@/features/resume/api/mappers";
 import { isPersistedResumeId } from "@/features/resume/constants/resumeDraft";
+import { resumeTemplateShowsProfileJobTitle } from "@/features/resume/constants/resumeTemplateCapabilities";
 import { useCalculateAtsScore } from "@/features/resume/hooks/useCalculateAtsScore";
 import { useDebouncedResumePreview } from "@/features/resume/hooks/useDebouncedResumePreview";
 import { useGeolocationTemplate } from "@/features/resume/hooks/useGeolocationTemplate";
@@ -2196,6 +2197,7 @@ const ResumeEditor: React.FC<ResumeEditorProps> = ({
                   showFieldValidation={showFieldValidation}
                   onImprove={onImprove}
                   resumeId={resumeId}
+                  showProfileJobTitle={resumeTemplateShowsProfileJobTitle(resume.templateId)}
                 />
               )}
 

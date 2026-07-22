@@ -1,11 +1,27 @@
 import { uploadFileDirect } from "@/features/gcp/core/client-upload";
-import { uploadMedia } from "@/features/portfolio/server-actions/asset";
 import { resolveMediaDisplayUrl } from "@/utils/resolve-media-url";
 
-/** Images/PDFs at or below this size go through Django `/api/media-upload/` (stored in MediaStore → GCS). */
-export const BACKEND_SIZE_THRESHOLD_BYTES = 4 * 1024 * 1024;
+/**
+ * MediaStore `category` tags. Keep covers / profile pics separate from ephemeral
+ * block media & icons so library + cleanup can treat them differently.
+ */
+export const MEDIA_CATEGORY = {
+  PROFILE_PICTURE: "profile-picture",
+  COVER_PICTURE: "cover-picture",
+  /** VPD / portfolio document icons (not job-table company logos). */
+  DOCUMENT_ICON: "document-icon",
+  /** Images/videos/PDFs inside portfolio or VPD content blocks — often deleted quickly. */
+  BLOCK_MEDIA: "block-media",
+  LINKEDIN_POST: "linkedin-post",
+} as const;
 
-/** Max size for browser → GCS signed-URL uploads (videos always; large images/PDFs). */
+export type MediaCategory = (typeof MEDIA_CATEGORY)[keyof typeof MEDIA_CATEGORY];
+
+/**
+ * Portfolio media always uses browser → GCS signed-URL uploads.
+ * Metadata is recorded via `/api/media-metadata/` after finalize.
+ * (Avoids Next.js Server Action ~1MB body limit; API route fallback is unused here.)
+ */
 export const MAX_DIRECT_UPLOAD_BYTES = 100 * 1024 * 1024;
 
 export type UploadedMediaType = "image" | "video" | "pdf" | "other";
@@ -54,9 +70,22 @@ const inferMediaType = (mimeType: string): UploadedMediaType => {
   return "other";
 };
 
+const sanitizeUploadFilename = (name: string): string => {
+  const base = name.split(/[/\\]/).pop()?.trim() ?? "upload";
+  const cleaned = base.replace(/[^\w.\- ()]/g, "_").replace(/_+/g, "_");
+  return cleaned || `upload-${Date.now()}.bin`;
+};
+
+const withSafeUploadFilename = (file: File): File => {
+  const safeName = sanitizeUploadFilename(file.name);
+  if (safeName === file.name) return file;
+  const mimeType = resolveFileMimeType(file);
+  return new File([file], safeName, { type: mimeType || file.type || "application/octet-stream" });
+};
+
 const formatSignedUploadError = (error: string): string => {
   if (/GOOGLE_CLOUD_CREDENTIALS|GOOGLE_CLOUD_STORAGE_BUCKET/i.test(error)) {
-    return "Large uploads need storage credentials in this environment. Use a file under 4MB, or add GOOGLE_CLOUD_* vars to .env.local.";
+    return "Uploads need storage credentials in this environment. Add GOOGLE_CLOUD_* vars to .env.local.";
   }
   return error;
 };
@@ -69,19 +98,7 @@ const uploadViaSignedUrl = async (file: File, category: string): Promise<string>
   return result.url;
 };
 
-const uploadViaBackend = async (file: File, category: string): Promise<string> => {
-  const formData = new FormData();
-  formData.append("file", file);
-  formData.append("category", category);
-
-  const response = await uploadMedia(formData);
-  if (response.error || !response.content?.url) {
-    throw new UploadError(response.error || "Upload failed", "network");
-  }
-  return response.content.url;
-};
-
-export type HeroMediaCategory = "profile-picture" | "cover-picture";
+export type HeroMediaCategory = typeof MEDIA_CATEGORY.PROFILE_PICTURE | typeof MEDIA_CATEGORY.COVER_PICTURE;
 
 export const dataUrlToFile = (dataUrl: string, filename: string, fallbackMimeType = "image/jpeg"): File => {
   const [header, base64] = dataUrl.split(",");
@@ -105,33 +122,30 @@ export const uploadHeroImageFromDataUrl = async (dataUrl: string, category: Hero
   return resolveMediaDisplayUrl(uploaded.url);
 };
 
-export const uploadPortfolioFile = async (file: File, category: string = "portfolio-assets"): Promise<UploadedFile> => {
+export const uploadPortfolioFile = async (file: File, category: string = MEDIA_CATEGORY.BLOCK_MEDIA): Promise<UploadedFile> => {
   if (!file) {
     throw new UploadError("No file selected. Choose an image or video and try again.");
   }
 
-  if (file.size > MAX_DIRECT_UPLOAD_BYTES) {
+  const normalizedFile = withSafeUploadFilename(file);
+
+  if (normalizedFile.size > MAX_DIRECT_UPLOAD_BYTES) {
     throw new UploadError(
-      `File is too large (${(file.size / (1024 * 1024)).toFixed(1)}MB). Maximum size is ${MAX_DIRECT_UPLOAD_BYTES / (1024 * 1024)}MB.`
+      `File is too large (${(normalizedFile.size / (1024 * 1024)).toFixed(1)}MB). Maximum size is ${MAX_DIRECT_UPLOAD_BYTES / (1024 * 1024)}MB.`
     );
   }
 
-  const mimeType = resolveFileMimeType(file);
+  const mimeType = resolveFileMimeType(normalizedFile);
   const mediaType = inferMediaType(mimeType);
-  const isVideo = mediaType === "video";
-  // Videos always use signed URL. Images/PDFs use backend when ≤4MB, GCS direct when >4MB.
-  const shouldUseSignedUrl = isVideo || file.size > BACKEND_SIZE_THRESHOLD_BYTES;
-  const uploadRoute = shouldUseSignedUrl ? "gcs-signed-url" : "django-media-upload";
 
   console.info("[portfolio-upload] route", {
     category,
-    uploadRoute,
-    ...{
-      name: file.name,
-      size: file.size,
-      type: file.type || "(empty mime)",
-      resolvedMimeType: mimeType || "(unknown)",
-    },
+    uploadRoute: "gcs-signed-url",
+    name: normalizedFile.name,
+    originalName: file.name !== normalizedFile.name ? file.name : undefined,
+    size: normalizedFile.size,
+    type: normalizedFile.type || "(empty mime)",
+    resolvedMimeType: mimeType || "(unknown)",
   });
 
   if (mediaType === "other" && !mimeType) {
@@ -140,7 +154,7 @@ export const uploadPortfolioFile = async (file: File, category: string = "portfo
 
   let url: string;
   try {
-    url = shouldUseSignedUrl ? await uploadViaSignedUrl(file, category) : await uploadViaBackend(file, category);
+    url = await uploadViaSignedUrl(normalizedFile, category);
   } catch (error) {
     if (error instanceof UploadError) {
       throw error;
@@ -152,6 +166,6 @@ export const uploadPortfolioFile = async (file: File, category: string = "portfo
     url,
     mediaType,
     mimeType,
-    name: file.name,
+    name: normalizedFile.name,
   };
 };

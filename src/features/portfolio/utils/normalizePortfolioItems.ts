@@ -32,27 +32,27 @@ export const normalizePortfolioItem = (item: PortfolioItem, options: NormalizePo
   const defaultHeight = getDefaultItemHeightPx(item.type);
   let height = item.height ?? defaultHeight;
 
-  if (item.type === "link-box" && height > 112) {
+  if (item.type === "link-box" && height > 112 && item.heightUserSet !== true) {
     height = defaultHeight;
-  } else if (COMPACT_ITEM_TYPES.has(item.type) && height > defaultHeight * 1.5) {
+  } else if (COMPACT_ITEM_TYPES.has(item.type) && height > defaultHeight * 1.5 && item.heightUserSet !== true) {
     height = defaultHeight;
-  } else if (options.clampTitleOnlyHeights && isTitleOnlyTextItem(item)) {
+  } else if (options.clampTitleOnlyHeights && item.heightUserSet !== true && isTitleOnlyTextItem(item)) {
     const estimate = estimateTitleOnlyTextLayoutHeightPx(item);
     if (height < estimate) height = estimate;
     else if (height > estimate * 1.25) height = estimate;
   }
 
   const type = resolvePortfolioBlockType(item);
-  const { heightUserSet: _legacyHeightUserSet, ...itemWithoutLegacyHeightLock } = item;
   const resolvedTitle =
     options.normalizeTemplateTitleHeadings && item.type === "text" ? (resolvePortfolioTitleHtmlForItem(item) ?? item.title) : item.title;
   const normalizedItem: PortfolioItem = {
-    ...itemWithoutLegacyHeightLock,
+    ...item,
     type,
     title: resolvedTitle,
     span: normalizedSpan as PortfolioItem["span"],
     colStart: item.colStart ? Math.max(1, Math.min(12, Math.round(item.colStart))) : item.colStart,
     height,
+    ...(item.heightUserSet === true ? { heightUserSet: true as const } : {}),
     detailedBlocks: item.detailedBlocks?.map(child => normalizePortfolioItem(child, options)),
   };
   const layoutRole = item.layoutRole ?? resolvePortfolioLayoutRole(normalizedItem) ?? undefined;

@@ -17,7 +17,14 @@ export function looksLikeTechnicalErrorMessage(candidate: string): boolean {
     lower.includes("traceback (most recent call last)") ||
     lower.includes("an error occurred in the server components render") ||
     lower.includes("digest property is included on this error") ||
-    /^print\(default_api\./i.test(trimmed)
+    lower.includes("value too long for type character varying") ||
+    lower.includes("character varying(") ||
+    lower.includes("django.db.utils") ||
+    lower.includes("integrityerror") ||
+    lower.includes("dataerror") ||
+    lower.includes("operationalerror") ||
+    /^print\(default_api\./i.test(trimmed) ||
+    (/^error:\s/i.test(trimmed) && lower.includes("varying"))
   );
 }
 
@@ -39,4 +46,11 @@ export function sanitizeUserFacingError(message: string, fallback = "Something w
     return fallback;
   }
   return trimmed.length > 400 ? `${trimmed.slice(0, 400)}…` : trimmed;
+}
+
+/** Dev/team console detail — masks raw internals so casual console peekers get less signal. */
+export function logSanitizedError(scope: string, error: unknown, extra?: Record<string, unknown>): void {
+  const raw = error instanceof Error ? error.message : String(error);
+  const masked = raw.length > 120 ? `${raw.slice(0, 40)}…[${raw.length}c]…${raw.slice(-20)}` : raw;
+  console.error(`[${scope}]`, { masked, ...extra, error });
 }

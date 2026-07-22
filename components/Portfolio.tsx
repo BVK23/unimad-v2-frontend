@@ -2,9 +2,12 @@
 import React, { useState, useRef, useEffect, useLayoutEffect, useCallback } from "react";
 import { DocumentSaveStatusBar } from "@/components/application-assets/DocumentSaveStatusBar";
 import ResumePublishedBeacon from "@/components/resume/ResumePublishedBeacon";
+import { HeroMediaPickerDialog } from "@/components/shared/HeroMediaPickerDialog";
 import { useCoachActAsSession } from "@/contexts/CoachActAsContext";
 import { EMPTY_PORTFOLIO_HIGHLIGHT_MAP } from "@/features/adk-chat/adkPortfolioHighlightDiff";
 import { useAdkPortfolioReviewStore } from "@/features/adk-chat/stores/useAdkPortfolioReviewStore";
+import { isAppManagedMediaUrl } from "@/features/media/utils/is-app-managed-media-url";
+import { optimisticDeleteMedia } from "@/features/media/utils/optimistic-delete-media";
 import { mapFrontendPortfolioToBackend } from "@/features/portfolio/api/mappers";
 import { PORTFOLIO_MIN_SELECTION_CHARS } from "@/features/portfolio/config/selection-presets";
 import { isPersistedPortfolioId } from "@/features/portfolio/constants/portfolioDraft";
@@ -397,6 +400,8 @@ const Portfolio: React.FC<PortfolioProps> = ({ portfolioId, initialData, onBack,
   const pendingPublishedTabUrlRef = useRef<string | null>(null);
   const [toastMessage, setToastMessage] = useState<string | null>(null);
   const [isRepositioningCover, setIsRepositioningCover] = useState(false);
+  const [avatarPickerOpen, setAvatarPickerOpen] = useState(false);
+  const [coverPickerOpen, setCoverPickerOpen] = useState(false);
   const [tempCoverPos, setTempCoverPos] = useState<{ x: number; y: number }>(() => profile.coverPosition ?? { x: 50, y: 50 });
   const [avatarCropModal, setAvatarCropModal] = useState<{ source: string; mimeType?: string } | null>(null);
   const [avatarCropZoom, setAvatarCropZoom] = useState(1);
@@ -1325,6 +1330,12 @@ const Portfolio: React.FC<PortfolioProps> = ({ portfolioId, initialData, onBack,
 
   const handleConfirmDeleteBlock = () => {
     if (!pendingDeleteBlockId) return;
+    const block = items.find(item => item.id === pendingDeleteBlockId);
+    if (block) {
+      for (const url of [block.content, block.canvasCover, block.iconUrl]) {
+        if (typeof url === "string" && url.trim()) optimisticDeleteMedia(url);
+      }
+    }
     removeItem(pendingDeleteBlockId);
     setPendingDeleteBlockId(null);
   };
@@ -1750,7 +1761,8 @@ const Portfolio: React.FC<PortfolioProps> = ({ portfolioId, initialData, onBack,
                   {isEditMode && !isRepositioningCover && (
                     <div className="absolute inset-0 bg-black/40 hidden group-hover:flex items-center justify-center gap-4 backdrop-blur-sm transition-all z-10">
                       <button
-                        onClick={() => coverInputRef.current?.click()}
+                        type="button"
+                        onClick={() => setCoverPickerOpen(true)}
                         className="bg-white text-slate-900 px-6 py-2 rounded-full font-medium text-sm shadow-xl hover:scale-105 active:scale-95 transition-transform"
                       >
                         Update Cover
@@ -1890,7 +1902,7 @@ const Portfolio: React.FC<PortfolioProps> = ({ portfolioId, initialData, onBack,
                           ) : isEditMode ? (
                             <button
                               type="button"
-                              onClick={() => avatarInputRef.current?.click()}
+                              onClick={() => setAvatarPickerOpen(true)}
                               className="flex h-full w-full flex-col items-center justify-center gap-1.5 text-slate-400 transition-colors hover:text-brand-600"
                               aria-label="Add profile photo"
                             >
@@ -1904,60 +1916,65 @@ const Portfolio: React.FC<PortfolioProps> = ({ portfolioId, initialData, onBack,
                           )}
                         </div>
                         {isEditMode && (
-                          <>
+                          <div className="absolute inset-0 rounded-full bg-black/60 hidden group-hover:flex flex-col items-center justify-center gap-1.5 cursor-pointer backdrop-blur-sm overflow-hidden p-2 z-10">
+                            <button
+                              type="button"
+                              onClick={e => {
+                                e.stopPropagation();
+                                setAvatarPickerOpen(true);
+                              }}
+                              className="flex items-center justify-center gap-1.5 text-white hover:text-brand-400 transition-colors"
+                            >
+                              <Edit3 size={16} /> <span className="text-[10px] font-medium">{hasAvatarImage ? "Update" : "Add"}</span>
+                            </button>
                             {hasAvatarImage ? (
-                              <div className="absolute top-0 left-1/2 -translate-x-1/2 -translate-y-full opacity-0 group-hover:opacity-100 transition-opacity bg-white dark:bg-slate-800 shadow-xl border border-slate-100 dark:border-white/5 rounded-lg flex items-center p-1 z-20 pointer-events-none group-hover:pointer-events-auto">
+                              <div className="flex items-center gap-1">
                                 <button
                                   type="button"
-                                  onClick={() => setProfile(prev => ({ ...prev, profileAlignment: "left" }))}
-                                  className={`p-1.5 rounded-md ${profile.profileAlignment === "left" ? "bg-slate-100 dark:bg-white/10 text-brand-600" : "text-slate-400 hover:text-slate-600 dark:hover:text-white"}`}
                                   title="Align Left"
+                                  aria-label="Align Left"
+                                  onClick={e => {
+                                    e.stopPropagation();
+                                    setProfile(prev => ({ ...prev, profileAlignment: "left" }));
+                                  }}
+                                  className={`rounded-md p-1.5 transition-colors ${
+                                    profile.profileAlignment === "left"
+                                      ? "bg-white/20 text-white"
+                                      : "text-white/70 hover:bg-white/10 hover:text-white"
+                                  }`}
                                 >
                                   <AlignLeft size={14} />
                                 </button>
                                 <button
                                   type="button"
-                                  onClick={() => setProfile(prev => ({ ...prev, profileAlignment: "center" }))}
-                                  className={`p-1.5 rounded-md ${profile.profileAlignment === "center" ? "bg-slate-100 dark:bg-white/10 text-brand-600" : "text-slate-400 hover:text-slate-600 dark:hover:text-white"}`}
                                   title="Align Center"
+                                  aria-label="Align Center"
+                                  onClick={e => {
+                                    e.stopPropagation();
+                                    setProfile(prev => ({ ...prev, profileAlignment: "center" }));
+                                  }}
+                                  className={`rounded-md p-1.5 transition-colors ${
+                                    profile.profileAlignment === "center"
+                                      ? "bg-white/20 text-white"
+                                      : "text-white/70 hover:bg-white/10 hover:text-white"
+                                  }`}
                                 >
                                   <AlignCenter size={14} />
                                 </button>
                               </div>
                             ) : null}
-                            <div className="absolute inset-0 rounded-full bg-black/60 hidden group-hover:flex flex-col items-center justify-center gap-2 cursor-pointer backdrop-blur-sm overflow-hidden p-2 z-10">
-                              <div
-                                onClick={e => {
-                                  e.stopPropagation();
-                                  avatarInputRef.current?.click();
-                                }}
-                                className="flex items-center justify-center gap-1.5 text-white hover:text-brand-400 transition-colors"
-                              >
-                                <Edit3 size={16} /> <span className="text-[10px] font-medium">{hasAvatarImage ? "Update" : "Add"}</span>
-                              </div>
-                              {hasAvatarImage ? (
-                                <div
-                                  onClick={e => {
-                                    e.stopPropagation();
-                                    openAvatarCropModal(profile.avatarUrl, "image/jpeg");
-                                  }}
-                                  className="flex items-center justify-center gap-1.5 text-white hover:text-brand-400 transition-colors"
-                                >
-                                  <ImageIcon size={16} /> <span className="text-[10px] font-medium">Crop</span>
-                                </div>
-                              ) : null}
-                              <div className="h-px w-1/2 bg-white/20"></div>
-                              <div
-                                onClick={e => {
-                                  e.stopPropagation();
-                                  handleHideAvatar();
-                                }}
-                                className="flex items-center justify-center gap-2 text-red-400 hover:text-red-500 transition-colors"
-                              >
-                                <Trash2 size={16} /> <span className="text-xs font-medium">Hide</span>
-                              </div>
-                            </div>
-                          </>
+                            <div className="h-px w-1/2 bg-white/20" />
+                            <button
+                              type="button"
+                              onClick={e => {
+                                e.stopPropagation();
+                                handleHideAvatar();
+                              }}
+                              className="flex items-center justify-center gap-2 text-red-400 hover:text-red-500 transition-colors"
+                            >
+                              <Trash2 size={16} /> <span className="text-xs font-medium">Hide</span>
+                            </button>
+                          </div>
                         )}
                       </div>
                     )
@@ -2338,6 +2355,36 @@ const Portfolio: React.FC<PortfolioProps> = ({ portfolioId, initialData, onBack,
               onConfirm={handleConfirmDeleteBlock}
             />
           )}
+
+          <HeroMediaPickerDialog
+            open={avatarPickerOpen}
+            onClose={() => setAvatarPickerOpen(false)}
+            kind="profile-picture"
+            currentUrl={profile.avatarUrl}
+            croppableUrl={isAppManagedMediaUrl(profile.avatarUrl) ? profile.avatarUrl : null}
+            onSelectUrl={url => {
+              setProfile(prev => ({ ...prev, avatarUrl: url, showAvatar: true }));
+              void queryClient.invalidateQueries({ queryKey: profileQk.media("profile-picture") });
+            }}
+          />
+
+          <HeroMediaPickerDialog
+            open={coverPickerOpen}
+            onClose={() => setCoverPickerOpen(false)}
+            kind="cover-picture"
+            currentUrl={profile.coverUrl}
+            onSelectUrl={url => {
+              setProfile(prev => ({
+                ...prev,
+                coverUrl: url,
+                showCover: true,
+                coverPosition: prev.coverPosition ?? { x: 50, y: 50 },
+              }));
+              void queryClient.invalidateQueries({ queryKey: profileQk.media("cover-picture") });
+              // Enter reposition after picking a new cover (same as previous upload flow).
+              beginCoverReposition(profile.coverPosition ?? { x: 50, y: 50 });
+            }}
+          />
 
           {/* Toast */}
           {toastMessage && (

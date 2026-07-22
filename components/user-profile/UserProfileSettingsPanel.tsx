@@ -179,6 +179,7 @@ function UserProfileSettingsForm({ profile }: { profile: ProfileData }) {
         onClose={() => setPictureOpen(false)}
         currentUrl={avatarUrl}
         croppableUrl={profile.profilePictureUrl}
+        pictureSources={profile.profilePictureSources}
       />
     </>
   );

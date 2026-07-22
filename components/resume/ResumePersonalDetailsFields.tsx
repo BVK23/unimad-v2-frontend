@@ -21,13 +21,18 @@ type ResumePersonalDetailsFieldsProps = {
   showFieldValidation: boolean;
   onImprove: (text: string) => void;
   resumeId: string;
+  /** When false, hide job title — template does not render profile.title in preview/PDF. */
+  showProfileJobTitle?: boolean;
 };
 
 const inputClass =
   "w-full p-3 bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-lg text-sm focus:border-brand-500 focus:ring-1 focus:ring-brand-500 outline-none dark:text-white dark:placeholder:text-slate-500";
 
 const ResumePersonalDetailsFields = forwardRef<ResumePersonalDetailsFieldsHandle, ResumePersonalDetailsFieldsProps>(
-  function ResumePersonalDetailsFields({ profile, onProfileSync, validationErrors, showFieldValidation, onImprove, resumeId }, ref) {
+  function ResumePersonalDetailsFields(
+    { profile, onProfileSync, validationErrors, showFieldValidation, onImprove, resumeId, showProfileJobTitle = true },
+    ref
+  ) {
     const [localProfile, setLocalProfile] = useState(profile);
     const localProfileRef = useRef(profile);
     const pushedSignatureRef = useRef(JSON.stringify(profile));
@@ -110,13 +115,15 @@ const ResumePersonalDetailsFields = forwardRef<ResumePersonalDetailsFieldsHandle
             />
             <ResumeFieldError errors={validationErrors} section="profile" field="fullName" visible={showFieldValidation} />
           </div>
-          <input
-            placeholder="Job Title"
-            value={localProfile.title ?? ""}
-            onChange={e => handleFieldChange("title", e.target.value)}
-            onBlur={flushToStore}
-            className={`${inputClass} font-medium`}
-          />
+          {showProfileJobTitle ? (
+            <input
+              placeholder="Job Title"
+              value={localProfile.title ?? ""}
+              onChange={e => handleFieldChange("title", e.target.value)}
+              onBlur={flushToStore}
+              className={`${inputClass} font-medium`}
+            />
+          ) : null}
           <div className="grid grid-cols-2 gap-4">
             <div>
               <input

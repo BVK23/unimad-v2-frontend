@@ -40,7 +40,7 @@ const GENERATE_NUDGE_MAX_ITEMS = 2;
 const GENERATE_NUDGE_MAX_EDITS = 5;
 
 /**
- * Single-portfolio UX: load persisted portfolio or show a local scratch draft immediately.
+ * Single-portfolio UX: shimmer while fetching, then persisted portfolio or local scratch draft.
  * Backend portfolio creation happens on first save (or when user accepts Unibot generation).
  */
 export default function PortfolioPageClient() {
@@ -56,6 +56,9 @@ export default function PortfolioPageClient() {
     if (typeof window === "undefined") return false;
     return window.sessionStorage.getItem(INCOMPLETE_ONBOARDING_PROMPT_KEY) === "1";
   });
+  /** Same-page dismiss when exploring scratch with no backend row yet (not persisted to sessionStorage). */
+  const [scratchExploreDismissed, setScratchExploreDismissed] = useState(false);
+  const [scratchOnboardingDismissed, setScratchOnboardingDismissed] = useState(false);
   const [showGenerateConfirm, setShowGenerateConfirm] = useState(false);
   const [showRevertConfirm, setShowRevertConfirm] = useState(false);
   const [showRevertDoubleConfirm, setShowRevertDoubleConfirm] = useState(false);
@@ -67,18 +70,19 @@ export default function PortfolioPageClient() {
   const needsOnboarding = needsProfileSetup(featureGates);
   const portfolioQuery = usePortfolio();
   const scratchSeededRef = useRef(false);
+  const portfolioFetchComplete = portfolioQuery.isFetched;
 
   const hasPersistedRow = Boolean(portfolioQuery.data?.id && isPersistedPortfolioId(portfolioQuery.data.id));
   /** Do not decide which prompt to show until the portfolio row fetch has settled. */
   const promptsReady = portfolioQuery.isFetched;
 
   const scratchDraft = useMemo(() => {
-    if (portfolioQuery.data) return null;
+    if (!portfolioFetchComplete || portfolioQuery.data) return null;
     const onboarding = profileData?.onboarding_data;
     const name = profileData?.name?.trim() || onboarding?.preferred_name?.trim() || onboarding?.first_name?.trim() || "";
     const email = profileData?.email?.trim() || "";
     return buildScratchPortfolio({ name, email });
-  }, [portfolioQuery.data, profileData]);
+  }, [portfolioFetchComplete, portfolioQuery.data, profileData]);
 
   useEffect(() => {
     if (portfolioQuery.data || scratchSeededRef.current) return;
@@ -119,7 +123,8 @@ export default function PortfolioPageClient() {
 
   // Derived prompts — never flash before gates + portfolio fetch are known.
   // Incomplete vs generate are mutually exclusive (`needsOnboarding` ⇔ `!canAutoCreate`).
-  const showIncompleteOnboardingPrompt = promptsReady && needsOnboarding && !hasPersistedRow && !incompleteOnboardingDismissed;
+  const showIncompleteOnboardingPrompt =
+    promptsReady && needsOnboarding && !hasPersistedRow && !incompleteOnboardingDismissed && !scratchOnboardingDismissed;
   const showPostOnboardingPrompt =
     promptsReady &&
     canAutoCreate &&
@@ -127,6 +132,7 @@ export default function PortfolioPageClient() {
     !hasGeneratedAt &&
     !isEngagedScratchBuild &&
     !postOnboardingDismissed &&
+    !(!hasPersistedRow && scratchExploreDismissed) &&
     !showIncompleteOnboardingPrompt;
 
   const showGenerateCta = canAutoCreate && !showPostOnboardingPrompt && !showGenerateConfirm && !showIncompleteOnboardingPrompt;
@@ -140,11 +146,24 @@ export default function PortfolioPageClient() {
     [queryClient]
   );
 
+  // Backend confirmed no portfolio row — reset stale session dismiss (e.g. admin deleted row).
+  useEffect(() => {
+    if (!portfolioFetchComplete || portfolioQuery.data) return;
+    if (typeof window === "undefined") return;
+    window.sessionStorage.removeItem(POST_ONBOARDING_PROMPT_KEY);
+    window.sessionStorage.removeItem(INCOMPLETE_ONBOARDING_PROMPT_KEY);
+    setPostOnboardingDismissed(false);
+    setIncompleteOnboardingDismissed(false);
+    setScratchExploreDismissed(false);
+    setScratchOnboardingDismissed(false);
+  }, [portfolioFetchComplete, portfolioQuery.data]);
+
   const phase: PortfolioCreationPhase = useMemo(() => {
+    if (!portfolioFetchComplete) return "fetching";
     if (portfolioQuery.isError && !displayPortfolio) return "error";
     if (displayPortfolio) return "ready";
     return "idle";
-  }, [displayPortfolio, portfolioQuery.isError]);
+  }, [displayPortfolio, portfolioFetchComplete, portfolioQuery.isError]);
 
   const pendingGenerationAction = usePortfolioGenerationStore(s => s.pendingAction);
 
@@ -220,15 +239,19 @@ export default function PortfolioPageClient() {
   };
 
   const dismissPostOnboardingPrompt = () => {
-    if (typeof window !== "undefined") {
+    if (hasPersistedRow && typeof window !== "undefined") {
       window.sessionStorage.setItem(POST_ONBOARDING_PROMPT_KEY, "1");
+    } else {
+      setScratchExploreDismissed(true);
     }
     setPostOnboardingDismissed(true);
   };
 
   const dismissIncompleteOnboardingPrompt = () => {
-    if (typeof window !== "undefined") {
+    if (hasPersistedRow && typeof window !== "undefined") {
       window.sessionStorage.setItem(INCOMPLETE_ONBOARDING_PROMPT_KEY, "1");
+    } else {
+      setScratchOnboardingDismissed(true);
     }
     setIncompleteOnboardingDismissed(true);
   };
@@ -239,6 +262,14 @@ export default function PortfolioPageClient() {
     return (
       <div className="relative h-full">
         <PortfolioCreatingOverlay variant={generationOverlayVariant} />
+      </div>
+    );
+  }
+
+  if (phase === "fetching") {
+    return (
+      <div className="relative h-full">
+        <PortfolioCreatingOverlay variant="fetch" />
       </div>
     );
   }

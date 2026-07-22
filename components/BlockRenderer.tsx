@@ -16,7 +16,7 @@ import {
   logPortfolioUploadStart,
   logPortfolioUploadSuccess,
 } from "@/features/portfolio/utils/portfolioUploadLog";
-import { uploadPortfolioFile } from "@/features/portfolio/utils/upload";
+import { MEDIA_CATEGORY, uploadPortfolioFile } from "@/features/portfolio/utils/upload";
 import {
   ExternalLink,
   Link as LinkIcon,
@@ -424,7 +424,7 @@ const BlockRenderer: React.FC<BlockRendererProps> = ({
     setIsUploading(true);
     logPortfolioUploadStart("block-media", file, { blockId: item.id, blockType: item.type });
     try {
-      const uploaded = await uploadPortfolioFile(file);
+      const uploaded = await uploadPortfolioFile(file, MEDIA_CATEGORY.BLOCK_MEDIA);
       const normalizedMediaType: PortfolioItem["mediaType"] =
         uploaded.mediaType === "video" || uploaded.mediaType === "pdf" ? uploaded.mediaType : "image";
 
@@ -461,7 +461,7 @@ const BlockRenderer: React.FC<BlockRendererProps> = ({
     setIsUploading(true);
     logPortfolioUploadStart("canvas-cover", file, { blockId: item.id, blockTitle: item.title });
     try {
-      const uploaded = await uploadPortfolioFile(file);
+      const uploaded = await uploadPortfolioFile(file, MEDIA_CATEGORY.BLOCK_MEDIA);
       onUpdate(item.id, { canvasCover: uploaded.url, showCoverImage: true });
       logPortfolioUploadSuccess("canvas-cover", uploaded.url, { blockId: item.id });
     } catch (error) {

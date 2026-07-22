@@ -92,6 +92,10 @@ export type MediaItem = {
   url: string;
   blob_name: string;
   id?: number;
+  category?: string;
+  /** Third-party (Google/LinkedIn) — shown in library but not deletable. */
+  source?: "upload" | "google" | "linkedin";
+  deletable?: boolean;
 };
 
 export type CurrentSubscription = {

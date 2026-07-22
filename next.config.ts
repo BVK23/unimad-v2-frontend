@@ -2,6 +2,14 @@ import type { NextConfig } from "next";
 
 const nextConfig: NextConfig = {
   compress: false,
+  // Resume PDFs / other FormData Server Actions can exceed the default 1MB cap.
+  // Portfolio media should use GCS signed URLs; this is a safety net for remaining paths.
+  // https://nextjs.org/docs/app/api-reference/config/next-config-js/serverActions#bodysizelimit
+  experimental: {
+    serverActions: {
+      bodySizeLimit: "10mb",
+    },
+  },
   // Turbopack-specific options
   turbopack: {
     root: __dirname,

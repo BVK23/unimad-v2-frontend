@@ -50,7 +50,7 @@ function SigninForm() {
         router.replace("/uniboard/unicoach");
       } else if (masterclassIntent === "video") {
         router.replace("/masterclass?autoplay=1");
-      } else if (from && from.startsWith("/uniboard")) {
+      } else if (from && (from.startsWith("/uniboard") || from.startsWith("/unibot/"))) {
         router.replace(from);
       } else {
         router.replace(resolveUniboardPath(redirect));

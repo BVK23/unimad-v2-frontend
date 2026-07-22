@@ -30,6 +30,11 @@ export function logPortfolioUploadError(context: PortfolioUploadContext, error: 
 
 export function formatPortfolioUploadError(error: unknown, fallback: string): string {
   if (error instanceof UploadError) return error.message;
-  if (error instanceof Error && error.message.trim()) return error.message;
+  if (error instanceof Error && error.message.trim()) {
+    if (/unexpected response was received from the server/i.test(error.message)) {
+      return "Upload failed — the image may be too large. Try a file under 4MB or export as JPG.";
+    }
+    return error.message;
+  }
   return fallback;
 }

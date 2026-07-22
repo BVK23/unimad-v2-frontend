@@ -3,13 +3,15 @@ import type { PdfHighlightMap } from "@/features/adk-chat/adkResumeHighlightDiff
 import { htmlToPlainText } from "@/utils/html-to-text";
 import { Page, View, Text, StyleSheet, Link } from "@react-pdf/renderer";
 import { ResumeData } from "../../../../types";
-import { SECTIONS, isCustomSection } from "../../config/constants";
+import { SECTIONS, isCustomSection, getTemplateConfig } from "../../config/constants";
 import HtmlRenderer from "../../shared/HtmlRenderer";
 import { PdfAdkGutterHighlight } from "../../shared/PdfAdkGutterHighlight";
 import { parseDate as formatDateMonthYear } from "../../shared/dateUtils";
 import { baseStyles } from "../../shared/pdf-base-styles";
 import { deduplicateSectionOrder } from "../../shared/sectionOrderUtils";
 import { getGithubUrl, getLinkedinUrl, getPortfolioUrl } from "../../shared/urlUtils";
+
+const FONT_FAMILY = getTemplateConfig("basic").pdf.fontFamily;
 
 const TOKENS = {
   colors: {
@@ -37,7 +39,7 @@ const styles = StyleSheet.create({
     ...baseStyles.page, // padding:30, bg:#fff, flexDir:col, fontWeight:400
     color: TOKENS.colors.text,
     fontSize: TOKENS.sizes.body,
-    fontFamily: "Onest",
+    fontFamily: FONT_FAMILY,
   },
   header: {
     width: "100%",
@@ -77,6 +79,11 @@ const styles = StyleSheet.create({
   sectionWrapper: {
     display: "flex",
     flexDirection: "column",
+  },
+  entryList: {
+    display: "flex",
+    flexDirection: "column",
+    gap: TOKENS.spacing.lg,
   },
   sectionHeading: {
     display: "flex",
@@ -143,7 +150,7 @@ const Experiences = ({ experiences, highlights }: { experiences: ResumeData["exp
   if (!visibleExperiences.length) return null;
 
   return (
-    <View style={styles.sectionWrapper}>
+    <View style={styles.entryList}>
       {visibleExperiences.map((exp, idx) => (
         <PdfAdkGutterHighlight key={idx} kind={highlights[`experience:${exp.id}`]}>
           <View style={styles.entryWrapper} wrap={false}>
@@ -168,7 +175,7 @@ const Experiences = ({ experiences, highlights }: { experiences: ResumeData["exp
                   style={{
                     fontSize: 9,
                     lineHeight: 1.4,
-                    fontFamily: "Onest",
+                    fontFamily: FONT_FAMILY,
                     color: TOKENS.colors.text,
                   }}
                 />
@@ -186,7 +193,7 @@ const Educations = ({ educations, highlights }: { educations: ResumeData["educat
   if (!visibleEducations.length) return null;
 
   return (
-    <View style={styles.sectionWrapper}>
+    <View style={styles.entryList}>
       {visibleEducations.map((edu, idx) => (
         <PdfAdkGutterHighlight key={idx} kind={highlights[`education:${edu.id}`]}>
           <View style={styles.entryWrapper} wrap={false}>
@@ -210,7 +217,7 @@ const Educations = ({ educations, highlights }: { educations: ResumeData["educat
                   style={{
                     fontSize: 9,
                     lineHeight: 1.4,
-                    fontFamily: "Onest",
+                    fontFamily: FONT_FAMILY,
                     color: TOKENS.colors.text,
                   }}
                 />
@@ -228,7 +235,7 @@ const Projects = ({ projects, highlights }: { projects: ResumeData["projects"]; 
   if (!visibleProjects.length) return null;
 
   return (
-    <View style={styles.sectionWrapper}>
+    <View style={styles.entryList}>
       {visibleProjects.map((project, idx) => (
         <PdfAdkGutterHighlight key={idx} kind={highlights[`projects:${project.id}`]}>
           <View style={styles.entryWrapper} wrap={false}>
@@ -250,7 +257,7 @@ const Projects = ({ projects, highlights }: { projects: ResumeData["projects"]; 
                   style={{
                     fontSize: 9,
                     lineHeight: 1.4,
-                    fontFamily: "Onest",
+                    fontFamily: FONT_FAMILY,
                     color: TOKENS.colors.text,
                   }}
                 />
@@ -314,7 +321,7 @@ const Certifications = ({ certifications, highlights }: { certifications: Resume
                   style={{
                     fontSize: 9,
                     lineHeight: 1.4,
-                    fontFamily: "Onest",
+                    fontFamily: FONT_FAMILY,
                     color: TOKENS.colors.text,
                   }}
                 />
@@ -418,7 +425,7 @@ const SectionRenderer = ({ resume, type, highlights }: { resume: ResumeData; typ
                       style={{
                         fontSize: 9,
                         lineHeight: 1.4,
-                        fontFamily: "Onest",
+                        fontFamily: FONT_FAMILY,
                         color: TOKENS.colors.text,
                       }}
                     />
@@ -446,7 +453,7 @@ const SectionRenderer = ({ resume, type, highlights }: { resume: ResumeData; typ
                   style={{
                     fontSize: 9,
                     lineHeight: 1.4,
-                    fontFamily: "Onest",
+                    fontFamily: FONT_FAMILY,
                     color: TOKENS.colors.text,
                   }}
                 />

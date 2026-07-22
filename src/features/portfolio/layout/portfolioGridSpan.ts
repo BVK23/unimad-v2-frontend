@@ -45,6 +45,11 @@ export const getBlendedHeightPx = (
   const measured = contentHeights[item.id] ?? 0;
   const stored = item.height;
   const manualFloor = item.heightUserSet === true;
+
+  if (manualFloor && stored) {
+    return Math.max(DEFAULT_BLEND_MIN_HEIGHT_PX, stored, measured);
+  }
+
   const titleOnlyHeading = item.type === "text" && isTitleOnlyTextItem(item);
   const contentOnlyBody = item.type === "text" && isContentOnlyTextItem(item);
   const headingEstimate = titleOnlyHeading ? estimateTitleOnlyTextLayoutHeightPx(item) : 0;
@@ -106,7 +111,8 @@ export const getRowSpanForPortfolioItem = (
   }
 
   const measuredHeight = contentHeights[item.id];
-  const heightPx = measuredHeight ?? item.height ?? DEFAULT_ITEM_HEIGHT_PX;
+  const heightPx =
+    item.heightUserSet === true && item.height != null ? item.height : (measuredHeight ?? item.height ?? DEFAULT_ITEM_HEIGHT_PX);
   const minRows = ["text", "table", "page-card", "link-box"].includes(item.type) ? 3 : 8;
   const rowUnit = gridMetrics.rowHeight + gridMetrics.rowGap;
   const span = Math.ceil((heightPx + gridMetrics.rowGap) / Math.max(1, rowUnit));

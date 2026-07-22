@@ -154,5 +154,5 @@ export async function proxy(request: NextRequest) {
 }
 
 export const config = {
-  matcher: ["/uniboard/:path*", "/api/:path*", "/onboarding/:path*"],
+  matcher: ["/uniboard/:path*", "/unibot/:path*", "/api/:path*", "/onboarding/:path*"],
 };

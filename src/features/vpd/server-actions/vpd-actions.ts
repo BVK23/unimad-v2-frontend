@@ -209,26 +209,51 @@ export async function duplicateVpd(vpdId: string, isDuplicatingTemplate = false)
 /**
  * Persist VPD title / cover / editor_content.
  * POST /api/vpd/update/
+ * Returns a result object so Next production does not digest/mask thrown Server Action errors.
  */
-export async function updateVpdContent(vpdId: string, content: VpdUpdateContent): Promise<VpdApiData> {
-  const res = await authedFetch("/api/vpd/update/", {
-    method: "POST",
-    body: JSON.stringify({
-      id: vpdId,
-      content,
-    }),
-  });
-  const data = (await res.json().catch(() => ({}))) as {
-    asset_data?: VpdApiData;
-    error?: string;
-  };
-  if (!res.ok) {
-    throw new Error(data.error ?? "Failed to update VPD");
+export type UpdateVpdContentResult = { ok: true; data: VpdApiData } | { ok: false; error: string };
+
+export async function updateVpdContent(vpdId: string, content: VpdUpdateContent): Promise<UpdateVpdContentResult> {
+  try {
+    const safeContent: VpdUpdateContent = {
+      ...content,
+      title: (content.title || "").trim().slice(0, 120) || "Value Proposition Document",
+    };
+    const res = await authedFetch("/api/vpd/update/", {
+      method: "POST",
+      body: JSON.stringify({
+        id: vpdId,
+        content: safeContent,
+      }),
+    });
+    const bodyText = await res.text();
+    let data: { asset_data?: VpdApiData; error?: string } = {};
+    try {
+      data = JSON.parse(bodyText) as typeof data;
+    } catch {
+      // non-JSON
+    }
+    if (!res.ok) {
+      const { messageFromFailedResponse, sanitizeUserFacingError, logSanitizedError } =
+        await import("@/utils/message-from-failed-response");
+      logSanitizedError("vpd-update", data.error ?? bodyText, { vpdId, status: res.status });
+      return {
+        ok: false,
+        error: sanitizeUserFacingError(
+          messageFromFailedResponse(res.status, bodyText, data.error),
+          "Could not save your VPD. Please try again."
+        ),
+      };
+    }
+    if (!data.asset_data) {
+      return { ok: false, error: "Could not save your VPD. Please try again." };
+    }
+    return { ok: true, data: data.asset_data };
+  } catch (error) {
+    const { sanitizeUserFacingError, logSanitizedError } = await import("@/utils/message-from-failed-response");
+    logSanitizedError("vpd-update", error, { vpdId });
+    return { ok: false, error: sanitizeUserFacingError("", "Could not save your VPD. Please try again.") };
   }
-  if (!data.asset_data) {
-    throw new Error("VPD update returned no data");
-  }
-  return data.asset_data;
 }
 
 export type PublishVpdResult = { ok: true; slug: string } | { ok: false; error: string; error_code?: string };

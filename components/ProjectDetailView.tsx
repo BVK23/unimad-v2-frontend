@@ -1,5 +1,7 @@
 import React, { useEffect, useState, useRef, type SetStateAction } from "react";
+import { HeroMediaPickerDialog } from "@/components/shared/HeroMediaPickerDialog";
 import type { PortfolioHighlightMap } from "@/features/adk-chat/adkPortfolioHighlightDiff";
+import { optimisticDeleteMedia } from "@/features/media/utils/optimistic-delete-media";
 import { getPortfolioBlockDeleteLabel } from "@/features/portfolio/utils/getPortfolioBlockDeleteLabel";
 import { isReadOnlyPortfolioBlockVisible } from "@/features/portfolio/utils/isReadOnlyPortfolioBlockVisible";
 import {
@@ -13,7 +15,9 @@ import {
   logPortfolioUploadStart,
   logPortfolioUploadSuccess,
 } from "@/features/portfolio/utils/portfolioUploadLog";
-import { uploadPortfolioFile } from "@/features/portfolio/utils/upload";
+import { MEDIA_CATEGORY, uploadPortfolioFile } from "@/features/portfolio/utils/upload";
+import { VPD_TITLE_MAX_CHARS } from "@/features/vpd/constants/title";
+import { htmlToPlainText } from "@/utils/html-to-text";
 import {
   ArrowLeft,
   Trash2,
@@ -112,6 +116,7 @@ const ProjectDetailView: React.FC<ProjectDetailViewProps> = ({
   const [isCoverUploading, setIsCoverUploading] = useState(false);
   const [isIconUploading, setIsIconUploading] = useState(false);
   const [isRepositioningCover, setIsRepositioningCover] = useState(false);
+  const [coverPickerOpen, setCoverPickerOpen] = useState(false);
   const [tempCoverPos, setTempCoverPos] = useState<{ x: number; y: number }>(() => project.coverPosition ?? { x: 50, y: 50 });
   const [inlineInserterIndex, setInlineInserterIndex] = useState<number | null>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
@@ -268,7 +273,7 @@ const ProjectDetailView: React.FC<ProjectDetailViewProps> = ({
     setIsIconUploading(true);
     logPortfolioUploadStart("page-icon", file, { pageId: project.id, pageTitle: project.title });
     try {
-      const uploaded = await uploadPortfolioFile(file);
+      const uploaded = await uploadPortfolioFile(file, MEDIA_CATEGORY.DOCUMENT_ICON);
       onUpdateProject({ ...project, iconUrl: uploaded.url });
       logPortfolioUploadSuccess("page-icon", uploaded.url, { pageId: project.id });
     } catch (error) {
@@ -304,6 +309,12 @@ const ProjectDetailView: React.FC<ProjectDetailViewProps> = ({
 
   const handleConfirmDeleteBlock = () => {
     if (!pendingDeleteBlockId) return;
+    const block = blocks.find(b => b.id === pendingDeleteBlockId);
+    if (block) {
+      for (const url of [block.content, block.canvasCover, block.iconUrl]) {
+        if (typeof url === "string" && url.trim()) optimisticDeleteMedia(url);
+      }
+    }
     handleRemoveBlock(pendingDeleteBlockId);
     setPendingDeleteBlockId(null);
   };
@@ -399,7 +410,7 @@ const ProjectDetailView: React.FC<ProjectDetailViewProps> = ({
     setIsCoverUploading(true);
     logPortfolioUploadStart("page-cover", file, { pageId: project.id, pageTitle: project.title });
     try {
-      const uploaded = await uploadPortfolioFile(file);
+      const uploaded = await uploadPortfolioFile(file, MEDIA_CATEGORY.COVER_PICTURE);
       const initialPos = { x: 50, y: 50 };
       onUpdateProject({
         ...project,
@@ -683,7 +694,7 @@ const ProjectDetailView: React.FC<ProjectDetailViewProps> = ({
                 <div className="absolute inset-0 z-10 hidden items-center justify-center gap-4 bg-black/40 backdrop-blur-sm transition-all group-hover/hero:flex">
                   <button
                     type="button"
-                    onClick={() => fileInputRef.current?.click()}
+                    onClick={() => setCoverPickerOpen(true)}
                     disabled={isCoverUploading}
                     className="rounded-full bg-white px-6 py-2 text-sm font-medium text-slate-900 shadow-xl transition-transform hover:scale-105 active:scale-95 disabled:opacity-60"
                   >
@@ -765,7 +776,10 @@ const ProjectDetailView: React.FC<ProjectDetailViewProps> = ({
                         </button>
                         <button
                           type="button"
-                          onClick={() => onUpdateProject({ ...project, iconUrl: "" })}
+                          onClick={() => {
+                            if (project.iconUrl) optimisticDeleteMedia(project.iconUrl);
+                            onUpdateProject({ ...project, iconUrl: "" });
+                          }}
                           className="inline-flex h-8 w-8 items-center justify-center rounded-full bg-red-500 text-white shadow-sm transition-transform hover:scale-105"
                           title="Remove icon"
                           aria-label="Remove icon"
@@ -800,7 +814,10 @@ const ProjectDetailView: React.FC<ProjectDetailViewProps> = ({
                       ? project.title || ""
                       : wrapPortfolioTitleWithHeadingLevel(project.title || "", "h2")
                   )}
-                  onChange={value => onUpdateProject({ ...project, title: value })}
+                  onChange={value => {
+                    if (htmlToPlainText(value).length > VPD_TITLE_MAX_CHARS) return;
+                    onUpdateProject({ ...project, title: value });
+                  }}
                   className={`block w-full bg-transparent outline-none placeholder:text-slate-400 ${PAGE_BANNER_TITLE_CLASSES}`}
                   placeholder="Page Title"
                   {...selectionEditorProps}
@@ -840,7 +857,8 @@ const ProjectDetailView: React.FC<ProjectDetailViewProps> = ({
           {isEditMode && (
             <div className="absolute right-6 top-6 z-30 opacity-0 transition-opacity group-hover/hero:opacity-100">
               <button
-                onClick={() => fileInputRef.current?.click()}
+                type="button"
+                onClick={() => setCoverPickerOpen(true)}
                 disabled={isCoverUploading}
                 className="rounded-full border border-slate-200 bg-white/90 px-5 py-2 text-xs font-bold text-slate-900 shadow-xl backdrop-blur transition-all hover:scale-105 hover:bg-white active:scale-95"
               >
@@ -1082,6 +1100,26 @@ const ProjectDetailView: React.FC<ProjectDetailViewProps> = ({
           onConfirm={handleConfirmDeleteBlock}
         />
       )}
+      <HeroMediaPickerDialog
+        open={coverPickerOpen}
+        onClose={() => setCoverPickerOpen(false)}
+        kind="cover-picture"
+        currentUrl={project.content}
+        onSelectUrl={url => {
+          const initialPos = project.coverPosition ?? { x: 50, y: 50 };
+          onUpdateProject({
+            ...project,
+            content: url,
+            showCoverImage: true,
+            coverPosition: initialPos,
+          });
+          if (useBannerCover) {
+            coverRepositionBaselineRef.current = initialPos;
+            setTempCoverPos(initialPos);
+            setIsRepositioningCover(true);
+          }
+        }}
+      />
     </div>
   );
 };

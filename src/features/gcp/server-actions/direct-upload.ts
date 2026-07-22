@@ -126,7 +126,15 @@ export const finalizeDirectUpload = async (
     });
 
     if (!metadataResponse.ok) {
-      console.warn("Failed to save metadata to backend");
+      console.error("Failed to save metadata to backend", {
+        status: metadataResponse.status,
+        filename: finalizeResult.filename,
+        category,
+      });
+      return {
+        success: false,
+        error: "Upload completed but we could not save it to your media library. Please try again.",
+      };
     }
 
     return {

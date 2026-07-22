@@ -2,6 +2,7 @@ import { mapBackendPortfolioToFrontend, mapFrontendPortfolioToBackend } from "@/
 import { NEW_PORTFOLIO_DRAFT_ID, isPersistedPortfolioId } from "@/features/portfolio/constants/portfolioDraft";
 import { updatePortfolioContent } from "@/features/portfolio/server-actions/portfolio-actions";
 import { usePortfolioStore } from "@/features/portfolio/store/usePortfolioStore";
+import { mergeSavedPortfolioLayout } from "@/features/portfolio/utils/mergePortfolioLayoutAfterSave";
 import type { PortfolioData } from "@/types";
 import { useMutation, useQueryClient } from "@tanstack/react-query";
 import { setLivePortfolioQueryData } from "./usePortfolio";
@@ -51,7 +52,8 @@ export function useUpdatePortfolio() {
       };
     },
     onSuccess: (result, variables) => {
-      const mergedPortfolio = mergeSavedCoverPosition(variables, result.portfolio);
+      const withLayout = mergeSavedPortfolioLayout(variables, result.portfolio);
+      const mergedPortfolio = mergeSavedCoverPosition(variables, withLayout);
 
       if (!mergedPortfolio?.profile) {
         console.error("[portfolio-save] backend response missing profile", {

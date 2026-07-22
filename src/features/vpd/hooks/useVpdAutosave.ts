@@ -123,7 +123,16 @@ export function useVpdAutosave(project: PortfolioItem, options?: UseVpdAutosaveO
       setActiveSaveSource(source);
 
       try {
-        await updateVpdContent(String(dataToSave.id), mapStudioProjectToVpdUpdateContent(dataToSave));
+        const result = await updateVpdContent(String(dataToSave.id), mapStudioProjectToVpdUpdateContent(dataToSave));
+        if (!result.ok) {
+          console.error("[vpd-autosave] save failed", {
+            vpdId: persistedId,
+            source,
+            message: result.error,
+          });
+          setLastSaveError({ message: result.error, nonce: Date.now() });
+          return;
+        }
         setLastSaveError(null);
         setLastAcknowledgedSnapshot(snapshotAtStart);
         onPersistedRef.current?.();
@@ -134,14 +143,12 @@ export function useVpdAutosave(project: PortfolioItem, options?: UseVpdAutosaveO
           queuedSaveRef.current = true;
         }
       } catch (error) {
-        const message = error instanceof Error ? error.message : "Failed to save VPD";
-        console.error("[vpd-autosave] save failed", {
-          vpdId: persistedId,
-          source,
-          message,
-          error,
+        const { sanitizeUserFacingError, logSanitizedError } = await import("@/utils/message-from-failed-response");
+        logSanitizedError("vpd-autosave", error, { vpdId: persistedId, source });
+        setLastSaveError({
+          message: sanitizeUserFacingError(error instanceof Error ? error.message : "", "Could not save your VPD. Please try again."),
+          nonce: Date.now(),
         });
-        setLastSaveError({ message, nonce: Date.now() });
       } finally {
         saveInFlightRef.current = false;
         setIsSavingRemote(false);

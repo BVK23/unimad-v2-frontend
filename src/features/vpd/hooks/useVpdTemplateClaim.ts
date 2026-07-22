@@ -95,13 +95,17 @@ export function useVpdTemplateClaim(project: PortfolioItem, options?: UseVpdTemp
         id: duplicated.id,
         title: nextTitle,
       };
-      await updateVpdContent(duplicated.id, mapStudioProjectToVpdUpdateContent(nextProject));
+      const updateResult = await updateVpdContent(duplicated.id, mapStudioProjectToVpdUpdateContent(nextProject));
+      if (!updateResult.ok) {
+        throw new Error(updateResult.error);
+      }
       setShowModal(false);
       setShowBanner(false);
       setPromptOffered(true);
       onClaimedRef.current?.({ id: duplicated.id, title: nextTitle, project: nextProject });
     } catch (error) {
-      const message = error instanceof Error ? error.message : "Failed to save as your VPD";
+      const { sanitizeUserFacingError } = await import("@/utils/message-from-failed-response");
+      const message = sanitizeUserFacingError(error instanceof Error ? error.message : "", "Failed to save as your VPD");
       setClaimError(message);
       setShowModal(true);
       setShowBanner(false);

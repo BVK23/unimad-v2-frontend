@@ -77,6 +77,7 @@ import type { CoverLetterAsset } from "@/features/cover-letter/types";
 import { MIN_LINKEDIN_POST_CHARS, LINKEDIN_POST_TOO_SHORT_MESSAGE } from "@/features/linkedin/constants";
 import { useLinkedInAnalysis } from "@/features/linkedin/hooks/useLinkedInAnalysis";
 import { resolveLinkedInPublishAccess } from "@/features/linkedin/utils/linkedinPublishAccess";
+import { optimisticDeleteMedia } from "@/features/media/utils/optimistic-delete-media";
 import { useOnboardingGate } from "@/features/onboarding/context/OnboardingGateContext";
 import { useReferralHistory, useGenerateReferral, type GenerateReferralResult } from "@/features/referral/hooks";
 import { REFERRAL_LIST_QUERY_KEY } from "@/features/referral/hooks/useReferralHistory";
@@ -3499,6 +3500,7 @@ const StudioMainV2: React.FC<StudioMainProps> = ({ initialContext, initialAssetI
       if (!linkedinPostAssetId) return;
       const nextImages = linkedinImages.filter(item => item !== url);
       setLinkedinImages(nextImages);
+      optimisticDeleteMedia(url);
       try {
         const saveResult = await updateContentGenAsset({ id: linkedinPostAssetId, images: nextImages });
         if (!saveResult.success) {
