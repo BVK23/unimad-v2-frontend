@@ -1,16 +1,17 @@
 import React, { useEffect, useMemo, useRef, useState } from "react";
 import JobUrlImportLoading from "@/components/jobs/JobUrlImportLoading";
+import GenerateBaseResumeModal from "@/components/resume/GenerateBaseResumeModal";
 import { ResumeCardSkeletonStyles, ResumeCardsLoadingSkeletons } from "@/components/resume/ResumeCardSkeleton";
 import ResumeDashboardCard from "@/components/resume/ResumeDashboardCard";
 import ResumeFlowErrorAlert from "@/components/resume/ResumeFlowErrorAlert";
 import ResumeGenerationOverlay from "@/components/resume/ResumeGenerationOverlay";
 import { ModalPortalOverlay } from "@/components/ui/ModalPortalOverlay";
 import { OnboardingGateTooltip } from "@/components/ui/OnboardingGateTooltip";
-import { FINISH_ONBOARDING_CTA } from "@/constants/onboarding-tooltips";
 import { importJobFromUrl } from "@/features/jobs/server-actions/jobs-actions";
 import { useOnboardingGate } from "@/features/onboarding/context/OnboardingGateContext";
 import { ONBOARDING_ROUTE } from "@/features/onboarding/featureGates";
 import { mapBackendResumeToFrontend } from "@/features/resume/api/mappers";
+import { dismissPostOnboardingGenerateResumePrompt } from "@/features/resume/constants/resumeOnboardingPrompt";
 import { resumesListQueryKey, useResumesList } from "@/features/resume/hooks/useResumesList";
 import { useUpdateResume } from "@/features/resume/hooks/useUpdateResume";
 import {
@@ -42,9 +43,11 @@ const isResumePdfFile = (file: File): boolean => {
 interface ResumeDashboardProps {
   onEditResume: (resume: ResumeData) => void;
   onCreateResume: (type: "scratch" | "jd" | "upload", resumeId?: string) => void | Promise<void>;
+  /** When true, show generate-first-resume modal if user has no resumes (fully onboarded). */
+  showBootstrapGeneratePrompt?: boolean;
 }
 
-const ResumeDashboard: React.FC<ResumeDashboardProps> = ({ onEditResume, onCreateResume }) => {
+const ResumeDashboard: React.FC<ResumeDashboardProps> = ({ onEditResume, onCreateResume, showBootstrapGeneratePrompt = false }) => {
   const queryClient = useQueryClient();
   const router = useRouter();
   const { featureGates } = useOnboardingGate();
@@ -92,7 +95,9 @@ const ResumeDashboard: React.FC<ResumeDashboardProps> = ({ onEditResume, onCreat
   const [isUploadDragOver, setIsUploadDragOver] = useState(false);
   const [newlyDuplicatedResumeId, setNewlyDuplicatedResumeId] = useState<string | null>(null);
   const [duplicateToastMessage, setDuplicateToastMessage] = useState<string | null>(null);
-  const isCreateFlowBusy = isGenerating || isUploadingFromFile || isImporting;
+  const [showBootstrapGenerateModal, setShowBootstrapGenerateModal] = useState(false);
+  const [isBootstrapGenerating, setIsBootstrapGenerating] = useState(false);
+  const isCreateFlowBusy = isGenerating || isUploadingFromFile || isImporting || isBootstrapGenerating;
   const scrollContainerRef = useRef<HTMLDivElement>(null);
   const uploadInputRef = useRef<HTMLInputElement>(null);
   const cardRefs = useRef<Map<string, HTMLDivElement>>(new Map());
@@ -101,6 +106,37 @@ const ResumeDashboard: React.FC<ResumeDashboardProps> = ({ onEditResume, onCreat
   const resumeVersionMetadata = useMemo(() => buildResumeVersionMetadata(resumes), [resumes]);
   const sortedResumes = useMemo(() => [...resumes].sort((a, b) => b.lastModified.getTime() - a.lastModified.getTime()), [resumes]);
   const hasBaseResume = useMemo(() => resumes.some(resume => resume.isBase), [resumes]);
+
+  useEffect(() => {
+    if (!showBootstrapGeneratePrompt || isLoading) return;
+    if (resumes.length > 0) {
+      setShowBootstrapGenerateModal(false);
+      return;
+    }
+    setShowBootstrapGenerateModal(true);
+  }, [isLoading, resumes.length, showBootstrapGeneratePrompt]);
+
+  const handleBootstrapGenerate = async () => {
+    setIsBootstrapGenerating(true);
+    try {
+      const result = await generateResume();
+      if (!result.ok) {
+        setBaseStatusType("error");
+        setBaseStatusMessage(result.message ?? "Failed to generate resume");
+        return;
+      }
+      if (!result.id) return;
+      dismissPostOnboardingGenerateResumePrompt();
+      setShowBootstrapGenerateModal(false);
+      await queryClient.invalidateQueries({ queryKey: ["resumes"] });
+      await onCreateResume("scratch", String(result.id));
+    } catch (err) {
+      setBaseStatusType("error");
+      setBaseStatusMessage(err instanceof Error ? err.message : "Failed to generate resume");
+    } finally {
+      setIsBootstrapGenerating(false);
+    }
+  };
 
   const handleSetCardRef = (id: string, element: HTMLDivElement | null) => {
     if (element) {
@@ -1139,6 +1175,21 @@ const ResumeDashboard: React.FC<ResumeDashboardProps> = ({ onEditResume, onCreat
           </div>
         </div>
       )}
+
+      <GenerateBaseResumeModal
+        open={showBootstrapGenerateModal && !isLoading}
+        busy={isBootstrapGenerating}
+        onDismiss={() => setShowBootstrapGenerateModal(false)}
+        onGenerate={() => void handleBootstrapGenerate()}
+      />
+
+      {isBootstrapGenerating ? (
+        <div className="fixed inset-0 z-[60] flex items-center justify-center bg-slate-900/30 backdrop-blur-[2px]">
+          <div className="relative h-48 w-full max-w-lg overflow-hidden rounded-2xl bg-white shadow-2xl dark:bg-slate-900">
+            <ResumeGenerationOverlay variant="bootstrap" />
+          </div>
+        </div>
+      ) : null}
     </div>
   );
 };

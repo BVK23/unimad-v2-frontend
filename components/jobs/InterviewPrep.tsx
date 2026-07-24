@@ -16,6 +16,8 @@ import type {
   InterviewQuestion,
   InterviewRoundType,
   InterviewSessionMode,
+  VoiceLiveUsage,
+  VoiceTranscriptEntry,
 } from "@/src/features/interview-prep/types";
 import type { InterviewView } from "@/src/features/jobs/jobs-url";
 import { Mic, Bot, Calendar, Clock, Trash2, Loader2 } from "lucide-react";
@@ -211,7 +213,7 @@ const InterviewPrep: React.FC<InterviewPrepProps> = ({
     });
   }, [autoStart, initialContext, handleStart, onAutoStartConsumed]);
 
-  const handleVoiceEnd = async (transcript: { role: "user" | "model"; text: string; timestamp?: number }[]) => {
+  const handleVoiceEnd = async (transcript: VoiceTranscriptEntry[], usage?: VoiceLiveUsage) => {
     navigate({ view: "analyzing", setup: null });
     setIsAnalyzing(true);
     try {
@@ -225,6 +227,7 @@ const InterviewPrep: React.FC<InterviewPrepProps> = ({
           roundType,
           interviewId: interviewId ?? undefined,
         },
+        usage,
       });
       setReportInterviewId(result.interview_id);
       setReportRoundType(result.round_type);

@@ -2,10 +2,20 @@
 
 import React, { useCallback, useEffect, useRef, useState } from "react";
 import { ModalPortalOverlay } from "@/components/ui/ModalPortalOverlay";
-import { saveInterviewAnswer } from "@/src/features/interview-prep/server-actions/interview-actions";
+import { recordInterviewUsage, saveInterviewAnswer } from "@/src/features/interview-prep/server-actions/interview-actions";
 import type { InterviewQuestion, InterviewRoundType } from "@/src/features/interview-prep/types";
 import { Mic, MicOff, SkipForward } from "lucide-react";
 import InterviewAnalyzingView from "./InterviewAnalyzingView";
+import { decodeBase64, pcmToAudioBuffer } from "./audio-utils";
+import {
+  cancelBrowserSynthesis,
+  fetchGeminiApiKey,
+  GEMINI_TTS_MODEL,
+  GEMINI_TTS_SAMPLE_RATE,
+  generateGeminiTtsAudio,
+  speakWithBrowserSynthesis,
+  type TtsUsage,
+} from "./geminiTts";
 
 interface InterviewActiveSessionProps {
   interviewId: string;
@@ -17,6 +27,13 @@ interface InterviewActiveSessionProps {
   onEnd: () => void;
   onComplete: (interviewId: string) => void;
 }
+
+const EMPTY_USAGE: TtsUsage = {
+  promptTokens: 0,
+  completionTokens: 0,
+  thinkingTokens: 0,
+  totalTokens: 0,
+};
 
 const InterviewActiveSession: React.FC<InterviewActiveSessionProps> = ({
   interviewId,
@@ -38,40 +55,133 @@ const InterviewActiveSession: React.FC<InterviewActiveSessionProps> = ({
 
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const recognitionRef = useRef<any>(null);
-  const synthRef = useRef<SpeechSynthesis | null>(null);
   const speakTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const apiKeyRef = useRef<string | null>(null);
+  const audioCtxRef = useRef<AudioContext | null>(null);
+  const activeSourcesRef = useRef<Set<AudioBufferSourceNode>>(new Set());
+  const speakGenerationRef = useRef(0);
+  const ttsUsageRef = useRef<TtsUsage>({ ...EMPTY_USAGE });
+  const usageReportedRef = useRef(false);
 
   const currentQuestion = questions[currentIndex];
 
-  const speakQuestion = useCallback((text: string) => {
-    if (!synthRef.current) return;
-    synthRef.current.cancel();
-    const utterance = new SpeechSynthesisUtterance(text);
-    utterance.rate = 1;
-    synthRef.current.speak(utterance);
+  const stopGeminiAudio = useCallback(() => {
+    activeSourcesRef.current.forEach(source => {
+      try {
+        source.stop();
+      } catch {
+        /* already stopped */
+      }
+    });
+    activeSourcesRef.current.clear();
   }, []);
 
+  const reportAccumulatedUsage = useCallback(() => {
+    if (usageReportedRef.current) return;
+    const usage = ttsUsageRef.current;
+    if (usage.totalTokens <= 0 && usage.promptTokens <= 0 && usage.completionTokens <= 0) return;
+    usageReportedRef.current = true;
+    void recordInterviewUsage({
+      interviewId,
+      modelId: GEMINI_TTS_MODEL,
+      promptTokens: usage.promptTokens,
+      completionTokens: usage.completionTokens,
+      thinkingTokens: usage.thinkingTokens,
+      totalTokens: usage.totalTokens,
+      kind: "tts",
+      roundType,
+    }).catch(() => {
+      /* best-effort ledger */
+    });
+  }, [interviewId, roundType]);
+
+  const speakQuestion = useCallback(
+    async (text: string) => {
+      const generation = ++speakGenerationRef.current;
+      stopGeminiAudio();
+      cancelBrowserSynthesis();
+
+      const playPcm = async (audioBase64: string) => {
+        if (generation !== speakGenerationRef.current) return;
+
+        const AudioContextClass =
+          window.AudioContext || (window as unknown as { webkitAudioContext: typeof AudioContext }).webkitAudioContext;
+        let ctx = audioCtxRef.current;
+        if (!ctx || ctx.state === "closed") {
+          ctx = new AudioContextClass({ sampleRate: GEMINI_TTS_SAMPLE_RATE });
+          audioCtxRef.current = ctx;
+        }
+        if (ctx.state === "suspended") await ctx.resume();
+        if (generation !== speakGenerationRef.current) return;
+
+        const audioBuffer = await pcmToAudioBuffer(decodeBase64(audioBase64), ctx, GEMINI_TTS_SAMPLE_RATE);
+        if (generation !== speakGenerationRef.current) return;
+
+        const source = ctx.createBufferSource();
+        source.buffer = audioBuffer;
+        source.connect(ctx.destination);
+        source.onended = () => {
+          activeSourcesRef.current.delete(source);
+        };
+        source.start(0);
+        activeSourcesRef.current.add(source);
+      };
+
+      try {
+        let apiKey = apiKeyRef.current;
+        if (!apiKey) {
+          apiKey = await fetchGeminiApiKey();
+          apiKeyRef.current = apiKey;
+        }
+        if (generation !== speakGenerationRef.current) return;
+
+        const { audioBase64, usage } = await generateGeminiTtsAudio(apiKey, text);
+        if (generation !== speakGenerationRef.current) return;
+
+        ttsUsageRef.current = {
+          promptTokens: ttsUsageRef.current.promptTokens + usage.promptTokens,
+          completionTokens: ttsUsageRef.current.completionTokens + usage.completionTokens,
+          thinkingTokens: ttsUsageRef.current.thinkingTokens + usage.thinkingTokens,
+          totalTokens: ttsUsageRef.current.totalTokens + usage.totalTokens,
+        };
+
+        await playPcm(audioBase64);
+      } catch {
+        if (generation !== speakGenerationRef.current) return;
+        speakWithBrowserSynthesis(text);
+      }
+    },
+    [stopGeminiAudio]
+  );
+
   const stopSessionAudio = useCallback(() => {
+    speakGenerationRef.current += 1;
     if (speakTimeoutRef.current) {
       clearTimeout(speakTimeoutRef.current);
       speakTimeoutRef.current = null;
     }
-    synthRef.current?.cancel();
-    if (typeof window !== "undefined") {
-      window.speechSynthesis?.cancel();
-    }
+    stopGeminiAudio();
+    cancelBrowserSynthesis();
     recognitionRef.current?.stop();
     setIsListening(false);
-  }, []);
+  }, [stopGeminiAudio]);
 
   const handleEnd = () => {
     stopSessionAudio();
+    reportAccumulatedUsage();
     onEnd();
   };
 
   useEffect(() => {
     if (typeof window === "undefined") return;
-    synthRef.current = window.speechSynthesis;
+
+    void fetchGeminiApiKey()
+      .then(key => {
+        apiKeyRef.current = key;
+      })
+      .catch(() => {
+        /* browser TTS fallback still works */
+      });
 
     type SpeechRecognitionCtor = new () => {
       continuous: boolean;
@@ -86,7 +196,10 @@ const InterviewActiveSession: React.FC<InterviewActiveSessionProps> = ({
       onend: (() => void) | null;
     };
 
-    const win = window as Window & { webkitSpeechRecognition?: SpeechRecognitionCtor; SpeechRecognition?: SpeechRecognitionCtor };
+    const win = window as Window & {
+      webkitSpeechRecognition?: SpeechRecognitionCtor;
+      SpeechRecognition?: SpeechRecognitionCtor;
+    };
     const SpeechRecognitionCtor = win.SpeechRecognition ?? win.webkitSpeechRecognition;
 
     if (SpeechRecognitionCtor) {
@@ -120,7 +233,7 @@ const InterviewActiveSession: React.FC<InterviewActiveSessionProps> = ({
     const startIndex = Math.min(Math.max(initialQuestionIndex, 0), Math.max(questions.length - 1, 0));
     speakTimeoutRef.current = setTimeout(() => {
       speakTimeoutRef.current = null;
-      if (questions[startIndex]) speakQuestion(questions[startIndex].question);
+      if (questions[startIndex]) void speakQuestion(questions[startIndex].question);
     }, 400);
 
     return () => {
@@ -134,8 +247,11 @@ const InterviewActiveSession: React.FC<InterviewActiveSessionProps> = ({
   useEffect(() => {
     return () => {
       stopSessionAudio();
+      reportAccumulatedUsage();
+      void audioCtxRef.current?.close().catch(() => {});
+      audioCtxRef.current = null;
     };
-  }, [stopSessionAudio]);
+  }, [stopSessionAudio, reportAccumulatedUsage]);
 
   const toggleMic = () => {
     if (!recognitionRef.current) {
@@ -179,6 +295,7 @@ const InterviewActiveSession: React.FC<InterviewActiveSessionProps> = ({
       });
 
       if (isLast) {
+        reportAccumulatedUsage();
         onComplete(interviewId);
         return;
       }
@@ -189,7 +306,7 @@ const InterviewActiveSession: React.FC<InterviewActiveSessionProps> = ({
       setInterimTranscript("");
       speakTimeoutRef.current = setTimeout(() => {
         speakTimeoutRef.current = null;
-        speakQuestion(questions[nextIndex].question);
+        void speakQuestion(questions[nextIndex].question);
       }, 400);
     } catch (e) {
       if (isLast) setIsAnalyzing(false);

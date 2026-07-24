@@ -24,7 +24,7 @@ type OnboardingTestPanelProps = {
 const PRESETS: { id: OnboardingTestPreset; label: string; hint: string }[] = [
   { id: "blank", label: "Blank", hint: "Empty answers, welcome step" },
   { id: "explorer", label: "Explorer", hint: "just_exploring only, skips niche and enters app" },
-  { id: "job_seeker", label: "Job seeker", hint: "Full path, at personalize opt-in" },
+  { id: "job_seeker", label: "Job seeker", hint: "Full path, at resume upload" },
   { id: "post_niche", label: "Post-niche", hint: "Resume path done, at strengths (no picks yet)" },
   { id: "personalized", label: "Personalized", hint: "Tier 3 answers filled — jump to any late step" },
   { id: "existing_user", label: "Existing user", hint: "No intent answers yet — simulates backfill" },

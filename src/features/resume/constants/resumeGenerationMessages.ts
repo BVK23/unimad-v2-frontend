@@ -1,4 +1,4 @@
-export type ResumeGenerationMessageVariant = "jd" | "upload";
+export type ResumeGenerationMessageVariant = "jd" | "upload" | "bootstrap";
 
 /** Worst-case loop: aligning → finishing → final bits → polish (never restart from step 1). */
 export const RESUME_GENERATION_TAIL_COUNT = 4;
@@ -15,6 +15,8 @@ const RESUME_MIDDLE_STEPS = [
 const RESUME_TAIL_STEPS = ["Putting on the finishing touches…", "Final bits of work…", "Polishing your resume…"] as const;
 
 export const RESUME_GENERATION_MESSAGES: Record<ResumeGenerationMessageVariant, readonly string[]> = {
+  // New bootstrap path from onboarding nudge; keep style aligned with our middle/tail copy.
+  bootstrap: ["Reading your onboarding profile…", ...RESUME_MIDDLE_STEPS, "Building your base resume…", ...RESUME_TAIL_STEPS],
   jd: ["Reading your job description…", ...RESUME_MIDDLE_STEPS, "Aligning with your job description…", ...RESUME_TAIL_STEPS],
   upload: ["Reading your uploaded resume…", ...RESUME_MIDDLE_STEPS, "Aligning with your resume…", ...RESUME_TAIL_STEPS],
 };

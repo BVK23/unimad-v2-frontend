@@ -1,7 +1,8 @@
 "use client";
 
 import React, { useEffect, useRef, useState } from "react";
-import type { VoiceInterviewConfig, VoiceTranscriptEntry } from "@/src/features/interview-prep/types";
+import type { VoiceInterviewConfig, VoiceLiveUsage, VoiceTranscriptEntry } from "@/src/features/interview-prep/types";
+import { VOICE_LIVE_MODEL_ID } from "@/src/features/interview-prep/types";
 import { GoogleGenAI, Modality } from "@google/genai";
 import { Mic, MicOff, PhoneOff, Loader2, AlertCircle, X } from "lucide-react";
 import InterviewVisualizer from "./InterviewVisualizer";
@@ -11,8 +12,48 @@ type ConnectionState = "connecting" | "connected" | "disconnected" | "error";
 
 interface VoiceInterviewSessionProps {
   config: VoiceInterviewConfig;
-  onEnd: (transcript: VoiceTranscriptEntry[]) => void;
+  onEnd: (transcript: VoiceTranscriptEntry[], usage?: VoiceLiveUsage) => void;
   onCancel: () => void;
+}
+
+type UsageTotals = {
+  prompt_tokens: number;
+  completion_tokens: number;
+  thinking_tokens: number;
+  total_tokens: number;
+};
+
+function readUsageNumber(source: Record<string, unknown>, ...keys: string[]): number {
+  for (const key of keys) {
+    const raw = source[key];
+    if (raw == null) continue;
+    const n = typeof raw === "number" ? raw : Number(raw);
+    if (Number.isFinite(n) && n >= 0) return Math.floor(n);
+  }
+  return 0;
+}
+
+/** Extract prompt/completion/thinking/total from Live usageMetadata (camelCase or snake_case). */
+function parseUsageMetadata(raw: unknown): UsageTotals | null {
+  if (!raw || typeof raw !== "object") return null;
+  const um = raw as Record<string, unknown>;
+  const prompt_tokens = readUsageNumber(um, "promptTokenCount", "prompt_token_count", "inputTokenCount", "input_token_count");
+  const completion_tokens = readUsageNumber(
+    um,
+    "candidatesTokenCount",
+    "candidates_token_count",
+    "responseTokenCount",
+    "response_token_count",
+    "outputTokenCount",
+    "output_token_count"
+  );
+  const thinking_tokens = readUsageNumber(um, "thoughtsTokenCount", "thoughts_token_count", "thinkingTokenCount", "thinking_token_count");
+  let total_tokens = readUsageNumber(um, "totalTokenCount", "total_token_count");
+  if (total_tokens <= 0) total_tokens = prompt_tokens + completion_tokens + thinking_tokens;
+  if (prompt_tokens <= 0 && completion_tokens <= 0 && thinking_tokens <= 0 && total_tokens <= 0) {
+    return null;
+  }
+  return { prompt_tokens, completion_tokens, thinking_tokens, total_tokens };
 }
 
 const VoiceInterviewSession: React.FC<VoiceInterviewSessionProps> = ({ config, onEnd, onCancel }) => {
@@ -32,6 +73,46 @@ const VoiceInterviewSession: React.FC<VoiceInterviewSessionProps> = ({ config, o
   const isMicMutedRef = useRef(false);
   const transcriptRef = useRef<VoiceTranscriptEntry[]>([]);
   const currentTextRef = useRef<{ role: "user" | "model"; text: string } | null>(null);
+  const usageTotalsRef = useRef<UsageTotals>({
+    prompt_tokens: 0,
+    completion_tokens: 0,
+    thinking_tokens: 0,
+    total_tokens: 0,
+  });
+  const usageReportedRef = useRef(false);
+  const onEndRef = useRef(onEnd);
+  onEndRef.current = onEnd;
+
+  const buildUsagePayload = (): VoiceLiveUsage => {
+    const t = usageTotalsRef.current;
+    return {
+      model_id: VOICE_LIVE_MODEL_ID,
+      prompt_tokens: t.prompt_tokens,
+      completion_tokens: t.completion_tokens,
+      thinking_tokens: t.thinking_tokens,
+      total_tokens: t.total_tokens > 0 ? t.total_tokens : t.prompt_tokens + t.completion_tokens + t.thinking_tokens,
+      input_modality: "audio",
+      output_modality: "audio",
+    };
+  };
+
+  const flushTranscript = () => {
+    if (currentTextRef.current?.text.trim()) {
+      transcriptRef.current.push({
+        role: currentTextRef.current.role,
+        text: currentTextRef.current.text.trim(),
+        timestamp: Date.now(),
+      });
+    }
+    currentTextRef.current = null;
+  };
+
+  const reportSessionEnd = () => {
+    if (usageReportedRef.current) return;
+    usageReportedRef.current = true;
+    flushTranscript();
+    onEndRef.current(transcriptRef.current, buildUsagePayload());
+  };
 
   useEffect(() => {
     const fetchApiKey = async () => {
@@ -59,6 +140,13 @@ const VoiceInterviewSession: React.FC<VoiceInterviewSessionProps> = ({ config, o
     if (!apiKey) return;
 
     let mounted = true;
+    usageReportedRef.current = false;
+    usageTotalsRef.current = {
+      prompt_tokens: 0,
+      completion_tokens: 0,
+      thinking_tokens: 0,
+      total_tokens: 0,
+    };
 
     /** Accumulate transcript silently (no UI) for post-session feedback only. */
     const appendToTranscriptSilent = (role: "user" | "model", text: string) => {
@@ -73,6 +161,30 @@ const VoiceInterviewSession: React.FC<VoiceInterviewSessionProps> = ({ config, o
         currentTextRef.current = { role, text: "" };
       }
       currentTextRef.current.text += text;
+    };
+
+    const accumulateUsage = (raw: unknown) => {
+      const parsed = parseUsageMetadata(raw);
+      if (!parsed) return;
+      const acc = usageTotalsRef.current;
+      // Live may send session-cumulative totals or per-turn deltas.
+      // If all fields are >= current, treat as cumulative snapshot; otherwise add as deltas.
+      if (
+        parsed.prompt_tokens >= acc.prompt_tokens &&
+        parsed.completion_tokens >= acc.completion_tokens &&
+        parsed.thinking_tokens >= acc.thinking_tokens &&
+        parsed.total_tokens >= acc.total_tokens
+      ) {
+        acc.prompt_tokens = parsed.prompt_tokens;
+        acc.completion_tokens = parsed.completion_tokens;
+        acc.thinking_tokens = parsed.thinking_tokens;
+        acc.total_tokens = parsed.total_tokens;
+      } else {
+        acc.prompt_tokens += parsed.prompt_tokens;
+        acc.completion_tokens += parsed.completion_tokens;
+        acc.thinking_tokens += parsed.thinking_tokens;
+        acc.total_tokens += parsed.total_tokens;
+      }
     };
 
     const startSession = async () => {
@@ -105,7 +217,7 @@ const VoiceInterviewSession: React.FC<VoiceInterviewSessionProps> = ({ config, o
         `;
 
         const sessionPromise = ai.live.connect({
-          model: "gemini-2.5-flash-native-audio-preview-09-2025",
+          model: VOICE_LIVE_MODEL_ID,
           config: {
             responseModalities: [Modality.AUDIO],
             systemInstruction,
@@ -150,6 +262,11 @@ const VoiceInterviewSession: React.FC<VoiceInterviewSessionProps> = ({ config, o
             },
             onmessage: async msg => {
               if (!mounted) return;
+
+              const usageRaw =
+                (msg as { usageMetadata?: unknown; usage_metadata?: unknown }).usageMetadata ??
+                (msg as { usage_metadata?: unknown }).usage_metadata;
+              if (usageRaw) accumulateUsage(usageRaw);
 
               const audioData = msg.serverContent?.modelTurn?.parts?.[0]?.inlineData?.data;
               if (audioData && outputCtx) {
@@ -206,7 +323,12 @@ const VoiceInterviewSession: React.FC<VoiceInterviewSessionProps> = ({ config, o
               }
             },
             onclose: () => {
-              if (mounted) setConnectionState("disconnected");
+              if (!mounted) return;
+              setConnectionState("disconnected");
+              // Best-effort: if the socket closes unexpectedly before End, still report usage once.
+              if (!usageReportedRef.current && transcriptRef.current.length > 0) {
+                reportSessionEnd();
+              }
             },
             onerror: err => {
               if (mounted) {
@@ -241,20 +363,8 @@ const VoiceInterviewSession: React.FC<VoiceInterviewSessionProps> = ({ config, o
     };
   }, [apiKey, config]);
 
-  const flushTranscript = () => {
-    if (currentTextRef.current?.text.trim()) {
-      transcriptRef.current.push({
-        role: currentTextRef.current.role,
-        text: currentTextRef.current.text.trim(),
-        timestamp: Date.now(),
-      });
-    }
-    currentTextRef.current = null;
-  };
-
   const handleDisconnect = () => {
-    flushTranscript();
-    onEnd(transcriptRef.current);
+    reportSessionEnd();
   };
 
   const toggleMute = () => {

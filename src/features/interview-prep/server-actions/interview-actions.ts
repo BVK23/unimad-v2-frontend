@@ -8,6 +8,7 @@ import type {
   StartInterviewResponse,
   VoiceAnalysisResult,
   VoiceInterviewConfig,
+  VoiceLiveUsage,
   VoiceTranscriptEntry,
 } from "../types";
 
@@ -98,6 +99,7 @@ export async function analyzeVoiceInterview(input: {
   transcript: VoiceTranscriptEntry[];
   config: VoiceInterviewConfig;
   interviewId?: string;
+  usage?: VoiceLiveUsage;
 }): Promise<{ interview_id: string; analysis: VoiceAnalysisResult; round_type: string }> {
   const res = await authedFetch("/api/interviews/analyze-voice/", {
     method: "POST",
@@ -105,6 +107,7 @@ export async function analyzeVoiceInterview(input: {
       transcript: input.transcript,
       config: input.config,
       interview_id: input.interviewId ?? input.config.interviewId,
+      ...(input.usage ? { usage: input.usage } : {}),
     }),
   });
 
@@ -141,4 +144,37 @@ export async function deleteInterviewSession(interviewId: string): Promise<void>
     const err = await res.json().catch(() => ({}));
     throw new Error((err as { error?: string }).error ?? "Failed to delete interview");
   }
+}
+
+/** Best-effort ledger for client-side Gemini TTS / Live interview audio usage. */
+export async function recordInterviewUsage(input: {
+  interviewId?: string;
+  modelId: string;
+  promptTokens: number;
+  completionTokens: number;
+  thinkingTokens?: number;
+  totalTokens: number;
+  kind?: "tts" | "live";
+  roundType?: InterviewRoundType | string;
+}): Promise<{ ok: boolean }> {
+  const res = await authedFetch("/api/interviews/record-usage/", {
+    method: "POST",
+    body: JSON.stringify({
+      interview_id: input.interviewId ?? "",
+      model_id: input.modelId,
+      prompt_tokens: input.promptTokens,
+      completion_tokens: input.completionTokens,
+      thinking_tokens: input.thinkingTokens ?? 0,
+      total_tokens: input.totalTokens,
+      kind: input.kind ?? "tts",
+      round_type: input.roundType ?? "",
+      input_modality: "text",
+      output_modality: "audio",
+    }),
+  });
+  if (!res.ok) {
+    const err = await res.json().catch(() => ({}));
+    throw new Error((err as { error?: string }).error ?? "Failed to record interview usage");
+  }
+  return res.json();
 }

@@ -29,85 +29,66 @@ type Plan = {
 
 const MODULES: Plan[] = [
   {
-    name: "LinkedIn Branding",
-    tagline: "Turn invisible into inbound.",
-    price: "£77",
+    name: "Profile Foundation",
+    tagline: "Become visible to recruiters",
+    price: "£99",
     period: "module",
-    features: [
-      "DP, headline & about rewritten",
-      "Cover photo designed for you",
-      "A monthly content engine",
-      "The comments strategy",
-      "Outbound that reaches recruiters",
-    ],
-    cta: "Book a call",
+    features: ["Fix your role", "Build a resume", "LinkedIn banner", "LinkedIn headline", "LinkedIn Summary"],
+    cta: "Book your session",
     variant: "module",
   },
   {
-    name: "Application Strategy",
-    tagline: "Stop applying. Start targeting.",
+    name: "Applications Strategy",
+    tagline: "Start applying targeted",
     price: "£85",
     period: "module",
-    features: [
-      "Tailored applications that land",
-      "A daily application system",
-      "Referral mastery",
-      "Cold emails that convert",
-      "Portfolio building & tracking",
-    ],
-    cta: "Book a call",
+    features: ["Sourcing roles", "Referrals mastery", "Quality applications", "Cold emails that convert", "A daily application system"],
+    cta: "Book your session",
     variant: "module",
   },
   {
     name: "Interview Mastery",
-    tagline: "Walk in ready to win.",
-    price: "£99",
+    tagline: "Walk in prepared to win",
+    price: "£77",
     period: "module",
     features: [
-      "Interview prep prompts",
-      "STAR-method answer library",
-      "Your Value Proposition Doc",
+      "Interview prompts",
       "30-60-90 day plans",
+      "STAR-method answers",
+      "Your Value Proposition Doc",
       "Sponsorship negotiation scripts",
     ],
-    cta: "Book a call",
+    cta: "Book your session",
     variant: "module",
   },
 ];
 
 const DISCOVERY: Plan = {
-  name: "Discovery Call",
-  tagline: "A free 1-on-1 with a coach who has placed 200+ international students. Your positioning, mapped\u00A0live.",
+  name: "Strategy session",
+  tagline: "A free 1-on-1 call with your coach who will give you a personalised strategy for your profile.",
   price: "£0",
   original: "£85",
   period: "one call",
-  features: [
-    "ATS hacks & role mapping",
-    "Niche discovery",
-    "Base resume rebuilt live",
-    "A job-search playbook",
-    "A personalised strategy you keep",
-  ],
-  cta: "Book free Discovery call",
+  features: ["Niche Discovery", "Resume tips", "LinkedIn optimisation", "Entire job search playbook"],
+  cta: "Book your free strategy session",
   variant: "free",
   note: "No credit card required",
 };
 
 const FULL_SYSTEM: Plan = {
-  name: "The Full System",
-  tagline: "All four modules, one coach, until you're hired.",
+  name: "The Full Unicoach System",
+  tagline: "All the modules to get you hired.",
   price: "£199",
   original: "£340",
   period: "one-time",
   features: [
-    "All 4 modules included",
+    "All 3 modules included",
     "1-on-1 mentorship",
     "Lifetime community access",
-    "Exclusive live webinars",
-    "24×7 career-coach support",
-    "The credibility system",
+    "24/7 career-coach support",
+    "The Accountability system",
   ],
-  cta: "Get the full system",
+  cta: "Unlock the Unicoach system",
   variant: "full",
   badge: "Best value",
 };
@@ -127,28 +108,28 @@ type Step = {
 const STEPS: Step[] = [
   {
     n: "01",
-    title: "We fix your role & resume, live",
-    body: "A coach helps you lock your niche and rebuilds your resume with you, while you watch exactly how we work.",
+    title: "We fix your role, resume, and LinkedIn",
+    body: "Your Unicoach will help you lock in your niche, develop a killer resume, and completely revamp your LinkedIn profile.",
   },
   {
     n: "02",
-    title: "We rebuild how recruiters see you",
-    body: "Profile picture, cover, headline and about rewritten; the right network built; comments and a content engine that turn you from invisible to inbound.",
+    title: "We introduce you to Quality Applications Framework",
+    body: "From choosing the right roles to tailoring your resume, cover letter, cold emails, followups, we build a repeatable application process.",
   },
   {
     n: "03",
-    title: "We don't just prepare you. We apply with you.",
-    body: "From choosing the right roles to tailoring your resume, writing cold emails, reaching out for referrals, and following up, we help you build a job search system you can repeat with confidence.",
+    title: "We prep you to convert interviews into offers",
+    body: "From likely interview questions and STAR methodologies to your Value Proposition Doc, we help you walk into interviews with clarity and confidence.",
   },
   {
     n: "04",
-    title: "We prep you to convert",
-    body: "From likely interview questions and STAR stories to your VPD, we help you walk into interviews with clarity and confidence.",
+    title: "Access to Unicoach community",
+    body: "This is where we become your accountability partner after building your job search system. You get to search for jobs with other like minded students in a similar journey.",
   },
 ];
 
 const WHY_TEXT =
-  "Getting rejected doesn't mean you're the wrong candidate. Every year, thousands of international students move abroad believing more applications are the answer, so they keep applying, tailoring, and waiting while nothing changes. Unicoach rebuilds your job search from the ground up, defining your niche, sharpening your positioning, and building a system that gives recruiters a reason to notice you.";
+  "Getting rejected doesn't mean you're the wrong candidate. Every year 1000s of international students move abroad believing more applications are the answer, so they keep applying. Unicoach rebuilds your job search system from ground up, defining your niche, improving your positioning, and building a system that gives recruiters a reason to notice you.";
 
 const FAQS: { q: string; a: string }[] = [
   {
@@ -273,16 +254,16 @@ export function UnicoachPage() {
               <span className="ms-hero__stat-lbl">in job offers</span>
             </div>
             <div className="ms-hero__stat">
-              <span className="ms-hero__stat-num">5k+</span>
-              <span className="ms-hero__stat-lbl">happy students</span>
+              <span className="ms-hero__stat-num">1000+</span>
+              <span className="ms-hero__stat-lbl">Happy students</span>
             </div>
             <div className="ms-hero__stat">
               <span className="ms-hero__stat-num">250+</span>
-              <span className="ms-hero__stat-lbl">mad stories</span>
+              <span className="ms-hero__stat-lbl">Mad Stories</span>
             </div>
             <div className="ms-hero__stat">
               <span className="ms-hero__stat-num">10k+</span>
-              <span className="ms-hero__stat-lbl">community</span>
+              <span className="ms-hero__stat-lbl">Community</span>
             </div>
           </div>
 
@@ -292,7 +273,7 @@ export function UnicoachPage() {
               className="masterclass-gold-btn unicoach-gold-cta uc-hero__cta"
               onClick={() => void openDiscoveryBooking()}
             >
-              Book free Discovery call
+              Book your strategy session
             </button>
             <a href="#how" className="btn btn-outline-light" style={{ padding: "13px 28px", fontSize: "15px" }}>
               See how it works
@@ -325,7 +306,7 @@ export function UnicoachPage() {
         <div className="uc-stack">
           <div className="uc-stack__card uc-stack__card--head" style={{ "--i": 0 } as CSSProperties}>
             <p className="eyebrow eyebrow-blue">How Unicoach works</p>
-            <h2 className="uc-section-hl">Four calls. One coach. Your whole system, built with you.</h2>
+            <h2 className="uc-section-hl">3 calls. One coach. Your whole job search system built for you.</h2>
           </div>
           {STEPS.map((step, i) => (
             <article key={step.n} className="uc-stack__card" style={{ "--i": i + 1 } as CSSProperties}>
@@ -342,7 +323,7 @@ export function UnicoachPage() {
         <div className="container">
           <div className="uc-section-head reveal">
             <p className="eyebrow eyebrow-blue">Pricing</p>
-            <h2 className="uc-section-hl">Start free. Pay only for what moves you forward.</h2>
+            <h2 className="uc-section-hl">Pay only if you want to move forward after your strategy session.</h2>
           </div>
 
           <div className="uc-plan uc-plan--banner uc-plan--free reveal">
@@ -418,7 +399,7 @@ export function UnicoachPage() {
                 >
                   {FULL_SYSTEM.cta}
                 </button>
-                <p className="uc-plan__note">Everything, one price</p>
+                <p className="uc-plan__note">Everything included</p>
               </div>
             </div>
           </div>
@@ -486,7 +467,7 @@ export function UnicoachPage() {
                   Start free at Unimad
                 </Link>
                 <button type="button" className="btn btn-solid" onClick={() => void openDiscoveryBooking()}>
-                  Book free Discovery call
+                  Book your strategy session
                 </button>
               </div>
             </div>

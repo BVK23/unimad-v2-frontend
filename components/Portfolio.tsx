@@ -901,7 +901,7 @@ const Portfolio: React.FC<PortfolioProps> = ({ portfolioId, initialData, onBack,
       height: getDefaultItemHeightPx(type),
       ...preset,
     };
-    setItems([...items, newItem]);
+    setItems(prev => [...prev, newItem]);
   };
 
   const handleInsertBlockAfter = useCallback(
@@ -1170,14 +1170,15 @@ const Portfolio: React.FC<PortfolioProps> = ({ portfolioId, initialData, onBack,
   };
 
   const duplicateItem = (id: string) => {
-    const original = items.find(item => item.id === id);
-    if (original) {
+    setItems(prev => {
+      const index = prev.findIndex(item => item.id === id);
+      if (index === -1) return prev;
+      const original = prev[index];
       const newItem = { ...original, id: getNextId("item") };
-      const index = items.findIndex(item => item.id === id);
-      const newItems = [...items];
+      const newItems = [...prev];
       newItems.splice(index + 1, 0, newItem);
-      setItems(newItems);
-    }
+      return newItems;
+    });
   };
 
   const handleContextMenu = (e: React.MouseEvent, targetId: string) => {
@@ -1312,15 +1313,17 @@ const Portfolio: React.FC<PortfolioProps> = ({ portfolioId, initialData, onBack,
   };
 
   const removeItem = (id: string) => {
-    const idx = items.findIndex(item => item.id === id);
-    const k = profile.itemsAboveProfileCount ?? 0;
-    setItems(items.filter(item => item.id !== id));
-    if (idx !== -1 && idx < k) {
-      setProfile(p => ({
-        ...p,
-        itemsAboveProfileCount: Math.max(0, (p.itemsAboveProfileCount ?? 0) - 1),
-      }));
-    }
+    setItems(prev => {
+      const idx = prev.findIndex(item => item.id === id);
+      const k = profile.itemsAboveProfileCount ?? 0;
+      if (idx !== -1 && idx < k) {
+        setProfile(p => ({
+          ...p,
+          itemsAboveProfileCount: Math.max(0, (p.itemsAboveProfileCount ?? 0) - 1),
+        }));
+      }
+      return prev.filter(item => item.id !== id);
+    });
   };
 
   const requestDeleteBlock = (id: string) => {

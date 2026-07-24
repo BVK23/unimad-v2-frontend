@@ -111,12 +111,12 @@ export function usePortfolioAutosave(
         return;
       }
 
-      const snapshotAtStart = latestSnapshotRef.current;
-
       await waitForPortfolioLayoutSettle();
 
       const dataToSave = usePortfolioStore.getState().getPortfolioData(portfolioId);
       if (!dataToSave) return;
+
+      const savedSnapshot = getPortfolioContentSignature(dataToSave);
 
       saveInFlightRef.current = true;
       setActiveSaveSource(source);
@@ -124,15 +124,23 @@ export function usePortfolioAutosave(
       try {
         const result = await updatePortfolioMutation(dataToSave);
         setLastSaveError(null);
-        setLastAcknowledgedSnapshot(snapshotAtStart);
+
         if (result.created) {
           options?.onPersisted?.(result.id, result.portfolio);
         }
-        if (latestSnapshotRef.current === snapshotAtStart) {
-          showSavedConfirmation();
+
+        const currentData =
+          usePortfolioStore.getState().getPortfolioData(result.id) ?? usePortfolioStore.getState().getPortfolioData(portfolioId);
+        const currentSnapshot = currentData ? getPortfolioContentSignature(currentData) : latestSnapshotRef.current;
+
+        if (currentSnapshot === savedSnapshot) {
+          setLastAcknowledgedSnapshot(savedSnapshot);
+          if (latestSnapshotRef.current === savedSnapshot) {
+            showSavedConfirmation();
+          }
         }
 
-        if (latestSnapshotRef.current !== snapshotAtStart) {
+        if (latestSnapshotRef.current !== savedSnapshot) {
           queuedSaveRef.current = true;
         }
       } catch (error) {

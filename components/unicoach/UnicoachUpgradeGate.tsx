@@ -143,7 +143,7 @@ export const UnicoachUpgradeGate = ({ onEnrollmentComplete, userName, userEmail 
                       onClick={openPricing}
                       className="mt-3 w-full rounded-xl bg-brand-600 hover:bg-brand-700 text-white text-sm font-semibold py-2.5 transition-all active:scale-[0.99] shadow-sm shadow-brand-500/20"
                     >
-                      Book Discovery Call
+                      Book your strategy call
                     </button>
                   ) : (
                     <button
@@ -174,7 +174,7 @@ export const UnicoachUpgradeGate = ({ onEnrollmentComplete, userName, userEmail 
             <div className="absolute inset-0 z-[55] pointer-events-none flex items-center justify-center p-6">
               <div className="w-full max-w-xl rounded-2xl border border-slate-200 bg-white px-6 py-7 text-center shadow-[0_16px_60px_rgba(15,23,42,0.12)] dark:border-slate-200 dark:bg-white">
                 <p className="text-xs text-brand-600 dark:text-brand-400 font-semibold">Hire a coach</p>
-                <h3 className="mt-2 text-2xl font-medium text-slate-900">Upgrade to Unicoach for free.</h3>
+                <h3 className="mt-2 text-2xl font-medium text-slate-900">Upgrade to Unicoach</h3>
                 <p className="mt-2 text-sm leading-relaxed text-slate-600">
                   Start your Unicoach journey and get your end-to-end job search strategy
                 </p>
@@ -183,7 +183,7 @@ export const UnicoachUpgradeGate = ({ onEnrollmentComplete, userName, userEmail 
                   onClick={openPricing}
                   className="mt-5 pointer-events-auto inline-flex items-center justify-center rounded-xl px-5 py-2.5 text-sm font-medium bg-brand-600 hover:bg-brand-700 text-white transition-colors"
                 >
-                  Book your 1st call now
+                  Book your strategy call
                 </button>
               </div>
             </div>

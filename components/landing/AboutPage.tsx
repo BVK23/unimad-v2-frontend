@@ -45,17 +45,17 @@ const SECTIONS: { grey?: boolean; blocks: StoryBlock[] }[] = [
     blocks: [
       {
         type: "p",
-        text: "Unimad was created by people who know what this journey feels like because we've lived it ourselves.",
+        text: "Unimad was created by people who know what this journey feels like, because we have lived it ourself.",
       },
       {
         type: "p",
-        text: "We've spent months refreshing inboxes, rewriting resumes, wondering why applications disappeared into silence, and questioning whether we had made the right decision to study abroad.",
+        text: "We spent months refreshing inboxes, rewriting resumes, wondering why applications didn't convert an interview. A lot of times we felt if moving abroad was a mistake.",
       },
       {
         type: "p",
-        text: "Eventually, we realised that finding a job wasn't just about having the right skills. It was about understanding how to position yourself in a completely different job market.",
+        text: "Eventually we realised that finding a job wasn't just about having the right skills. It was about understanding how to position yourself in a completely different job market.",
       },
-      { type: "accent", lines: ["And nobody was really teaching that."] },
+      { type: "accent", lines: ["Surprisingly, nobody was teaching that."] },
     ],
   },
   {
@@ -63,50 +63,34 @@ const SECTIONS: { grey?: boolean; blocks: StoryBlock[] }[] = [
     blocks: [
       {
         type: "p",
-        text: "Most platforms focus on one part of the process: resume builders, interview prep, LinkedIn optimisation, and job boards.",
+        text: "Most platforms focus on one aspect of job search. Resume, LinkedIn, cover letters, job boards, or interview preparation. There was no single system that could connect all of this.",
       },
-      {
-        type: "accent",
-        lines: ["But the job search doesn't happen in pieces.", "Everything is connected."],
-      },
-      {
-        type: "p",
-        text: "Your resume helps you get shortlisted. Your LinkedIn shapes the first impression. Networking creates opportunities that applications alone often can't. And your interview determines whether all that hard work turns into an offer.",
-      },
-    ],
-  },
-  {
-    blocks: [
       { type: "accent", lines: ["That's why we built Unimad."] },
+    ],
+  },
+  {
+    blocks: [
       {
         type: "p",
-        text: "A single platform that brings every part of the job search together, so international students can stop guessing and start applying with confidence.",
+        text: "A single platform that brings every aspect of job search together, so international students can stop guessing and start applying with confidence.",
       },
       {
         type: "p",
-        text: "That's why everything lives in one place. From ATS-friendly resumes and LinkedIn optimisation to portfolios, cold emails, interview preparation, Value Proposition Documents (VPDs), and Unibot, our AI career strategist, every tool is designed to help you move one step closer to the interview.",
+        text: "Using Unimad you can fix your role, build your resume, optimise LinkedIn, develop a portfolio, search for visa-sponsored jobs and prepare for interviews, all in one place.",
       },
     ],
   },
   {
     grey: true,
     blocks: [
+      { type: "accent", lines: ["We're building something we wish existed when we started our journeys."] },
       {
         type: "p",
-        text: "Today, thousands of international students use Unimad to build stronger profiles, land interviews, and grow careers across the UK, Ireland, the US, Canada, and beyond.",
-      },
-      {
-        type: "p",
-        text: "But more than anything, we're building something we wish existed when we started.",
-      },
-      { type: "accent", lines: ["Because no student should have to figure this journey out alone."] },
-      {
-        type: "p",
-        text: "Whether you're applying for your first internship or your 500th job, Unimad is here to help you build a job search that actually works.",
+        text: "Because we believe no student should have to figure out this journey alone.",
       },
       {
         type: "accent",
-        lines: ["Every Mad Story starts somewhere.", "We hope yours starts here."],
+        lines: ["Every mad story starts somewhere.", "We hope yours starts here."],
       },
     ],
   },
@@ -222,14 +206,14 @@ export function AboutPage() {
           <StarfieldBackground />
           <div className="container">
             <div className="closing-band-inner reveal-stagger">
-              <h2 className="closing-hl closing-hl--light">Your story could be next.</h2>
+              <h2 className="closing-hl closing-hl--light">We&apos;re on a mission to create a million mad stories.</h2>
               <p className="closing-sub closing-sub--light">
-                Let&apos;s build it together. Whether you&apos;re applying for your first internship or your 500th job, Unimad is here to
-                help you build a job search that actually works.
+                Your story could be the next. Whether you&apos;re applying for your first internship or your 500th job, Unimad is here to
+                help you build a job search system that works.
               </p>
               <div className="closing-ctas">
                 <Link href={getSigninUrl()} className="btn btn-solid about-cta-btn">
-                  Get Started
+                  Get started now
                 </Link>
               </div>
             </div>

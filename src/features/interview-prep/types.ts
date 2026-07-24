@@ -69,6 +69,19 @@ export interface VoiceTranscriptEntry {
   timestamp?: number;
 }
 
+/** Accumulated Gemini Live token usage for a voice interview session. */
+export interface VoiceLiveUsage {
+  model_id: string;
+  prompt_tokens: number;
+  completion_tokens: number;
+  thinking_tokens: number;
+  total_tokens: number;
+  input_modality: "audio";
+  output_modality: "audio";
+}
+
+export const VOICE_LIVE_MODEL_ID = "gemini-3.1-flash-live-preview";
+
 export interface VoiceInterviewConfig {
   role: string;
   company: string;

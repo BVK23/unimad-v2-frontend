@@ -634,12 +634,15 @@ html.landing-active body {
   animation: fadeUp 0.72s ease 0.22s both;
 }
 .hero-hl-l2 {
-  display: inline;
+  display: block;
   animation: fadeUp 0.72s ease 0.38s both;
 }
 .hero-hl-l3 {
   display: inline;
   animation: fadeUp 0.72s ease 0.52s both;
+}
+.hero-hl-l2 .mark-red-line {
+  white-space: nowrap;
 }
 .hero-sl {
   font-size: 17.5px;

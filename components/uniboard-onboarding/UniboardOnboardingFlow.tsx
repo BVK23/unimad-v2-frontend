@@ -4,7 +4,11 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import PhoneInput, { isValidPhoneNumber } from "react-phone-number-input";
 import "react-phone-number-input/style.css";
 import { useOnboardingGate } from "@/features/onboarding/context/OnboardingGateContext";
-import { resolveOnboardingEntryStep, hasResumeProfileProgress } from "@/features/onboarding/resolveOnboardingEntryStep";
+import {
+  resolveOnboardingEntryStep,
+  hasResumeProfileProgress,
+  type OnboardingEntryStep,
+} from "@/features/onboarding/resolveOnboardingEntryStep";
 import { useOnboardingStore, type OnboardingAnswers } from "@/features/onboarding/useOnboardingStore";
 import { resumesListQueryKey } from "@/features/resume/hooks/useResumesList";
 import { useProfileData } from "@/features/user-profile/hooks/use-profile-data";
@@ -75,7 +79,13 @@ function toggle(list: string[], id: string, max?: number): string[] {
   return [...list, id];
 }
 
-export default function UniboardOnboardingFlow({ testConfig = null }: { testConfig?: OnboardingTestConfig | null }) {
+export default function UniboardOnboardingFlow({
+  testConfig = null,
+  forcedEntryStep = null,
+}: {
+  testConfig?: OnboardingTestConfig | null;
+  forcedEntryStep?: OnboardingEntryStep | null;
+}) {
   const router = useRouter();
   const queryClient = useQueryClient();
   const { featureGates } = useOnboardingGate();
@@ -108,8 +118,15 @@ export default function UniboardOnboardingFlow({ testConfig = null }: { testConf
     if (testConfig || entryResolvedRef.current) return;
     if (!profileFetched) return;
 
-    const entry = resolveOnboardingEntryStep(featureGates, profileData);
     entryResolvedRef.current = true;
+
+    // Special deep-links only: ?entry=niche (resume→profile sync) or ?entry=resume (explicit resume return).
+    if (forcedEntryStep) {
+      setStack([forcedEntryStep]);
+      return;
+    }
+
+    const entry = resolveOnboardingEntryStep(featureGates, profileData);
 
     // Prefill wizard fields from the profile so returning / minimal users don't retype.
     const onboarding = profileData?.onboarding_data;
@@ -125,7 +142,7 @@ export default function UniboardOnboardingFlow({ testConfig = null }: { testConf
     });
 
     setStack([entry]);
-  }, [featureGates, profileData, profileFetched, setAnswers, testConfig]);
+  }, [featureGates, forcedEntryStep, profileData, profileFetched, setAnswers, testConfig]);
 
   const set = (patch: Partial<OnboardingAnswers>) => setAnswers(patch);
 
@@ -319,24 +336,11 @@ export default function UniboardOnboardingFlow({ testConfig = null }: { testConf
                     if (isExplorerOnlyGoals(answers.goals)) {
                       finishAndEnter();
                     } else {
-                      go("personalize");
+                      // Skip the old "Want Unimad tailored?" confirmation — resume (and niche) are the personalisation path.
+                      set({ personalize: true });
+                      syncPersonalization({ personalize: true });
+                      go("resume");
                     }
-                  }}
-                />
-              )}
-
-              {current === "personalize" && (
-                <PersonalizeStep
-                  name={answers.name}
-                  onYes={() => {
-                    set({ personalize: true });
-                    syncPersonalization({ personalize: true });
-                    go("resume");
-                  }}
-                  onSkip={() => {
-                    setError(null);
-                    set({ personalize: false });
-                    finishAndEnter({ personalize: false });
                   }}
                 />
               )}
@@ -363,6 +367,10 @@ export default function UniboardOnboardingFlow({ testConfig = null }: { testConf
                     }
                   }}
                   onBuildWithUnibot={() => go("profile_builder")}
+                  onDoItLater={() => {
+                    setError(null);
+                    finishAndEnter({ personalize: false });
+                  }}
                 />
               )}
 
@@ -676,26 +684,15 @@ function StageStep({ value, onChange, onNext }: { value: string[]; onChange: (v:
   );
 }
 
-function PersonalizeStep({ name, onYes, onSkip }: { name: string; onYes: () => void; onSkip: () => void }) {
-  return (
-    <div className="flex flex-col items-center gap-7">
-      <QuestionHeader
-        title={name.trim() ? `Want Unimad tailored to you, ${name.trim()}?` : "Want Unimad tailored to you?"}
-        subtitle="Add your resume and answer a few strength questions (~2 min)."
-      />
-      <div className="flex w-full max-w-md flex-col gap-2.5">
-        <PrimaryButton onClick={onYes} fullWidth>
-          Yes, personalize my experience
-        </PrimaryButton>
-        <GhostButton onClick={onSkip} fullWidth>
-          Skip for now
-        </GhostButton>
-      </div>
-    </div>
-  );
-}
-
-function ResumeStep({ onUploaded, onBuildWithUnibot }: { onUploaded: (file: File) => Promise<void>; onBuildWithUnibot: () => void }) {
+function ResumeStep({
+  onUploaded,
+  onBuildWithUnibot,
+  onDoItLater,
+}: {
+  onUploaded: (file: File) => Promise<void>;
+  onBuildWithUnibot: () => void;
+  onDoItLater: () => void;
+}) {
   const [mode, setMode] = useState<"choose" | "uploading" | "noresume">("choose");
   const inputRef = useRef<HTMLInputElement>(null);
 
@@ -720,13 +717,19 @@ function ResumeStep({ onUploaded, onBuildWithUnibot }: { onUploaded: (file: File
   if (mode === "noresume") {
     return (
       <div className="flex flex-col items-center gap-7 text-center">
-        <QuestionHeader title="No resume yet?" subtitle="Build your first resume with an interactive chat with Unibot." />
+        <QuestionHeader
+          title="No resume yet?"
+          subtitle="Build your first resume with Unibot — this helps personalise your Unimad experience."
+        />
         <div className="flex w-full max-w-md flex-col gap-2.5">
           <PrimaryButton onClick={onBuildWithUnibot} fullWidth>
             Build with Unibot
           </PrimaryButton>
           <GhostButton onClick={() => setMode("choose")} fullWidth>
             Upload instead
+          </GhostButton>
+          <GhostButton onClick={onDoItLater} fullWidth>
+            Do it later
           </GhostButton>
         </div>
       </div>
@@ -735,7 +738,10 @@ function ResumeStep({ onUploaded, onBuildWithUnibot }: { onUploaded: (file: File
 
   return (
     <div className="flex flex-col items-center gap-6">
-      <QuestionHeader title="Start with your resume" subtitle="Upload a PDF and we'll extract your profile automatically." />
+      <QuestionHeader
+        title="Tailor your Unimad experience"
+        subtitle="Upload your resume so Unibot can understand you better and unlock most of what Unimad has to offer. Your profile helps Unibot target the right niche and build features and assets for you."
+      />
       <input ref={inputRef} type="file" accept=".pdf" className="hidden" onChange={e => handleFile(e.target.files?.[0])} />
       <button
         type="button"
@@ -744,9 +750,14 @@ function ResumeStep({ onUploaded, onBuildWithUnibot }: { onUploaded: (file: File
       >
         <span className="text-[15px] font-semibold">Drop PDF or click to upload</span>
       </button>
-      <button type="button" onClick={() => setMode("noresume")} className="text-sm text-[#4A5568] underline">
-        I don&apos;t have a resume yet
-      </button>
+      <div className="flex w-full max-w-md flex-col items-center gap-3">
+        <button type="button" onClick={() => setMode("noresume")} className="text-sm text-[#4A5568] underline">
+          I don&apos;t have a resume yet
+        </button>
+        <GhostButton onClick={onDoItLater} fullWidth>
+          Do it later
+        </GhostButton>
+      </div>
     </div>
   );
 }

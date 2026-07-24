@@ -343,7 +343,7 @@ function UniboardShellContent({
                         onClick={() => router.push("/uniboard/unicoach?book=discovery")}
                         className="hidden sm:inline-flex bg-brand-600 hover:bg-brand-700 text-white px-5 py-2 rounded-xl text-xs font-semibold shadow-sm shadow-brand-500/20 transition-all active:scale-[0.99] items-center gap-2"
                       >
-                        Book free discovery call
+                        Book your strategy call
                       </button>
                     ) : null}
                     {isCoachActAs && coachActAsSession ? (

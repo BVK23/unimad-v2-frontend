@@ -185,7 +185,7 @@ const PRESET_ANSWERS: Record<OnboardingTestPreset, OnboardingTestAnswers> = {
 const PRESET_DEFAULT_STEP: Record<OnboardingTestPreset, OnboardingStepKey> = {
   blank: "welcome",
   explorer: "goals",
-  job_seeker: "personalize",
+  job_seeker: "resume",
   personalized: "strengths",
   post_niche: "strengths",
   existing_user: "goals",

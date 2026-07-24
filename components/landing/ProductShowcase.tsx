@@ -219,9 +219,9 @@ function ScrollShowcase() {
       <div className="showcase-sticky">
         <div className="showcase-stage">
           <motion.h2 className="showcase-hl showcase-hl--pinned" style={{ opacity: headlineOpacityValue, x: "-50%", y: headlineY }}>
-            Every tool you need, for free.
+            Only tool you need for job search.
             <br />
-            Powered by unibot.
+            Powered by Unibot.
           </motion.h2>
 
           <motion.div className="showcase-features-layer" style={{ opacity: featuresOpacity }}>
@@ -278,9 +278,9 @@ function StaticShowcase() {
   return (
     <div className="showcase-static">
       <h2 className="showcase-hl">
-        Every tool you need, for free.
+        Only tool you need for job search.
         <br />
-        Powered by unibot.
+        Powered by Unibot.
       </h2>
 
       <div className="showcase-static-tabs" role="tablist" aria-label="Product features">

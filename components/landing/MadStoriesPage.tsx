@@ -169,9 +169,8 @@ export function MadStoriesPage() {
         <div className="ms-hero__glow" aria-hidden />
         <div className="ms-hero__inner">
           <h1 className="ms-hero__hl">
-            Every offer starts
-            <br />
-            with a <BrushWord>mad</BrushWord> story.
+            Behind every offer is
+            <br />a <BrushWord>mad</BrushWord> story.
           </h1>
         </div>
       </section>

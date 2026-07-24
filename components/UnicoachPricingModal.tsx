@@ -126,26 +126,12 @@ const UnicoachPricingModal: React.FC<UnicoachPricingModalProps> = ({ open, onClo
               90% of our students land interviews in less than 30 days.
             </p>
 
-            <div className="mt-5 flex flex-wrap items-baseline justify-center gap-3">
-              <span className="text-5xl font-semibold tracking-tight text-slate-400 line-through decoration-slate-400/80 decoration-2 dark:text-slate-500 sm:text-6xl">
-                £199
-              </span>
-              <span className="text-5xl font-semibold tracking-tight text-brand-600 dark:text-brand-400 sm:text-6xl">Free to Start</span>
-              <span
-                style={{
-                  border: "1px solid rgba(212, 175, 55, 0.4)",
-                  background: "rgba(251, 245, 183, 0.08)",
-                  padding: "2px 8px",
-                  fontSize: "0.75rem",
-                  color: "#B38728",
-                  borderRadius: "9999px",
-                }}
-              >
-                Limited offer
-              </span>
+            <div className="mt-5 flex flex-wrap items-baseline justify-center gap-2">
+              <span className="text-5xl font-semibold tracking-tight text-brand-600 dark:text-brand-400 sm:text-6xl">£199</span>
+              <span className="text-base font-medium text-slate-500 dark:text-slate-400 sm:text-lg">one-time investment</span>
             </div>
 
-            <div className="mt-3 text-xs text-slate-500 dark:text-slate-400 sm:text-sm">4 live calls · 1-1 Coaching · 24/7 Support</div>
+            <div className="mt-3 text-xs text-slate-500 dark:text-slate-400 sm:text-sm">3 live calls · 1-1 Coaching · 24/7 Support</div>
 
             <div className="mt-6 w-full max-w-xl">
               <h2 className="text-xs font-semibold text-slate-500 dark:text-slate-400">All deliverables done for you.</h2>
@@ -174,7 +160,7 @@ const UnicoachPricingModal: React.FC<UnicoachPricingModalProps> = ({ open, onClo
                 boxShadow: "0 10px 25px -5px rgba(187, 137, 34, 0.35), 0 8px 10px -6px rgba(187, 137, 34, 0.25)",
               }}
             >
-              {isResolving ? "Checking your details…" : "Start Unicoach for Free"}
+              {isResolving ? "Checking your details…" : "Check eligibility for Unicoach"}
             </button>
           </div>
         </footer>

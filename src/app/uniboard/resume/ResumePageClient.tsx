@@ -1,14 +1,22 @@
 "use client";
 
-import { Suspense, useEffect, useRef, useState, type ReactNode } from "react";
+import { Suspense, useCallback, useEffect, useRef, useState, type ReactNode } from "react";
 import ResumeDashboard from "@/components/ResumeDashboard";
 import ResumeEditor from "@/components/ResumeEditor";
+import ResumeCompleteOnboardingModal from "@/components/resume/ResumeCompleteOnboardingModal";
 import { ModalPortalOverlay } from "@/components/ui/ModalPortalOverlay";
+import { useOnboardingGate } from "@/features/onboarding/context/OnboardingGateContext";
+import { needsProfileSetup } from "@/features/onboarding/featureGates";
 import { RESUME_OPEN_FULL_IMPROVE_EVENT } from "@/features/resume/api/resume-full-improve-presets";
-import { NEW_RESUME_DRAFT_ID } from "@/features/resume/constants/resumeDraft";
+import { isPersistedResumeId, NEW_RESUME_DRAFT_ID } from "@/features/resume/constants/resumeDraft";
+import {
+  isResumeOnboardingPromptOnCooldown,
+  isPostOnboardingGenerateResumeDismissed,
+} from "@/features/resume/constants/resumeOnboardingPrompt";
 import { useResume, resumeByIdQueryKey } from "@/features/resume/hooks/useResume";
 import { useResumeUrlActions, useResumeUrlState } from "@/features/resume/hooks/useResumeUrlState";
 import { resumesListQueryKey } from "@/features/resume/hooks/useResumesList";
+import { resumeMeetsOnboardingProfileMinimum } from "@/features/resume/utils/resumeOnboardingMinimum";
 import { getPrepareReturnSession } from "@/lib/jobs/prepare-application-return";
 import { parseResumePrepareSearchParams } from "@/lib/jobs/prepare-application-url";
 import { useRehydrateResumeReviewFromAdk } from "@/src/features/adk-chat/hooks/useRehydrateResumeReviewFromAdk";
@@ -76,6 +84,7 @@ function ResumeEditorById({
   showTemplateModal,
   setShowTemplateModal,
   onFirstSaveId,
+  onResumeSaved,
 }: {
   resumeId: string;
   onBack: () => void;
@@ -83,6 +92,7 @@ function ResumeEditorById({
   showTemplateModal: boolean;
   setShowTemplateModal: (open: boolean) => void;
   onFirstSaveId?: (id: string) => void;
+  onResumeSaved?: (data: ResumeData) => void;
 }) {
   const queryClient = useQueryClient();
   const resumeQuery = useResume(resumeId);
@@ -121,6 +131,7 @@ function ResumeEditorById({
         if (data.id && data.id !== resumeId) {
           onFirstSaveId?.(String(data.id));
         }
+        onResumeSaved?.(data);
       }}
       onImprove={onImprove}
       showTemplateModal={showTemplateModal}
@@ -134,6 +145,7 @@ function ResumePageContent({ initialResumeId, initialIsNewDraft = false }: Resum
   const searchParams = useSearchParams();
   const parsed = parseResumePrepareSearchParams(searchParams);
   const queryClient = useQueryClient();
+  const { featureGates } = useOnboardingGate();
   const improveDispatchedRef = useRef(false);
   const { resumeId, isNewDraft } = useResumeUrlState({
     resumeId: initialResumeId,
@@ -144,6 +156,29 @@ function ResumePageContent({ initialResumeId, initialIsNewDraft = false }: Resum
 
   const [showTemplateModal, setShowTemplateModal] = useState(false);
   const [resumeLoadError, setResumeLoadError] = useState<string | null>(null);
+  const [completeOnboardingModalOpen, setCompleteOnboardingModalOpen] = useState(false);
+  const [completeOnboardingResumeId, setCompleteOnboardingResumeId] = useState("");
+
+  const needsOnboarding = needsProfileSetup(featureGates);
+
+  const maybePromptCompleteOnboarding = useCallback(
+    (saved: ResumeData) => {
+      if (!needsOnboarding) return;
+      if (!isPersistedResumeId(saved.id)) return;
+      if (!resumeMeetsOnboardingProfileMinimum(saved)) return;
+      if (isResumeOnboardingPromptOnCooldown()) return;
+      setCompleteOnboardingResumeId(String(saved.id));
+      setCompleteOnboardingModalOpen(true);
+    },
+    [needsOnboarding]
+  );
+
+  const handleResumeSaved = useCallback(
+    (saved: ResumeData) => {
+      maybePromptCompleteOnboarding(saved);
+    },
+    [maybePromptCompleteOnboarding]
+  );
 
   /* eslint-disable react-hooks/set-state-in-effect -- reset template picker when switching resumes */
   useEffect(() => {
@@ -203,7 +238,7 @@ function ResumePageContent({ initialResumeId, initialIsNewDraft = false }: Resum
   };
 
   const handleCreateResume = async (type: "scratch" | "jd" | "upload", createdResumeId?: string) => {
-    if ((type === "jd" || type === "upload") && createdResumeId) {
+    if (createdResumeId) {
       await queryClient.refetchQueries({ queryKey: resumesListQueryKey, exact: true });
       await openResumeById(String(createdResumeId));
       return;
@@ -253,39 +288,64 @@ function ResumePageContent({ initialResumeId, initialIsNewDraft = false }: Resum
   if (showLanding) {
     content = (
       <div className="relative flex h-full w-full min-w-0 flex-col">
-        <ResumeDashboard onEditResume={handleEditResume} onCreateResume={handleCreateResume} />
+        <ResumeDashboard
+          onEditResume={handleEditResume}
+          onCreateResume={handleCreateResume}
+          showBootstrapGeneratePrompt={featureGates.resume_auto_bootstrap && !isPostOnboardingGenerateResumeDismissed()}
+        />
         {resumeLoadErrorModal}
+        <ResumeCompleteOnboardingModal
+          open={completeOnboardingModalOpen}
+          resumeId={completeOnboardingResumeId}
+          onDismiss={() => setCompleteOnboardingModalOpen(false)}
+        />
       </div>
     );
   } else if (showNewDraftEditor) {
     content = (
-      <ResumeEditor
-        resumeId={NEW_RESUME_DRAFT_ID}
-        initialData={NEW_DRAFT_INITIAL_DATA}
-        onBack={handleBackToLanding}
-        onSave={async data => {
-          if (data.id) {
-            queryClient.setQueryData(resumeByIdQueryKey(String(data.id)), data);
-            await queryClient.refetchQueries({ queryKey: resumesListQueryKey, exact: true });
-            openResume(String(data.id));
-          }
-        }}
-        onImprove={handleImproveWithAI}
-        showTemplateModal={showTemplateModal}
-        setShowTemplateModal={setShowTemplateModal}
-      />
+      <>
+        <ResumeEditor
+          resumeId={NEW_RESUME_DRAFT_ID}
+          initialData={NEW_DRAFT_INITIAL_DATA}
+          onBack={handleBackToLanding}
+          onSave={async data => {
+            if (data.id) {
+              queryClient.setQueryData(resumeByIdQueryKey(String(data.id)), data);
+              await queryClient.refetchQueries({ queryKey: resumesListQueryKey, exact: true });
+              handleResumeSaved(data);
+              openResume(String(data.id));
+            }
+          }}
+          onImprove={handleImproveWithAI}
+          showTemplateModal={showTemplateModal}
+          setShowTemplateModal={setShowTemplateModal}
+        />
+        <ResumeCompleteOnboardingModal
+          open={completeOnboardingModalOpen}
+          resumeId={completeOnboardingResumeId}
+          onDismiss={() => setCompleteOnboardingModalOpen(false)}
+        />
+      </>
     );
   } else if (showExistingEditor && resumeId) {
     content = (
-      <ResumeEditorById
-        key={resumeId}
-        resumeId={resumeId}
-        onBack={handleBackToLanding}
-        onImprove={handleImproveWithAI}
-        showTemplateModal={showTemplateModal}
-        setShowTemplateModal={setShowTemplateModal}
-        onFirstSaveId={openResume}
-      />
+      <>
+        <ResumeEditorById
+          key={resumeId}
+          resumeId={resumeId}
+          onBack={handleBackToLanding}
+          onImprove={handleImproveWithAI}
+          showTemplateModal={showTemplateModal}
+          setShowTemplateModal={setShowTemplateModal}
+          onFirstSaveId={openResume}
+          onResumeSaved={handleResumeSaved}
+        />
+        <ResumeCompleteOnboardingModal
+          open={completeOnboardingModalOpen}
+          resumeId={completeOnboardingResumeId}
+          onDismiss={() => setCompleteOnboardingModalOpen(false)}
+        />
+      </>
     );
   }
 

@@ -2,6 +2,7 @@ import { mapBackendPortfolioToFrontend, mapFrontendPortfolioToBackend } from "@/
 import { NEW_PORTFOLIO_DRAFT_ID, isPersistedPortfolioId } from "@/features/portfolio/constants/portfolioDraft";
 import { updatePortfolioContent } from "@/features/portfolio/server-actions/portfolio-actions";
 import { usePortfolioStore } from "@/features/portfolio/store/usePortfolioStore";
+import { getPortfolioContentSignature } from "@/features/portfolio/utils/getPortfolioContentSignature";
 import { mergeSavedPortfolioLayout } from "@/features/portfolio/utils/mergePortfolioLayoutAfterSave";
 import type { PortfolioData } from "@/types";
 import { useMutation, useQueryClient } from "@tanstack/react-query";
@@ -35,6 +36,11 @@ function removeDraftFromStore() {
   });
 }
 
+function getStorePortfolio(portfolioId: string, draftId?: string): PortfolioData | undefined {
+  const store = usePortfolioStore.getState();
+  return store.getPortfolioData(portfolioId) ?? (draftId ? store.getPortfolioData(draftId) : undefined);
+}
+
 export function useUpdatePortfolio() {
   const queryClient = useQueryClient();
 
@@ -62,12 +68,34 @@ export function useUpdatePortfolio() {
         });
       }
 
-      setLivePortfolioQueryData(queryClient, mergedPortfolio);
-      usePortfolioStore.getState().setPortfolioData(result.id, mergedPortfolio);
+      const savedSnapshot = getPortfolioContentSignature(variables);
+      const draftId = isPersistedPortfolioId(variables.id) ? undefined : variables.id || NEW_PORTFOLIO_DRAFT_ID;
+      const current = getStorePortfolio(result.id, draftId);
+      const currentSnapshot = current ? getPortfolioContentSignature(current) : savedSnapshot;
+      const storeDiverged = currentSnapshot !== savedSnapshot;
 
       if (result.created) {
+        if (storeDiverged && current) {
+          const migrated = { ...current, id: result.id };
+          setLivePortfolioQueryData(queryClient, migrated);
+          usePortfolioStore.getState().setPortfolioData(result.id, migrated);
+        } else {
+          setLivePortfolioQueryData(queryClient, mergedPortfolio);
+          usePortfolioStore.getState().setPortfolioData(result.id, mergedPortfolio);
+        }
         removeDraftFromStore();
+        return;
       }
+
+      if (storeDiverged) {
+        if (current) {
+          setLivePortfolioQueryData(queryClient, current);
+        }
+        return;
+      }
+
+      setLivePortfolioQueryData(queryClient, mergedPortfolio);
+      usePortfolioStore.getState().setPortfolioData(result.id, mergedPortfolio);
     },
   });
 }

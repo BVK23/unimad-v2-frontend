@@ -154,7 +154,7 @@ export function StoriesSection() {
             where you are.
           </h2>
           <p className="sec-intro">
-            International students. Hundreds of rejections. Zero shortcuts. Here&apos;s what happened when they stopped applying randomly
+            International students with 100s of rejections and 0 shortcuts. Here&apos;s what happened when they stopped applying randomly
             and started building a personal brand.
           </p>
         </div>

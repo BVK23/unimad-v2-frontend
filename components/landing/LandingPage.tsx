@@ -30,21 +30,21 @@ export function LandingPage() {
           <div className="hero-text-glow" />
           <div className="hero-content">
             <h1 className="hero-hl">
-              <span className="hero-hl-l1">The platform behind</span>
+              <span className="hero-hl-l1">The platform to</span>
               <span className="hero-hl-l2">
                 <MarkRed />
               </span>
             </h1>
             <div className="hero-ctas">
               <Link href={getSigninUrl()} className="btn btn-solid" style={{ padding: "13px 28px", fontSize: "15px" }}>
-                Get started for free
+                Start now for free
               </Link>
               <Link
                 href={MASTERCLASS_PATH}
                 className="btn btn-outline-dark"
                 style={{ padding: "13px 28px", fontSize: "15px", fontWeight: 500 }}
               >
-                Book free Discovery call
+                Book your strategy session
               </Link>
             </div>
             <div className="hero-cycling-quote" id="hero-cq">
@@ -67,7 +67,7 @@ export function LandingPage() {
         </section>
 
         <section className="trust">
-          <p className="trust-label">Our users got placed at</p>
+          <p className="trust-label">Our community got placed at</p>
           <TrustMarquee />
         </section>
       </div>
@@ -93,8 +93,8 @@ export function LandingPage() {
                   Positioning System
                 </h2>
                 <p className="closing-sub closing-sub--light">
-                  A coach who&apos;s placed 200+ international students maps your positioning, applications and interviews with you, step by
-                  step.
+                  Get access to a mentor who has placed 200+ international students to build your positioning, applications strategy, and
+                  entire job search system step-by-step.
                 </p>
               </div>
               <div className="coach-split__panel">
@@ -105,7 +105,7 @@ export function LandingPage() {
                   </div>
                   <div className="coach-stat">
                     <span className="coach-stat-num">10,000+</span>
-                    <span className="coach-stat-lbl">interviews</span>
+                    <span className="coach-stat-lbl">interviews secured</span>
                   </div>
                   <div className="coach-stat">
                     <span className="coach-stat-num">95%</span>
@@ -114,7 +114,7 @@ export function LandingPage() {
                 </div>
                 <div className="coach-ctas">
                   <Link href={MASTERCLASS_PATH} className="masterclass-gold-btn closing-gold-cta">
-                    Book free Discovery call
+                    Book your strategy session now
                   </Link>
                   <Link href={MASTERCLASS_ORGANIC_PATH} className="btn btn-outline-light">
                     View full system
@@ -134,16 +134,16 @@ export function LandingPage() {
           <StarfieldBackground />
           <div className="container">
             <div className="closing-band-inner reveal-stagger">
-              <h2 className="closing-hl closing-hl--light">Ready to write your mad story?</h2>
+              <h2 className="closing-hl closing-hl--light">Turn your applications into offers.</h2>
               <p className="closing-sub closing-sub--light">
-                Free tools from day one, or a 30-minute call with a coach who&apos;s placed 200+ international students.
+                Either do it yourself using the tool, or take personalised guidance from a coach.
               </p>
               <div className="closing-ctas">
                 <Link href={getSigninUrl()} className="btn btn-outline-light">
-                  Start free today
+                  Start now for free
                 </Link>
                 <Link href={MASTERCLASS_PATH} className="btn btn-solid">
-                  Book free Discovery call
+                  Book your strategy session
                 </Link>
               </div>
             </div>

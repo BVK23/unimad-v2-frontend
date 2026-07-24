@@ -1,4 +1,5 @@
 import type { PortfolioItem } from "@/types";
+import { htmlToPlainText } from "@/utils/html-to-text";
 
 const BLOCK_TYPE_LABELS: Record<PortfolioItem["type"], string> = {
   text: "Text block",
@@ -18,7 +19,7 @@ const BLOCK_TYPE_LABELS: Record<PortfolioItem["type"], string> = {
 };
 
 export function getPortfolioBlockDeleteLabel(item: PortfolioItem): string {
-  const title = item.title?.trim();
+  const title = htmlToPlainText(item.title ?? "").trim();
   if (title) {
     return title;
   }

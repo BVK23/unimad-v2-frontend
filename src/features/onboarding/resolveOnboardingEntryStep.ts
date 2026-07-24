@@ -2,7 +2,7 @@ import type { ProfileData } from "@/features/user-profile/types";
 import type { FeatureGates } from "./featureGates";
 
 /** Steps the onboarding flow may open directly (skipping earlier wizard steps). */
-export type OnboardingEntryStep = "welcome" | "name" | "resume" | "niche" | "strengths";
+export type OnboardingEntryStep = "welcome" | "name" | "resume" | "niche";
 
 export const ONBOARDING_ROUTE = "/uniboard/onboarding";
 
@@ -23,13 +23,11 @@ export function hasPreferredName(profile: ProfileData | null | undefined): boole
 
 /**
  * Pick the onboarding step for users returning to finish setup.
- * Order follows product gates: phone/goals wizard → preferred name → resume upload/build → niche discovery.
+ * Order: incomplete initial wizard → preferred name → niche (if resume profile exists) → resume upload.
+ * Strengths is handled outside this wizard (Unibot nudge), not as an onboarding entry.
  */
 export function resolveOnboardingEntryStep(gates: FeatureGates, profile?: ProfileData | null): OnboardingEntryStep {
   if (gates.profile_setup_complete && gates.niche_complete) {
-    if (!gates.strengths_complete && gates.strengths_recommended) {
-      return "strengths";
-    }
     return "welcome";
   }
 
@@ -46,5 +44,6 @@ export function resolveOnboardingEntryStep(gates: FeatureGates, profile?: Profil
     return "niche";
   }
 
+  // Skippers ("Do it later" after stage) and others without resume profile → resume step.
   return "resume";
 }

@@ -271,6 +271,25 @@ export async function setBaseResume(resumeId: string): Promise<Record<string, un
 }
 
 /**
+ * Copy resume sections into UserProfile for onboarding continuation.
+ * POST `/api/resume/sync-to-profile/` with body `{ id: resumeId }`.
+ */
+export async function syncResumeToProfile(resumeId: string): Promise<Record<string, unknown>> {
+  const res = await authedFetch("/api/resume/sync-to-profile/", {
+    method: "POST",
+    body: JSON.stringify({ id: resumeId }),
+  });
+
+  const data = (await res.json().catch(() => ({}))) as Record<string, unknown>;
+
+  if (!res.ok) {
+    throw new Error((data?.message as string) ?? (data?.error as string) ?? "Failed to sync resume to profile");
+  }
+
+  return data;
+}
+
+/**
  * Extract resume data from an uploaded PDF and upsert into the user's base resume.
  * POST `/api/resume/extract-from-pdf/` (multipart/form-data, field name `resume`).
  * Returns resume_id and resume_data on success; throws on failure or status !== "success".
